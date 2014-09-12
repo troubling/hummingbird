@@ -5,6 +5,8 @@ import (
 	"crypto/md5"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 )
@@ -55,28 +57,33 @@ func (r Ring) GetPartition(account string, container string, object string) uint
 	return val >> r.PartShift
 }
 
-func LoadRing(path string, prefix string, suffix string) *Ring {
+func LoadRing(path string, prefix string, suffix string) (*Ring, error) {
 	fp, _ := os.Open(path)
 	gz, _ := gzip.NewReader(fp)
-	magic_buf := make([]byte, 4)
-	io.ReadFull(gz, magic_buf)
-	// TODO: assert magic_buf == "R1NG"
-	var ring_version uint16
-	binary.Read(gz, binary.BigEndian, &ring_version)
-	// TODO: assert ring_version == 1
+	magicBuf := make([]byte, 4)
+	io.ReadFull(gz, magicBuf)
+	if string(magicBuf) != "R1NG" {
+		return nil, errors.New("Bad magic string")
+	}
+	var ringVersion uint16
+	binary.Read(gz, binary.BigEndian, &ringVersion)
+	if ringVersion != 1 {
+		return nil, errors.New(fmt.Sprintf("Unknown ring version %d", ringVersion))
+	}
+	// TODO: assert ringVersion == 1
 	var json_len uint32
 	binary.Read(gz, binary.BigEndian, &json_len)
-	json_buf := make([]byte, json_len)
-	io.ReadFull(gz, json_buf)
+	jsonBuf := make([]byte, json_len)
+	io.ReadFull(gz, jsonBuf)
 	var ring Ring
-	json.Unmarshal(json_buf, &ring)
+	json.Unmarshal(jsonBuf, &ring)
 	ring.prefix = prefix
 	ring.suffix = suffix
-	partition_count := 1 << (32 - ring.PartShift)
+	partitionCount := 1 << (32 - ring.PartShift)
 	for i := uint(0); i < ring.ReplicaCount; i++ {
-		part2dev := make([]uint16, partition_count)
+		part2dev := make([]uint16, partitionCount)
 		binary.Read(gz, binary.LittleEndian, &part2dev)
 		ring.replica2part2dev_id = append(ring.replica2part2dev_id, part2dev)
 	}
-	return &ring
+	return &ring, nil
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -10,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"encoding/json"
 
 	"github.com/mattn/go-sqlite3"
 	"hummingbird/common"
@@ -36,7 +36,7 @@ type ContainerInfo struct {
 	XContainerSyncPoint1    string
 	XContainerSyncPoint2    string
 	StoragePolicyIndex      int
-	Metadata				string
+	Metadata                string
 }
 
 type ObjectRecord struct {
@@ -55,8 +55,8 @@ type SubdirRecord struct {
 }
 
 type ExistingRecord struct {
-	created_at string
-	rowid      int64
+	createdAt string
+	rowid     int64
 }
 
 type ContainerDB struct {
@@ -135,13 +135,13 @@ func (db *ContainerDB) GetInfo() (*ContainerInfo, error) {
 }
 
 func (db *ContainerDB) GetMetadata() map[string]string {
-  	info, _ := db.GetInfo()
-	var metadata_info interface{}
+	info, _ := db.GetInfo()
+	var metadataInfo interface{}
 	metadata := make(map[string]string)
-	err := json.Unmarshal([]byte(info.Metadata), &metadata_info)
+	err := json.Unmarshal([]byte(info.Metadata), &metadataInfo)
 	if err == nil {
-		for key, value := range metadata_info.(map[string]interface{}) {
-		  metadata[key] = value.([]interface{})[0].(string)
+		for key, value := range metadataInfo.(map[string]interface{}) {
+			metadata[key] = value.([]interface{})[0].(string)
 		}
 	}
 	return metadata
@@ -155,7 +155,7 @@ func (db *ContainerDB) IsDeleted() bool {
 func (db *ContainerDB) Delete(timestamp string) {
 	db.CExec("UPDATE container_info SET delete_timestamp = ?", timestamp)
 	if db.InfoCache != nil {
-	  	db.InfoCache.DeleteTimestamp = timestamp
+		db.InfoCache.DeleteTimestamp = timestamp
 	}
 }
 
@@ -185,40 +185,40 @@ func (db *ContainerDB) MergeItems(records []map[string]interface{}) error {
 		existing[fmt.Sprintf("%d/%s", policy, name)] = ExistingRecord{timestamp, rowid}
 	}
 	rows.Close()
-	to_delete := make(map[int64]bool)
-	to_add := make(map[string]map[string]interface{})
+	toDelete := make(map[int64]bool)
+	toAdd := make(map[string]map[string]interface{})
 	for _, record := range records {
 		if _, ok := record["storage_policy_index"]; !ok { /* legacy */
 			record["storage_policy_index"] = 0
 		}
-		record_id := fmt.Sprintf("%d/%s", record["storage_policy_index"], record["name"])
-		current, in_existing := existing[record_id]
-		if !in_existing {
-			to_add[record_id] = record
-		} else if current.created_at < record["created_at"].(string) {
-			to_delete[current.rowid] = true
-			if already_in, ok := to_add[record_id]; !ok || record["created_at"].(string) > already_in["created_at"].(string) {
-				to_add[record_id] = record
+		recordId := fmt.Sprintf("%d/%s", record["storage_policy_index"], record["name"])
+		current, inExisting := existing[recordId]
+		if !inExisting {
+			toAdd[recordId] = record
+		} else if current.createdAt < record["created_at"].(string) {
+			toDelete[current.rowid] = true
+			if alreadyIn, ok := toAdd[recordId]; !ok || record["created_at"].(string) > alreadyIn["created_at"].(string) {
+				toAdd[recordId] = record
 			}
 		}
 	}
-	if len(to_delete) > 0 {
+	if len(toDelete) > 0 {
 		txstmt, err := tx.Prepare("DELETE FROM object WHERE ROWID=?")
 		defer txstmt.Close()
 		if err != nil {
 			return err
 		}
-		for key, _ := range to_delete {
+		for key, _ := range toDelete {
 			txstmt.Exec(key)
 		}
 	}
-	if len(to_add) > 0 {
+	if len(toAdd) > 0 {
 		txstmt, err := tx.Prepare("INSERT INTO object (name, created_at, size, content_type, etag, deleted, storage_policy_index) VALUES (?, ?, ?, ?, ?, ?, ?)")
 		defer txstmt.Close()
 		if err != nil {
 			return err
 		}
-		for _, record := range to_add {
+		for _, record := range toAdd {
 			txstmt.Exec(record["name"], record["created_at"], record["size"], record["content_type"], record["etag"], record["deleted"], record["storage_policy_index"])
 		}
 	}
@@ -240,7 +240,11 @@ func (db *ContainerDB) CommitPendingAlreadyLocked() error {
 		if err != nil {
 			continue
 		}
-		record := hummingbird.PickleLoads(pickled).([]interface{})
+		r, err := hummingbird.PickleLoads(pickled)
+		if err != nil {
+			continue
+		}
+		record := r.([]interface{})
 		records = append(records, map[string]interface{}{
 			"name":                 record[0],
 			"created_at":           record[1],
@@ -267,18 +271,18 @@ func (db *ContainerDB) CommitPending() error {
 	return db.CommitPendingAlreadyLocked()
 }
 
-func (db *ContainerDB) ListObjectsSimple(limit int, marker *string, end_marker *string, prefix *string, storage_policy_index int) ([]interface{}, error) {
+func (db *ContainerDB) ListObjectsSimple(limit int, marker *string, endMarker *string, prefix *string, storagePolicyIndex int) ([]interface{}, error) {
 	results := make([]interface{}, 0)
 	if marker == nil {
-	  	if prefix != nil {
-		  	marker = prefix
+		if prefix != nil {
+			marker = prefix
 		} else {
-		  empty_str := ""
-		  marker = &empty_str
-		 }
+			emptyStr := ""
+			marker = &emptyStr
+		}
 	}
 	rows, err := db.CQuery("SELECT name, created_at, size, content_type, etag FROM object WHERE +deleted = 0 AND name > ? AND storage_policy_index = ? ORDER BY name ASC LIMIT ?",
-		*marker, storage_policy_index, limit)
+		*marker, storagePolicyIndex, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +290,7 @@ func (db *ContainerDB) ListObjectsSimple(limit int, marker *string, end_marker *
 		record := ObjectRecord{}
 		var createdAt string
 		rows.Scan(&record.Name, &createdAt, &record.Size, &record.ContentType, &record.Etag)
-		if (end_marker != nil && record.Name >= *end_marker) || (prefix != nil && !strings.HasPrefix(record.Name, *prefix)) {
+		if (endMarker != nil && record.Name >= *endMarker) || (prefix != nil && !strings.HasPrefix(record.Name, *prefix)) {
 			break
 		}
 		record.LastModified, _ = hummingbird.FormatTimestamp(createdAt)
@@ -296,22 +300,44 @@ func (db *ContainerDB) ListObjectsSimple(limit int, marker *string, end_marker *
 	return results, nil
 }
 
-func (db *ContainerDB) ListObjectsPrefixDelimiter(limit int, marker *string, end_marker *string, prefix *string, delimiter *string, storage_policy_index int) ([]interface{}, error) {
+func (db *ContainerDB) ListObjectsPrefix(limit int, marker *string, endMarker *string, prefix *string, storagePolicyIndex int) ([]interface{}, error) {
+	results := make([]interface{}, 0)
+	if marker == nil {
+		emptyStr := ""
+		marker = &emptyStr
+	}
+	rows, err := db.CQuery("SELECT name, created_at, size, content_type, etag FROM object WHERE +deleted = 0 AND name > ? AND name GLOB ?||'*' AND storage_policy_index = ? ORDER BY name ASC LIMIT ?",
+		*marker, *prefix, storagePolicyIndex, limit)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		record := ObjectRecord{}
+		var createdAt string
+		rows.Scan(&record.Name, &createdAt, &record.Size, &record.ContentType, &record.Etag)
+		record.LastModified, _ = hummingbird.FormatTimestamp(createdAt)
+		results = append(results, record)
+	}
+	rows.Close()
+	return results, nil
+}
+
+func (db *ContainerDB) ListObjectsPrefixDelimiter(limit int, marker *string, endMarker *string, prefix *string, delimiter *string, storagePolicyIndex int) ([]interface{}, error) {
 	results := make([]interface{}, 0)
 	var start string
 	if marker != nil {
 		start = *marker
 	} else {
-		start = *prefix
+		start = ""
 	}
 	if prefix == nil {
-		empty_string := ""
-		prefix = &empty_string
+		emptyString := ""
+		prefix = &emptyString
 	}
 	for len(results) < limit {
 		rowcount := 0
-		rows, err := db.CQuery("SELECT name, created_at, size, content_type, etag FROM object WHERE +deleted = 0 AND name > ? AND storage_policy_index = ? ORDER BY name ASC LIMIT ?",
-			start, storage_policy_index, limit-len(results))
+		rows, err := db.CQuery("SELECT name, created_at, size, content_type, etag FROM object WHERE +deleted = 0 AND name > ? AND name GLOB ?||'*' AND storage_policy_index = ? ORDER BY name ASC LIMIT ?",
+			start, *prefix, storagePolicyIndex, limit-len(results))
 		if err != nil {
 			return nil, err
 		}
@@ -320,13 +346,13 @@ func (db *ContainerDB) ListObjectsPrefixDelimiter(limit int, marker *string, end
 			record := ObjectRecord{}
 			var createdAt string
 			rows.Scan(&record.Name, &createdAt, &record.Size, &record.ContentType, &record.Etag)
-			if (end_marker != nil && record.Name >= *end_marker) || (!strings.HasPrefix(record.Name, *prefix)) {
+			if endMarker != nil && record.Name >= *endMarker {
 				rows.Close()
 				return results, nil
 			}
-			after_prefix := record.Name[len(*prefix):]
-			if strings.Contains(after_prefix, *delimiter) {
-				parts := strings.SplitN(after_prefix, *delimiter, 2)
+			afterPrefix := record.Name[len(*prefix):]
+			if strings.Contains(afterPrefix, *delimiter) {
+				parts := strings.SplitN(afterPrefix, *delimiter, 2)
 				subdir := SubdirRecord{Name: parts[0], Name2: parts[0]}
 				results = append(results, subdir)
 				start = *prefix + parts[0] + string(rune((*delimiter)[0]+1))
@@ -345,7 +371,7 @@ func (db *ContainerDB) ListObjectsPrefixDelimiter(limit int, marker *string, end
 	return results, nil
 }
 
-func (db *ContainerDB) ListObjectsPath(limit int, marker *string, end_marker *string, path *string, storage_policy_index int) ([]interface{}, error) {
+func (db *ContainerDB) ListObjectsPath(limit int, marker *string, endMarker *string, path *string, storagePolicyIndex int) ([]interface{}, error) {
 	results := make([]interface{}, 0)
 	var start string
 	prefix := ""
@@ -360,7 +386,7 @@ func (db *ContainerDB) ListObjectsPath(limit int, marker *string, end_marker *st
 	for len(results) < limit {
 		rowcount := 0
 		rows, err := db.CQuery("SELECT name, created_at, size, content_type, etag FROM object WHERE +deleted = 0 AND name > ? AND storage_policy_index = ? ORDER BY name ASC LIMIT ?",
-			start, storage_policy_index, limit-len(results))
+			start, storagePolicyIndex, limit-len(results))
 		if err != nil {
 			return nil, err
 		}
@@ -369,16 +395,16 @@ func (db *ContainerDB) ListObjectsPath(limit int, marker *string, end_marker *st
 			record := ObjectRecord{}
 			var createdAt string
 			rows.Scan(&record.Name, &createdAt, &record.Size, &record.ContentType, &record.Etag)
-			if (end_marker != nil && record.Name >= *end_marker) || (!strings.HasPrefix(record.Name, prefix)) {
+			if (endMarker != nil && record.Name >= *endMarker) || (!strings.HasPrefix(record.Name, prefix)) {
 				rows.Close()
 				return results, nil
 			}
-			after_prefix := record.Name[len(prefix):]
-			if record.Name == prefix || after_prefix[0] == '/' {
+			afterPrefix := record.Name[len(prefix):]
+			if record.Name == prefix || afterPrefix[0] == '/' {
 				continue
 			}
-			if strings.Contains(after_prefix, "/") {
-				parts := strings.SplitN(after_prefix, "/", 2)
+			if strings.Contains(afterPrefix, "/") {
+				parts := strings.SplitN(afterPrefix, "/", 2)
 				record.Name = prefix + parts[0]
 				if len(parts) > 1 {
 					record.Name += "/"
@@ -400,7 +426,7 @@ func (db *ContainerDB) ListObjectsPath(limit int, marker *string, end_marker *st
 	return results, nil
 }
 
-func (db *ContainerDB) ListObjects(limit int, marker *string, end_marker *string, prefix *string, delimiter *string, path *string, storage_policy_index int) ([]interface{}, error) {
+func (db *ContainerDB) ListObjects(limit int, marker *string, endMarker *string, prefix *string, delimiter *string, path *string, storagePolicyIndex int) ([]interface{}, error) {
 	db.CommitPending()
 
 	if prefix == nil {
@@ -412,18 +438,22 @@ func (db *ContainerDB) ListObjects(limit int, marker *string, end_marker *string
 	}
 
 	if delimiter != nil {
-		return db.ListObjectsPrefixDelimiter(limit, marker, end_marker, prefix, delimiter, storage_policy_index)
+		return db.ListObjectsPrefixDelimiter(limit, marker, endMarker, prefix, delimiter, storagePolicyIndex)
+	}
+
+	if prefix != nil {
+		return db.ListObjectsPrefix(limit, marker, endMarker, prefix, storagePolicyIndex)
 	}
 
 	if path != nil {
-		return db.ListObjectsPath(limit, marker, end_marker, path, storage_policy_index)
+		return db.ListObjectsPath(limit, marker, endMarker, path, storagePolicyIndex)
 	}
 
-	return db.ListObjectsSimple(limit, marker, end_marker, prefix, storage_policy_index)
+	return db.ListObjectsSimple(limit, marker, endMarker, prefix, storagePolicyIndex)
 }
 
 func (db *ContainerDB) UpdateMetadata(updates map[string][]string) error {
-  	var new_metadata []byte
+	var newMetadata []byte
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -435,20 +465,20 @@ func (db *ContainerDB) UpdateMetadata(updates map[string][]string) error {
 	}
 	defer rows.Close()
 	if rows.Next() {
-	  	var metadata_value string
-		var metadata_if interface{}
-		rows.Scan(&metadata_value)
-		if metadata_value == "" {
-			new_metadata, _ = json.Marshal(updates)
+		var metadataValue string
+		var metadataIf interface{}
+		rows.Scan(&metadataValue)
+		if metadataValue == "" {
+			newMetadata, _ = json.Marshal(updates)
 		} else {
-			err := json.Unmarshal([]byte(metadata_value), &metadata_if)
+			err := json.Unmarshal([]byte(metadataValue), &metadataIf)
 			if err != nil {
 				return err
 			}
-			metadata := metadata_if.(map[string]interface{})
+			metadata := metadataIf.(map[string]interface{})
 			for key, newvalue := range updates {
-			  	if newvalue[0] == "" {
-				  	delete(metadata, key)
+				if newvalue[0] == "" {
+					delete(metadata, key)
 				} else if existing, ok := metadata[key]; ok {
 					if existing.([]interface{})[1].(string) < newvalue[1] {
 						metadata[key] = interface{}(newvalue)
@@ -457,9 +487,9 @@ func (db *ContainerDB) UpdateMetadata(updates map[string][]string) error {
 					metadata[key] = interface{}(newvalue)
 				}
 			}
-			new_metadata, _ = json.Marshal(metadata)
+			newMetadata, _ = json.Marshal(metadata)
 		}
-		_, err := tx.Exec("UPDATE container_stat SET metadata=?", string(new_metadata))
+		_, err := tx.Exec("UPDATE container_stat SET metadata=?", string(newMetadata))
 		tx.Commit()
 		db.InfoCache = nil
 		return err
@@ -467,21 +497,32 @@ func (db *ContainerDB) UpdateMetadata(updates map[string][]string) error {
 	return errors.New("NO CONTAINER_STAT ENTRY")
 }
 
-func CreateDatabase(containerFile string, account string, container string, put_timestamp string, metadata map[string][]string, policy_index int) (bool, error) {
+func OpenDatabase(containerFile string) (*ContainerDB, error) {
+	if _, err := os.Stat(containerFile); os.IsNotExist(err) {
+		return nil, errors.New("Does not exist..")
+	}
+	dbConn, err := sql.Open("sqlite3_chexor", containerFile)
+	if err != nil {
+		return nil, errors.New("Failed to open.")
+	}
+	dbConn.Exec("PRAGMA synchronous = NORMAL")
+	return &ContainerDB{dbConn, containerFile, make(map[string]*sql.Stmt), nil}, nil
+}
+
+func CreateDatabase(containerFile string, account string, container string, putTimestamp string, metadata map[string][]string, policyIndex int) (bool, error) {
 	containerDir := filepath.Dir(containerFile)
-	serialized_metadata, _ := json.Marshal(metadata)
+	serializedMetadata, _ := json.Marshal(metadata)
 	if _, err := os.Stat(containerFile); err == nil {
-		var current_put_timestamp string
-		var current_delete_timestamp string
-		dbConn, err := sql.Open("sqlite3_chexor", containerFile)
+		db, err := OpenDatabase(containerFile)
 		if err != nil {
 			return false, err
 		}
-		row := dbConn.QueryRow("SELECT put_timestamp, delete_timestamp FROM container_info")
-		row.Scan(&current_put_timestamp, &current_delete_timestamp)
-		dbConn.Exec("UPDATE container_info SET put_timestamp = ?", put_timestamp)
-		dbConn.Close()
-		return (current_delete_timestamp > current_put_timestamp && put_timestamp > current_delete_timestamp), nil
+		defer db.Release()
+		var cpt string
+		var cdt string
+		db.QueryRow("SELECT put_timestamp, delete_timestamp FROM container_info").Scan(&cpt, &cdt)
+		db.Exec("UPDATE container_info SET put_timestamp = ?, metadata = ?", putTimestamp, serializedMetadata)
+		return (cdt > cpt && putTimestamp > cdt), nil
 	}
 	if err := os.MkdirAll(containerDir, 0770); err != nil {
 		return false, err
@@ -631,23 +672,11 @@ func CreateDatabase(containerFile string, account string, container string, put_
 						  WHERE ROWID = new.ROWID;
 					  END`)
 	dbConn.Exec(`INSERT INTO container_info (account, container, created_at, id, put_timestamp, status_changed_at, storage_policy_index, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-								account, container, hummingbird.GetTimestamp(), hummingbird.UUID(), put_timestamp, put_timestamp, policy_index, serialized_metadata)
+		account, container, hummingbird.GetTimestamp(), hummingbird.UUID(), putTimestamp, putTimestamp, policyIndex, serializedMetadata)
 	return true, tx.Commit()
 }
 
-func OpenDatabase(containerFile string) (*ContainerDB, error) {
-	if _, err := os.Stat(containerFile); os.IsNotExist(err) {
-		return nil, errors.New("Does not exist..")
-	}
-	dbConn, err := sql.Open("sqlite3_chexor", containerFile)
-	if err != nil {
-		return nil, errors.New("Failed to open.")
-	}
-	dbConn.Exec("PRAGMA synchronous = NORMAL")
-	return &ContainerDB{dbConn, containerFile, make(map[string]*sql.Stmt), nil}, nil
-}
-
-func PutObject(containerFile string, name string, timestamp string, size int64, content_type string, etag string, deleted int, storage_policy_index int) error {
+func PutObject(containerFile string, name string, timestamp string, size int64, contentType string, etag string, deleted int, storagePolicyIndex int) error {
 	lock, err := hummingbird.LockParent(containerFile, 10)
 	if err != nil {
 		return err
@@ -657,10 +686,10 @@ func PutObject(containerFile string, name string, timestamp string, size int64, 
 	tuple[0] = name
 	tuple[1] = timestamp
 	tuple[2] = size
-	tuple[3] = content_type
+	tuple[3] = contentType
 	tuple[4] = etag
 	tuple[5] = deleted
-	tuple[6] = storage_policy_index
+	tuple[6] = storagePolicyIndex
 	file, err := os.OpenFile(containerFile+".pending", os.O_RDWR|os.O_APPEND|os.O_CREATE, 0660)
 	if err != nil {
 		return err

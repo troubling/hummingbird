@@ -7,7 +7,6 @@ import (
 	"io"
 	"io/ioutil"
 	"log/syslog"
-	"net"
 	"net/http"
 	"net/textproto"
 	"os"
@@ -19,39 +18,40 @@ import (
 	"hummingbird/common"
 )
 
-type ObjectServer struct {
+type ObjectHandler struct {
 	driveRoot      string
 	hashPathPrefix string
 	hashPathSuffix string
 	checkMounts    bool
 	disableFsync   bool
 	asyncFinalize  bool
+	asyncFsync     bool
+	dropCache      bool
 	allowedHeaders map[string]bool
 	logger         *syslog.Writer
 	diskLimit      int64
 	diskInUse      map[string]int64
 }
 
-func (server ObjectServer) ObjGetHandler(writer *hummingbird.SwiftWriter, request *hummingbird.SwiftRequest, vars map[string]string) {
+func (server ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	headers := writer.Header()
-	hashDir, err := hummingbird.ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, server.checkMounts)
+	hashDir, err := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, server.checkMounts)
 	if err != nil {
 		http.Error(writer, "Insufficent Storage", 507)
 		return
 	}
-	// TODO: do proper logic, .meta files...
-	dataFile := hummingbird.PrimaryFile(hashDir)
+	dataFile, metaFile := ObjectFiles(hashDir)
 	if dataFile == "" || strings.HasSuffix(dataFile, ".ts") {
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
 	}
-	file, err := os.Open(fmt.Sprintf("%s/%s", hashDir, dataFile))
+
+	metadata, err := ObjectMetadata(dataFile, metaFile)
 	if err != nil {
-		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		request.LogError("Error getting metadata from (%s, %s): %s", dataFile, metaFile, err.Error())
+		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
-	defer file.Close()
-	metadata, _ := hummingbird.ReadMetadataFd(int(file.Fd()))
 
 	if deleteAt, ok := metadata["X-Delete-At"].(string); ok {
 		if deleteTime, err := hummingbird.ParseDate(deleteAt); err == nil && deleteTime.Before(time.Now()) {
@@ -62,6 +62,7 @@ func (server ObjectServer) ObjGetHandler(writer *hummingbird.SwiftWriter, reques
 
 	lastModified, err := hummingbird.ParseDate(metadata["X-Timestamp"].(string))
 	if err != nil {
+		request.LogError("Error getting timestamp from %s: %s", dataFile, err.Error())
 		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
@@ -97,6 +98,14 @@ func (server ObjectServer) ObjGetHandler(writer *hummingbird.SwiftWriter, reques
 	headers.Set("Content-Type", metadata["Content-Type"].(string))
 	headers.Set("Content-Length", metadata["Content-Length"].(string))
 	contentLength, err := strconv.ParseInt(metadata["Content-Length"].(string), 10, 64)
+
+	file, err := os.Open(dataFile)
+	if err != nil {
+		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		return
+	}
+	defer file.Close()
+
 	if err != nil {
 		contentLength, _ = file.Seek(0, os.SEEK_END)
 		file.Seek(0, os.SEEK_SET)
@@ -119,34 +128,38 @@ func (server ObjectServer) ObjGetHandler(writer *hummingbird.SwiftWriter, reques
 	writer.WriteHeader(http.StatusOK)
 	if request.Method == "GET" {
 		io.Copy(writer, file)
-		go hummingbird.DropBufferCache(int(file.Fd()), contentLength)
+		if server.dropCache {
+			go hummingbird.DropBufferCache(int(file.Fd()), contentLength)
+		}
 	} else {
 		writer.Write([]byte{})
 	}
 }
 
-func (server ObjectServer) ObjPutHandler(writer *hummingbird.SwiftWriter, request *hummingbird.SwiftRequest, vars map[string]string) {
+func (server ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	outHeaders := writer.Header()
-	hashDir, err := hummingbird.ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, server.checkMounts)
+	hashDir, err := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, server.checkMounts)
 	if err != nil {
 		http.Error(writer, "Insufficent Storage", 507)
 		return
 	}
 	if inm := request.Header.Get("If-None-Match"); inm == "*" {
-		dataFile := hummingbird.PrimaryFile(hashDir)
+		dataFile, _ := ObjectFiles(hashDir)
 		if dataFile != "" && !strings.HasSuffix(dataFile, ".ts") {
 			http.Error(writer, http.StatusText(http.StatusPreconditionFailed), http.StatusPreconditionFailed)
 			return
 		}
 	}
 
-	if os.MkdirAll(hashDir, 0770) != nil || os.MkdirAll(hummingbird.ObjTempDir(vars, server.driveRoot), 0770) != nil {
+	if os.MkdirAll(hashDir, 0770) != nil || os.MkdirAll(ObjTempDir(vars, server.driveRoot), 0770) != nil {
+		request.LogError("Error creating directories on %s", server.driveRoot)
 		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 	fileName := fmt.Sprintf("%s/%s.data", hashDir, request.Header.Get("X-Timestamp"))
-	tempFile, err := ioutil.TempFile(hummingbird.ObjTempDir(vars, server.driveRoot), "PUT")
+	tempFile, err := ioutil.TempFile(ObjTempDir(vars, server.driveRoot), "PUT")
 	if err != nil {
+		request.LogError("Error creating temporary file in %s: %s", server.driveRoot, err.Error())
 		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
@@ -167,10 +180,10 @@ func (server ObjectServer) ObjPutHandler(writer *hummingbird.SwiftWriter, reques
 	hash := md5.New()
 	totalSize, err := io.Copy(hash, io.TeeReader(request.Body, tempFile))
 	if err != nil {
-		fmt.Printf("ERROR: %s\n", err)
+		request.LogError("Error writing to file %s: %s", tempFile.Name(), err.Error())
+		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
-	go hummingbird.DropBufferCache(int(tempFile.Fd()), totalSize)
 	metadata["Content-Length"] = strconv.FormatInt(totalSize, 10)
 	metadata["ETag"] = fmt.Sprintf("%x", hash.Sum(nil))
 	requestEtag := request.Header.Get("ETag")
@@ -179,20 +192,27 @@ func (server ObjectServer) ObjPutHandler(writer *hummingbird.SwiftWriter, reques
 		return
 	}
 	outHeaders.Set("ETag", metadata["ETag"].(string))
-	hummingbird.WriteMetadata(int(tempFile.Fd()), metadata)
+	WriteMetadata(int(tempFile.Fd()), metadata)
 
 	if !server.disableFsync {
-		tempFile.Sync()
+		if server.asyncFsync {
+			go tempFile.Sync()
+		} else {
+			tempFile.Sync()
+		}
 	}
 	os.Rename(tempFile.Name(), fileName)
+	if server.dropCache {
+		go hummingbird.DropBufferCache(int(tempFile.Fd()), totalSize)
+	}
 
 	finalize := func() {
-		UpdateContainer(metadata, request, vars)
+		UpdateContainer(metadata, request, vars, hashDir)
 		if request.Header.Get("X-Delete-At") != "" || request.Header.Get("X-Delete-After") != "" {
-			UpdateDeleteAt(request, vars, metadata)
+			UpdateDeleteAt(request, vars, metadata, hashDir)
 		}
-		hummingbird.CleanupHashDir(hashDir)
-		hummingbird.InvalidateHash(hashDir, !server.disableFsync)
+		CleanupHashDir(hashDir)
+		InvalidateHash(hashDir, !server.disableFsync)
 	}
 	if server.asyncFinalize {
 		go finalize()
@@ -202,13 +222,13 @@ func (server ObjectServer) ObjPutHandler(writer *hummingbird.SwiftWriter, reques
 	http.Error(writer, http.StatusText(http.StatusCreated), http.StatusCreated)
 }
 
-func (server ObjectServer) ObjDeleteHandler(writer *hummingbird.SwiftWriter, request *hummingbird.SwiftRequest, vars map[string]string) {
-	hashDir, err := hummingbird.ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, server.checkMounts)
+func (server ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+	hashDir, err := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, server.checkMounts)
 	if err != nil {
 		http.Error(writer, "Insufficent Storage", 507)
 		return
 	}
-	dataFile := hummingbird.PrimaryFile(hashDir)
+	dataFile, metaFile := ObjectFiles(hashDir)
 	if ida := request.Header.Get("X-If-Delete-At"); ida != "" {
 		_, err = strconv.ParseInt(ida, 10, 64)
 		if err != nil {
@@ -219,9 +239,10 @@ func (server ObjectServer) ObjDeleteHandler(writer *hummingbird.SwiftWriter, req
 			http.Error(writer, http.StatusText(http.StatusPreconditionFailed), http.StatusPreconditionFailed)
 			return
 		}
-		metadata, err := hummingbird.ReadMetadataFilename(fmt.Sprintf("%s/%s", hashDir, dataFile))
+		metadata, err := ObjectMetadata(dataFile, metaFile)
 		if err != nil {
-			http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+			request.LogError("Error getting metadata from (%s, %s): %s", dataFile, metaFile, err.Error())
+			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
 		if _, ok := metadata["X-Delete-At"]; ok {
@@ -237,34 +258,42 @@ func (server ObjectServer) ObjDeleteHandler(writer *hummingbird.SwiftWriter, req
 		return
 	}
 	fileName := fmt.Sprintf("%s/%s.ts", hashDir, request.Header.Get("X-Timestamp"))
-	tempFile, err := ioutil.TempFile(hummingbird.ObjTempDir(vars, server.driveRoot), "PUT")
+	tempFile, err := ioutil.TempFile(ObjTempDir(vars, server.driveRoot), "PUT")
 	if err != nil {
+		request.LogError("Error creating temporary file in %s: %s", server.driveRoot, err.Error())
 		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 	defer tempFile.Close()
+	defer os.RemoveAll(tempFile.Name())
 	metadata := make(map[string]interface{})
 	metadata["X-Timestamp"] = request.Header.Get("X-Timestamp")
 	metadata["name"] = fmt.Sprintf("/%s/%s/%s", vars["account"], vars["container"], vars["obj"])
-	hummingbird.WriteMetadata(int(tempFile.Fd()), metadata)
+	WriteMetadata(int(tempFile.Fd()), metadata)
 
 	if !server.disableFsync {
-		tempFile.Sync()
+		if server.asyncFsync {
+			go tempFile.Sync()
+		} else {
+			tempFile.Sync()
+		}
 	}
 	os.Rename(tempFile.Name(), fileName)
+
 	finalize := func() {
-		UpdateContainer(metadata, request, vars)
+		UpdateContainer(metadata, request, vars, hashDir)
 		if _, ok := metadata["X-Delete-At"]; ok {
-			UpdateDeleteAt(request, vars, metadata)
+			UpdateDeleteAt(request, vars, metadata, hashDir)
 		}
-		hummingbird.CleanupHashDir(hashDir)
-		hummingbird.InvalidateHash(hashDir, !server.disableFsync)
+		CleanupHashDir(hashDir)
+		InvalidateHash(hashDir, !server.disableFsync)
 	}
 	if server.asyncFinalize {
 		go finalize()
 	} else {
 		finalize()
 	}
+
 	if !strings.HasSuffix(dataFile, ".data") {
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 	} else {
@@ -272,8 +301,8 @@ func (server ObjectServer) ObjDeleteHandler(writer *hummingbird.SwiftWriter, req
 	}
 }
 
-func (server ObjectServer) ObjReplicateHandler(writer *hummingbird.SwiftWriter, request *hummingbird.SwiftRequest, vars map[string]string) {
-	hashes, err := hummingbird.GetHashes(server.driveRoot, vars["device"], vars["partition"], strings.Split(vars["suffixes"], "-"))
+func (server ObjectHandler) ObjReplicateHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+	hashes, err := GetHashes(server.driveRoot, vars["device"], vars["partition"], strings.Split(vars["suffixes"], "-"))
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
@@ -290,7 +319,7 @@ func GetDefault(h http.Header, key string, dfl string) string {
 	return val
 }
 
-func (server ObjectServer) AcquireDisk(disk string) bool {
+func (server ObjectHandler) AcquireDisk(disk string) bool {
 	if _, ok := server.diskInUse[disk]; !ok {
 		server.diskInUse[disk] = 0
 	}
@@ -301,11 +330,11 @@ func (server ObjectServer) AcquireDisk(disk string) bool {
 	return true
 }
 
-func (server ObjectServer) ReleaseDisk(disk string) {
+func (server ObjectHandler) ReleaseDisk(disk string) {
 	server.diskInUse[disk] -= 1
 }
 
-func (server ObjectServer) LogRequest(writer *hummingbird.SwiftWriter, request *hummingbird.SwiftRequest) {
+func (server ObjectHandler) LogRequest(writer *hummingbird.WebWriter, request *hummingbird.WebRequest) {
 	go server.logger.Info(fmt.Sprintf("%s - - [%s] \"%s %s\" %d %s \"%s\" \"%s\" \"%s\" %.4f \"%s\"",
 		request.RemoteAddr,
 		time.Now().Format("02/Jan/2006:15:04:05 -0700"),
@@ -317,17 +346,19 @@ func (server ObjectServer) LogRequest(writer *hummingbird.SwiftWriter, request *
 		GetDefault(request.Header, "X-Trans-Id", "-"),
 		GetDefault(request.Header, "User-Agent", "-"),
 		time.Since(request.Start).Seconds(),
-		"-")) // TODO: "additional info"
+		"-")) // TODO: "additional info"?
 }
 
-func (server ObjectServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+func (server ObjectHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	if request.URL.Path == "/healthcheck" {
 		writer.Header().Set("Content-Length", "2")
 		writer.WriteHeader(http.StatusOK)
 		writer.Write([]byte("OK"))
 		return
-	}
-	if request.URL.Path == "/diskusage" {
+	} else if strings.HasPrefix(request.URL.Path, "/recon/") {
+		hummingbird.ReconHandler(server.driveRoot, writer, request)
+		return
+	} else if request.URL.Path == "/diskusage" {
 		data, err := json.Marshal(server.diskInUse)
 		if err == nil {
 			writer.WriteHeader(http.StatusOK)
@@ -357,8 +388,8 @@ func (server ObjectServer) ServeHTTP(writer http.ResponseWriter, request *http.R
 		}
 	}
 
-	newWriter := &hummingbird.SwiftWriter{writer, 200}
-	newRequest := &hummingbird.SwiftRequest{request, "", "", time.Now()}
+	newWriter := &hummingbird.WebWriter{writer, 200}
+	newRequest := &hummingbird.WebRequest{request, request.Header.Get("X-Trans-Id"), request.Header.Get("X-Timestamp"), time.Now(), server.logger}
 	defer server.LogRequest(newWriter, newRequest) // log the request after return
 
 	if !server.AcquireDisk(vars["device"]) {
@@ -381,8 +412,8 @@ func (server ObjectServer) ServeHTTP(writer http.ResponseWriter, request *http.R
 	}
 }
 
-func RunServer(conf string) {
-	server := ObjectServer{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: "",
+func GetServer(conf string) (string, int, http.Handler) {
+	handler := ObjectHandler{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: "",
 		checkMounts: true, disableFsync: false, asyncFinalize: false,
 		allowedHeaders: map[string]bool{"Content-Disposition": true,
 			"Content-Encoding":      true,
@@ -394,19 +425,21 @@ func RunServer(conf string) {
 	}
 
 	if swiftconf, err := hummingbird.LoadIniFile("/etc/swift/swift.conf"); err == nil {
-		server.hashPathPrefix = swiftconf.GetDefault("swift-hash", "swift_hash_path_prefix", "")
-		server.hashPathSuffix = swiftconf.GetDefault("swift-hash", "swift_hash_path_suffix", "")
+		handler.hashPathPrefix = swiftconf.GetDefault("swift-hash", "swift_hash_path_prefix", "")
+		handler.hashPathSuffix = swiftconf.GetDefault("swift-hash", "swift_hash_path_suffix", "")
 	}
 
 	serverconf, err := hummingbird.LoadIniFile(conf)
 	if err != nil {
 		panic(fmt.Sprintf("Unable to load %s", conf))
 	}
-	server.driveRoot = serverconf.GetDefault("DEFAULT", "devices", "/srv/node")
-	server.checkMounts = hummingbird.LooksTrue(serverconf.GetDefault("DEFAULT", "mount_check", "true"))
-	server.disableFsync = hummingbird.LooksTrue(serverconf.GetDefault("DEFAULT", "disable_fsync", "false"))
-	server.asyncFinalize = hummingbird.LooksTrue(serverconf.GetDefault("DEFAULT", "async_finalize", "false"))
-	server.diskLimit, err = strconv.ParseInt(serverconf.GetDefault("DEFAULT", "disk_limit", "100"), 10, 64)
+	handler.driveRoot = serverconf.GetDefault("DEFAULT", "devices", "/srv/node")
+	handler.checkMounts = hummingbird.LooksTrue(serverconf.GetDefault("DEFAULT", "mount_check", "true"))
+	handler.disableFsync = hummingbird.LooksTrue(serverconf.GetDefault("DEFAULT", "disable_fsync", "false"))
+	handler.asyncFinalize = hummingbird.LooksTrue(serverconf.GetDefault("DEFAULT", "async_finalize", "false"))
+	handler.asyncFsync = hummingbird.LooksTrue(serverconf.GetDefault("DEFAULT", "async_fsync", "false"))
+	handler.diskLimit, err = strconv.ParseInt(serverconf.GetDefault("DEFAULT", "disk_limit", "100"), 10, 64)
+	handler.dropCache = hummingbird.LooksTrue(serverconf.GetDefault("DEFAULT", "drop_cache", "true"))
 	if err != nil {
 		panic("Invalid disk_limit format")
 	}
@@ -418,30 +451,16 @@ func RunServer(conf string) {
 	if allowedHeaders, ok := serverconf.Get("DEFAULT", "allowed_headers"); ok {
 		headers := strings.Split(allowedHeaders, ",")
 		for i := range headers {
-			server.allowedHeaders[textproto.CanonicalMIMEHeaderKey(strings.TrimSpace(headers[i]))] = true
+			handler.allowedHeaders[textproto.CanonicalMIMEHeaderKey(strings.TrimSpace(headers[i]))] = true
 		}
 	}
 
-	sock, err := net.Listen("tcp", fmt.Sprintf("%s:%d", bindIP, bindPort))
-	if err != nil {
-		panic(fmt.Sprintf("Unable to bind %s:%d", bindIP, bindPort))
-	}
-	server.logger = hummingbird.SetupLogger(serverconf.GetDefault("DEFAULT", "log_facility", "LOG_LOCAL0"), "object-server")
+	handler.logger = hummingbird.SetupLogger(serverconf.GetDefault("DEFAULT", "log_facility", "LOG_LOCAL0"), "object-server")
 	hummingbird.DropPrivileges(serverconf.GetDefault("DEFAULT", "user", "swift"))
-	srv := &http.Server{Handler: server}
-	srv.Serve(sock)
+
+	return bindIP, int(bindPort), handler
 }
 
 func main() {
-	hummingbird.UseMaxProcs()
-	if os.Args[1] == "saio" {
-		go RunServer("/etc/swift/object-server/1.conf")
-		go RunServer("/etc/swift/object-server/2.conf")
-		go RunServer("/etc/swift/object-server/3.conf")
-		go RunServer("/etc/swift/object-server/4.conf")
-		for {
-			time.Sleep(10000)
-		}
-	}
-	RunServer(os.Args[1])
+	hummingbird.RunServers(GetServer)
 }

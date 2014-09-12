@@ -39,7 +39,7 @@ func ChexorFunc(context *C.sqlite3_context, argc C.int, argv **C.sqlite3_value) 
 		digest[i] ^= old_digest[i]
 	}
 	result := fmt.Sprintf("%x", digest)
-	C.sqlite3_result_text(context, C.CString(result), 32, (*[0]byte)(C.free))
+	C.sqlite3_result_text(context, C.CString(result), 32, (*[0]byte)(C.cfree))
 }
 
 var chexor_name = C.CString("chexor")

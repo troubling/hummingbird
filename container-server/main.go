@@ -8,9 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/syslog"
-	"net"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -18,7 +16,7 @@ import (
 	"hummingbird/common"
 )
 
-type ContainerServer struct {
+type ContainerHandler struct {
 	driveRoot      string
 	hashPathPrefix string
 	hashPathSuffix string
@@ -26,9 +24,9 @@ type ContainerServer struct {
 	logger         *syslog.Writer
 }
 
-var save_headers = map[string]bool{"X-Container-Read": true, "X-Container-Write": true, "X-Container-Sync-Key": true, "X-Container-Sync-To": true}
+var saveHeaders = map[string]bool{"X-Container-Read": true, "X-Container-Write": true, "X-Container-Sync-Key": true, "X-Container-Sync-To": true}
 
-func ContainerLocation(vars map[string]string, server ContainerServer) (string, error) {
+func ContainerLocation(vars map[string]string, server ContainerHandler) (string, error) {
 	h := md5.New()
 	io.WriteString(h, fmt.Sprintf("%s/%s/%s%s", server.hashPathPrefix, vars["account"],
 		vars["container"], server.hashPathSuffix))
@@ -43,7 +41,7 @@ func ContainerLocation(vars map[string]string, server ContainerServer) (string, 
 	return fmt.Sprintf("%s/%s/%s/%s/%s/%s.db", devicePath, "containers", vars["partition"], suffix, hexHash, hexHash), nil
 }
 
-func (server ContainerServer) ContainerGetHandler(writer http.ResponseWriter, request *hummingbird.SwiftRequest, vars map[string]string) {
+func (server ContainerHandler) ContainerGetHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	containerFile, err := ContainerLocation(vars, server)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -75,7 +73,7 @@ func (server ContainerServer) ContainerGetHandler(writer http.ResponseWriter, re
 		headers.Set("X-Timestamp", info.CreatedAt)
 		headers.Set("X-PUT-Timestamp", info.PutTimestamp)
 		for key, value := range db.GetMetadata() {
-		  	headers.Set(key, value)
+			headers.Set(key, value)
 		}
 	}
 	limit, _ := strconv.ParseInt(request.FormValue("limit"), 10, 64)
@@ -87,8 +85,8 @@ func (server ContainerServer) ContainerGetHandler(writer http.ResponseWriter, re
 	prefix := request.NillableFormValue("prefix")
 	delimiter := request.NillableFormValue("delimiter")
 	path := request.NillableFormValue("path")
-	storage_policy_index := 0
-	objects, err := db.ListObjects(int(limit), marker, endMarker, prefix, delimiter, path, storage_policy_index)
+	storagePolicyIndex := 0
+	objects, err := db.ListObjects(int(limit), marker, endMarker, prefix, delimiter, path, storagePolicyIndex)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
@@ -107,9 +105,9 @@ func (server ContainerServer) ContainerGetHandler(writer http.ResponseWriter, re
 	if format == "text" {
 		response := ""
 		for _, obj := range objects {
-		  	response += obj.(ObjectRecord).Name + "\n"
+			response += obj.(ObjectRecord).Name + "\n"
 		}
-	  	if len(response) > 0 {
+		if len(response) > 0 {
 			headers.Set("Content-Length", strconv.Itoa(len(response)))
 			writer.WriteHeader(200)
 			writer.Write([]byte(response))
@@ -133,14 +131,14 @@ func (server ContainerServer) ContainerGetHandler(writer http.ResponseWriter, re
 		container := &Container{Name: vars["container"], Objects: objects}
 		writer.Header().Set("Content-Type", "application/xml; charset=utf-8")
 		output, _ := xml.MarshalIndent(container, "", "  ")
-		headers.Set("Content-Length", strconv.Itoa(len(output) + 39))
+		headers.Set("Content-Length", strconv.Itoa(len(output)+39))
 		writer.WriteHeader(200)
 		writer.Write([]byte("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"))
 		writer.Write(output)
 	}
 }
 
-func (server ContainerServer) ContainerHeadHandler(writer http.ResponseWriter, request *hummingbird.SwiftRequest, vars map[string]string) {
+func (server ContainerHandler) ContainerHeadHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	containerFile, err := ContainerLocation(vars, server)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -172,30 +170,32 @@ func (server ContainerServer) ContainerHeadHandler(writer http.ResponseWriter, r
 		headers.Set("X-Timestamp", info.CreatedAt)
 		headers.Set("X-PUT-Timestamp", info.PutTimestamp)
 		for key, value := range db.GetMetadata() {
-		  	headers.Set(key, value)
+			headers.Set(key, value)
 		}
 	}
 	writer.WriteHeader(204)
 	writer.Write([]byte(""))
 }
 
-func (server ContainerServer) ContainerPutHandler(writer http.ResponseWriter, request *hummingbird.SwiftRequest, vars map[string]string) {
+func (server ContainerHandler) ContainerPutHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	containerFile, err := ContainerLocation(vars, server)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 	timestamp := request.Header.Get("X-Timestamp")
-	policy_index := 0
+	policyIndex := 0
 	metadata := make(map[string][]string)
 	for key, _ := range request.Header {
-	  	_, in_save_headers := save_headers[key]
-	  	if !(strings.HasPrefix(key, "X-Container-Meta-") || strings.HasPrefix(key, "X-Container-Sysmeta") || in_save_headers) {
-		  	continue
+		_, inSaveHeaders := saveHeaders[key]
+		if !(strings.HasPrefix(key, "X-Container-Meta-") || strings.HasPrefix(key, "X-Container-Sysmeta") || inSaveHeaders) {
+			continue
+		} else if request.Header.Get(key) == "" {
+			continue
 		}
-	  	metadata[key] = []string{request.Header.Get(key), timestamp}
+		metadata[key] = []string{request.Header.Get(key), timestamp}
 	}
-	created, err := CreateDatabase(containerFile, vars["account"], vars["container"], timestamp, metadata, policy_index)
+	created, err := CreateDatabase(containerFile, vars["account"], vars["container"], timestamp, metadata, policyIndex)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
@@ -215,7 +215,7 @@ func (server ContainerServer) ContainerPutHandler(writer http.ResponseWriter, re
 	}
 }
 
-func (server ContainerServer) ContainerDeleteHandler(writer http.ResponseWriter, request *hummingbird.SwiftRequest, vars map[string]string) {
+func (server ContainerHandler) ContainerDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	containerFile, err := ContainerLocation(vars, server)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -240,7 +240,7 @@ func (server ContainerServer) ContainerDeleteHandler(writer http.ResponseWriter,
 	writer.Write([]byte(""))
 }
 
-func (server ContainerServer) ContainerPostHandler(writer http.ResponseWriter, request *hummingbird.SwiftRequest, vars map[string]string) {
+func (server ContainerHandler) ContainerPostHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	containerFile, err := ContainerLocation(vars, server)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -249,11 +249,11 @@ func (server ContainerServer) ContainerPostHandler(writer http.ResponseWriter, r
 	timestamp := request.Header.Get("X-Timestamp")
 	updates := make(map[string][]string)
 	for key, _ := range request.Header {
-	  	_, in_save_headers := save_headers[key]
-	  	if !(strings.HasPrefix(key, "X-Container-Meta-") || strings.HasPrefix(key, "X-Container-Sysmeta") || in_save_headers) {
-		  	continue
+		_, inSaveHeaders := saveHeaders[key]
+		if !(strings.HasPrefix(key, "X-Container-Meta-") || strings.HasPrefix(key, "X-Container-Sysmeta") || inSaveHeaders) {
+			continue
 		}
-	  	updates[key] = []string{request.Header.Get(key), timestamp}
+		updates[key] = []string{request.Header.Get(key), timestamp}
 	}
 	db, err := OpenDatabase(containerFile)
 	if err != nil {
@@ -266,7 +266,7 @@ func (server ContainerServer) ContainerPostHandler(writer http.ResponseWriter, r
 	writer.Write([]byte(""))
 }
 
-func (server ContainerServer) ObjPutHandler(writer http.ResponseWriter, request *hummingbird.SwiftRequest, vars map[string]string) {
+func (server ContainerHandler) ObjPutHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	containerFile, err := ContainerLocation(vars, server)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -274,11 +274,11 @@ func (server ContainerServer) ObjPutHandler(writer http.ResponseWriter, request 
 	}
 	timestamp := request.Header.Get("X-Timestamp")
 	size, _ := strconv.ParseInt(request.Header.Get("X-Size"), 10, 64)
-	content_type := request.Header.Get("X-Content-Type")
+	contentType := request.Header.Get("X-Content-Type")
 	etag := request.Header.Get("X-Etag")
 	deleted := 0
-	storage_policy_index := 0 // TODO: figure out where this comes from in real life
-	err = PutObject(containerFile, vars["obj"], timestamp, size, content_type, etag, deleted, storage_policy_index)
+	storagePolicyIndex := 0 // TODO: figure out where this comes from in real life
+	err = PutObject(containerFile, vars["obj"], timestamp, size, contentType, etag, deleted, storagePolicyIndex)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
@@ -286,15 +286,15 @@ func (server ContainerServer) ObjPutHandler(writer http.ResponseWriter, request 
 	http.Error(writer, http.StatusText(201), 201)
 }
 
-func (server ContainerServer) ObjDeleteHandler(writer http.ResponseWriter, request *hummingbird.SwiftRequest, vars map[string]string) {
+func (server ContainerHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	containerFile, err := ContainerLocation(vars, server)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
 	}
 	timestamp := request.Header.Get("X-Timestamp")
-	storage_policy_index := 0 // TODO: figure out where this comes from in real life
-	err = PutObject(containerFile, vars["obj"], timestamp, 0, "", "", 1, storage_policy_index)
+	storagePolicyIndex := 0 // TODO: figure out where this comes from in real life
+	err = PutObject(containerFile, vars["obj"], timestamp, 0, "", "", 1, storagePolicyIndex)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
@@ -311,13 +311,15 @@ func GetDefault(h http.Header, key string, dfl string) string {
 	return val
 }
 
-func (server ContainerServer) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
-  	fmt.Println(request.Method, request.URL)
+func (server ContainerHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	request.Body.Close()
 	if request.URL.Path == "/healthcheck" {
 		writer.Header().Set("Content-Length", "2")
 		writer.WriteHeader(http.StatusOK)
 		writer.Write([]byte("OK"))
+		return
+	} else if strings.HasPrefix(request.URL.Path, "/recon/") {
+		hummingbird.ReconHandler(server.driveRoot, writer, request)
 		return
 	}
 	parts := strings.SplitN(request.URL.Path, "/", 6)
@@ -338,8 +340,8 @@ func (server ContainerServer) ServeHTTP(writer http.ResponseWriter, request *htt
 			}
 		}
 	}
-	newWriter := &hummingbird.SwiftWriter{writer, 200}
-	newRequest := &hummingbird.SwiftRequest{request, "", "", time.Now()}
+	newWriter := &hummingbird.WebWriter{writer, 200}
+	newRequest := &hummingbird.WebRequest{request, request.Header.Get("X-Trans-Id"), request.Header.Get("X-Timestamp"), time.Now(), server.logger}
 	if len(parts) == 5 {
 		switch newRequest.Method {
 		case "GET":
@@ -376,49 +378,34 @@ func (server ContainerServer) ServeHTTP(writer http.ResponseWriter, request *htt
 		"-")) // TODO: "additional info"
 }
 
-func RunServer(conf string) {
-	server := ContainerServer{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: "",
+func GetServer(conf string) (string, int, http.Handler) {
+	handler := ContainerHandler{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: "",
 		checkMounts: true,
 	}
 
 	if swiftconf, err := hummingbird.LoadIniFile("/etc/swift/swift.conf"); err == nil {
-		server.hashPathPrefix = swiftconf.GetDefault("swift-hash", "swift_hash_path_prefix", "")
-		server.hashPathSuffix = swiftconf.GetDefault("swift-hash", "swift_hash_path_suffix", "")
+		handler.hashPathPrefix = swiftconf.GetDefault("swift-hash", "swift_hash_path_prefix", "")
+		handler.hashPathSuffix = swiftconf.GetDefault("swift-hash", "swift_hash_path_suffix", "")
 	}
 
 	serverconf, err := hummingbird.LoadIniFile(conf)
 	if err != nil {
 		panic(fmt.Sprintf("Unable to load %s", conf))
 	}
-	server.driveRoot = serverconf.GetDefault("DEFAULT", "devices", "/srv/node")
-	server.checkMounts = hummingbird.LooksTrue(serverconf.GetDefault("DEFAULT", "mount_check", "true"))
+	handler.driveRoot = serverconf.GetDefault("DEFAULT", "devices", "/srv/node")
+	handler.checkMounts = hummingbird.LooksTrue(serverconf.GetDefault("DEFAULT", "mount_check", "true"))
 	bindIP := serverconf.GetDefault("DEFAULT", "bind_ip", "0.0.0.0")
 	bindPort, err := strconv.ParseInt(serverconf.GetDefault("DEFAULT", "bind_port", "8080"), 10, 64)
 	if err != nil {
 		panic("Invalid bind port format")
 	}
-
-	sock, err := net.Listen("tcp", fmt.Sprintf("%s:%d", bindIP, bindPort))
-	if err != nil {
-		panic(fmt.Sprintf("Unable to bind %s:%d", bindIP, bindPort))
-	}
-	server.logger = hummingbird.SetupLogger(serverconf.GetDefault("DEFAULT", "log_facility", "LOG_LOCAL0"), "object-server")
+	handler.logger = hummingbird.SetupLogger(serverconf.GetDefault("DEFAULT", "log_facility", "LOG_LOCAL0"), "object-server")
 	hummingbird.DropPrivileges(serverconf.GetDefault("DEFAULT", "user", "swift"))
-	srv := &http.Server{Handler: server}
-	srv.Serve(sock)
+
+	return bindIP, int(bindPort), handler
 }
 
 func main() {
-	hummingbird.UseMaxProcs()
 	InitializeDatabase()
-	if os.Args[1] == "saio" {
-		go RunServer("/etc/swift/container-server/1.conf")
-		go RunServer("/etc/swift/container-server/2.conf")
-		go RunServer("/etc/swift/container-server/3.conf")
-		go RunServer("/etc/swift/container-server/4.conf")
-		for {
-			time.Sleep(10000)
-		}
-	}
-	RunServer(os.Args[1])
+	hummingbird.RunServers(GetServer)
 }

@@ -1,34 +1,32 @@
 package hummingbird
 
 /*
-#include <stdlib.h>
-#include <sys/stat.h>
 #include <unistd.h>
-#include <attr/xattr.h>
-#include <sys/types.h>
-#include <pwd.h>
 #include <stdlib.h>
-#include <fcntl.h>
+// #include <fcntl.h>
+#include <pwd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 */
 import "C"
 import "unsafe"
+import "syscall"
 
-func FGetXattr(fd int, name string, value []byte) int {
-	cname := C.CString(name)
-	bytes := C.fgetxattr(C.int(fd), cname, unsafe.Pointer(&value[0]), C.size_t(len(value)))
-	C.free(unsafe.Pointer(cname))
-	return int(bytes)
-}
-
-func FSetXattr(fd int, name string, value []byte) int {
-	cname := C.CString(name)
-	ret := C.fsetxattr(C.int(fd), cname, unsafe.Pointer(&value[0]), C.size_t(len(value)), 0)
-	C.free(unsafe.Pointer(cname))
-	return int(ret)
+func FSetXattr(fd int, attr string, value []byte) (int, error) {
+    attrp, err := syscall.BytePtrFromString(attr)
+    if err != nil {
+        return 0, err
+    }
+	valuep := unsafe.Pointer(&value[0])
+    r0, _, e1 := syscall.Syscall6(syscall.SYS_FSETXATTR, uintptr(fd), uintptr(unsafe.Pointer(attrp)), uintptr(valuep), uintptr(len(value)), 0, 0)
+    if e1 != 0 {
+        err = e1
+    }
+    return int(r0), nil
 }
 
 func DropBufferCache(fd int, length int64) {
-	C.posix_fadvise(C.int(fd), C.__off_t(0), C.__off_t(length), C.int(4))
+    syscall.Syscall6(syscall.SYS_FADVISE64, uintptr(fd), uintptr(0), uintptr(length), uintptr(4), 0, 0)
 }
 
 func DropPrivileges(name string) {

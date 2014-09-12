@@ -63,7 +63,7 @@ func WriteFileAtomic(filename string, data []byte, perm os.FileMode) error {
 }
 
 func LockPath(directory string, timeout int) (*os.File, error) {
-	sleep_time := 5
+	sleepTime := 5
 	lockfile := filepath.Join(directory, ".lock")
 	file, err := os.OpenFile(lockfile, os.O_RDWR|os.O_CREATE, 0660)
 	if err != nil {
@@ -74,8 +74,8 @@ func LockPath(directory string, timeout int) (*os.File, error) {
 		if err == nil {
 			return file, nil
 		}
-		time.Sleep(time.Millisecond * time.Duration(sleep_time))
-		sleep_time += 5
+		time.Sleep(time.Millisecond * time.Duration(sleepTime))
+		sleepTime += 5
 	}
 	file.Close()
 	return nil, errors.New("Timed out")
@@ -96,10 +96,6 @@ func IsMount(dir string) (bool, error) {
 	} else {
 		return false, errors.New("Unable to stat directory")
 	}
-}
-
-func ObjTempDir(vars map[string]string, driveRoot string) string {
-	return fmt.Sprintf("%s/%s/%s", driveRoot, vars["device"], "tmp")
 }
 
 func Urlencode(str string) string {

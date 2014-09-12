@@ -1,4 +1,4 @@
-package hummingbird
+package main
 
 import (
 	"crypto/md5"
@@ -9,10 +9,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
+
+	"hummingbird/common"
 )
 
-func ReadMetadataFd(fd int) (map[interface{}]interface{}, error) {
-	var pickledMetadata [32768]byte
+func ReadMetadataFilename(filename string) (map[interface{}]interface{}, error) {
+	var pickledMetadata [8192]byte
 	offset := 0
 	for index := 0; ; index += 1 {
 		var metadataName string
@@ -21,27 +24,24 @@ func ReadMetadataFd(fd int) (map[interface{}]interface{}, error) {
 		} else {
 			metadataName = fmt.Sprintf("user.swift.metadata%d", index)
 		}
-		length := FGetXattr(fd, metadataName, pickledMetadata[offset:])
+		length, _ := syscall.Getxattr(filename, metadataName, pickledMetadata[offset:])
 		if length <= 0 {
 			break
 		}
 		offset += length
 	}
-	v := PickleLoads(pickledMetadata[0:offset])
+	if offset == 0 {
+	  	return nil, errors.New("No metadata data")
+	}
+	v, err := hummingbird.PickleLoads(pickledMetadata[0:offset])
+	if err != nil {
+		return nil, err
+	}
 	return v.(map[interface{}]interface{}), nil
 }
 
-func ReadMetadataFilename(filename string) (map[interface{}]interface{}, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, errors.New("Unable to open file.")
-	}
-	defer file.Close()
-	return ReadMetadataFd(int(file.Fd()))
-}
-
 func WriteMetadata(fd int, v map[string]interface{}) {
-	buf := PickleDumps(v)
+	buf := hummingbird.PickleDumps(v)
 	for index := 0; len(buf) > 0; index++ {
 		var metadataName string
 		if index == 0 {
@@ -53,7 +53,7 @@ func WriteMetadata(fd int, v map[string]interface{}) {
 		if len(buf) < writelen {
 			writelen = len(buf)
 		}
-		FSetXattr(fd, metadataName, []byte(buf[0:writelen]))
+		hummingbird.FSetXattr(fd, metadataName, []byte(buf[0:writelen]))
 		buf = buf[writelen:len(buf)]
 	}
 }
@@ -62,7 +62,7 @@ func InvalidateHash(hashDir string, atomic bool) {
 	// TODO: return errors
 	suffDir := filepath.Dir(hashDir)
 	partitionDir := filepath.Dir(suffDir)
-	partitionLock, err := LockPath(partitionDir, 10)
+	partitionLock, err := hummingbird.LockPath(partitionDir, 10)
 	if err != nil {
 		return
 	}
@@ -72,12 +72,12 @@ func InvalidateHash(hashDir string, atomic bool) {
 	if err != nil {
 		return
 	}
-	v := PickleLoads(data)
+	v, _ := hummingbird.PickleLoads(data)
 	v.(map[string]interface{})[suffDir] = nil
 	if atomic {
-		WriteFileAtomic(pklFile, PickleDumps(v), 0666)
+		hummingbird.WriteFileAtomic(pklFile, hummingbird.PickleDumps(v), 0600)
 	} else {
-		ioutil.WriteFile(pklFile, PickleDumps(v), 0666)
+		ioutil.WriteFile(pklFile, hummingbird.PickleDumps(v), 0600)
 	}
 }
 
@@ -134,25 +134,29 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 	if err != nil {
 		return nil, err
 	}
-	v := PickleLoads(data).(map[string]interface{})
-	for _, suffix := range recalculate {
-		v[suffix] = nil
+	v, err := hummingbird.PickleLoads(data)
+	hashes := v.(map[string]interface{})
+	if err != nil {
+		return nil, err
 	}
-	for suffix, hash := range v {
+	for _, suffix := range recalculate {
+		hashes[suffix] = nil
+	}
+	for suffix, hash := range hashes {
 		if hash == nil || hash == "" {
-			v[suffix], err = RecalculateSuffixHash(fmt.Sprintf("%s/%s/%s/%s", driveRoot, device, partition, suffix))
+			hashes[suffix], err = RecalculateSuffixHash(fmt.Sprintf("%s/%s/%s/%s", driveRoot, device, partition, suffix))
 			if err != nil {
-				v[suffix] = nil
+				hashes[suffix] = nil
 			}
 		}
 	}
-	partitionLock, err := LockPath(partitionDir, 10)
+	partitionLock, err := hummingbird.LockPath(partitionDir, 10)
 	if err != nil {
 		return nil, err
 	}
 	defer partitionLock.Close()
-	WriteFileAtomic(pklFile, PickleDumps(v), 0666)
-	return v, nil
+	hummingbird.WriteFileAtomic(pklFile, hummingbird.PickleDumps(hashes), 0600)
+	return hashes, nil
 }
 
 func ObjHashDir(vars map[string]string, driveRoot string, hashPathPrefix string, hashPathSuffix string, checkMounts bool) (string, error) {
@@ -163,23 +167,57 @@ func ObjHashDir(vars map[string]string, driveRoot string, hashPathPrefix string,
 	suffix := hexHash[29:32]
 	devicePath := fmt.Sprintf("%s/%s", driveRoot, vars["device"])
 	if checkMounts {
-		if mounted, err := IsMount(devicePath); err != nil || mounted != true {
+		if mounted, err := hummingbird.IsMount(devicePath); err != nil || mounted != true {
 			return "", errors.New("Not mounted")
 		}
 	}
 	return fmt.Sprintf("%s/%s/%s/%s/%s", devicePath, "objects", vars["partition"], suffix, hexHash), nil
 }
 
-func PrimaryFile(directory string) string {
+func ObjectFiles(directory string) (string, string) {
 	fileList, err := ioutil.ReadDir(directory)
+	metaFile := ""
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	for index := len(fileList) - 1; index >= 0; index-- {
 		filename := fileList[index].Name()
+		if strings.HasSuffix(filename, ".meta") {
+		  	metaFile = filename
+		}
 		if strings.HasSuffix(filename, ".ts") || strings.HasSuffix(filename, ".data") {
-			return filename
+		  	if metaFile != "" {
+				return filepath.Join(directory, filename), filepath.Join(directory, metaFile)
+			} else {
+				return filepath.Join(directory, filename), ""
+			}
 		}
 	}
-	return ""
+	return "", ""
+}
+
+func ObjTempDir(vars map[string]string, driveRoot string) string {
+	return fmt.Sprintf("%s/%s/%s", driveRoot, vars["device"], "tmp")
+}
+
+func ObjectMetadata(dataFile string, metaFile string) (map[interface{}]interface{}, error) {
+  	datafileMetadata, err := ReadMetadataFilename(dataFile)
+    if err != nil {
+        return nil, err
+    }
+
+    if metaFile == "" {
+	  	return datafileMetadata, nil
+    } else {
+        metadata, err := ReadMetadataFilename(metaFile)
+        if err != nil {
+		  	return nil, err
+        }
+        for k, v := range datafileMetadata {
+            if k == "Content-Length" || k == "Content-Type" || k == "deleted" || k == "Etag" || strings.HasPrefix(k.(string), "X-Object-Sysmeta-") {
+                metadata[k] = v
+            }
+        }
+		return metadata, nil
+    }
 }
