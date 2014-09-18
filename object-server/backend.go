@@ -31,7 +31,7 @@ func ReadMetadataFilename(filename string) (map[interface{}]interface{}, error) 
 		offset += length
 	}
 	if offset == 0 {
-	  	return nil, errors.New("No metadata data")
+		return nil, errors.New("No metadata data")
 	}
 	v, err := hummingbird.PickleLoads(pickledMetadata[0:offset])
 	if err != nil {
@@ -183,10 +183,10 @@ func ObjectFiles(directory string) (string, string) {
 	for index := len(fileList) - 1; index >= 0; index-- {
 		filename := fileList[index].Name()
 		if strings.HasSuffix(filename, ".meta") {
-		  	metaFile = filename
+			metaFile = filename
 		}
 		if strings.HasSuffix(filename, ".ts") || strings.HasSuffix(filename, ".data") {
-		  	if metaFile != "" {
+			if metaFile != "" {
 				return filepath.Join(directory, filename), filepath.Join(directory, metaFile)
 			} else {
 				return filepath.Join(directory, filename), ""
@@ -201,23 +201,23 @@ func ObjTempDir(vars map[string]string, driveRoot string) string {
 }
 
 func ObjectMetadata(dataFile string, metaFile string) (map[interface{}]interface{}, error) {
-  	datafileMetadata, err := ReadMetadataFilename(dataFile)
-    if err != nil {
-        return nil, err
-    }
+	datafileMetadata, err := ReadMetadataFilename(dataFile)
+	if err != nil {
+		return nil, err
+	}
 
-    if metaFile == "" {
-	  	return datafileMetadata, nil
-    } else {
-        metadata, err := ReadMetadataFilename(metaFile)
-        if err != nil {
-		  	return nil, err
-        }
-        for k, v := range datafileMetadata {
-            if k == "Content-Length" || k == "Content-Type" || k == "deleted" || k == "Etag" || strings.HasPrefix(k.(string), "X-Object-Sysmeta-") {
-                metadata[k] = v
-            }
-        }
+	if metaFile == "" {
+		return datafileMetadata, nil
+	} else {
+		metadata, err := ReadMetadataFilename(metaFile)
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range datafileMetadata {
+			if k == "Content-Length" || k == "Content-Type" || k == "deleted" || k == "Etag" || strings.HasPrefix(k.(string), "X-Object-Sysmeta-") {
+				metadata[k] = v
+			}
+		}
 		return metadata, nil
-    }
+	}
 }

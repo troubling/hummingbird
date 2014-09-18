@@ -3,7 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math/rand"
 	"net/http"
 	"os"
@@ -17,13 +17,10 @@ import (
 
 var client = &http.Client{}
 
-var CONCURRENCY = 16
-var OBJ_SIZE = 131072
-var PUT_COUNT = 5000
-var GET_COUNT = 30000
-
 var storageURL = ""
 var authToken = ""
+
+var devNull, _ = os.OpenFile("/dev/null", os.O_WRONLY, 0666)
 
 func Auth(endpoint string, user string, key string) (string, string) {
 	req, err := http.NewRequest("GET", endpoint, nil)
@@ -78,7 +75,7 @@ func (obj *Object) Get() {
 	req.Header.Set("X-Auth-Token", authToken)
 	resp, err := client.Do(req)
 	if resp != nil {
-		ioutil.ReadAll(resp.Body)
+		io.Copy(devNull, resp.Body)
 	}
 	if (err != nil) || (resp.StatusCode/100 != 2) {
 		obj.GetError += 1
@@ -121,16 +118,57 @@ func DoJobs(work []func(), concurrency int) time.Duration {
 	return time.Now().Sub(start)
 }
 
+func ParseInt(number string) int {
+	val, err := strconv.ParseInt(number, 10, 64)
+	if err != nil {
+		fmt.Println("Error parsing number:", number)
+		os.Exit(1)
+	}
+	return int(val)
+}
+
 func main() {
 	hummingbird.UseMaxProcs()
-	storageURL, authToken = Auth("http://localhost:8080/auth/v1.0", "test:tester", "testing")
 
-	PutContainers(storageURL, authToken, CONCURRENCY)
+	if len(os.Args) < 2 {
+		fmt.Println("Usage:", os.Args[0], "[configuration file]")
+		fmt.Println("Only supports auth 1.0.")
+		fmt.Println("The configuration file should look something like:")
+		fmt.Println("    [bench]")
+		fmt.Println("    auth = http://localhost:8080/auth/v1.0")
+		fmt.Println("    user = test:tester")
+		fmt.Println("    key = testing")
+		fmt.Println("    concurrency = 15")
+		fmt.Println("    object_size = 131072")
+		fmt.Println("    num_objects = 5000")
+		fmt.Println("    num_gets = 30000")
+		fmt.Println("    delete = yes")
+		os.Exit(1)
+	}
 
-	data := make([]byte, OBJ_SIZE)
-	objects := make([]Object, PUT_COUNT)
+	benchconf, err := hummingbird.LoadIniFile(os.Args[1])
+	if err != nil {
+		fmt.Println("Error parsing ini file:", err)
+		os.Exit(1)
+	}
+
+	authURL := benchconf.GetDefault("bench", "auth", "http://localhost:8080/auth/v1.0")
+	authUser := benchconf.GetDefault("bench", "user", "test:tester")
+	authKey := benchconf.GetDefault("bench", "key", "testing")
+	concurrency := ParseInt(benchconf.GetDefault("bench", "concurrency", "16"))
+	objectSize := ParseInt(benchconf.GetDefault("bench", "object_size", "131072"))
+	numObjects := ParseInt(benchconf.GetDefault("bench", "num_objects", "5000"))
+	numGets := ParseInt(benchconf.GetDefault("bench", "num_gets", "30000"))
+	delete := hummingbird.LooksTrue(benchconf.GetDefault("bench", "delete", "yes"))
+
+	storageURL, authToken = Auth(authURL, authUser, authKey)
+
+	PutContainers(storageURL, authToken, concurrency)
+
+	data := make([]byte, objectSize)
+	objects := make([]Object, numObjects)
 	for i := 0; i < len(objects); i++ {
-		objects[i].Url = fmt.Sprintf("%s/%d/%d", storageURL, i%CONCURRENCY, rand.Int63())
+		objects[i].Url = fmt.Sprintf("%s/%d/%d", storageURL, i%concurrency, rand.Int63())
 		objects[i].Data = data
 	}
 
@@ -138,22 +176,24 @@ func main() {
 	for i := 0; i < len(objects); i++ {
 		work[i] = objects[i].Put
 	}
-	putTime := DoJobs(work, CONCURRENCY)
-	fmt.Printf("   PUT %d objects @ %.2f/s\n", PUT_COUNT, float64(PUT_COUNT)/float64(putTime/time.Second))
+	putTime := DoJobs(work, concurrency)
+	fmt.Printf("   PUT %d objects @ %.2f/s\n", numObjects, float64(numObjects)/(float64(putTime)/float64(time.Second)))
 
-	work = make([]func(), GET_COUNT)
-	for i := 0; i < GET_COUNT; i++ {
+	work = make([]func(), numGets)
+	for i := 0; i < numGets; i++ {
 		work[i] = objects[int(rand.Int63()%int64(len(objects)))].Get
 	}
-	getTime := DoJobs(work, CONCURRENCY)
-	fmt.Printf("   GET %d objects @ %.2f/s\n", GET_COUNT, float64(GET_COUNT)/float64(getTime/time.Second))
+	getTime := DoJobs(work, concurrency)
+	fmt.Printf("   GET %d objects @ %.2f/s\n", numGets, float64(numGets)/(float64(getTime)/float64(time.Second)))
 
-	work = make([]func(), len(objects))
-	for i := 0; i < len(objects); i++ {
-		work[i] = objects[i].Delete
+	if delete {
+		work = make([]func(), len(objects))
+		for i := 0; i < len(objects); i++ {
+			work[i] = objects[i].Delete
+		}
+		deleteTime := DoJobs(work, concurrency)
+		fmt.Printf("DELETE %d objects @ %.2f/s\n", numObjects, float64(numObjects)/(float64(deleteTime)/float64(time.Second)))
 	}
-	deleteTime := DoJobs(work, CONCURRENCY)
-	fmt.Printf("DELETE %d objects @ %.2f/s\n", PUT_COUNT, float64(PUT_COUNT)/float64(deleteTime/time.Second))
 
 	putErrors := 0
 	getErrors := 0
