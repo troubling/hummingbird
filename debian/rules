@@ -1,0 +1,14 @@
+#!/usr/bin/make -f
+
+BUILDPATH := $(shell mktemp -d)
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	mkdir -p ${BUILDPATH}/src
+	ln -s $(CURDIR) ${BUILDPATH}/src/
+	GOPATH=${BUILDPATH} make get all
+	rm -rf ${BUILDPATH}
+
+override_dh_auto_install:

@@ -18,6 +18,14 @@ bin/hummingbird: init/*.go
 bin/hummingbird-bench: bench/*.go
 	go build -o bin/hummingbird-bench hummingbird/bench
 
+get:
+	go get hummingbird/common
+	go get hummingbird/object-server
+	go get hummingbird/proxy-server
+	go get hummingbird/container-server
+	go get hummingbird/init
+	go get hummingbird/bench
+
 fmt:
 	go fmt hummingbird/common
 	go fmt hummingbird/object-server
@@ -27,7 +35,7 @@ fmt:
 	go fmt hummingbird/bench
 
 install: all
-	cp bin/* /usr/local/bin
+	cp bin/* $(DESTDIR)/usr/bin
 
 develop: all
 	ln -f -s `pwd`/bin/* -t /usr/local/bin/

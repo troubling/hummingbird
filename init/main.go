@@ -145,10 +145,10 @@ func RunCommand(cmd string, args ...string) {
 	fmt.Println("Failed to execute", executable)
 	//proc, err := os.StartProcess(executable, processArgs, &os.ProcAttr{})
 	/*
-	if err != nil {
-		return
-	}
-	fmt.Println(proc.Wait())
+		if err != nil {
+			return
+		}
+		fmt.Println(proc.Wait())
 	*/
 }
 
