@@ -134,16 +134,34 @@ func GracefulShutdownServer(name string) {
 	fmt.Println(strings.Title(name), "server graceful shutdown began.")
 }
 
+func RunCommand(cmd string, args ...string) {
+	executable, err := exec.LookPath(cmd)
+	if err != nil {
+		fmt.Println("Unable to find executable", cmd)
+		return
+	}
+	processArgs := append([]string{executable}, args...)
+	err = syscall.Exec(executable, processArgs, nil)
+	fmt.Println("Failed to execute", executable)
+	//proc, err := os.StartProcess(executable, processArgs, &os.ProcAttr{})
+	/*
+	if err != nil {
+		return
+	}
+	fmt.Println(proc.Wait())
+	*/
+}
+
 func main() {
 	var serverList []string
 	var serverCommand func(name string)
 
-	if len(os.Args) < 3 {
-		goto USAGE
-	}
-
 	if !Exists("/var/run/hummingbird") {
 		os.MkdirAll("/var/run/hummingbird", 0600)
+	}
+
+	if len(os.Args) < 2 {
+		goto USAGE
 	}
 
 	switch strings.ToLower(os.Args[1]) {
@@ -157,7 +175,14 @@ func main() {
 		serverCommand = GracefulRestartServer
 	case "shutdown", "graceful-shutdown":
 		serverCommand = GracefulShutdownServer
+	case "bench":
+		RunCommand("hummingbird-bench", os.Args[2:]...)
+		return
 	default:
+		goto USAGE
+	}
+
+	if len(os.Args) < 3 {
 		goto USAGE
 	}
 
