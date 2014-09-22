@@ -55,12 +55,14 @@ type Object struct {
 	DeleteError int
 	GetError    int
 	Data        []byte
+	Id		    int
 }
 
 func (obj *Object) Put() {
 	req, _ := http.NewRequest("PUT", obj.Url, bytes.NewReader(obj.Data))
 	req.Header.Set("X-Auth-Token", authToken)
 	req.Header.Set("Content-Length", strconv.FormatInt(int64(len(obj.Data)), 10))
+	req.ContentLength = int64(len(obj.Data))
 	resp, err := client.Do(req)
 	if resp != nil {
 		resp.Body.Close()
@@ -97,7 +99,7 @@ func (obj *Object) Delete() {
 func DoJobs(work []func(), concurrency int) time.Duration {
 	wg := sync.WaitGroup{}
 	starterPistol := make(chan int)
-	jobId := int32(1)
+	jobId := int32(-1)
 	wg.Add(concurrency)
 	for i := 0; i < concurrency; i++ {
 		go func() {
@@ -167,28 +169,31 @@ func main() {
 
 	data := make([]byte, objectSize)
 	objects := make([]Object, numObjects)
-	for i := 0; i < len(objects); i++ {
+	for i, _ := range(objects) {
 		objects[i].Url = fmt.Sprintf("%s/%d/%d", storageURL, i%concurrency, rand.Int63())
 		objects[i].Data = data
+		objects[i].Id = i
 	}
 
 	work := make([]func(), len(objects))
-	for i := 0; i < len(objects); i++ {
-		work[i] = objects[i].Put
+	for i, _ := range(objects) {
+	  	work[i] = objects[i].Put
 	}
 	putTime := DoJobs(work, concurrency)
-	fmt.Printf("   PUT %d objects @ %.2f/s\n", numObjects, float64(numObjects)/(float64(putTime)/float64(time.Second)))
+	fmt.Printf("PUT %d objects @ %.2f/s\n", numObjects, float64(numObjects)/(float64(putTime)/float64(time.Second)))
+
+	time.Sleep(time.Second * 2)
 
 	work = make([]func(), numGets)
 	for i := 0; i < numGets; i++ {
 		work[i] = objects[int(rand.Int63()%int64(len(objects)))].Get
 	}
 	getTime := DoJobs(work, concurrency)
-	fmt.Printf("   GET %d objects @ %.2f/s\n", numGets, float64(numGets)/(float64(getTime)/float64(time.Second)))
+	fmt.Printf("GET %d objects @ %.2f/s\n", numGets, float64(numGets)/(float64(getTime)/float64(time.Second)))
 
 	if delete {
 		work = make([]func(), len(objects))
-		for i := 0; i < len(objects); i++ {
+		for i, _ := range(objects) {
 			work[i] = objects[i].Delete
 		}
 		deleteTime := DoJobs(work, concurrency)
@@ -198,10 +203,13 @@ func main() {
 	putErrors := 0
 	getErrors := 0
 	deleteErrors := 0
-	for i := 0; i < len(objects); i++ {
-		getErrors += objects[i].GetError
-		deleteErrors += objects[i].DeleteError
-		putErrors += objects[i].PutError
+	for _, obj := range(objects) {
+		getErrors += obj.GetError
+		deleteErrors += obj.DeleteError
+		putErrors += obj.PutError
+		if obj.GetError > 0 {
+		  	fmt.Println("GET ERROR:", obj.Id)
+		}
 	}
 	if putErrors > 0 {
 		fmt.Println("Put errors:", putErrors)
