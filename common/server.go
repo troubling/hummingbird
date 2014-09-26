@@ -110,12 +110,11 @@ func (srv *HummingbirdServer) Wait() {
 
 	Graceful shutdown/restart gives any open connections 5 minutes to complete, then exits.
 */
-func RunServers(GetServer func(string) (string, int, http.Handler)) {
-	UseMaxProcs()
+func RunServers(configFile string, GetServer func(string) (string, int, http.Handler)) {
 	var servers []*HummingbirdServer
-	configFiles, err := filepath.Glob(fmt.Sprintf("%s/*.conf", os.Args[1]))
+	configFiles, err := filepath.Glob(fmt.Sprintf("%s/*.conf", configFile))
 	if err != nil || len(configFiles) <= 0 {
-		configFiles = []string{os.Args[1]}
+		configFiles = []string{configFile}
 	}
 	for _, configFile := range configFiles {
 		ip, port, handler := GetServer(configFile)

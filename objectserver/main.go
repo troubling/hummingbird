@@ -1,4 +1,4 @@
-package main
+package objectserver
 
 import (
 	"crypto/md5"
@@ -459,8 +459,4 @@ func GetServer(conf string) (string, int, http.Handler) {
 	hummingbird.DropPrivileges(serverconf.GetDefault("DEFAULT", "user", "swift"))
 
 	return bindIP, int(bindPort), handler
-}
-
-func main() {
-	hummingbird.RunServers(GetServer)
 }

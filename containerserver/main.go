@@ -1,4 +1,4 @@
-package main
+package containerserver
 
 import (
 	"crypto/md5"
@@ -379,6 +379,8 @@ func (server ContainerHandler) ServeHTTP(writer http.ResponseWriter, request *ht
 }
 
 func GetServer(conf string) (string, int, http.Handler) {
+	InitializeDatabase()
+
 	handler := ContainerHandler{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: "",
 		checkMounts: true,
 	}
@@ -403,9 +405,4 @@ func GetServer(conf string) (string, int, http.Handler) {
 	hummingbird.DropPrivileges(serverconf.GetDefault("DEFAULT", "user", "swift"))
 
 	return bindIP, int(bindPort), handler
-}
-
-func main() {
-	InitializeDatabase()
-	hummingbird.RunServers(GetServer)
 }

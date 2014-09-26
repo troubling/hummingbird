@@ -1,4 +1,4 @@
-package main
+package containerserver
 
 import (
 	"database/sql"
@@ -66,8 +66,13 @@ type ContainerDB struct {
 	InfoCache     *ContainerInfo
 }
 
+var initialized = false
+
 func InitializeDatabase() {
-	sql.Register("sqlite3_chexor", &sqlite3.SQLiteDriver{ConnectHook: SQLiteSetup})
+  	if !initialized {
+		sql.Register("sqlite3_chexor", &sqlite3.SQLiteDriver{ConnectHook: SQLiteSetup})
+		initialized = true
+	}
 }
 
 func (db *ContainerDB) Release() {

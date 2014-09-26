@@ -7,6 +7,12 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"hummingbird/common"
+	"hummingbird/proxyserver"
+	"hummingbird/objectserver"
+	"hummingbird/containerserver"
+	"hummingbird/bench"
 )
 
 func Exists(file string) bool {
@@ -65,12 +71,12 @@ func StartServer(name string) {
 		fmt.Println("Unable to find", name, "configuration file.")
 		return
 	}
-	serverExecutable, err := exec.LookPath(fmt.Sprintf("hummingbird-%s-server", name))
+	serverExecutable, err := exec.LookPath(os.Args[0])
 	if err != nil {
-		fmt.Println("Unable to find ", name, " executable in path.")
+		fmt.Println("Unable to find hummingbird executable in path.")
 		return
 	}
-	cmd := exec.Command(serverExecutable, serverConf)
+	cmd := exec.Command(serverExecutable, "run", name, serverConf)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true,
 	}
@@ -134,6 +140,17 @@ func GracefulShutdownServer(name string) {
 	fmt.Println(strings.Title(name), "server graceful shutdown began.")
 }
 
+func RunServer(name string) {
+  	switch name {
+	case "object":
+		hummingbird.RunServers(os.Args[3], objectserver.GetServer)
+	case "container":
+		hummingbird.RunServers(os.Args[3], containerserver.GetServer)
+	case "proxy":
+		hummingbird.RunServers(os.Args[3], proxyserver.GetServer)
+	}
+}
+
 func RunCommand(cmd string, args ...string) {
 	executable, err := exec.LookPath(cmd)
 	if err != nil {
@@ -143,28 +160,24 @@ func RunCommand(cmd string, args ...string) {
 	processArgs := append([]string{executable}, args...)
 	err = syscall.Exec(executable, processArgs, nil)
 	fmt.Println("Failed to execute", executable)
-	//proc, err := os.StartProcess(executable, processArgs, &os.ProcAttr{})
-	/*
-		if err != nil {
-			return
-		}
-		fmt.Println(proc.Wait())
-	*/
 }
 
 func main() {
+	hummingbird.UseMaxProcs()
+
 	var serverList []string
 	var serverCommand func(name string)
-
-	if !Exists("/var/run/hummingbird") {
-		os.MkdirAll("/var/run/hummingbird", 0600)
-	}
 
 	if len(os.Args) < 2 {
 		goto USAGE
 	}
 
 	switch strings.ToLower(os.Args[1]) {
+	case "run":
+		if len(os.Args) < 4 {
+			goto USAGE
+		}
+		serverCommand = RunServer
 	case "start":
 		serverCommand = StartServer
 	case "stop":
@@ -176,7 +189,10 @@ func main() {
 	case "shutdown", "graceful-shutdown":
 		serverCommand = GracefulShutdownServer
 	case "bench":
-		RunCommand("hummingbird-bench", os.Args[2:]...)
+		bench.RunBench(os.Args[2:])
+		return
+	case "thrash":
+		bench.RunThrash(os.Args[2:])
 		return
 	default:
 		goto USAGE
@@ -186,11 +202,18 @@ func main() {
 		goto USAGE
 	}
 
+	if !Exists("/var/run/hummingbird") {
+		err := os.MkdirAll("/var/run/hummingbird", 0600)
+		if err != nil {
+		  	fmt.Println("Unable to create /var/run/hummingbird")
+		  	fmt.Println("You should create it, writable by the user you wish to launch servers with.")
+			os.Exit(1)
+		}
+	}
+
 	switch strings.ToLower(os.Args[2]) {
-	case "obj", "object":
-		serverList = []string{"object"}
-	case "container", "proxy":
-		serverList = []string{strings.ToLower(os.Args[1])}
+	case "container", "proxy", "object":
+		serverList = []string{strings.ToLower(os.Args[2])}
 	case "all":
 		serverList = []string{"container", "proxy", "object"}
 	default:
@@ -206,7 +229,8 @@ USAGE:
 	fmt.Println("Usage: hummingbird [command] [args...]")
 	fmt.Println("")
 	fmt.Println("Process control: args=[object,container,proxy,all]")
-	fmt.Println("            start: start a server")
+	fmt.Println("              run: run a server (attached)")
+	fmt.Println("            start: start a server (detached)")
 	fmt.Println("             stop: stop a server immediately")
 	fmt.Println("          restart: stop then restart a server")
 	fmt.Println("         shutdown: gracefully stop a server")

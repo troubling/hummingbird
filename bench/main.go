@@ -1,4 +1,4 @@
-package main
+package bench
 
 import (
 	"bytes"
@@ -56,6 +56,7 @@ type Object struct {
 	GetError    int
 	Data        []byte
 	Id		    int
+	State       int
 }
 
 func (obj *Object) Put() {
@@ -129,11 +130,10 @@ func ParseInt(number string) int {
 	return int(val)
 }
 
-func main() {
-	hummingbird.UseMaxProcs()
-
-	if len(os.Args) < 2 {
-		fmt.Println("Usage:", os.Args[0], "[configuration file]")
+func RunBench(args []string) {
+  	rand.Seed(time.Now().UTC().UnixNano())
+	if len(args) < 1 {
+		fmt.Println("Usage: [configuration file]")
 		fmt.Println("Only supports auth 1.0.")
 		fmt.Println("The configuration file should look something like:")
 		fmt.Println("    [bench]")
@@ -148,7 +148,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	benchconf, err := hummingbird.LoadIniFile(os.Args[1])
+	benchconf, err := hummingbird.LoadIniFile(args[0])
 	if err != nil {
 		fmt.Println("Error parsing ini file:", err)
 		os.Exit(1)
@@ -219,5 +219,74 @@ func main() {
 	}
 	if deleteErrors > 0 {
 		fmt.Println("Delete errors:", deleteErrors)
+	}
+}
+
+func RunThrash(args []string) {
+  	rand.Seed(time.Now().UTC().UnixNano())
+	if len(args) < 1 {
+		fmt.Println("Usage: [configuration file]")
+		fmt.Println("Only supports auth 1.0.")
+		fmt.Println("The configuration file should look something like:")
+		fmt.Println("    [thrash]")
+		fmt.Println("    auth = http://localhost:8080/auth/v1.0")
+		fmt.Println("    user = test:tester")
+		fmt.Println("    key = testing")
+		fmt.Println("    concurrency = 15")
+		fmt.Println("    object_size = 131072")
+		fmt.Println("    num_objects = 5000")
+		fmt.Println("    num_gets = 5")
+		os.Exit(1)
+	}
+
+	thrashconf, err := hummingbird.LoadIniFile(args[0])
+	if err != nil {
+		fmt.Println("Error parsing ini file:", err)
+		os.Exit(1)
+	}
+
+	authURL := thrashconf.GetDefault("thrash", "auth", "http://localhost:8080/auth/v1.0")
+	authUser := thrashconf.GetDefault("thrash", "user", "test:tester")
+	authKey := thrashconf.GetDefault("thrash", "key", "testing")
+	concurrency := ParseInt(thrashconf.GetDefault("thrash", "concurrency", "16"))
+	objectSize := ParseInt(thrashconf.GetDefault("thrash", "object_size", "131072"))
+	numObjects := ParseInt(thrashconf.GetDefault("thrash", "num_objects", "5000"))
+	numGets := ParseInt(thrashconf.GetDefault("thrash", "num_gets", "5"))
+
+	storageURL, authToken = Auth(authURL, authUser, authKey)
+
+	PutContainers(storageURL, authToken, concurrency)
+
+	data := make([]byte, objectSize)
+	objects := make([]*Object, numObjects)
+	for i, _ := range(objects) {
+	  	objects[i] = &Object{}
+		objects[i].Url = fmt.Sprintf("%s/%d/%d", storageURL, i%concurrency, rand.Int63())
+		objects[i].Data = data
+		objects[i].Id = i
+		objects[i].State = 1
+	}
+
+	workch := make(chan func())
+
+	for i := 0; i < concurrency; i++ {
+	  	go func() {
+		  	for {
+			  	(<-workch)()
+			}
+		}()
+	}
+
+	for {
+		i := int(rand.Int63()%int64(len(objects)))
+		if objects[i].State == 1 {
+		  	workch <- objects[i].Put
+		} else if objects[i].State < numGets + 2 {
+		  	workch <- objects[i].Get
+		} else if objects[i].State >= numGets + 2 {
+		  	workch <- objects[i].Delete
+			objects[i] = &Object{Url: fmt.Sprintf("%s/%d/%d", storageURL, i%concurrency, rand.Int63()), Data: data, Id: i, State: 0}
+		}
+		objects[i].State += 1
 	}
 }

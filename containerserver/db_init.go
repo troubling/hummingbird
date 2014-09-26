@@ -1,4 +1,4 @@
-package main
+package containerserver
 
 /*
 #cgo pkg-config: sqlite3
