@@ -12,10 +12,9 @@ get:
 fmt:
 	go fmt hummingbird
 	go fmt hummingbird/common
-	go fmt hummingbird/object-server
-	go fmt hummingbird/proxy-server
-	go fmt hummingbird/container-server
-	go fmt hummingbird/init
+	go fmt hummingbird/objectserver
+	go fmt hummingbird/proxyserver
+	go fmt hummingbird/containerserver
 	go fmt hummingbird/bench
 
 install: all

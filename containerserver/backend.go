@@ -69,7 +69,7 @@ type ContainerDB struct {
 var initialized = false
 
 func InitializeDatabase() {
-  	if !initialized {
+	if !initialized {
 		sql.Register("sqlite3_chexor", &sqlite3.SQLiteDriver{ConnectHook: SQLiteSetup})
 		initialized = true
 	}

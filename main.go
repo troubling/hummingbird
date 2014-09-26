@@ -8,11 +8,11 @@ import (
 	"syscall"
 	"time"
 
-	"hummingbird/common"
-	"hummingbird/proxyserver"
-	"hummingbird/objectserver"
-	"hummingbird/containerserver"
 	"hummingbird/bench"
+	"hummingbird/common"
+	"hummingbird/containerserver"
+	"hummingbird/objectserver"
+	"hummingbird/proxyserver"
 )
 
 func Exists(file string) bool {
@@ -141,7 +141,7 @@ func GracefulShutdownServer(name string) {
 }
 
 func RunServer(name string) {
-  	switch name {
+	switch name {
 	case "object":
 		hummingbird.RunServers(os.Args[3], objectserver.GetServer)
 	case "container":
@@ -205,8 +205,8 @@ func main() {
 	if !Exists("/var/run/hummingbird") {
 		err := os.MkdirAll("/var/run/hummingbird", 0600)
 		if err != nil {
-		  	fmt.Println("Unable to create /var/run/hummingbird")
-		  	fmt.Println("You should create it, writable by the user you wish to launch servers with.")
+			fmt.Println("Unable to create /var/run/hummingbird")
+			fmt.Println("You should create it, writable by the user you wish to launch servers with.")
 			os.Exit(1)
 		}
 	}

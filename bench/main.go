@@ -55,7 +55,7 @@ type Object struct {
 	DeleteError int
 	GetError    int
 	Data        []byte
-	Id		    int
+	Id          int
 	State       int
 }
 
@@ -131,7 +131,7 @@ func ParseInt(number string) int {
 }
 
 func RunBench(args []string) {
-  	rand.Seed(time.Now().UTC().UnixNano())
+	rand.Seed(time.Now().UTC().UnixNano())
 	if len(args) < 1 {
 		fmt.Println("Usage: [configuration file]")
 		fmt.Println("Only supports auth 1.0.")
@@ -169,15 +169,15 @@ func RunBench(args []string) {
 
 	data := make([]byte, objectSize)
 	objects := make([]Object, numObjects)
-	for i, _ := range(objects) {
+	for i, _ := range objects {
 		objects[i].Url = fmt.Sprintf("%s/%d/%d", storageURL, i%concurrency, rand.Int63())
 		objects[i].Data = data
 		objects[i].Id = i
 	}
 
 	work := make([]func(), len(objects))
-	for i, _ := range(objects) {
-	  	work[i] = objects[i].Put
+	for i, _ := range objects {
+		work[i] = objects[i].Put
 	}
 	putTime := DoJobs(work, concurrency)
 	fmt.Printf("PUT %d objects @ %.2f/s\n", numObjects, float64(numObjects)/(float64(putTime)/float64(time.Second)))
@@ -193,7 +193,7 @@ func RunBench(args []string) {
 
 	if delete {
 		work = make([]func(), len(objects))
-		for i, _ := range(objects) {
+		for i, _ := range objects {
 			work[i] = objects[i].Delete
 		}
 		deleteTime := DoJobs(work, concurrency)
@@ -203,12 +203,12 @@ func RunBench(args []string) {
 	putErrors := 0
 	getErrors := 0
 	deleteErrors := 0
-	for _, obj := range(objects) {
+	for _, obj := range objects {
 		getErrors += obj.GetError
 		deleteErrors += obj.DeleteError
 		putErrors += obj.PutError
 		if obj.GetError > 0 {
-		  	fmt.Println("GET ERROR:", obj.Id)
+			fmt.Println("GET ERROR:", obj.Id)
 		}
 	}
 	if putErrors > 0 {
@@ -223,7 +223,7 @@ func RunBench(args []string) {
 }
 
 func RunThrash(args []string) {
-  	rand.Seed(time.Now().UTC().UnixNano())
+	rand.Seed(time.Now().UTC().UnixNano())
 	if len(args) < 1 {
 		fmt.Println("Usage: [configuration file]")
 		fmt.Println("Only supports auth 1.0.")
@@ -259,8 +259,8 @@ func RunThrash(args []string) {
 
 	data := make([]byte, objectSize)
 	objects := make([]*Object, numObjects)
-	for i, _ := range(objects) {
-	  	objects[i] = &Object{}
+	for i, _ := range objects {
+		objects[i] = &Object{}
 		objects[i].Url = fmt.Sprintf("%s/%d/%d", storageURL, i%concurrency, rand.Int63())
 		objects[i].Data = data
 		objects[i].Id = i
@@ -270,21 +270,21 @@ func RunThrash(args []string) {
 	workch := make(chan func())
 
 	for i := 0; i < concurrency; i++ {
-	  	go func() {
-		  	for {
-			  	(<-workch)()
+		go func() {
+			for {
+				(<-workch)()
 			}
 		}()
 	}
 
 	for {
-		i := int(rand.Int63()%int64(len(objects)))
+		i := int(rand.Int63() % int64(len(objects)))
 		if objects[i].State == 1 {
-		  	workch <- objects[i].Put
-		} else if objects[i].State < numGets + 2 {
-		  	workch <- objects[i].Get
-		} else if objects[i].State >= numGets + 2 {
-		  	workch <- objects[i].Delete
+			workch <- objects[i].Put
+		} else if objects[i].State < numGets+2 {
+			workch <- objects[i].Get
+		} else if objects[i].State >= numGets+2 {
+			workch <- objects[i].Delete
 			objects[i] = &Object{Url: fmt.Sprintf("%s/%d/%d", storageURL, i%concurrency, rand.Int63()), Data: data, Id: i, State: 0}
 		}
 		objects[i].State += 1
