@@ -35,9 +35,9 @@ func Auth(endpoint string, user string, key string) (string, string) {
 	return resp.Header.Get("X-Storage-Url"), resp.Header.Get("X-Auth-Token")
 }
 
-func PutContainers(storageURL string, authToken string, count int) {
+func PutContainers(storageURL string, authToken string, count int, salt string) {
 	for i := 0; i < count; i++ {
-		url := fmt.Sprintf("%s/%d", storageURL, i)
+		url := fmt.Sprintf("%s/%d-%s", storageURL, i, salt)
 		req, _ := http.NewRequest("PUT", url, nil)
 		req.Header.Set("X-Auth-Token", authToken)
 		resp, err := client.Do(req)
@@ -162,15 +162,16 @@ func RunBench(args []string) {
 	numObjects := ParseInt(benchconf.GetDefault("bench", "num_objects", "5000"))
 	numGets := ParseInt(benchconf.GetDefault("bench", "num_gets", "30000"))
 	delete := hummingbird.LooksTrue(benchconf.GetDefault("bench", "delete", "yes"))
+	salt := fmt.Sprintf("%d", rand.Int63())
 
 	storageURL, authToken = Auth(authURL, authUser, authKey)
 
-	PutContainers(storageURL, authToken, concurrency)
+	PutContainers(storageURL, authToken, concurrency, salt)
 
 	data := make([]byte, objectSize)
 	objects := make([]Object, numObjects)
 	for i, _ := range objects {
-		objects[i].Url = fmt.Sprintf("%s/%d/%d", storageURL, i%concurrency, rand.Int63())
+		objects[i].Url = fmt.Sprintf("%s/%d-%s/%d", storageURL, i%concurrency, salt, rand.Int63())
 		objects[i].Data = data
 		objects[i].Id = i
 	}
@@ -255,7 +256,7 @@ func RunThrash(args []string) {
 
 	storageURL, authToken = Auth(authURL, authUser, authKey)
 
-	PutContainers(storageURL, authToken, concurrency)
+	PutContainers(storageURL, authToken, concurrency, "")
 
 	data := make([]byte, objectSize)
 	objects := make([]*Object, numObjects)
