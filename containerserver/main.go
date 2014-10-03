@@ -397,7 +397,7 @@ func GetServer(conf string) (string, int, http.Handler) {
 	handler.driveRoot = serverconf.GetDefault("DEFAULT", "devices", "/srv/node")
 	handler.checkMounts = hummingbird.LooksTrue(serverconf.GetDefault("DEFAULT", "mount_check", "true"))
 	bindIP := serverconf.GetDefault("DEFAULT", "bind_ip", "0.0.0.0")
-	bindPort, err := strconv.ParseInt(serverconf.GetDefault("DEFAULT", "bind_port", "8080"), 10, 64)
+	bindPort, err := strconv.ParseInt(serverconf.GetDefault("DEFAULT", "bind_port", "6001"), 10, 64)
 	if err != nil {
 		panic("Invalid bind port format")
 	}

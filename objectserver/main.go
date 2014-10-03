@@ -444,7 +444,7 @@ func GetServer(conf string) (string, int, http.Handler) {
 		panic("Invalid disk_limit format")
 	}
 	bindIP := serverconf.GetDefault("DEFAULT", "bind_ip", "0.0.0.0")
-	bindPort, err := strconv.ParseInt(serverconf.GetDefault("DEFAULT", "bind_port", "8080"), 10, 64)
+	bindPort, err := strconv.ParseInt(serverconf.GetDefault("DEFAULT", "bind_port", "6000"), 10, 64)
 	if err != nil {
 		panic("Invalid bind port format")
 	}
