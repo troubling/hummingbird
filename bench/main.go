@@ -208,9 +208,6 @@ func RunBench(args []string) {
 		getErrors += obj.GetError
 		deleteErrors += obj.DeleteError
 		putErrors += obj.PutError
-		if obj.GetError > 0 {
-			fmt.Println("GET ERROR:", obj.Id)
-		}
 	}
 	if putErrors > 0 {
 		fmt.Println("Put errors:", putErrors)
