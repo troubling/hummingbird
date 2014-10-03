@@ -152,7 +152,7 @@ func (server ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, request
 	}
 
 	if os.MkdirAll(hashDir, 0770) != nil || os.MkdirAll(ObjTempDir(vars, server.driveRoot), 0770) != nil {
-		request.LogError("Error creating directories on %s", server.driveRoot)
+		request.LogError("Error creating temp directory: %s", ObjTempDir(vars, server.driveRoot))
 		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
