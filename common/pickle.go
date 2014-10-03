@@ -39,6 +39,10 @@ func picklefloat(val float64, buf *bytes.Buffer) {
 }
 
 func pickleobj(o interface{}, buf *bytes.Buffer) {
+	if o == nil {
+		buf.WriteByte('N')
+		return
+	}
 	switch o := o.(type) {
 	case int:
 		pickleint(int64(o), buf)

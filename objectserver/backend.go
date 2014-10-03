@@ -73,7 +73,7 @@ func InvalidateHash(hashDir string, atomic bool) {
 		return
 	}
 	v, _ := hummingbird.PickleLoads(data)
-	v.(map[string]interface{})[suffDir] = nil
+	v.(map[interface{}]interface{})[suffDir] = nil
 	if atomic {
 		hummingbird.WriteFileAtomic(pklFile, hummingbird.PickleDumps(v), 0600)
 	} else {
