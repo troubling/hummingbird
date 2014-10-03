@@ -163,7 +163,7 @@ func (server ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, request
 		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
-	if contentLength, err := strconv.ParseInt(request.Header.Get("Content-Type"), 10, 64); err == nil {
+	if contentLength, err := strconv.ParseInt(request.Header.Get("Content-Length"), 10, 64); err == nil {
 		syscall.Fallocate(int(tempFile.Fd()), 1, 0, contentLength)
 	}
 	defer tempFile.Close()
