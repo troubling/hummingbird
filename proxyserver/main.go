@@ -51,7 +51,7 @@ func (mc *MultiClient) Do(log hummingbird.LoggingContext, req *http.Request) {
 	mc.requestCount += 1
 }
 
-func (mc MultiClient) BestResponse(writer *hummingbird.WebWriter) {
+func (mc *MultiClient) BestResponse(writer *hummingbird.WebWriter) {
 	var responses []int
 	quorum := (mc.requestCount / 2) + 1
 	for chanIndex, done := range mc.done {
@@ -79,7 +79,7 @@ func (mc MultiClient) BestResponse(writer *hummingbird.WebWriter) {
 
 // request handlers
 
-func (server ProxyHandler) ObjectGetHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ProxyHandler) ObjectGetHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	partition := server.objectRing.GetPartition(vars["account"], vars["container"], vars["obj"])
 	for _, device := range server.objectRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", device.Ip, device.Port, device.Device, partition,
@@ -110,7 +110,7 @@ func (server ProxyHandler) ObjectGetHandler(writer *hummingbird.WebWriter, reque
 	}
 }
 
-func (server ProxyHandler) ObjectPutHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ProxyHandler) ObjectPutHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	partition := server.objectRing.GetPartition(vars["account"], vars["container"], vars["obj"])
 	containerPartition := server.containerRing.GetPartition(vars["account"], vars["container"], "")
 	containerDevices := server.containerRing.GetNodes(containerPartition)
@@ -144,7 +144,7 @@ func (server ProxyHandler) ObjectPutHandler(writer *hummingbird.WebWriter, reque
 	resultSet.BestResponse(writer)
 }
 
-func (server ProxyHandler) ObjectDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ProxyHandler) ObjectDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	partition := server.objectRing.GetPartition(vars["account"], vars["container"], vars["obj"])
 	rs := MultiClient{server.client, 0, nil}
 	for _, device := range server.objectRing.GetNodes(partition) {
@@ -157,7 +157,7 @@ func (server ProxyHandler) ObjectDeleteHandler(writer *hummingbird.WebWriter, re
 	rs.BestResponse(writer)
 }
 
-func (server ProxyHandler) ContainerGetHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ProxyHandler) ContainerGetHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	partition := server.containerRing.GetPartition(vars["account"], vars["container"], "")
 	for _, device := range server.containerRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s?%s", device.Ip, device.Port, device.Device, partition,
@@ -186,7 +186,7 @@ func (server ProxyHandler) ContainerGetHandler(writer *hummingbird.WebWriter, re
 	}
 }
 
-func (server ProxyHandler) ContainerPutHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ProxyHandler) ContainerPutHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	partition := server.containerRing.GetPartition(vars["account"], vars["container"], "")
 	rs := MultiClient{server.client, 0, nil}
 	for _, device := range server.containerRing.GetNodes(partition) {
@@ -199,7 +199,7 @@ func (server ProxyHandler) ContainerPutHandler(writer *hummingbird.WebWriter, re
 	rs.BestResponse(writer)
 }
 
-func (server ProxyHandler) ContainerDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ProxyHandler) ContainerDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	partition := server.containerRing.GetPartition(vars["account"], vars["container"], "")
 	rs := MultiClient{server.client, 0, nil}
 	for _, device := range server.containerRing.GetNodes(partition) {
@@ -215,12 +215,12 @@ func (server ProxyHandler) ContainerDeleteHandler(writer *hummingbird.WebWriter,
 	rs.BestResponse(writer)
 }
 
-func (server ProxyHandler) AccountGetHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ProxyHandler) AccountGetHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	fmt.Println("ACCOUNT GET?!")
 	http.Error(writer, http.StatusText(http.StatusNotImplemented), http.StatusNotImplemented)
 }
 
-func (server ProxyHandler) AccountPutHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ProxyHandler) AccountPutHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	partition := server.containerRing.GetPartition(vars["account"], "", "")
 	rs := MultiClient{server.client, 0, nil}
 	for _, device := range server.accountRing.GetNodes(partition) {
@@ -232,7 +232,7 @@ func (server ProxyHandler) AccountPutHandler(writer *hummingbird.WebWriter, requ
 	rs.BestResponse(writer)
 }
 
-func (server ProxyHandler) AccountDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ProxyHandler) AccountDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	partition := server.containerRing.GetPartition(vars["account"], "", "")
 	rs := MultiClient{server.client, 0, nil}
 	for _, device := range server.accountRing.GetNodes(partition) {
@@ -244,7 +244,7 @@ func (server ProxyHandler) AccountDeleteHandler(writer *hummingbird.WebWriter, r
 	rs.BestResponse(writer)
 }
 
-func (server ProxyHandler) AuthHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ProxyHandler) AuthHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	token := make([]byte, 32)
 	for i := range token {
 		token[i] = byte('A' + (rand.Int() % 26))
@@ -260,7 +260,7 @@ func (server ProxyHandler) AuthHandler(writer *hummingbird.WebWriter, request *h
 
 // access log
 
-func (server ProxyHandler) LogRequest(writer *hummingbird.WebWriter, request *hummingbird.WebRequest) {
+func (server *ProxyHandler) LogRequest(writer *hummingbird.WebWriter, request *hummingbird.WebRequest) {
 	go server.logger.Info(fmt.Sprintf("%s - - [%s] \"%s %s\" %d %s \"%s\" \"%s\" \"%s\" %.4f \"%s\"",
 		request.RemoteAddr,
 		time.Now().Format("02/Jan/2006:15:04:05 -0700"),
@@ -295,6 +295,7 @@ func (server ProxyHandler) ServeHTTP(writer http.ResponseWriter, request *http.R
 	}
 	newWriter := &hummingbird.WebWriter{writer, 500}
 	newRequest := &hummingbird.WebRequest{request, hummingbird.GetTransactionId(), hummingbird.GetTimestamp(), time.Now(), server.logger}
+	defer newRequest.LogPanics()
 	defer server.LogRequest(newWriter, newRequest) // log the request after return
 
 	if len(parts) >= 1 && parts[1] == "auth" {

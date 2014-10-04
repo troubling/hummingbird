@@ -33,7 +33,7 @@ type ObjectHandler struct {
 	diskInUse      map[string]int64
 }
 
-func (server ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	headers := writer.Header()
 	hashDir, err := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, server.checkMounts)
 	if err != nil {
@@ -136,7 +136,7 @@ func (server ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, request
 	}
 }
 
-func (server ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	outHeaders := writer.Header()
 	hashDir, err := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, server.checkMounts)
 	if err != nil {
@@ -222,7 +222,7 @@ func (server ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, request
 	http.Error(writer, http.StatusText(http.StatusCreated), http.StatusCreated)
 }
 
-func (server ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	hashDir, err := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, server.checkMounts)
 	if err != nil {
 		http.Error(writer, "Insufficent Storage", 507)
@@ -301,7 +301,7 @@ func (server ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, requ
 	}
 }
 
-func (server ObjectHandler) ObjReplicateHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ObjectHandler) ObjReplicateHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	hashes, err := GetHashes(server.driveRoot, vars["device"], vars["partition"], strings.Split(vars["suffixes"], "-"))
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -319,7 +319,7 @@ func GetDefault(h http.Header, key string, dfl string) string {
 	return val
 }
 
-func (server ObjectHandler) AcquireDisk(disk string) bool {
+func (server *ObjectHandler) AcquireDisk(disk string) bool {
 	if _, ok := server.diskInUse[disk]; !ok {
 		server.diskInUse[disk] = 0
 	}
@@ -330,11 +330,11 @@ func (server ObjectHandler) AcquireDisk(disk string) bool {
 	return true
 }
 
-func (server ObjectHandler) ReleaseDisk(disk string) {
+func (server *ObjectHandler) ReleaseDisk(disk string) {
 	server.diskInUse[disk] -= 1
 }
 
-func (server ObjectHandler) LogRequest(writer *hummingbird.WebWriter, request *hummingbird.WebRequest) {
+func (server *ObjectHandler) LogRequest(writer *hummingbird.WebWriter, request *hummingbird.WebRequest) {
 	go server.logger.Info(fmt.Sprintf("%s - - [%s] \"%s %s\" %d %s \"%s\" \"%s\" \"%s\" %.4f \"%s\"",
 		request.RemoteAddr,
 		time.Now().Format("02/Jan/2006:15:04:05 -0700"),
@@ -390,6 +390,7 @@ func (server ObjectHandler) ServeHTTP(writer http.ResponseWriter, request *http.
 
 	newWriter := &hummingbird.WebWriter{writer, 200}
 	newRequest := &hummingbird.WebRequest{request, request.Header.Get("X-Trans-Id"), request.Header.Get("X-Timestamp"), time.Now(), server.logger}
+	defer newRequest.LogPanics()
 	defer server.LogRequest(newWriter, newRequest) // log the request after return
 
 	if !server.AcquireDisk(vars["device"]) {

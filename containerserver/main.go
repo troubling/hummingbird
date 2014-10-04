@@ -26,7 +26,7 @@ type ContainerHandler struct {
 
 var saveHeaders = map[string]bool{"X-Container-Read": true, "X-Container-Write": true, "X-Container-Sync-Key": true, "X-Container-Sync-To": true}
 
-func ContainerLocation(vars map[string]string, server ContainerHandler) (string, error) {
+func ContainerLocation(vars map[string]string, server *ContainerHandler) (string, error) {
 	h := md5.New()
 	io.WriteString(h, fmt.Sprintf("%s/%s/%s%s", server.hashPathPrefix, vars["account"],
 		vars["container"], server.hashPathSuffix))
@@ -41,7 +41,7 @@ func ContainerLocation(vars map[string]string, server ContainerHandler) (string,
 	return fmt.Sprintf("%s/%s/%s/%s/%s/%s.db", devicePath, "containers", vars["partition"], suffix, hexHash, hexHash), nil
 }
 
-func (server ContainerHandler) ContainerGetHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ContainerHandler) ContainerGetHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	containerFile, err := ContainerLocation(vars, server)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -138,7 +138,7 @@ func (server ContainerHandler) ContainerGetHandler(writer *hummingbird.WebWriter
 	}
 }
 
-func (server ContainerHandler) ContainerHeadHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ContainerHandler) ContainerHeadHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	containerFile, err := ContainerLocation(vars, server)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -177,7 +177,7 @@ func (server ContainerHandler) ContainerHeadHandler(writer *hummingbird.WebWrite
 	writer.Write([]byte(""))
 }
 
-func (server ContainerHandler) ContainerPutHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ContainerHandler) ContainerPutHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	containerFile, err := ContainerLocation(vars, server)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -215,7 +215,7 @@ func (server ContainerHandler) ContainerPutHandler(writer *hummingbird.WebWriter
 	}
 }
 
-func (server ContainerHandler) ContainerDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ContainerHandler) ContainerDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	containerFile, err := ContainerLocation(vars, server)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -240,7 +240,7 @@ func (server ContainerHandler) ContainerDeleteHandler(writer *hummingbird.WebWri
 	writer.Write([]byte(""))
 }
 
-func (server ContainerHandler) ContainerPostHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ContainerHandler) ContainerPostHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	containerFile, err := ContainerLocation(vars, server)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -266,7 +266,7 @@ func (server ContainerHandler) ContainerPostHandler(writer *hummingbird.WebWrite
 	writer.Write([]byte(""))
 }
 
-func (server ContainerHandler) ObjPutHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ContainerHandler) ObjPutHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	containerFile, err := ContainerLocation(vars, server)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -286,7 +286,7 @@ func (server ContainerHandler) ObjPutHandler(writer *hummingbird.WebWriter, requ
 	http.Error(writer, http.StatusText(201), 201)
 }
 
-func (server ContainerHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ContainerHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	containerFile, err := ContainerLocation(vars, server)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -309,6 +309,21 @@ func GetDefault(h http.Header, key string, dfl string) string {
 		return dfl
 	}
 	return val
+}
+
+func (server *ContainerHandler) LogRequest(writer *hummingbird.WebWriter, request *hummingbird.WebRequest) {
+	go request.LogInfo(fmt.Sprintf("%s - - [%s] \"%s %s\" %d %s \"%s\" \"%s\" \"%s\" %.4f \"%s\"",
+		request.RemoteAddr,
+		time.Now().Format("02/Jan/2006:15:04:05 -0700"),
+		request.Method,
+		request.URL.Path,
+		writer.Status,
+		GetDefault(writer.Header(), "Content-Length", "-"),
+		GetDefault(request.Header, "Referer", "-"),
+		GetDefault(request.Header, "X-Trans-Id", "-"),
+		GetDefault(request.Header, "User-Agent", "-"),
+		time.Since(request.Start).Seconds(),
+		"-")) // TODO: "additional info"
 }
 
 func (server ContainerHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -342,6 +357,9 @@ func (server ContainerHandler) ServeHTTP(writer http.ResponseWriter, request *ht
 	}
 	newWriter := &hummingbird.WebWriter{writer, 200}
 	newRequest := &hummingbird.WebRequest{request, request.Header.Get("X-Trans-Id"), request.Header.Get("X-Timestamp"), time.Now(), server.logger}
+	defer newRequest.LogPanics()
+    defer server.LogRequest(newWriter, newRequest) // log the request after return
+
 	if len(parts) == 5 {
 		switch newRequest.Method {
 		case "GET":
@@ -363,19 +381,6 @@ func (server ContainerHandler) ServeHTTP(writer http.ResponseWriter, request *ht
 			server.ObjDeleteHandler(newWriter, newRequest, vars)
 		}
 	}
-
-	go server.logger.Info(fmt.Sprintf("%s - - [%s] \"%s %s\" %d %s \"%s\" \"%s\" \"%s\" %.4f \"%s\"",
-		request.RemoteAddr,
-		time.Now().Format("02/Jan/2006:15:04:05 -0700"),
-		request.Method,
-		request.URL.Path,
-		newWriter.Status,
-		GetDefault(writer.Header(), "Content-Length", "-"),
-		GetDefault(request.Header, "Referer", "-"),
-		GetDefault(request.Header, "X-Trans-Id", "-"),
-		GetDefault(request.Header, "User-Agent", "-"),
-		time.Since(newRequest.Start).Seconds(),
-		"-")) // TODO: "additional info"
 }
 
 func GetServer(conf string) (string, int, http.Handler) {

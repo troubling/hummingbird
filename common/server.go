@@ -11,6 +11,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"runtime/debug"
 )
 
 // ResponseWriter that saves its status - used for logging.
@@ -70,6 +71,12 @@ func (r WebRequest) LogInfo(format string, args ...interface{}) {
 
 func (r WebRequest) LogDebug(format string, args ...interface{}) {
 	r.Logger.Debug(fmt.Sprintf(format, args...) + " (txn:" + r.TransactionId + ")")
+}
+
+func (r WebRequest) LogPanics() {
+	if e := recover(); e != nil {
+		r.Logger.Err(fmt.Sprintf("PANIC: %s: %s", e, debug.Stack()) + " (txn:" + r.TransactionId + ")")
+	}
 }
 
 type LoggingContext interface {
