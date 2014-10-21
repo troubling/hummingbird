@@ -8,10 +8,10 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"sync"
 	"syscall"
 	"time"
-	"runtime/debug"
 )
 
 // ResponseWriter that saves its status - used for logging.

@@ -164,6 +164,7 @@ func RunCommand(cmd string, args ...string) {
 
 func main() {
 	hummingbird.UseMaxProcs()
+	hummingbird.SetRlimits()
 
 	var serverList []string
 	var serverCommand func(name string)
