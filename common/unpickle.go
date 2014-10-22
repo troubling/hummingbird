@@ -8,6 +8,7 @@ import (
 	"math"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 var markster = "HI, I'M MARK!"
@@ -118,7 +119,7 @@ func PickleLoads(data []byte) (interface{}, error) {
 			if err != nil {
 				return nil, errors.New("Incomplete pickle (STRING): " + err.Error())
 			}
-			str, err := PythonString(val)
+			str, err := PythonString(strings.TrimRight(val, "\n"))
 			if err != nil {
 				return nil, errors.New("Unable to interpret Python string (STRING): " + err.Error())
 			}
@@ -190,7 +191,7 @@ func PickleLoads(data []byte) (interface{}, error) {
 			if err != nil {
 				return nil, errors.New("Incomplete pickle (INT): " + err.Error())
 			}
-			val, err := strconv.ParseInt(line, 10, 64)
+			val, err := strconv.ParseInt(strings.TrimRight(line, "\n"), 10, 64)
 			if err != nil {
 				return nil, errors.New("Invalid pickle (INT): " + err.Error())
 			}
@@ -200,7 +201,7 @@ func PickleLoads(data []byte) (interface{}, error) {
 			if err != nil {
 				return nil, errors.New("Incomplete pickle (FLOAT): " + err.Error())
 			}
-			val, err := strconv.ParseFloat(line, 64)
+			val, err := strconv.ParseFloat(strings.TrimRight(line, "\n"), 64)
 			if err != nil {
 				return nil, errors.New("Invalid pickle (FLOAT): " + err.Error())
 			}
@@ -259,7 +260,7 @@ func PickleLoads(data []byte) (interface{}, error) {
 			if err != nil {
 				return nil, errors.New("Incomplete pickle (PUT): " + err.Error())
 			}
-			id, err := strconv.ParseInt(line, 10, 64)
+			id, err := strconv.ParseInt(strings.TrimRight(line, "\n"), 10, 64)
 			if err != nil {
 				return nil, errors.New("Invalid pickle (PUT): " + err.Error())
 			}
@@ -269,7 +270,7 @@ func PickleLoads(data []byte) (interface{}, error) {
 			if err != nil {
 				return nil, errors.New("Incomplete pickle (GET): " + err.Error())
 			}
-			id, err := strconv.ParseInt(line, 10, 64)
+			id, err := strconv.ParseInt(strings.TrimRight(line, "\n"), 10, 64)
 			if err != nil {
 				return nil, errors.New("Invalid pickle (GET): " + err.Error())
 			}

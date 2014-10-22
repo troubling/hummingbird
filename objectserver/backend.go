@@ -41,6 +41,7 @@ func ReadMetadataFilename(filename string) (map[interface{}]interface{}, error) 
 }
 
 func WriteMetadata(fd int, v map[string]interface{}) {
+  	// TODO: benchmark this with and without chunking up the metadata
 	buf := hummingbird.PickleDumps(v)
 	for index := 0; len(buf) > 0; index++ {
 		var metadataName string
