@@ -32,18 +32,18 @@ func TestUnpicklingVersion2Map(t *testing.T) {
 	}
 }
 
-func PickleRoundTrip(t *testing.T, v interface{}) (interface{}) {
-  	str := PickleDumps(v)
+func PickleRoundTrip(t *testing.T, v interface{}) interface{} {
+	str := PickleDumps(v)
 	ret, err := PickleLoads(str)
 	if err != nil {
-	  	t.Fatal("Error parsing pickle: " + err.Error())
+		t.Fatal("Error parsing pickle: " + err.Error())
 	}
 	return ret
 }
 
 func TestRoundTrip1(t *testing.T) {
-  	if dataVal, ok := PickleRoundTrip(t, 2).(int64); ok {
-	  	if dataVal != 2 {
+	if dataVal, ok := PickleRoundTrip(t, 2).(int64); ok {
+		if dataVal != 2 {
 			t.Fatal("Return data not correct.")
 		}
 	} else {
@@ -52,8 +52,8 @@ func TestRoundTrip1(t *testing.T) {
 }
 
 func TestRoundTrip2(t *testing.T) {
-  	if dataVal, ok := PickleRoundTrip(t, "hi").(string); ok {
-	  	if dataVal != "hi" {
+	if dataVal, ok := PickleRoundTrip(t, "hi").(string); ok {
+		if dataVal != "hi" {
 			t.Fatal("Return data not correct.")
 		}
 	} else {
@@ -63,11 +63,11 @@ func TestRoundTrip2(t *testing.T) {
 
 func TestRoundTrip3(t *testing.T) {
 	data := map[string]string{"1": "test1", "2": "test2"}
-  	if dataVal, ok := PickleRoundTrip(t, data).(map[interface{}]interface{}); ok {
-	  	if dataVal["1"] != "test1" {
+	if dataVal, ok := PickleRoundTrip(t, data).(map[interface{}]interface{}); ok {
+		if dataVal["1"] != "test1" {
 			t.Fatal("Return data not correct.")
 		}
-	  	if dataVal["2"] != "test2" {
+		if dataVal["2"] != "test2" {
 			t.Fatal("Return data not correct.")
 		}
 	} else {
