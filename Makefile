@@ -22,3 +22,7 @@ install: all
 
 develop: all
 	ln -f -s `pwd`/bin/* -t /usr/local/bin/
+
+test:
+	go test hummingbird/tests
+
