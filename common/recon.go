@@ -150,8 +150,8 @@ func ListDevices(driveRoot string) (map[string][]string, error) {
 	return map[string][]string{driveRoot: fileList}, nil
 }
 
-func quarantineCounts(driveRoot string) (map[string]uint64, error) {
-	qcounts := map[string]uint64{"objects": 0, "containers": 0, "accounts": 0}
+func quarantineCounts(driveRoot string) (map[string]interface{}, error) {
+	qcounts := map[string]interface{}{"objects": 0, "containers": 0, "accounts": 0}
 	deviceList, err := ioutil.ReadDir(driveRoot)
 	if err != nil {
 		return nil, err
