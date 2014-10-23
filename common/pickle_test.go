@@ -73,3 +73,20 @@ func TestRoundTrip3(t *testing.T) {
 		t.Fatal("Invalid return type.")
 	}
 }
+
+func TestRoundTrip4(t *testing.T) {
+	data := []interface{}{1, 2, 3}
+	if dataVal, ok := PickleRoundTrip(t, data).([]interface{}); ok {
+		if dataVal[0].(int64) != 1 {
+			t.Fatal("Return data not correct.")
+		}
+		if dataVal[1].(int64) != 2 {
+			t.Fatal("Return data not correct.")
+		}
+		if dataVal[2].(int64) != 3 {
+			t.Fatal("Return data not correct.")
+		}
+	} else {
+		t.Fatal("Invalid return type.")
+	}
+}
