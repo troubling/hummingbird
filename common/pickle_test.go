@@ -1,12 +1,11 @@
-package tests
+package hummingbird
 
 import (
-	"hummingbird/common"
 	"testing"
 )
 
 func TestUnpicklingVersion1Map(t *testing.T) {
-	data, err := hummingbird.PickleLoads([]byte("(dp1\nS'hi'\np2\nS'there'\np3\ns."))
+	data, err := PickleLoads([]byte("(dp1\nS'hi'\np2\nS'there'\np3\ns."))
 	if err != nil {
 		t.Fatal("Error parsing pickle: " + err.Error())
 	}
@@ -20,7 +19,7 @@ func TestUnpicklingVersion1Map(t *testing.T) {
 }
 
 func TestUnpicklingVersion2Map(t *testing.T) {
-	data, err := hummingbird.PickleLoads([]byte("\x80\x02}q\x01U\x02hiq\x02U\x05thereq\x03s."))
+	data, err := PickleLoads([]byte("\x80\x02}q\x01U\x02hiq\x02U\x05thereq\x03s."))
 	if err != nil {
 		t.Fatal("Error parsing pickle: " + err.Error())
 	}
@@ -34,7 +33,7 @@ func TestUnpicklingVersion2Map(t *testing.T) {
 }
 
 func PickleRoundTrip(t *testing.T, v interface{}) interface{} {
-	ret, err := hummingbird.PickleLoads(hummingbird.PickleDumps(v))
+	ret, err := PickleLoads(PickleDumps(v))
 	if err != nil {
 		t.Fatal("Error parsing pickle: " + err.Error())
 	}
