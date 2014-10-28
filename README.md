@@ -13,15 +13,17 @@ The object and container servers are able to pass Swift's functional test suite,
 Installation
 --------------
 
-First, you should have a working [SAIO](http://docs.openstack.org/developer/swift/development_saio.html).
+First, you should have a working [SAIO](http://docs.openstack.org/developer/swift/development_saio.html). (With no storage policies)
 
 Next, you must have a working [Go development environment](https://golang.org/doc/install).
 
 Then, clone this repo.  If you don't have $GOPATH set, replace it with wherever your Go code lives:
 
 ```sh
+sudo apt-get install pkg-config libsqlite3-dev
 git clone 'https://github.com/rackerlabs/hummingbird.git' $GOPATH/src/hummingbird
 cd $GOPATH/src/hummingbird
+go get
 make
 sudo make develop # this symlinks local binaries into /usr/local/bin
 ```
