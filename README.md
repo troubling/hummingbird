@@ -28,6 +28,17 @@ make
 sudo make develop # this symlinks local binaries into /usr/local/bin
 ```
 
+You will also need to configure your syslog to listen for UDP packets:
+
+For a SAIO, change these lines in /etc/rsyslog.conf:
+```
+# provides UDP syslog reception
+$ModLoad imudp
+$UDPServerRun 514
+```
+
+and then sudo service rsyslog restart.
+
 
 Running
 -------
