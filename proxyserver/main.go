@@ -367,7 +367,10 @@ func GetServer(conf string) (string, int, http.Handler) {
 	hashPathPrefix := ""
 	hashPathSuffix := ""
 
-	if swiftconf, err := hummingbird.LoadIniFile("/etc/swift/swift.conf"); err == nil {
+	if swiftconf, err := hummingbird.LoadIniFile("/etc/hummingbird/hummingbird.conf"); err == nil {
+		hashPathPrefix = swiftconf.GetDefault("swift-hash", "swift_hash_path_prefix", "")
+		hashPathSuffix = swiftconf.GetDefault("swift-hash", "swift_hash_path_suffix", "")
+	} else if swiftconf, err := hummingbird.LoadIniFile("/etc/swift/swift.conf"); err == nil {
 		hashPathPrefix = swiftconf.GetDefault("swift-hash", "swift_hash_path_prefix", "")
 		hashPathSuffix = swiftconf.GetDefault("swift-hash", "swift_hash_path_suffix", "")
 	}
@@ -383,17 +386,20 @@ func GetServer(conf string) (string, int, http.Handler) {
 	}
 
 	handler.logger = hummingbird.SetupLogger(serverconf.GetDefault("DEFAULT", "log_facility", "LOG_LOCAL0"), "proxy-server")
-	handler.objectRing, err = hummingbird.LoadRing("/etc/swift/object.ring.gz", hashPathPrefix, hashPathSuffix)
-	if err != nil {
-		panic("Error loading object ring: " + err.Error())
+	if handler.objectRing, err = hummingbird.LoadRing("/etc/hummingbird/object.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
+		if handler.objectRing, err = hummingbird.LoadRing("/etc/swift/object.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
+			panic("Error loading object ring: " + err.Error())
+		}
 	}
-	handler.containerRing, err = hummingbird.LoadRing("/etc/swift/container.ring.gz", hashPathPrefix, hashPathSuffix)
-	if err != nil {
-		panic("Error loading container ring: " + err.Error())
+	if handler.containerRing, err = hummingbird.LoadRing("/etc/hummingbird/container.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
+		if handler.containerRing, err = hummingbird.LoadRing("/etc/swift/container.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
+			panic("Error loading container ring: " + err.Error())
+		}
 	}
-	handler.accountRing, err = hummingbird.LoadRing("/etc/swift/account.ring.gz", hashPathPrefix, hashPathSuffix)
-	if err != nil {
-		panic("Error loading account ring: " + err.Error())
+	if handler.accountRing, err = hummingbird.LoadRing("/etc/hummingbird/account.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
+		if handler.accountRing, err = hummingbird.LoadRing("/etc/swift/account.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
+			panic("Error loading account ring: " + err.Error())
+		}
 	}
 	hummingbird.DropPrivileges(serverconf.GetDefault("DEFAULT", "user", "swift"))
 

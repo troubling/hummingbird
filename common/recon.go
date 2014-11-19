@@ -275,17 +275,23 @@ func ReconHandler(driveRoot string, writer http.ResponseWriter, request *http.Re
 		}
 	case "ringmd5":
 		var err error
-		content, err = fileMD5("/etc/swift/object.ring.gz", "/etc/swift/container.ring.gz", "/etc/swift/account.ring.gz")
+		content, err = fileMD5("/etc/hummingbird/object.ring.gz", "/etc/hummingbird/container.ring.gz", "/etc/hummingbird/account.ring.gz")
 		if err != nil {
-			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			return
+			content, err = fileMD5("/etc/swift/object.ring.gz", "/etc/swift/container.ring.gz", "/etc/swift/account.ring.gz")
+			if err != nil {
+				http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				return
+			}
 		}
 	case "swiftconfmd5":
 		var err error
-		content, err = fileMD5("/etc/swift/swift.conf")
+		content, err = fileMD5("/etc/hummingbird/hummingbird.conf")
 		if err != nil {
-			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			return
+			content, err = fileMD5("/etc/swift/swift.conf")
+			if err != nil {
+				http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				return
+			}
 		}
 	case "quarantined":
 		var err error

@@ -63,11 +63,20 @@ func StartServer(name string) {
 		fmt.Println("Found already running", name, "server")
 		return
 	}
-	serverConf := fmt.Sprintf("/etc/swift/%s-server.conf", name)
-	if !Exists(serverConf) {
-		serverConf = fmt.Sprintf("/etc/swift/%s-server", name)
+	serverConf := ""
+	configSearch := []string{
+		fmt.Sprintf("/etc/hummingbird/%s-server.conf", name),
+		fmt.Sprintf("/etc/hummingbird/%s-server", name),
+		fmt.Sprintf("/etc/swift/%s-server.conf", name),
+		fmt.Sprintf("/etc/swift/%s-server", name),
 	}
-	if !Exists(serverConf) {
+	for _, config := range configSearch {
+		if Exists(config) {
+			serverConf = config
+			break
+		}
+	}
+	if serverConf == "" {
 		fmt.Println("Unable to find", name, "configuration file.")
 		return
 	}
