@@ -129,7 +129,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 			return
 		} else if ranges != nil && len(ranges) > 1 {
 			w := multipart.NewWriter(writer)
-			responseLength := int64(6 + len(w.Boundary()) + (len(w.Boundary()) + len(metadata["Content-Type"].(string)) + 47) * len(ranges))
+			responseLength := int64(6 + len(w.Boundary()) + (len(w.Boundary())+len(metadata["Content-Type"].(string))+47)*len(ranges))
 			for _, rng := range ranges {
 				responseLength += int64(len(fmt.Sprintf("%d-%d/%d", rng.Start, rng.End-1, contentLength))) + rng.End - rng.Start
 			}
@@ -185,7 +185,8 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 		writer.StandardResponse(http.StatusInternalServerError)
 		return
 	}
-	fileName := fmt.Sprintf("%s/%s.data", hashDir, request.Header.Get("X-Timestamp"))
+	floatTimestamp, _ := strconv.ParseFloat(request.Header.Get("X-Timestamp"), 64)
+	fileName := fmt.Sprintf("%s/%.5f.data", hashDir, floatTimestamp) // TODO: use alan's func for this
 	tempFile, err := ioutil.TempFile(ObjTempDir(vars, server.driveRoot), "PUT")
 	if err != nil {
 		request.LogError("Error creating temporary file in %s: %s", server.driveRoot, err.Error())
@@ -240,7 +241,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 		if request.Header.Get("X-Delete-At") != "" || request.Header.Get("X-Delete-After") != "" {
 			UpdateDeleteAt(request, vars, metadata, hashDir)
 		}
-		CleanupHashDir(hashDir)
+		HashCleanupListDir(hashDir, server.logger)
 		InvalidateHash(hashDir, !server.disableFsync)
 	}
 	if server.asyncFinalize {
@@ -286,7 +287,10 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 		writer.StandardResponse(http.StatusInternalServerError)
 		return
 	}
-	fileName := fmt.Sprintf("%s/%s.ts", hashDir, request.Header.Get("X-Timestamp"))
+
+	floatTimestamp, _ := strconv.ParseFloat(request.Header.Get("X-Timestamp"), 64)
+	fileName := fmt.Sprintf("%s/%.5f.ts", hashDir, floatTimestamp) // TODO: use alan's func for this
+
 	tempFile, err := ioutil.TempFile(ObjTempDir(vars, server.driveRoot), "PUT")
 	if err != nil {
 		request.LogError("Error creating temporary file in %s: %s", server.driveRoot, err.Error())
@@ -314,7 +318,7 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 		if _, ok := metadata["X-Delete-At"]; ok {
 			UpdateDeleteAt(request, vars, metadata, hashDir)
 		}
-		CleanupHashDir(hashDir)
+		HashCleanupListDir(hashDir, server.logger)
 		InvalidateHash(hashDir, !server.disableFsync)
 	}
 	if server.asyncFinalize {
@@ -331,9 +335,12 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 }
 
 func (server *ObjectHandler) ObjReplicateHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
-	hashes, err := GetHashes(server.driveRoot, vars["device"], vars["partition"], strings.Split(vars["suffixes"], "-"))
+	hashes, err := GetHashes(server.driveRoot, vars["device"], vars["partition"], strings.Split(vars["suffixes"], "-"), server.logger)
 	if err != nil {
 		writer.StandardResponse(http.StatusInternalServerError)
+		// TODO: need to check if this is  507 instead of a 500 for the drive unmounted
+		//        if err.(*BackEnd)
+		//		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 	writer.WriteHeader(http.StatusOK)
