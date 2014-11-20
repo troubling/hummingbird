@@ -59,6 +59,22 @@ func WriteMetadata(fd int, v map[string]interface{}) {
 	}
 }
 
+func QuarantineHash(hashDir string) error {
+	hash := filepath.Base(hashDir)
+	//          drive        objects      partition    suffix       hash
+	driveDir := filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(hashDir))))
+	// TODO: this will need to be slightly more complicated once policies
+	quarantineDir := filepath.Join(driveDir, "quarantined", "objects")
+	if err := os.MkdirAll(quarantineDir, 0770); err != nil {
+		return err
+	}
+	destDir := filepath.Join(quarantineDir, fmt.Sprintf("%s-%s", hash, hummingbird.UUID()))
+	if err := os.Rename(hashDir, destDir); err != nil {
+		return err
+	}
+	return nil
+}
+
 func InvalidateHash(hashDir string, atomic bool) {
 	// TODO: return errors
 	suffDir := filepath.Dir(hashDir)
