@@ -52,6 +52,22 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 		writer.StandardResponse(http.StatusInternalServerError)
 		return
 	}
+	contentLength, err := strconv.ParseInt(metadata["Content-Length"].(string), 10, 64)
+
+	file, err := os.Open(dataFile)
+	if err != nil {
+		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		return
+	}
+	defer file.Close()
+
+	if stat, _ := file.Stat(); stat.Size() != contentLength {
+		if QuarantineHash(hashDir) == nil {
+			InvalidateHash(hashDir, !server.disableFsync)
+		}
+		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		return
+	}
 
 	if deleteAt, ok := metadata["X-Delete-At"].(string); ok {
 		if deleteTime, err := hummingbird.ParseDate(deleteAt); err == nil && deleteTime.Before(time.Now()) {
@@ -97,19 +113,6 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 	}
 	headers.Set("Content-Type", metadata["Content-Type"].(string))
 	headers.Set("Content-Length", metadata["Content-Length"].(string))
-	contentLength, err := strconv.ParseInt(metadata["Content-Length"].(string), 10, 64)
-
-	file, err := os.Open(dataFile)
-	if err != nil {
-		writer.StandardResponse(http.StatusNotFound)
-		return
-	}
-	defer file.Close()
-
-	if err != nil {
-		contentLength, _ = file.Seek(0, os.SEEK_END)
-		file.Seek(0, os.SEEK_SET)
-	}
 
 	if rangeHeader := request.Header.Get("Range"); rangeHeader != "" {
 		ranges, err := hummingbird.ParseRange(rangeHeader, contentLength)
