@@ -62,6 +62,7 @@ func TestParseDate(t *testing.T) {
 		"Mon Jan 02 15:04:05 2006",
 		"Monday, 02-Jan-06 15:04:05 MST",
 		"1136214245",
+        "1136214245.1234",
 		"2006-01-02 15:04:05",
 	}
 
@@ -79,6 +80,27 @@ func TestParseDate(t *testing.T) {
 			assert.Equal(t, err.Error(), "invalid time")
 		}
 	}
+
+}
+
+func TestNormalizeTimestamp(t *testing.T) {
+	//Setup tests with individual data
+	tests := []struct { timestamp string
+                        internal bool
+                        expectedResult string
+    }{
+        {"12345.12345", true, "12345.12345"},
+        {"12345.1234", true, "12345.12340"},
+        {"12345.1234_123455", true, "12345.12340_0000000000123455"},
+        {"12345.12343_12345a", true, "12345.12343_000000000012345a"},
+        {"12345.12343_12345a", false, "12345.12343"},
+    }
+
+	//Run Tests from above
+	for _, test := range tests {
+		result := NormalizeTimestamp(test.timestamp, test.internal)
+	    assert.Equal(t, test.expectedResult, result)
+    }
 
 }
 

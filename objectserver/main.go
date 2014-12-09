@@ -88,7 +88,8 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 	}
 	headers.Set("Last-Modified", lastModifiedHeader.Format(time.RFC1123))
 	headers.Set("ETag", fmt.Sprintf("\"%s\"", metadata["ETag"].(string)))
-	headers.Set("X-Timestamp", metadata["X-Timestamp"].(string))
+    headers.Set("X-Timestamp", hummingbird.NormalizeTimestamp(metadata["X-Timestamp"].(string), false))
+    headers.Set("X-Backend-Timestamp", metadata["X-Timestamp"].(string))
 	for key, value := range metadata {
 		if allowed, ok := server.allowedHeaders[key.(string)]; (ok && allowed) || strings.HasPrefix(key.(string), "X-Object-Meta-") {
 			headers.Set(key.(string), value.(string))
@@ -159,7 +160,8 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 		writer.StandardResponse(http.StatusInternalServerError)
 		return
 	}
-	fileName := fmt.Sprintf("%s/%s.data", hashDir, request.Header.Get("X-Timestamp"))
+	requestTimestamp := hummingbird.NormalizeTimestamp(request.Header.Get("X-Timestamp"), true)
+    fileName := fmt.Sprintf("%s/%s.data", hashDir, requestTimestamp)
 	tempFile, err := ioutil.TempFile(ObjTempDir(vars, server.driveRoot), "PUT")
 	if err != nil {
 		request.LogError("Error creating temporary file in %s: %s", server.driveRoot, err.Error())
@@ -173,7 +175,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 	defer os.RemoveAll(tempFile.Name())
 	metadata := make(map[string]interface{})
 	metadata["name"] = fmt.Sprintf("/%s/%s/%s", vars["account"], vars["container"], vars["obj"])
-	metadata["X-Timestamp"] = request.Header.Get("X-Timestamp")
+	metadata["X-Timestamp"] = requestTimestamp
 	metadata["Content-Type"] = request.Header.Get("Content-Type")
 	for key := range request.Header {
 		if allowed, ok := server.allowedHeaders[key]; (ok && allowed) || strings.HasPrefix(key, "X-Object-Meta-") {
@@ -226,6 +228,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 }
 
 func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+	headers := writer.Header()
 	hashDir, err := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, server.checkMounts)
 	if err != nil {
 		http.Error(writer, "Insufficent Storage", 507)
@@ -260,7 +263,8 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 		writer.StandardResponse(http.StatusInternalServerError)
 		return
 	}
-	fileName := fmt.Sprintf("%s/%s.ts", hashDir, request.Header.Get("X-Timestamp"))
+    requestTimestamp := hummingbird.NormalizeTimestamp(request.Header.Get("X-Timestamp"), true)
+	fileName := fmt.Sprintf("%s/%s.ts", hashDir, requestTimestamp)
 	tempFile, err := ioutil.TempFile(ObjTempDir(vars, server.driveRoot), "PUT")
 	if err != nil {
 		request.LogError("Error creating temporary file in %s: %s", server.driveRoot, err.Error())
@@ -270,7 +274,7 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 	defer tempFile.Close()
 	defer os.RemoveAll(tempFile.Name())
 	metadata := make(map[string]interface{})
-	metadata["X-Timestamp"] = request.Header.Get("X-Timestamp")
+	metadata["X-Timestamp"] = requestTimestamp
 	metadata["name"] = fmt.Sprintf("/%s/%s/%s", vars["account"], vars["container"], vars["obj"])
 	WriteMetadata(int(tempFile.Fd()), metadata)
 
@@ -296,7 +300,7 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 	} else {
 		finalize()
 	}
-
+    headers.Set("X-Backend-Timestamp", metadata["X-Timestamp"].(string))
 	if !strings.HasSuffix(dataFile, ".data") {
 		writer.StandardResponse(http.StatusNotFound)
 	} else {
