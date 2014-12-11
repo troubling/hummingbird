@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log/syslog"
+	"mime/multipart"
 	"net/http"
 	"net/textproto"
 	"os"
@@ -111,6 +112,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 		writer.StandardResponse(http.StatusNotModified)
 		return
 	}
+	headers.Set("Accept-Ranges", "bytes")
 	headers.Set("Content-Type", metadata["Content-Type"].(string))
 	headers.Set("Content-Length", metadata["Content-Length"].(string))
 
@@ -119,12 +121,28 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 		if err != nil {
 			writer.StandardResponse(http.StatusRequestedRangeNotSatisfiable)
 			return
-		}
-		if ranges != nil && len(ranges) == 1 {
-			_, _ = file.Seek(ranges[0].Start, os.SEEK_SET)
-			writer.Header().Set("Content-Length", strconv.FormatInt(int64(ranges[0].End-ranges[0].Start), 10))
+		} else if ranges != nil && len(ranges) == 1 {
+			headers.Set("Content-Length", strconv.FormatInt(int64(ranges[0].End-ranges[0].Start), 10))
 			writer.WriteHeader(http.StatusPartialContent)
+			file.Seek(ranges[0].Start, os.SEEK_SET)
 			io.CopyN(writer, file, ranges[0].End-ranges[0].Start)
+			return
+		} else if ranges != nil && len(ranges) > 1 {
+			w := multipart.NewWriter(writer)
+			responseLength := int64(6 + len(w.Boundary()) + (len(w.Boundary()) + len(metadata["Content-Type"].(string)) + 47) * len(ranges))
+			for _, rng := range ranges {
+				responseLength += int64(len(fmt.Sprintf("%d-%d/%d", rng.Start, rng.End-1, contentLength))) + rng.End - rng.Start
+			}
+			headers.Set("Content-Length", strconv.FormatInt(responseLength, 10))
+			headers.Set("Content-Type", "multipart/byteranges; boundary="+w.Boundary())
+			writer.WriteHeader(http.StatusPartialContent)
+			for _, rng := range ranges {
+				part, _ := w.CreatePart(textproto.MIMEHeader{"Content-Type": []string{metadata["Content-Type"].(string)},
+					"Content-Range": []string{fmt.Sprintf("bytes %d-%d/%d", rng.Start, rng.End-1, contentLength)}})
+				file.Seek(rng.Start, os.SEEK_SET)
+				io.CopyN(part, file, rng.End-rng.Start)
+			}
+			w.Close()
 			return
 		}
 	}
