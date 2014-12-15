@@ -118,11 +118,11 @@ func ParseDate(date string) (time.Time, error) {
 	if ius, err := time.ParseInLocation(time.RFC850, date, GMT); err == nil {
 		return ius, nil
 	}
-	if strings.Contains(date, "_"){
-        all_date_parts := strings.Split(date, "_")
-        date = all_date_parts[0]
-    }
-    if timestamp, err := strconv.ParseFloat(date, 64); err == nil {
+	if strings.Contains(date, "_") {
+		all_date_parts := strings.Split(date, "_")
+		date = all_date_parts[0]
+	}
+	if timestamp, err := strconv.ParseFloat(date, 64); err == nil {
 		nans := int64((timestamp - float64(int64(timestamp))) * 1.0e9)
 		return time.Unix(int64(timestamp), nans).In(GMT), nil
 	}
@@ -248,22 +248,32 @@ func SetRlimits() {
 	syscall.Setrlimit(syscall.RLIMIT_NOFILE, &syscall.Rlimit{65536, 65536})
 }
 
-func NormalizeTimestamp(timestamp string, internal bool)(string){
-    offset := strings.Contains(timestamp, "_")
-    if ( offset && internal) {
-        split_timestamp := strings.Split(timestamp, "_")
-        floatTimestamp, _ := strconv.ParseFloat(split_timestamp[0], 5)
-        split_timestamp[0] = fmt.Sprintf("%.5f", floatTimestamp)
-        split_timestamp[1] = fmt.Sprintf("%016s", split_timestamp[1])
-        timestamp = strings.Join(split_timestamp, "_")
-    }else if ( offset && !internal) {
-        split_timestamp := strings.Split(timestamp, "_")
-        floatTimestamp, _ := strconv.ParseFloat(split_timestamp[0], 5)
-        timestamp = fmt.Sprintf("%.5f", floatTimestamp)
-    } else {
-        floatTimestamp, _ := strconv.ParseFloat(timestamp, 5)
-        timestamp = fmt.Sprintf("%.5f", floatTimestamp)
-    }
-    return timestamp
+func GetEpochFromTimestamp(timestamp string) (string, error) {
+	split_timestamp := strings.Split(timestamp, "_")
+	floatTimestamp, err := strconv.ParseFloat(split_timestamp[0], 5)
+	if err != nil {
+		return "", errors.New(fmt.Sprintf("Could not parse float from '%s'.", split_timestamp[0]))
+	}
+	return fmt.Sprintf("%.5f", floatTimestamp), nil
 }
 
+func StandardizeTimestamp(timestamp string) (string, error) {
+	offset := strings.Contains(timestamp, "_")
+	if offset {
+		split_timestamp := strings.Split(timestamp, "_")
+		floatTimestamp, err := strconv.ParseFloat(split_timestamp[0], 5)
+		if err != nil {
+			return "", errors.New(fmt.Sprintf("Could not parse float from '%s'.", split_timestamp[0]))
+		}
+		split_timestamp[0] = fmt.Sprintf("%.5f", floatTimestamp)
+		split_timestamp[1] = fmt.Sprintf("%016s", split_timestamp[1])
+		timestamp = strings.Join(split_timestamp, "_")
+	} else {
+		floatTimestamp, err := strconv.ParseFloat(timestamp, 5)
+		if err != nil {
+			return "", errors.New(fmt.Sprintf("Could not parse float from '%s'.", timestamp))
+		}
+		timestamp = fmt.Sprintf("%.5f", floatTimestamp)
+	}
+	return timestamp, nil
+}

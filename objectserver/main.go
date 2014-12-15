@@ -88,7 +88,12 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 	}
 	headers.Set("Last-Modified", lastModifiedHeader.Format(time.RFC1123))
 	headers.Set("ETag", fmt.Sprintf("\"%s\"", metadata["ETag"].(string)))
-	headers.Set("X-Timestamp", hummingbird.NormalizeTimestamp(metadata["X-Timestamp"].(string), false))
+	xTimestamp, err := hummingbird.GetEpochFromTimestamp(metadata["X-Timestamp"].(string))
+	if err != nil {
+		request.LogError("Error getting the epoch time from x-timestamp :: %s", metadata["X-Timestamp"])
+		writer.StandardResponse(http.StatusInternalServerError)
+	}
+	headers.Set("X-Timestamp", xTimestamp)
 	headers.Set("X-Backend-Timestamp", metadata["X-Timestamp"].(string))
 	for key, value := range metadata {
 		if allowed, ok := server.allowedHeaders[key.(string)]; (ok && allowed) || strings.HasPrefix(key.(string), "X-Object-Meta-") {
@@ -160,7 +165,13 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 		writer.StandardResponse(http.StatusInternalServerError)
 		return
 	}
-	requestTimestamp := hummingbird.NormalizeTimestamp(request.Header.Get("X-Timestamp"), true)
+	requestTimestamp, err := hummingbird.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
+	if err != nil {
+		request.LogError("Error standardizing request X-Timestamp: %s", request.Header.Get("X-Timestamp"))
+		writer.StandardResponse(http.StatusInternalServerError)
+		return
+	}
+
 	fileName := fmt.Sprintf("%s/%s.data", hashDir, requestTimestamp)
 	tempFile, err := ioutil.TempFile(ObjTempDir(vars, server.driveRoot), "PUT")
 	if err != nil {
@@ -263,7 +274,12 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 		writer.StandardResponse(http.StatusInternalServerError)
 		return
 	}
-	requestTimestamp := hummingbird.NormalizeTimestamp(request.Header.Get("X-Timestamp"), true)
+	requestTimestamp, err := hummingbird.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
+	if err != nil {
+		request.LogError("Error standardizing request X-Timestamp: %s", request.Header.Get("X-Timestamp"))
+		writer.StandardResponse(http.StatusInternalServerError)
+		return
+	}
 	fileName := fmt.Sprintf("%s/%s.ts", hashDir, requestTimestamp)
 	tempFile, err := ioutil.TempFile(ObjTempDir(vars, server.driveRoot), "PUT")
 	if err != nil {
