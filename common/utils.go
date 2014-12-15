@@ -261,3 +261,10 @@ func UseMaxProcs() {
 func SetRlimits() {
 	syscall.Setrlimit(syscall.RLIMIT_NOFILE, &syscall.Rlimit{65536, 65536})
 }
+
+func IsNotDir(err error) bool {
+	if se, ok := err.(*os.SyscallError); ok {
+		return se.Err == syscall.ENOTDIR
+	}
+	return false
+}
