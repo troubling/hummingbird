@@ -90,7 +90,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 	headers.Set("ETag", fmt.Sprintf("\"%s\"", metadata["ETag"].(string)))
 	xTimestamp, err := hummingbird.GetEpochFromTimestamp(metadata["X-Timestamp"].(string))
 	if err != nil {
-		request.LogError("Error getting the epoch time from x-timestamp :: %s", metadata["X-Timestamp"])
+		request.LogError("Error getting the epoch time from x-timestamp: %s", err.Error())
 		writer.StandardResponse(http.StatusInternalServerError)
 	}
 	headers.Set("X-Timestamp", xTimestamp)
@@ -167,7 +167,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 	}
 	requestTimestamp, err := hummingbird.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
 	if err != nil {
-		request.LogError("Error standardizing request X-Timestamp: %s", request.Header.Get("X-Timestamp"))
+		request.LogError("Error standardizing request X-Timestamp: %s", err.Error())
 		writer.StandardResponse(http.StatusInternalServerError)
 		return
 	}
@@ -276,7 +276,7 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 	}
 	requestTimestamp, err := hummingbird.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
 	if err != nil {
-		request.LogError("Error standardizing request X-Timestamp: %s", request.Header.Get("X-Timestamp"))
+		request.LogError("Error standardizing request X-Timestamp: %s", err.Error())
 		writer.StandardResponse(http.StatusInternalServerError)
 		return
 	}
