@@ -141,8 +141,12 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 
 func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	outHeaders := writer.Header()
-	if !hummingbird.ValidTimestamp(request.Header.Get("X-Timestamp")) || request.Header.Get("Content-Type") == "" {
-		writer.StandardResponse(http.StatusBadRequest)
+	if !hummingbird.ValidTimestamp(request.Header.Get("X-Timestamp")) {
+	  	http.Error(writer, "Invalid X-Timestamp header", http.StatusBadRequest)
+		return
+	}
+	if request.Header.Get("Content-Type") == "" {
+	  	http.Error(writer, "No content type", http.StatusBadRequest)
 		return
 	}
 	hashDir, err := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, server.checkMounts)
