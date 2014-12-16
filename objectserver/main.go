@@ -241,7 +241,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 		if request.Header.Get("X-Delete-At") != "" || request.Header.Get("X-Delete-After") != "" {
 			UpdateDeleteAt(request, vars, metadata, hashDir)
 		}
-		HashCleanupListDir(hashDir, server.logger)
+		HashCleanupListDir(hashDir, request)
 		InvalidateHash(hashDir, !server.disableFsync)
 	}
 	if server.asyncFinalize {
@@ -318,7 +318,7 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 		if _, ok := metadata["X-Delete-At"]; ok {
 			UpdateDeleteAt(request, vars, metadata, hashDir)
 		}
-		HashCleanupListDir(hashDir, server.logger)
+		HashCleanupListDir(hashDir, request)
 		InvalidateHash(hashDir, !server.disableFsync)
 	}
 	if server.asyncFinalize {
@@ -335,7 +335,7 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 }
 
 func (server *ObjectHandler) ObjReplicateHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
-	hashes, err := GetHashes(server.driveRoot, vars["device"], vars["partition"], strings.Split(vars["suffixes"], "-"), server.logger)
+	hashes, err := GetHashes(server.driveRoot, vars["device"], vars["partition"], strings.Split(vars["suffixes"], "-"), request)
 	if err != nil {
 		writer.StandardResponse(http.StatusInternalServerError)
 		// TODO: need to check if this is  507 instead of a 500 for the drive unmounted

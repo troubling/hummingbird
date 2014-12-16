@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log/syslog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -103,7 +102,7 @@ func InvalidateHash(hashDir string, atomic bool) {
 	}
 }
 
-func HashCleanupListDir(hashDir string, logger *syslog.Writer) ([]string, *hummingbird.BackendError) {
+func HashCleanupListDir(hashDir string, logger hummingbird.LoggingContext) ([]string, *hummingbird.BackendError) {
 	fileList, err := ioutil.ReadDir(hashDir)
 	returnList := []string{}
 	if err != nil {
@@ -156,7 +155,7 @@ func HashCleanupListDir(hashDir string, logger *syslog.Writer) ([]string, *hummi
 	return returnList, nil
 }
 
-func RecalculateSuffixHash(suffixDir string, logger *syslog.Writer) (string, *hummingbird.BackendError) {
+func RecalculateSuffixHash(suffixDir string, logger hummingbird.LoggingContext) (string, *hummingbird.BackendError) {
 	// the is hash_suffix in swift
 	h := md5.New()
 
@@ -190,7 +189,7 @@ func RecalculateSuffixHash(suffixDir string, logger *syslog.Writer) (string, *hu
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
-func GetHashes(driveRoot string, device string, partition string, recalculate []string, logger *syslog.Writer) (map[string]string, *hummingbird.BackendError) {
+func GetHashes(driveRoot string, device string, partition string, recalculate []string, logger hummingbird.LoggingContext) (map[string]string, *hummingbird.BackendError) {
 	/*
 			    TODO: this needs to be added later but SAIOs aren't mounted like this
 		        devicePath := filepath.Join(driveRoot, device)
@@ -248,7 +247,7 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 				case err.Code == hummingbird.PathNotDirErrorCode:
 					delete(hashes, suffix)
 				case err.Code == hummingbird.OsErrorCode:
-					logger.Err(fmt.Sprintf("Error hashing suffix: %s/%s (%s)", partitionDir, suffix, "asdf"))
+					logger.LogError("Error hashing suffix: %s/%s (%s)", partitionDir, suffix, "asdf")
 				}
 			}
 		}
@@ -264,7 +263,7 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 				hummingbird.WriteFileAtomic(pklFile, hummingbird.PickleDumps(hashes), 0600)
 				return hashes, nil
 			}
-			logger.Err(fmt.Sprintf("Made recursive call to GetHashes: %s", partitionDir))
+			logger.LogError("Made recursive call to GetHashes: %s", partitionDir)
 			return GetHashes(driveRoot, device, partition, recalculate, logger)
 		}
 	}
