@@ -267,3 +267,10 @@ func ValidTimestamp(timestamp string) bool {
 	count, err := fmt.Sscanf(timestamp, "%d.%d", &a, &b)
 	return err == nil && count == 2
 }
+
+func IsNotDir(err error) bool {
+	if se, ok := err.(*os.SyscallError); ok {
+		return se.Err == syscall.ENOTDIR
+	}
+	return false
+}

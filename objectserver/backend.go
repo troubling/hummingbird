@@ -111,7 +111,7 @@ func HashCleanupListDir(hashDir string, logger *syslog.Writer) ([]string, *hummi
 		if os.IsNotExist(err) {
 			return returnList, nil
 		}
-		if strings.Contains(err.Error(), "not a directory") { // whats the better way to do this?
+		if hummingbird.IsNotDir(err) {
 			return returnList, &hummingbird.BackendError{err, hummingbird.PathNotDirErrorCode}
 		}
 		return returnList, &hummingbird.BackendError{err, hummingbird.OsErrorCode}
