@@ -179,8 +179,12 @@ func RecalculateSuffixHash(suffixDir string, logger *syslog.Writer) (string, *hu
 			}
 			return "", err
 		}
-		for _, fileName := range fileList {
-			io.WriteString(h, fileName)
+		if len(fileList) > 0 {
+			for _, fileName := range fileList {
+				io.WriteString(h, fileName)
+			}
+		} else {
+			os.Remove(hashPath) // leaves the suffix (swift removes it but who cares)
 		}
 	}
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
@@ -202,7 +206,6 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 	hashes := make(map[string]string, 4096)
 	lsForSuffixes := true
 	data, err := ioutil.ReadFile(pklFile)
-	// TODO: do I need to defer close this or whatever?
 	if err == nil {
 		v, err := hummingbird.PickleLoads(data)
 		if err == nil {
