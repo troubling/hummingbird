@@ -243,3 +243,9 @@ func UseMaxProcs() {
 func SetRlimits() {
 	syscall.Setrlimit(syscall.RLIMIT_NOFILE, &syscall.Rlimit{65536, 65536})
 }
+
+func ValidTimestamp(timestamp string) bool {
+	var a, b int
+	count, err := fmt.Sscanf(timestamp, "%d.%d", &a, &b)
+	return err == nil && count == 2
+}
