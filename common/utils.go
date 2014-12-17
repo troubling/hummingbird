@@ -19,6 +19,24 @@ import (
 	"github.com/vaughan0/go-ini"
 )
 
+var (
+	PathNotDirErrorCode = 1
+	OsErrorCode         = 2
+	NotMountedErrorCode = 3
+	LockPathError       = 4
+	BlowUp              = 5 // :)
+	ONE_WEEK            = 604800
+)
+
+type BackendError struct {
+	Err  error
+	Code int
+}
+
+func (e BackendError) Error() string {
+	return fmt.Sprintf("%s ( %d )", e.Err, e.Code)
+}
+
 type httpRange struct {
 	Start, End int64
 }
@@ -67,7 +85,7 @@ func LockPath(directory string, timeout int) (*os.File, error) {
 	lockfile := filepath.Join(directory, ".lock")
 	file, err := os.OpenFile(lockfile, os.O_RDWR|os.O_CREATE, 0660)
 	if err != nil {
-		return nil, errors.New("Unable to open file.")
+		return nil, errors.New(fmt.Sprintf("Unable to open file. ( %s )", err.Error()))
 	}
 	for stop := time.Now().Add(time.Duration(timeout) * time.Second); time.Now().Before(stop); {
 		err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
@@ -248,4 +266,11 @@ func ValidTimestamp(timestamp string) bool {
 	var a, b int
 	count, err := fmt.Sscanf(timestamp, "%d.%d", &a, &b)
 	return err == nil && count == 2
+}
+
+func IsNotDir(err error) bool {
+	if se, ok := err.(*os.SyscallError); ok {
+		return se.Err == syscall.ENOTDIR
+	}
+	return false
 }
