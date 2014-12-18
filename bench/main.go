@@ -131,7 +131,6 @@ func ParseInt(number string) int {
 }
 
 func RunBench(args []string) {
-	rand.Seed(time.Now().UTC().UnixNano())
 	if len(args) < 1 {
 		fmt.Println("Usage: [configuration file]")
 		fmt.Println("Only supports auth 1.0.")

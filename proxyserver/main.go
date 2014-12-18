@@ -352,7 +352,6 @@ func (server ProxyHandler) ServeHTTP(writer http.ResponseWriter, request *http.R
 }
 
 func GetServer(conf string) (string, int, http.Handler) {
-	rand.Seed(time.Now().Unix())
 	handler := ProxyHandler{}
 
 	transport := http.Transport{
