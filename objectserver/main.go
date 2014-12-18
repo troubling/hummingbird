@@ -92,7 +92,8 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 	xTimestamp, err := hummingbird.GetEpochFromTimestamp(metadata["X-Timestamp"].(string))
 	if err != nil {
 		request.LogError("Error getting the epoch time from x-timestamp: %s", err.Error())
-		writer.StandardResponse(http.StatusInternalServerError)
+		http.Error(writer, "Invalid X-Timestamp header", http.StatusBadRequest)
+		return
 	}
 	headers.Set("X-Timestamp", xTimestamp)
 	headers.Set("X-Backend-Timestamp", metadata["X-Timestamp"].(string))
@@ -135,7 +136,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 			return
 		} else if ranges != nil && len(ranges) > 1 {
 			w := multipart.NewWriter(writer)
-			responseLength := int64(6 + len(w.Boundary()) + (len(w.Boundary()) + len(metadata["Content-Type"].(string)) + 47) * len(ranges))
+			responseLength := int64(6 + len(w.Boundary()) + (len(w.Boundary())+len(metadata["Content-Type"].(string))+47)*len(ranges))
 			for _, rng := range ranges {
 				responseLength += int64(len(fmt.Sprintf("%d-%d/%d", rng.Start, rng.End-1, contentLength))) + rng.End - rng.Start
 			}
@@ -186,7 +187,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 	requestTimestamp, err := hummingbird.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
 	if err != nil {
 		request.LogError("Error standardizing request X-Timestamp: %s", err.Error())
-		writer.StandardResponse(http.StatusInternalServerError)
+		http.Error(writer, "Invalid X-Timestamp header", http.StatusBadRequest)
 		return
 	}
 
@@ -295,7 +296,7 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 	requestTimestamp, err := hummingbird.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
 	if err != nil {
 		request.LogError("Error standardizing request X-Timestamp: %s", err.Error())
-		writer.StandardResponse(http.StatusInternalServerError)
+		http.Error(writer, "Invalid X-Timestamp header", http.StatusNotFound)
 		return
 	}
 	fileName := fmt.Sprintf("%s/%s.ts", hashDir, requestTimestamp)

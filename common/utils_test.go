@@ -89,10 +89,10 @@ func TestStandardizeTimestamp(t *testing.T) {
 		timestamp      string
 		expectedResult string
 	}{
-		{"12345.12345", "12345.12345"},
-		{"12345.1234", "12345.12340"},
-		{"12345.1234_123455", "12345.12340_0000000000123455"},
-		{"12345.12343_12345a", "12345.12343_000000000012345a"},
+		{"12345.12345", "0000012345.12345"},
+		{"12345.1234", "0000012345.12340"},
+		{"12345.1234_123455", "0000012345.12340_0000000000123455"},
+		{"12345.12343_12345a", "0000012345.12343_000000000012345a"},
 	}
 
 	//Run Tests from above
@@ -104,8 +104,18 @@ func TestStandardizeTimestamp(t *testing.T) {
 }
 
 func TestStandardizeTimestamp_invalidTimestamp(t *testing.T) {
-	_, err := StandardizeTimestamp("invalidTimestamp")
-	assert.Equal(t, err.Error(), "Could not parse float from 'invalidTimestamp'.")
+	//Setup test data
+	tests := []struct {
+		timestamp string
+		errorMsg  string
+	}{
+		{"invalidTimestamp", "Could not parse float from 'invalidTimestamp'."},
+		{"1234.1234_invalidOffset", "Could not parse int from 'invalidOffset'."},
+	}
+	for _, test := range tests {
+		_, err := StandardizeTimestamp(test.timestamp)
+		assert.Equal(t, err.Error(), test.errorMsg)
+	}
 }
 
 func TestGetEpochFromTimestamp(t *testing.T) {
@@ -114,10 +124,10 @@ func TestGetEpochFromTimestamp(t *testing.T) {
 		timestamp      string
 		expectedResult string
 	}{
-		{"12345.12345", "12345.12345"},
-		{"12345.1234", "12345.12340"},
-		{"12345.1234_123455", "12345.12340"},
-		{"12345.12343_12345a", "12345.12343"},
+		{"12345.12345", "0000012345.12345"},
+		{"12345.1234", "0000012345.12340"},
+		{"12345.1234_123455", "0000012345.12340"},
+		{"12345.12343_12345a", "0000012345.12343"},
 	}
 
 	//Run Tests from above

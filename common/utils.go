@@ -250,30 +250,35 @@ func SetRlimits() {
 
 func GetEpochFromTimestamp(timestamp string) (string, error) {
 	split_timestamp := strings.Split(timestamp, "_")
-	floatTimestamp, err := strconv.ParseFloat(split_timestamp[0], 5)
+	floatTimestamp, err := strconv.ParseFloat(split_timestamp[0], 64)
 	if err != nil {
 		return "", errors.New(fmt.Sprintf("Could not parse float from '%s'.", split_timestamp[0]))
 	}
-	return fmt.Sprintf("%.5f", floatTimestamp), nil
+	return fmt.Sprintf("%016.5f", floatTimestamp), nil
 }
 
 func StandardizeTimestamp(timestamp string) (string, error) {
 	offset := strings.Contains(timestamp, "_")
 	if offset {
 		split_timestamp := strings.Split(timestamp, "_")
-		floatTimestamp, err := strconv.ParseFloat(split_timestamp[0], 5)
+		floatTimestamp, err := strconv.ParseFloat(split_timestamp[0], 64)
 		if err != nil {
 			return "", errors.New(fmt.Sprintf("Could not parse float from '%s'.", split_timestamp[0]))
 		}
-		split_timestamp[0] = fmt.Sprintf("%.5f", floatTimestamp)
-		split_timestamp[1] = fmt.Sprintf("%016s", split_timestamp[1])
+		intOffset, err := strconv.ParseInt(split_timestamp[1], 16, 64)
+		if err != nil {
+			return "", errors.New(fmt.Sprintf("Could not parse int from '%s'.", split_timestamp[1]))
+		}
+
+		split_timestamp[0] = fmt.Sprintf("%016.5f", floatTimestamp)
+		split_timestamp[1] = fmt.Sprintf("%016x", intOffset)
 		timestamp = strings.Join(split_timestamp, "_")
 	} else {
-		floatTimestamp, err := strconv.ParseFloat(timestamp, 5)
+		floatTimestamp, err := strconv.ParseFloat(timestamp, 64)
 		if err != nil {
 			return "", errors.New(fmt.Sprintf("Could not parse float from '%s'.", timestamp))
 		}
-		timestamp = fmt.Sprintf("%.5f", floatTimestamp)
+		timestamp = fmt.Sprintf("%016.5f", floatTimestamp)
 	}
 	return timestamp, nil
 }
