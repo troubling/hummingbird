@@ -50,8 +50,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 	metadata, err := ObjectMetadata(dataFile, metaFile)
 	if err != nil {
 		request.LogError("Error getting metadata from (%s, %s): %s", dataFile, metaFile, err.Error())
-		qerr := QuarantineHash(hashDir)
-		if qerr == nil {
+		if qerr := QuarantineHash(hashDir); qerr == nil {
 			InvalidateHash(hashDir, !server.disableFsync)
 		}
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
