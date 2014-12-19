@@ -175,3 +175,9 @@ func TestLooksTrue(t *testing.T) {
 		assert.True(t, isTrue)
 	}
 }
+
+func TestValidTimestamp(t *testing.T) {
+	assert.True(t, ValidTimestamp("12345.12345"))
+	assert.False(t, ValidTimestamp("12345"))
+	assert.False(t, ValidTimestamp("your.face"))
+}

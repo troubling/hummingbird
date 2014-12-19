@@ -53,7 +53,9 @@ func UpdateContainer(metadata map[string]interface{}, request *hummingbird.WebRe
 			req.Header.Add("X-Etag", metadata["ETag"].(string))
 		}
 		resp, err := client.Do(req)
-		resp.Body.Close()
+		if err == nil {
+			resp.Body.Close()
+		}
 		if err != nil || (resp.StatusCode/100) != 2 {
 			request.LogError("Container update failed with %s/%s, saving async", host, device)
 			data := map[string]interface{}{
@@ -61,14 +63,16 @@ func UpdateContainer(metadata map[string]interface{}, request *hummingbird.WebRe
 				"account":   vars["account"],
 				"container": vars["container"],
 				"obj":       vars["obj"],
-				"headers":   HeaderToMap(request.Header),
+				"headers":   HeaderToMap(req.Header),
 			}
 			suffDir, hash := filepath.Split(hashDir)
+			suffDir = filepath.Dir(hashDir)
 			partitionDir, suff := filepath.Split(suffDir)
-			objDir, _ := filepath.Split(partitionDir)
-			rootDir, _ := filepath.Split(objDir)
-			asyncDir := filepath.Join(rootDir, "async_dir", suff)
-			os.MkdirAll(asyncDir, 0600)
+			partitionDir = filepath.Dir(suffDir)
+			objDir := filepath.Dir(partitionDir)
+			rootDir := filepath.Dir(objDir)
+			asyncDir := filepath.Join(rootDir, "async_pending", suff)
+			os.MkdirAll(asyncDir, 0700)
 			asyncFile := filepath.Join(asyncDir, fmt.Sprintf("%s-%s", hash, request.XTimestamp))
 			hummingbird.WriteFileAtomic(asyncFile, hummingbird.PickleDumps(data), 0600)
 		}
