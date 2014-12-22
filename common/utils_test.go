@@ -62,6 +62,7 @@ func TestParseDate(t *testing.T) {
 		"Mon Jan 02 15:04:05 2006",
 		"Monday, 02-Jan-06 15:04:05 MST",
 		"1136214245",
+		"1136214245.1234",
 		"2006-01-02 15:04:05",
 	}
 
@@ -80,6 +81,65 @@ func TestParseDate(t *testing.T) {
 		}
 	}
 
+}
+
+func TestStandardizeTimestamp(t *testing.T) {
+	//Setup tests with individual data
+	tests := []struct {
+		timestamp      string
+		expectedResult string
+	}{
+		{"12345.12345", "0000012345.12345"},
+		{"12345.1234", "0000012345.12340"},
+		{"12345.1234_123455", "0000012345.12340_0000000000123455"},
+		{"12345.12343_12345a", "0000012345.12343_000000000012345a"},
+	}
+
+	//Run Tests from above
+	for _, test := range tests {
+		result, _ := StandardizeTimestamp(test.timestamp)
+		assert.Equal(t, test.expectedResult, result)
+	}
+
+}
+
+func TestStandardizeTimestamp_invalidTimestamp(t *testing.T) {
+	//Setup test data
+	tests := []struct {
+		timestamp string
+		errorMsg  string
+	}{
+		{"invalidTimestamp", "Could not parse float from 'invalidTimestamp'."},
+		{"1234.1234_invalidOffset", "Could not parse int from 'invalidOffset'."},
+	}
+	for _, test := range tests {
+		_, err := StandardizeTimestamp(test.timestamp)
+		assert.Equal(t, err.Error(), test.errorMsg)
+	}
+}
+
+func TestGetEpochFromTimestamp(t *testing.T) {
+	//Setup tests with individual data
+	tests := []struct {
+		timestamp      string
+		expectedResult string
+	}{
+		{"12345.12345", "0000012345.12345"},
+		{"12345.1234", "0000012345.12340"},
+		{"12345.1234_123455", "0000012345.12340"},
+		{"12345.12343_12345a", "0000012345.12343"},
+	}
+
+	//Run Tests from above
+	for _, test := range tests {
+		result, _ := GetEpochFromTimestamp(test.timestamp)
+		assert.Equal(t, test.expectedResult, result)
+	}
+}
+
+func TestGetEpochFromTimestamp_invalidTimestamp(t *testing.T) {
+	_, err := GetEpochFromTimestamp("invalidTimestamp")
+	assert.Equal(t, err.Error(), "Could not parse float from 'invalidTimestamp'.")
 }
 
 func TestParseTimestamp(t *testing.T) {
