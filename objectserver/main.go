@@ -43,8 +43,13 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 	}
 	dataFile, metaFile := ObjectFiles(hashDir)
 	if dataFile == "" || strings.HasSuffix(dataFile, ".ts") {
-		writer.StandardResponse(http.StatusNotFound)
-		return
+		if im := request.Header.Get("If-Match"); im != "" && strings.Contains(im, "*") {
+			writer.StandardResponse(http.StatusPreconditionFailed)
+			return
+		} else {
+			writer.StandardResponse(http.StatusNotFound)
+			return
+		}
 	}
 
 	metadata, err := ObjectMetadata(dataFile, metaFile)
@@ -106,22 +111,26 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 		}
 	}
 
-	if im := request.Header.Get("If-Match"); im != "" && !strings.Contains(im, metadata["ETag"].(string)) {
+	if im := request.Header.Get("If-Match"); im != "" && !strings.Contains(im, metadata["ETag"].(string)) && !strings.Contains(im, "*") {
 		writer.StandardResponse(http.StatusPreconditionFailed)
 		return
 	}
-	if inm := request.Header.Get("If-None-Match"); inm != "" && strings.Contains(inm, metadata["ETag"].(string)) {
-		writer.StandardResponse(http.StatusNotModified)
+
+	if inm := request.Header.Get("If-None-Match"); inm != "" && (strings.Contains(inm, metadata["ETag"].(string)) || strings.Contains(inm, "*")) {
+		writer.WriteHeader(http.StatusNotModified)
 		return
 	}
+
 	if ius, err := hummingbird.ParseDate(request.Header.Get("If-Unmodified-Since")); err == nil && lastModified.After(ius) {
 		writer.StandardResponse(http.StatusPreconditionFailed)
 		return
 	}
+
 	if ims, err := hummingbird.ParseDate(request.Header.Get("If-Modified-Since")); err == nil && lastModified.Before(ims) {
-		writer.StandardResponse(http.StatusNotModified)
+		writer.WriteHeader(http.StatusNotModified)
 		return
 	}
+
 	headers.Set("Accept-Ranges", "bytes")
 	headers.Set("Content-Type", metadata["Content-Type"].(string))
 	headers.Set("Content-Length", metadata["Content-Length"].(string))

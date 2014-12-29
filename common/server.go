@@ -27,7 +27,7 @@ var responseBodies = map[int]string{
 	301: fmt.Sprintf(responseTemplate, "Moved Permanently", "The resource has moved permanently."),
 	302: fmt.Sprintf(responseTemplate, "Found", "The resource has moved temporarily."),
 	303: fmt.Sprintf(responseTemplate, "See Other", "The response to the request can be found under a different URI."),
-	304: fmt.Sprintf(responseTemplate, "Not Modified", ""),
+	304: "",
 	307: fmt.Sprintf(responseTemplate, "Temporary Redirect", "The resource has moved temporarily."),
 	400: fmt.Sprintf(responseTemplate, "Bad Request", "The server could not comply with the request since it is either malformed or otherwise incorrect."),
 	401: fmt.Sprintf(responseTemplate, "Unauthorized", "This server could not verify that you are authorized to access the document you requested."),
@@ -40,7 +40,7 @@ var responseBodies = map[int]string{
 	409: fmt.Sprintf(responseTemplate, "Conflict", "There was a conflict when trying to complete your request."),
 	410: fmt.Sprintf(responseTemplate, "Gone", "This resource is no longer available."),
 	411: fmt.Sprintf(responseTemplate, "Length Required", "Content-Length header required."),
-	412: fmt.Sprintf(responseTemplate, "Precondition Failed", "A precondition for this request was not met."),
+	412: "",
 	413: fmt.Sprintf(responseTemplate, "Request Entity Too Large", "The body of your request was too large for this server."),
 	414: fmt.Sprintf(responseTemplate, "Request URI Too Long", "The request URI was too long for this server."),
 	415: fmt.Sprintf(responseTemplate, "Unsupported Media Type", "The request media type is not supported by this server."),
@@ -75,10 +75,10 @@ func (w *WebWriter) CopyResponseHeaders(src *http.Response) {
 }
 
 func (w *WebWriter) StandardResponse(statusCode int) {
-	w.WriteHeader(statusCode)
 	body := responseBodies[statusCode]
 	w.Header().Set("Content-Type", "text/html")
 	w.Header().Set("Content-Length", strconv.FormatInt(int64(len(body)), 10))
+	w.WriteHeader(statusCode)
 	w.Write([]byte(body))
 }
 
