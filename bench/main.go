@@ -121,15 +121,6 @@ func DoJobs(work []func(), concurrency int) time.Duration {
 	return time.Now().Sub(start)
 }
 
-func ParseInt(number string) int {
-	val, err := strconv.ParseInt(number, 10, 64)
-	if err != nil {
-		fmt.Println("Error parsing number:", number)
-		os.Exit(1)
-	}
-	return int(val)
-}
-
 func RunBench(args []string) {
 	if len(args) < 1 {
 		fmt.Println("Usage: [configuration file]")
@@ -156,11 +147,11 @@ func RunBench(args []string) {
 	authURL := benchconf.GetDefault("bench", "auth", "http://localhost:8080/auth/v1.0")
 	authUser := benchconf.GetDefault("bench", "user", "test:tester")
 	authKey := benchconf.GetDefault("bench", "key", "testing")
-	concurrency := ParseInt(benchconf.GetDefault("bench", "concurrency", "16"))
-	objectSize := ParseInt(benchconf.GetDefault("bench", "object_size", "131072"))
-	numObjects := ParseInt(benchconf.GetDefault("bench", "num_objects", "5000"))
-	numGets := ParseInt(benchconf.GetDefault("bench", "num_gets", "30000"))
-	delete := hummingbird.LooksTrue(benchconf.GetDefault("bench", "delete", "yes"))
+	concurrency := int(benchconf.GetInt("bench", "concurrency", 16))
+	objectSize := benchconf.GetInt("bench", "object_size", 131072)
+	numObjects := benchconf.GetInt("bench", "num_objects", 5000)
+	numGets := int(benchconf.GetInt("bench", "num_gets", 30000))
+	delete := benchconf.GetBool("bench", "delete", true)
 	salt := fmt.Sprintf("%d", rand.Int63())
 
 	storageURL, authToken = Auth(authURL, authUser, authKey)
@@ -245,10 +236,10 @@ func RunThrash(args []string) {
 	authURL := thrashconf.GetDefault("thrash", "auth", "http://localhost:8080/auth/v1.0")
 	authUser := thrashconf.GetDefault("thrash", "user", "test:tester")
 	authKey := thrashconf.GetDefault("thrash", "key", "testing")
-	concurrency := ParseInt(thrashconf.GetDefault("thrash", "concurrency", "16"))
-	objectSize := ParseInt(thrashconf.GetDefault("thrash", "object_size", "131072"))
-	numObjects := ParseInt(thrashconf.GetDefault("thrash", "num_objects", "5000"))
-	numGets := ParseInt(thrashconf.GetDefault("thrash", "num_gets", "5"))
+	concurrency := int(thrashconf.GetInt("thrash", "concurrency", 16))
+	objectSize := thrashconf.GetInt("thrash", "object_size", 131072)
+	numObjects := thrashconf.GetInt("thrash", "num_objects", 5000)
+	numGets := int(thrashconf.GetInt("thrash", "num_gets", 5))
 
 	storageURL, authToken = Auth(authURL, authUser, authKey)
 
