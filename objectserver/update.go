@@ -93,8 +93,13 @@ func UpdateDeleteAt(request *hummingbird.WebRequest, vars map[string]string, met
 	device := request.Header.Get("X-Delete-At-Device")
 
 	deleteAtContainer := (deleteAt.Unix() / deleteAtDivisor) * deleteAtDivisor
+	// TODO: do the thing where it subtracts a randomish number so it doesn't hammer the containers
 	url := fmt.Sprintf("http://%s/%s/%s/%s/%d/%d-%s/%s/%s", host, device, partition, deleteAtAccount, deleteAtContainer,
 		deleteAt.Unix(), hummingbird.Urlencode(vars["account"]), hummingbird.Urlencode(vars["container"]), hummingbird.Urlencode(vars["obj"]))
+	if partition == "" || host == "" || device == "" {
+		request.LogError(fmt.Sprintf("Trying to save an x-delete-at but did not send required headers: %s", url))
+		return
+	}
 	req, err := http.NewRequest(request.Method, url, nil)
 	req.Header.Add("X-Trans-Id", request.Header.Get("X-Trans-Id"))
 	req.Header.Add("X-Timestamp", request.Header.Get("X-Timestamp"))
@@ -106,7 +111,7 @@ func UpdateDeleteAt(request *hummingbird.WebRequest, vars map[string]string, met
 		resp.Body.Close()
 	}
 	if err != nil || (resp.StatusCode/100) != 2 {
-		request.LogError("Container update failed with %s/%s, saving async", host, device)
+		request.LogError("Container update failed with %s/%s, saving async", host, device) // TODO: should this really be a LogError? its just an async
 		data := map[string]interface{}{
 			"op":        request.Method,
 			"account":   vars["account"],

@@ -78,6 +78,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 		return
 	}
 
+	headers.Set("X-Backend-Timestamp", metadata["X-Timestamp"].(string))
 	if deleteAt, ok := metadata["X-Delete-At"].(string); ok {
 		if deleteTime, err := hummingbird.ParseDate(deleteAt); err == nil && deleteTime.Before(time.Now()) {
 			writer.StandardResponse(http.StatusNotFound)
@@ -104,7 +105,6 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 		return
 	}
 	headers.Set("X-Timestamp", xTimestamp)
-	headers.Set("X-Backend-Timestamp", metadata["X-Timestamp"].(string))
 	for key, value := range metadata {
 		if allowed, ok := server.allowedHeaders[key.(string)]; (ok && allowed) || strings.HasPrefix(key.(string), "X-Object-Meta-") {
 			headers.Set(key.(string), value.(string))
@@ -193,6 +193,14 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 		http.Error(writer, "Insufficent Storage", 507)
 		return
 	}
+
+	if deleteAt := request.Header.Get("X-Delete-At"); deleteAt != "" {
+		if deleteTime, err := hummingbird.ParseDate(deleteAt); err != nil || deleteTime.Before(time.Now()) {
+			http.Error(writer, "Bad Request", 400)
+			return
+		}
+	}
+
 	if inm := request.Header.Get("If-None-Match"); inm == "*" {
 		dataFile, _ := ObjectFiles(hashDir)
 		if dataFile != "" && !strings.HasSuffix(dataFile, ".ts") {
@@ -281,11 +289,19 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 
 func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	headers := writer.Header()
+	requestTimestamp, err := hummingbird.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
+	if err != nil {
+		request.LogError("Error standardizing request X-Timestamp: %s", err.Error())
+		http.Error(writer, "Invalid X-Timestamp header", http.StatusBadRequest)
+		return
+	}
 	hashDir, err := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, server.checkMounts)
 	if err != nil {
 		http.Error(writer, "Insufficent Storage", 507)
 		return
 	}
+	responseStatus := http.StatusNotFound
+
 	dataFile, metaFile := ObjectFiles(hashDir)
 	if ida := request.Header.Get("X-If-Delete-At"); ida != "" {
 		_, err = strconv.ParseInt(ida, 10, 64)
@@ -311,14 +327,34 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 		}
 	}
 
+	if dataFile != "" {
+		if strings.HasSuffix(dataFile, ".data") {
+			responseStatus = http.StatusNoContent
+		}
+		origMetadata, err := ObjectMetadata(dataFile, metaFile)
+		if err == nil {
+			// compare the timestamps here
+			if origTimestamp, ok := origMetadata["X-Timestamp"]; ok && origTimestamp.(string) >= requestTimestamp {
+				headers.Set("X-Backend-Timestamp", origTimestamp.(string))
+				if strings.HasSuffix(dataFile, ".data") {
+					writer.StandardResponse(http.StatusConflict)
+					return
+				} else {
+					writer.StandardResponse(http.StatusNotFound)
+					return
+				}
+			}
+		} else {
+			request.LogError("Error getting metadata from (%s, %s): %s", dataFile, metaFile, err.Error())
+			if qerr := QuarantineHash(hashDir); qerr == nil {
+				InvalidateHash(hashDir, !server.disableFsync)
+			}
+			responseStatus = http.StatusNotFound
+		}
+	}
+
 	if os.MkdirAll(hashDir, 0770) != nil {
 		writer.StandardResponse(http.StatusInternalServerError)
-		return
-	}
-	requestTimestamp, err := hummingbird.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
-	if err != nil {
-		request.LogError("Error standardizing request X-Timestamp: %s", err.Error())
-		http.Error(writer, "Invalid X-Timestamp header", http.StatusNotFound)
 		return
 	}
 	fileName := fmt.Sprintf("%s/%s.ts", hashDir, requestTimestamp)
@@ -358,11 +394,7 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 		finalize()
 	}
 	headers.Set("X-Backend-Timestamp", metadata["X-Timestamp"].(string))
-	if !strings.HasSuffix(dataFile, ".data") {
-		writer.StandardResponse(http.StatusNotFound)
-	} else {
-		http.Error(writer, "", http.StatusNoContent)
-	}
+	writer.StandardResponse(responseStatus)
 }
 
 func (server *ObjectHandler) ObjReplicateHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
