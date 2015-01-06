@@ -53,14 +53,13 @@ var responseBodies = map[int]string{
 	502: fmt.Sprintf(responseTemplate, "Bad Gateway", "Bad gateway."),
 	503: fmt.Sprintf(responseTemplate, "Service Unavailable", "The server is currently unavailable. Please try again at a later time."),
 	504: fmt.Sprintf(responseTemplate, "Gateway Timeout", "A timeout has occurred speaking to a backend server."),
-	507: fmt.Sprintf(responseTemplate, "Insufficent Storage", "There was not enough space to save the resource."),
 }
 
 // ResponseWriter that saves its status - used for logging.
 
 type WebWriter struct {
 	http.ResponseWriter
-	Status int
+	Status          int
 	ResponseStarted bool
 }
 
@@ -144,7 +143,7 @@ func (r WebRequest) LogPanics(w *WebWriter) {
 		r.Logger.Err(fmt.Sprintf("PANIC: %s: %s", e, debug.Stack()) + " (txn:" + r.TransactionId + ")")
 		// if we haven't set a status code yet, we can send a 500 response.
 		if !w.ResponseStarted {
-		  	w.StandardResponse(http.StatusInternalServerError)
+			w.StandardResponse(http.StatusInternalServerError)
 		}
 	}
 }
