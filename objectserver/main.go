@@ -138,7 +138,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 	if rangeHeader := request.Header.Get("Range"); rangeHeader != "" {
 		ranges, err := hummingbird.ParseRange(rangeHeader, contentLength)
 		if err != nil {
-			headers.Set("Content-Length", strconv.Itoa(0))
+			headers.Set("Content-Length", "0")
 			writer.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
 			return
 		} else if ranges != nil && len(ranges) == 1 {
