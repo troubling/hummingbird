@@ -138,10 +138,12 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 	if rangeHeader := request.Header.Get("Range"); rangeHeader != "" {
 		ranges, err := hummingbird.ParseRange(rangeHeader, contentLength)
 		if err != nil {
-			writer.StandardResponse(http.StatusRequestedRangeNotSatisfiable)
+			headers.Set("Content-Length", strconv.Itoa(0))
+			writer.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
 			return
 		} else if ranges != nil && len(ranges) == 1 {
 			headers.Set("Content-Length", strconv.FormatInt(int64(ranges[0].End-ranges[0].Start), 10))
+			headers.Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", ranges[0].Start, ranges[0].End-1, contentLength))
 			writer.WriteHeader(http.StatusPartialContent)
 			file.Seek(ranges[0].Start, os.SEEK_SET)
 			io.CopyN(writer, file, ranges[0].End-ranges[0].Start)
