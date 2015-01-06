@@ -38,7 +38,8 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 	headers := writer.Header()
 	hashDir, err := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, server.checkMounts)
 	if err != nil {
-		writer.StandardResponse(507)
+		vars["Method"] = request.Method
+		writer.CustomErrorResponse(507, vars)
 		return
 	}
 	dataFile, metaFile := ObjectFiles(hashDir)
@@ -190,7 +191,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 	}
 	hashDir, err := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, server.checkMounts)
 	if err != nil {
-		http.Error(writer, "Insufficent Storage", 507)
+		writer.CustomErrorResponse(507, vars)
 		return
 	}
 	if inm := request.Header.Get("If-None-Match"); inm == "*" {
@@ -283,7 +284,7 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 	headers := writer.Header()
 	hashDir, err := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, server.checkMounts)
 	if err != nil {
-		http.Error(writer, "Insufficent Storage", 507)
+		writer.CustomErrorResponse(507, vars)
 		return
 	}
 	dataFile, metaFile := ObjectFiles(hashDir)
