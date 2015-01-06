@@ -293,9 +293,9 @@ func (server ProxyHandler) ServeHTTP(writer http.ResponseWriter, request *http.R
 			}
 		}
 	}
-	newWriter := &hummingbird.WebWriter{writer, 500}
+	newWriter := &hummingbird.WebWriter{writer, 500, false}
 	newRequest := &hummingbird.WebRequest{request, hummingbird.GetTransactionId(), hummingbird.GetTimestamp(), time.Now(), server.logger}
-	defer newRequest.LogPanics()
+	defer newRequest.LogPanics(newWriter)
 	defer server.LogRequest(newWriter, newRequest) // log the request after return
 
 	if len(parts) >= 1 && parts[1] == "auth" {
