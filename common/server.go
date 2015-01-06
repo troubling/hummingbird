@@ -61,11 +61,13 @@ var responseBodies = map[int]string{
 type WebWriter struct {
 	http.ResponseWriter
 	Status int
+	ResponseStarted bool
 }
 
 func (w *WebWriter) WriteHeader(status int) {
 	w.ResponseWriter.WriteHeader(status)
 	w.Status = status
+	w.ResponseStarted = true
 }
 
 func (w *WebWriter) CopyResponseHeaders(src *http.Response) {
@@ -123,9 +125,13 @@ func (r WebRequest) LogDebug(format string, args ...interface{}) {
 	r.Logger.Debug(fmt.Sprintf(format, args...) + " (txn:" + r.TransactionId + ")")
 }
 
-func (r WebRequest) LogPanics() {
+func (r WebRequest) LogPanics(w *WebWriter) {
 	if e := recover(); e != nil {
 		r.Logger.Err(fmt.Sprintf("PANIC: %s: %s", e, debug.Stack()) + " (txn:" + r.TransactionId + ")")
+		// if we haven't set a status code yet, we can send a 500 response.
+		if !w.ResponseStarted {
+		  	w.StandardResponse(http.StatusInternalServerError)
+		}
 	}
 }
 

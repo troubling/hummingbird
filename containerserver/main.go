@@ -355,9 +355,9 @@ func (server ContainerHandler) ServeHTTP(writer http.ResponseWriter, request *ht
 			}
 		}
 	}
-	newWriter := &hummingbird.WebWriter{writer, 200}
+	newWriter := &hummingbird.WebWriter{writer, 500, false}
 	newRequest := &hummingbird.WebRequest{request, request.Header.Get("X-Trans-Id"), request.Header.Get("X-Timestamp"), time.Now(), server.logger}
-	defer newRequest.LogPanics()
+	defer newRequest.LogPanics(newWriter)
 	defer server.LogRequest(newWriter, newRequest) // log the request after return
 
 	if len(parts) == 5 {
