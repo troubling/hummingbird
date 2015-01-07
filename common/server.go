@@ -53,14 +53,13 @@ var responseBodies = map[int]string{
 	502: fmt.Sprintf(responseTemplate, "Bad Gateway", "Bad gateway."),
 	503: fmt.Sprintf(responseTemplate, "Service Unavailable", "The server is currently unavailable. Please try again at a later time."),
 	504: fmt.Sprintf(responseTemplate, "Gateway Timeout", "A timeout has occurred speaking to a backend server."),
-	507: fmt.Sprintf(responseTemplate, "Insufficient Storage", "There was not enough space to save the resource."),
 }
 
 // ResponseWriter that saves its status - used for logging.
 
 type WebWriter struct {
 	http.ResponseWriter
-	Status int
+	Status          int
 	ResponseStarted bool
 }
 
@@ -79,6 +78,20 @@ func (w *WebWriter) CopyResponseHeaders(src *http.Response) {
 func (w *WebWriter) StandardResponse(statusCode int) {
 	body := responseBodies[statusCode]
 	w.Header().Set("Content-Type", "text/html")
+	w.Header().Set("Content-Length", strconv.FormatInt(int64(len(body)), 10))
+	w.WriteHeader(statusCode)
+	w.Write([]byte(body))
+}
+
+func (w *WebWriter) CustomErrorResponse(statusCode int, vars map[string]string) {
+	body := ""
+	switch statusCode {
+	case 507:
+		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+		if vars["Method"] != "HEAD" {
+			body = fmt.Sprintf("<html><h1>Insufficient Storage</h1><p>There was not enough space to save the resource. Drive: %s</p></html>", vars["device"])
+		}
+	}
 	w.Header().Set("Content-Length", strconv.FormatInt(int64(len(body)), 10))
 	w.WriteHeader(statusCode)
 	w.Write([]byte(body))
@@ -130,7 +143,7 @@ func (r WebRequest) LogPanics(w *WebWriter) {
 		r.Logger.Err(fmt.Sprintf("PANIC: %s: %s", e, debug.Stack()) + " (txn:" + r.TransactionId + ")")
 		// if we haven't set a status code yet, we can send a 500 response.
 		if !w.ResponseStarted {
-		  	w.StandardResponse(http.StatusInternalServerError)
+			w.StandardResponse(http.StatusInternalServerError)
 		}
 	}
 }
