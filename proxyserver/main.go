@@ -379,10 +379,7 @@ func GetServer(conf string) (string, int, http.Handler) {
 		panic(fmt.Sprintf("Unable to load %s", conf))
 	}
 	bindIP := serverconf.GetDefault("DEFAULT", "bind_ip", "0.0.0.0")
-	bindPort, err := strconv.ParseInt(serverconf.GetDefault("DEFAULT", "bind_port", "8080"), 10, 64)
-	if err != nil {
-		panic("Invalid bind port format")
-	}
+	bindPort := serverconf.GetInt("DEFAULT", "bind_port", 8080)
 
 	handler.logger = hummingbird.SetupLogger(serverconf.GetDefault("DEFAULT", "log_facility", "LOG_LOCAL0"), "proxy-server")
 	if handler.objectRing, err = hummingbird.LoadRing("/etc/hummingbird/object.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {

@@ -52,6 +52,23 @@ func (f IniFile) GetDefault(section string, key string, dfl string) string {
 	return dfl
 }
 
+func (f IniFile) GetBool(section string, key string, dfl bool) bool {
+	if value, ok := f.Get(section, key); ok {
+		return LooksTrue(value)
+	}
+	return dfl
+}
+
+func (f IniFile) GetInt(section string, key string, dfl int64) int64 {
+	if value, ok := f.Get(section, key); ok {
+		if val, err := strconv.ParseInt(value, 10, 64); err == nil {
+		    return val
+		}
+		panic(fmt.Sprintf("Error parsing integer %s/%s from config.", section, key))
+	}
+	return dfl
+}
+
 func LoadIniFile(filename string) (IniFile, error) {
 	file := IniFile{make(ini.File)}
 	return file, file.LoadFile(filename)

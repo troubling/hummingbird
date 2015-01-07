@@ -403,12 +403,9 @@ func GetServer(conf string) (string, int, http.Handler) {
 		panic(fmt.Sprintf("Unable to load %s", conf))
 	}
 	handler.driveRoot = serverconf.GetDefault("DEFAULT", "devices", "/srv/node")
-	handler.checkMounts = hummingbird.LooksTrue(serverconf.GetDefault("DEFAULT", "mount_check", "true"))
+	handler.checkMounts = serverconf.GetBool("DEFAULT", "mount_check", true)
 	bindIP := serverconf.GetDefault("DEFAULT", "bind_ip", "0.0.0.0")
-	bindPort, err := strconv.ParseInt(serverconf.GetDefault("DEFAULT", "bind_port", "6001"), 10, 64)
-	if err != nil {
-		panic("Invalid bind port format")
-	}
+	bindPort := serverconf.GetInt("DEFAULT", "bind_port", 6001)
 	handler.logger = hummingbird.SetupLogger(serverconf.GetDefault("DEFAULT", "log_facility", "LOG_LOCAL0"), "object-server")
 	hummingbird.DropPrivileges(serverconf.GetDefault("DEFAULT", "user", "swift"))
 

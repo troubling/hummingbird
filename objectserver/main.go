@@ -505,20 +505,14 @@ func GetServer(conf string) (string, int, http.Handler) {
 		panic(fmt.Sprintf("Unable to load %s", conf))
 	}
 	handler.driveRoot = serverconf.GetDefault("DEFAULT", "devices", "/srv/node")
-	handler.checkMounts = hummingbird.LooksTrue(serverconf.GetDefault("DEFAULT", "mount_check", "true"))
-	handler.disableFsync = hummingbird.LooksTrue(serverconf.GetDefault("DEFAULT", "disable_fsync", "false"))
-	handler.asyncFinalize = hummingbird.LooksTrue(serverconf.GetDefault("DEFAULT", "async_finalize", "false"))
-	handler.asyncFsync = hummingbird.LooksTrue(serverconf.GetDefault("DEFAULT", "async_fsync", "false"))
-	handler.diskLimit, err = strconv.ParseInt(serverconf.GetDefault("DEFAULT", "disk_limit", "100"), 10, 64)
-	handler.dropCache = hummingbird.LooksTrue(serverconf.GetDefault("DEFAULT", "drop_cache", "true"))
-	if err != nil {
-		panic("Invalid disk_limit format")
-	}
+	handler.checkMounts = serverconf.GetBool("DEFAULT", "mount_check", true)
+	handler.disableFsync = serverconf.GetBool("DEFAULT", "disable_fsync", false)
+	handler.asyncFinalize = serverconf.GetBool("DEFAULT", "async_finalize", false)
+	handler.asyncFsync = serverconf.GetBool("DEFAULT", "async_fsync", false)
+	handler.dropCache = serverconf.GetBool("DEFAULT", "drop_cache", true)
+	handler.diskLimit = serverconf.GetInt("DEFAULT", "disk_limit", 100)
 	bindIP := serverconf.GetDefault("DEFAULT", "bind_ip", "0.0.0.0")
-	bindPort, err := strconv.ParseInt(serverconf.GetDefault("DEFAULT", "bind_port", "6000"), 10, 64)
-	if err != nil {
-		panic("Invalid bind port format")
-	}
+	bindPort := serverconf.GetInt("DEFAULT", "bind_port", 6000)
 	if allowedHeaders, ok := serverconf.Get("DEFAULT", "allowed_headers"); ok {
 		headers := strings.Split(allowedHeaders, ",")
 		for i := range headers {
