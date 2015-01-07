@@ -20,18 +20,19 @@ import (
 )
 
 type ObjectHandler struct {
-	driveRoot      string
-	hashPathPrefix string
-	hashPathSuffix string
-	checkMounts    bool
-	disableFsync   bool
-	asyncFinalize  bool
-	asyncFsync     bool
-	dropCache      bool
-	allowedHeaders map[string]bool
-	logger         *syslog.Writer
-	diskLimit      int64
-	diskInUse      map[string]int64
+	driveRoot        string
+	hashPathPrefix   string
+	hashPathSuffix   string
+	checkMounts      bool
+	disableFsync     bool
+	asyncFinalize    bool
+	asyncFsync       bool
+	dropCache        bool
+	allowedHeaders   map[string]bool
+	logger           *syslog.Writer
+	diskLimit        int64
+	diskInUse        map[string]int64
+	fallocateReserve int64
 }
 
 func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
@@ -221,11 +222,18 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 		writer.StandardResponse(http.StatusInternalServerError)
 		return
 	}
-	if contentLength, err := strconv.ParseInt(request.Header.Get("Content-Length"), 10, 64); err == nil {
-		syscall.Fallocate(int(tempFile.Fd()), 1, 0, contentLength)
-	}
 	defer tempFile.Close()
 	defer os.RemoveAll(tempFile.Name())
+	contentLength, cLErr := strconv.ParseInt(request.Header.Get("Content-Length"), 10, 64)
+
+	var st syscall.Statfs_t
+	if server.fallocateReserve > 0 && syscall.Fstatfs(int(tempFile.Fd()), &st) == nil && (st.Frsize*int64(st.Bavail)-contentLength) < server.fallocateReserve {
+		writer.CustomErrorResponse(507, vars)
+		return
+	}
+	if cLErr == nil && contentLength > 0 {
+		syscall.Fallocate(int(tempFile.Fd()), 1, 0, contentLength)
+	}
 	metadata := make(map[string]interface{})
 	metadata["name"] = fmt.Sprintf("/%s/%s/%s", vars["account"], vars["container"], vars["obj"])
 	metadata["X-Timestamp"] = requestTimestamp
