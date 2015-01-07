@@ -62,7 +62,7 @@ func (f IniFile) GetBool(section string, key string, dfl bool) bool {
 func (f IniFile) GetInt(section string, key string, dfl int64) int64 {
 	if value, ok := f.Get(section, key); ok {
 		if val, err := strconv.ParseInt(value, 10, 64); err == nil {
-		    return val
+			return val
 		}
 		panic(fmt.Sprintf("Error parsing integer %s/%s from config.", section, key))
 	}
