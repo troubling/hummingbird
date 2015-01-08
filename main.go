@@ -172,6 +172,19 @@ func RunCommand(cmd string, args ...string) {
 	fmt.Println("Failed to execute", executable)
 }
 
+func FakeSwiftObject(configFile string) {
+	devnull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0600)
+	if err != nil {
+		fmt.Println("Error opening devnull")
+		return
+	}
+	syscall.Dup2(int(devnull.Fd()), int(os.Stdin.Fd()))
+	syscall.Dup2(int(devnull.Fd()), int(os.Stdout.Fd()))
+	syscall.Dup2(int(devnull.Fd()), int(os.Stderr.Fd()))
+	devnull.Close()
+	hummingbird.RunServers(configFile, objectserver.GetServer)
+}
+
 func main() {
 	hummingbird.UseMaxProcs()
 	hummingbird.SetRlimits()
@@ -182,6 +195,11 @@ func main() {
 
 	if len(os.Args) < 2 {
 		goto USAGE
+	}
+
+	if strings.HasSuffix(os.Args[0], "swift-object-server") && strings.HasPrefix(os.Args[1], "/etc/swift/object-server/") {
+		FakeSwiftObject(os.Args[1])
+		return
 	}
 
 	switch strings.ToLower(os.Args[1]) {
