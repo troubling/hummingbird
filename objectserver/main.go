@@ -237,7 +237,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 	contentLength, cLErr := strconv.ParseInt(request.Header.Get("Content-Length"), 10, 64)
 
 	var st syscall.Statfs_t
-	if server.fallocateReserve > 0 && syscall.Fstatfs(int(tempFile.Fd()), &st) == nil && (st.Frsize*int64(st.Bavail)-contentLength) < server.fallocateReserve {
+	if server.fallocateReserve > 0 && syscall.Fstatfs(int(tempFile.Fd()), &st) == nil && (int64(st.Frsize)*int64(st.Bavail)-contentLength) < server.fallocateReserve {
 		writer.CustomErrorResponse(507, vars)
 		return
 	}
@@ -249,7 +249,9 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 	metadata["X-Timestamp"] = requestTimestamp
 	metadata["Content-Type"] = request.Header.Get("Content-Type")
 	for key := range request.Header {
-		if allowed, ok := server.allowedHeaders[key]; (ok && allowed) || strings.HasPrefix(key, "X-Object-Meta-") {
+		if allowed, ok := server.allowedHeaders[key]; (ok && allowed) ||
+			strings.HasPrefix(key, "X-Object-Meta-") ||
+			strings.HasPrefix(key, "X-Object-Sysmeta-") {
 			metadata[key] = request.Header.Get(key)
 		}
 	}
