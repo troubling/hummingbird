@@ -260,7 +260,7 @@ func ParseRange(rangeHeader string, fileSize int64) ([]httpRange, error) {
 				return nil, errors.New("invalid end")
 			}
 			if end < begin {
-				return nil, errors.New("end before begin")
+				continue // not an error, just ignored.
 			}
 			if begin > fileSize {
 				return nil, errors.New("Begin bigger than file")
