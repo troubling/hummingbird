@@ -351,7 +351,7 @@ func (server ProxyHandler) ServeHTTP(writer http.ResponseWriter, request *http.R
 	}
 }
 
-func GetServer(conf string) (string, int, http.Handler) {
+func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 	handler := ProxyHandler{}
 
 	transport := http.Transport{
@@ -399,5 +399,5 @@ func GetServer(conf string) (string, int, http.Handler) {
 	}
 	hummingbird.DropPrivileges(serverconf.GetDefault("DEFAULT", "user", "swift"))
 
-	return bindIP, int(bindPort), handler
+	return bindIP, int(bindPort), handler, handler.logger
 }

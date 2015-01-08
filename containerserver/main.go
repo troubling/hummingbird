@@ -383,7 +383,7 @@ func (server ContainerHandler) ServeHTTP(writer http.ResponseWriter, request *ht
 	}
 }
 
-func GetServer(conf string) (string, int, http.Handler) {
+func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 	InitializeDatabase()
 
 	handler := ContainerHandler{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: "",
@@ -409,5 +409,5 @@ func GetServer(conf string) (string, int, http.Handler) {
 	handler.logger = hummingbird.SetupLogger(serverconf.GetDefault("DEFAULT", "log_facility", "LOG_LOCAL0"), "object-server")
 	hummingbird.DropPrivileges(serverconf.GetDefault("DEFAULT", "user", "swift"))
 
-	return bindIP, int(bindPort), handler
+	return bindIP, int(bindPort), handler, handler.logger
 }

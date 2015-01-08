@@ -523,7 +523,7 @@ func (server ObjectHandler) ServeHTTP(writer http.ResponseWriter, request *http.
 	}
 }
 
-func GetServer(conf string) (string, int, http.Handler) {
+func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 	handler := ObjectHandler{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: "",
 		checkMounts: true, disableFsync: false, asyncFinalize: false,
 		allowedHeaders: map[string]bool{"Content-Disposition": true,
@@ -566,5 +566,5 @@ func GetServer(conf string) (string, int, http.Handler) {
 	handler.logger = hummingbird.SetupLogger(serverconf.GetDefault("DEFAULT", "log_facility", "LOG_LOCAL0"), "object-server")
 	hummingbird.DropPrivileges(serverconf.GetDefault("DEFAULT", "user", "swift"))
 
-	return bindIP, int(bindPort), handler
+	return bindIP, int(bindPort), handler, handler.logger
 }

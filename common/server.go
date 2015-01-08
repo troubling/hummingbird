@@ -179,6 +179,17 @@ func (srv *HummingbirdServer) Wait() {
 	srv.wg.Wait()
 }
 
+func ShutdownStdio() {
+	devnull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0600)
+	if err != nil {
+		panic("Error opening /dev/null")
+	}
+	syscall.Dup2(int(devnull.Fd()), int(os.Stdin.Fd()))
+	syscall.Dup2(int(devnull.Fd()), int(os.Stdout.Fd()))
+	syscall.Dup2(int(devnull.Fd()), int(os.Stderr.Fd()))
+	devnull.Close()
+}
+
 /*
 	SIGHUP - graceful restart
 	SIGINT - graceful shutdown
@@ -186,17 +197,19 @@ func (srv *HummingbirdServer) Wait() {
 
 	Graceful shutdown/restart gives any open connections 5 minutes to complete, then exits.
 */
-func RunServers(configFile string, GetServer func(string) (string, int, http.Handler)) {
+func RunServers(configFile string, GetServer func(string) (string, int, http.Handler, *syslog.Writer)) {
 	var servers []*HummingbirdServer
 	configFiles, err := filepath.Glob(fmt.Sprintf("%s/*.conf", configFile))
 	if err != nil || len(configFiles) <= 0 {
 		configFiles = []string{configFile}
 	}
 	for _, configFile := range configFiles {
-		ip, port, handler := GetServer(configFile)
+		ip, port, handler, logger := GetServer(configFile)
 		sock, err := net.Listen("tcp", fmt.Sprintf("%s:%d", ip, port))
 		if err != nil {
-			panic("Error listening on socket!")
+			logger.Err(fmt.Sprintf("Error listening: %v", err))
+			fmt.Printf("Error listening: %v\n", err)
+			os.Exit(1)
 		}
 		srv := HummingbirdServer{}
 		srv.Handler = handler
@@ -204,7 +217,11 @@ func RunServers(configFile string, GetServer func(string) (string, int, http.Han
 		srv.Listener = sock
 		go srv.Serve(sock)
 		servers = append(servers, &srv)
+		logger.Err(fmt.Sprintf("Server started on port %d", port))
+		fmt.Printf("Server started on port %d\n", port)
 	}
+
+	ShutdownStdio()
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
