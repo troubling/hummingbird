@@ -161,13 +161,14 @@ func RecalculateSuffixHash(suffixDir string, logger hummingbird.LoggingContext) 
 
 	hashList, err := ioutil.ReadDir(suffixDir)
 	if err != nil {
-		if strings.Contains(err.Error(), "not a directory") { // whats the better way to do this?
+		if strings.Contains(err.Error(), "not a directory") {
+			// TODO: whats the better way to do this? redbo showed me a way but did we not merge it?
 			return "", &hummingbird.BackendError{err, hummingbird.PathNotDirErrorCode}
 		}
 		return "", &hummingbird.BackendError{err, hummingbird.OsErrorCode}
 	}
-	for index := len(hashList) - 1; index >= 0; index-- {
-		hashPath := fmt.Sprintf("%s/%s", suffixDir, hashList[index].Name())
+	for _, fullHash := range hashList {
+		hashPath := fmt.Sprintf("%s/%s", suffixDir, fullHash.Name())
 		fileList, err := HashCleanupListDir(hashPath, logger)
 		if err != nil {
 			if err.Code == hummingbird.PathNotDirErrorCode {
