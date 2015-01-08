@@ -108,7 +108,9 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 	}
 	headers.Set("X-Timestamp", xTimestamp)
 	for key, value := range metadata {
-		if allowed, ok := server.allowedHeaders[key.(string)]; (ok && allowed) || strings.HasPrefix(key.(string), "X-Object-Meta-") {
+		if allowed, ok := server.allowedHeaders[key.(string)]; (ok && allowed) ||
+			strings.HasPrefix(key.(string), "X-Object-Meta-") ||
+			strings.HasPrefix(key.(string), "X-Object-Sysmeta-") {
 			headers.Set(key.(string), value.(string))
 		}
 	}
