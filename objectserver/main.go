@@ -411,7 +411,11 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 }
 
 func (server *ObjectHandler) ObjReplicateHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
-	hashes, err := GetHashes(server.driveRoot, vars["device"], vars["partition"], strings.Split(vars["suffixes"], "-"), request)
+	var recalculate []string
+	if len(vars["suffixes"]) > 0 {
+		recalculate = strings.Split(vars["suffixes"], "-")
+	}
+	hashes, err := GetHashes(server.driveRoot, vars["device"], vars["partition"], recalculate, request)
 	if err != nil {
 		writer.StandardResponse(http.StatusInternalServerError)
 		// TODO: need to check if this is  507 instead of a 500 for the drive unmounted

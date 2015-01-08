@@ -233,7 +233,9 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 		}
 	}
 	for _, suffix := range recalculate {
-		hashes[suffix] = ""
+		if len(suffix) == 3 {
+			hashes[suffix] = ""
+		}
 	}
 	for suffix, hash := range hashes {
 		if hash == "" {
