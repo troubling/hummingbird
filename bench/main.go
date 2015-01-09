@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -50,16 +52,13 @@ func PutContainers(storageURL string, authToken string, count int, salt string) 
 }
 
 type Object struct {
-	Url         string
-	PutError    int
-	DeleteError int
-	GetError    int
-	Data        []byte
-	Id          int
-	State       int
+	Url   string
+	Data  []byte
+	Id    int
+	State int
 }
 
-func (obj *Object) Put() {
+func (obj *Object) Put() bool {
 	req, _ := http.NewRequest("PUT", obj.Url, bytes.NewReader(obj.Data))
 	req.Header.Set("X-Auth-Token", authToken)
 	req.Header.Set("Content-Length", strconv.FormatInt(int64(len(obj.Data)), 10))
@@ -68,40 +67,36 @@ func (obj *Object) Put() {
 	if resp != nil {
 		resp.Body.Close()
 	}
-	if (err != nil) || (resp.StatusCode/100 != 2) {
-		obj.PutError += 1
-	}
+	return err == nil && resp.StatusCode/100 == 2
 }
 
-func (obj *Object) Get() {
+func (obj *Object) Get() bool {
 	req, _ := http.NewRequest("GET", obj.Url, nil)
 	req.Header.Set("X-Auth-Token", authToken)
 	resp, err := client.Do(req)
 	if resp != nil {
 		io.Copy(devNull, resp.Body)
 	}
-	if (err != nil) || (resp.StatusCode/100 != 2) {
-		obj.GetError += 1
-	}
+	return err == nil && resp.StatusCode/100 == 2
 }
 
-func (obj *Object) Delete() {
+func (obj *Object) Delete() bool {
 	req, _ := http.NewRequest("DELETE", obj.Url, nil)
 	req.Header.Set("X-Auth-Token", authToken)
 	resp, err := client.Do(req)
 	if resp != nil {
 		resp.Body.Close()
 	}
-	if (err != nil) || (resp.StatusCode/100 != 2) {
-		obj.DeleteError += 1
-	}
+	return err == nil && resp.StatusCode/100 == 2
 }
 
-func DoJobs(work []func(), concurrency int) time.Duration {
+func DoJobs(name string, work []func() bool, concurrency int) {
 	wg := sync.WaitGroup{}
 	starterPistol := make(chan int)
 	jobId := int32(-1)
+	errors := 0
 	wg.Add(concurrency)
+	jobTimes := make([]float64, len(work))
 	for i := 0; i < concurrency; i++ {
 		go func() {
 			_, _ = <-starterPistol
@@ -111,14 +106,38 @@ func DoJobs(work []func(), concurrency int) time.Duration {
 					wg.Done()
 					return
 				}
-				work[job]()
+				startJob := time.Now()
+				result := work[job]()
+				jobTimes[job] = float64(time.Now().Sub(startJob)) / float64(time.Second)
+				if !result {
+					errors += 1
+				}
 			}
 		}()
 	}
 	start := time.Now()
 	close(starterPistol)
 	wg.Wait()
-	return time.Now().Sub(start)
+	totalTime := float64(time.Now().Sub(start)) / float64(time.Second)
+
+	sort.Float64s(jobTimes)
+	sum := 0.0
+	for _, val := range jobTimes {
+		sum += val
+	}
+	avg := sum / float64(len(work))
+	diffsum := 0.0
+	for _, val := range jobTimes {
+		diffsum += math.Pow(val-avg, 2.0)
+	}
+	fmt.Printf("%ss: %d @ %.2f/s\n", name, len(work), float64(len(work))/totalTime)
+	fmt.Println("  Failures:", errors)
+	fmt.Printf("  Mean: %.5fs (%.1f%% RSD)\n", avg, math.Sqrt(diffsum/float64(len(work)))*100.0/avg)
+	fmt.Printf("  Median: %.5fs\n", jobTimes[int(float64(len(jobTimes))*0.5)])
+	fmt.Printf("  85%%: %.5fs\n", jobTimes[int(float64(len(jobTimes))*0.85)])
+	fmt.Printf("  90%%: %.5fs\n", jobTimes[int(float64(len(jobTimes))*0.90)])
+	fmt.Printf("  95%%: %.5fs\n", jobTimes[int(float64(len(jobTimes))*0.95)])
+	fmt.Printf("  99%%: %.5fs\n", jobTimes[int(float64(len(jobTimes))*0.99)])
 }
 
 func RunBench(args []string) {
@@ -150,7 +169,7 @@ func RunBench(args []string) {
 	concurrency := int(benchconf.GetInt("bench", "concurrency", 16))
 	objectSize := benchconf.GetInt("bench", "object_size", 131072)
 	numObjects := benchconf.GetInt("bench", "num_objects", 5000)
-	numGets := int(benchconf.GetInt("bench", "num_gets", 30000))
+	numGets := benchconf.GetInt("bench", "num_gets", 30000)
 	delete := benchconf.GetBool("bench", "delete", true)
 	salt := fmt.Sprintf("%d", rand.Int63())
 
@@ -166,47 +185,26 @@ func RunBench(args []string) {
 		objects[i].Id = i
 	}
 
-	work := make([]func(), len(objects))
+	work := make([]func() bool, len(objects))
 	for i, _ := range objects {
 		work[i] = objects[i].Put
 	}
-	putTime := DoJobs(work, concurrency)
-	fmt.Printf("PUT %d objects @ %.2f/s\n", numObjects, float64(numObjects)/(float64(putTime)/float64(time.Second)))
+	DoJobs("PUT", work, concurrency)
 
 	time.Sleep(time.Second * 2)
 
-	work = make([]func(), numGets)
-	for i := 0; i < numGets; i++ {
+	work = make([]func() bool, numGets)
+	for i := int64(0); i < numGets; i++ {
 		work[i] = objects[int(rand.Int63()%int64(len(objects)))].Get
 	}
-	getTime := DoJobs(work, concurrency)
-	fmt.Printf("GET %d objects @ %.2f/s\n", numGets, float64(numGets)/(float64(getTime)/float64(time.Second)))
+	DoJobs("GET", work, concurrency)
 
 	if delete {
-		work = make([]func(), len(objects))
+		work = make([]func() bool, len(objects))
 		for i, _ := range objects {
 			work[i] = objects[i].Delete
 		}
-		deleteTime := DoJobs(work, concurrency)
-		fmt.Printf("DELETE %d objects @ %.2f/s\n", numObjects, float64(numObjects)/(float64(deleteTime)/float64(time.Second)))
-	}
-
-	putErrors := 0
-	getErrors := 0
-	deleteErrors := 0
-	for _, obj := range objects {
-		getErrors += obj.GetError
-		deleteErrors += obj.DeleteError
-		putErrors += obj.PutError
-	}
-	if putErrors > 0 {
-		fmt.Println("Put errors:", putErrors)
-	}
-	if getErrors > 0 {
-		fmt.Println("Get errors:", getErrors)
-	}
-	if deleteErrors > 0 {
-		fmt.Println("Delete errors:", deleteErrors)
+		DoJobs("DELETE", work, concurrency)
 	}
 }
 
@@ -223,7 +221,7 @@ func RunThrash(args []string) {
 		fmt.Println("    concurrency = 15")
 		fmt.Println("    object_size = 131072")
 		fmt.Println("    num_objects = 5000")
-		fmt.Println("    num_gets = 5")
+		fmt.Println("    gets_per_object = 5")
 		os.Exit(1)
 	}
 
@@ -239,7 +237,7 @@ func RunThrash(args []string) {
 	concurrency := int(thrashconf.GetInt("thrash", "concurrency", 16))
 	objectSize := thrashconf.GetInt("thrash", "object_size", 131072)
 	numObjects := thrashconf.GetInt("thrash", "num_objects", 5000)
-	numGets := int(thrashconf.GetInt("thrash", "num_gets", 5))
+	numGets := int(thrashconf.GetInt("thrash", "gets_per_object", 5))
 
 	storageURL, authToken = Auth(authURL, authUser, authKey)
 
@@ -255,7 +253,7 @@ func RunThrash(args []string) {
 		objects[i].State = 1
 	}
 
-	workch := make(chan func())
+	workch := make(chan func() bool)
 
 	for i := 0; i < concurrency; i++ {
 		go func() {
