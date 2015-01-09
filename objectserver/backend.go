@@ -190,13 +190,6 @@ func RecalculateSuffixHash(suffixDir string, logger hummingbird.LoggingContext) 
 }
 
 func GetHashes(driveRoot string, device string, partition string, recalculate []string, logger hummingbird.LoggingContext) (map[string]string, *hummingbird.BackendError) {
-	/*
-			    TODO: this needs to be added later but SAIOs aren't mounted like this
-		        devicePath := filepath.Join(driveRoot, device)
-				if mounted, err := hummingbird.IsMount(devicePath); err != nil || mounted != true {
-					return nil, &hummingbird.BackendError{err, hummingbird.NotMountedErrorCode}
-				}
-	*/
 	partitionDir := filepath.Join(driveRoot, device, "objects", partition)
 	pklFile := filepath.Join(partitionDir, "hashes.pkl")
 
@@ -272,19 +265,13 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 	return hashes, nil
 }
 
-func ObjHashDir(vars map[string]string, driveRoot string, hashPathPrefix string, hashPathSuffix string, checkMounts bool) (string, error) {
+func ObjHashDir(vars map[string]string, driveRoot string, hashPathPrefix string, hashPathSuffix string) (string, error) {
 	h := md5.New()
 	io.WriteString(h, fmt.Sprintf("%s/%s/%s/%s%s", hashPathPrefix, vars["account"],
 		vars["container"], vars["obj"], hashPathSuffix))
 	hexHash := fmt.Sprintf("%x", h.Sum(nil))
 	suffix := hexHash[29:32]
-	devicePath := fmt.Sprintf("%s/%s", driveRoot, vars["device"])
-	if checkMounts {
-		if mounted, err := hummingbird.IsMount(devicePath); err != nil || mounted != true {
-			return "", errors.New("Not mounted")
-		}
-	}
-	return fmt.Sprintf("%s/%s/%s/%s/%s", devicePath, "objects", vars["partition"], suffix, hexHash), nil
+	return fmt.Sprintf("%s/%s/%s/%s/%s/%s", driveRoot, vars["device"], "objects", vars["partition"], suffix, hexHash), nil
 }
 
 func ObjectFiles(directory string) (string, string) {
