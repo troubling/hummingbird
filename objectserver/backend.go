@@ -265,13 +265,13 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 	return hashes, nil
 }
 
-func ObjHashDir(vars map[string]string, driveRoot string, hashPathPrefix string, hashPathSuffix string) (string, error) {
+func ObjHashDir(vars map[string]string, driveRoot string, hashPathPrefix string, hashPathSuffix string) string {
 	h := md5.New()
 	io.WriteString(h, fmt.Sprintf("%s/%s/%s/%s%s", hashPathPrefix, vars["account"],
 		vars["container"], vars["obj"], hashPathSuffix))
 	hexHash := fmt.Sprintf("%x", h.Sum(nil))
 	suffix := hexHash[29:32]
-	return fmt.Sprintf("%s/%s/%s/%s/%s/%s", driveRoot, vars["device"], "objects", vars["partition"], suffix, hexHash), nil
+	return fmt.Sprintf("%s/%s/%s/%s/%s/%s", driveRoot, vars["device"], "objects", vars["partition"], suffix, hexHash)
 }
 
 func ObjectFiles(directory string) (string, string) {
