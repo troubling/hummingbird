@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -90,13 +91,19 @@ func StartServer(name string) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setsid: true,
 	}
-	cmd.Stdout = nil
-	cmd.Stderr = nil
+	rdp, err := cmd.StdoutPipe()
+	cmd.Stderr = cmd.Stdout
+	if err != nil {
+		fmt.Println("Error creating stdout pipe:", err)
+		return
+	}
+
 	err = cmd.Start()
 	if err != nil {
 		fmt.Println("Error starting server:", err)
 		return
 	}
+	io.Copy(os.Stdout, rdp)
 	WritePid(name, cmd.Process.Pid)
 	fmt.Println(strings.Title(name), "server started.")
 }
