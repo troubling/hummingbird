@@ -23,6 +23,7 @@ type ObjectHandler struct {
 	driveRoot        string
 	hashPathPrefix   string
 	hashPathSuffix   string
+	checkEtags       bool
 	checkMounts      bool
 	disableFsync     bool
 	asyncFinalize    bool
@@ -57,7 +58,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 	metadata, err := ObjectMetadata(dataFile, metaFile)
 	if err != nil {
 		request.LogError("Error getting metadata from (%s, %s): %s", dataFile, metaFile, err.Error())
-		if qerr := QuarantineHash(hashDir); qerr == nil {
+		if QuarantineHash(hashDir) == nil {
 			InvalidateHash(hashDir, !server.disableFsync)
 		}
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -173,7 +174,16 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 	}
 	writer.WriteHeader(http.StatusOK)
 	if request.Method == "GET" {
-		io.Copy(writer, file)
+		if server.checkEtags {
+			hash := md5.New()
+			mw := io.MultiWriter(writer, hash)
+			io.Copy(mw, file)
+			if fmt.Sprintf("%x", hash.Sum(nil)) != metadata["ETag"].(string) && QuarantineHash(hashDir) == nil {
+				InvalidateHash(hashDir, !server.disableFsync)
+			}
+		} else {
+			io.Copy(writer, file)
+		}
 		if server.dropCache {
 			go hummingbird.DropBufferCache(int(file.Fd()), contentLength)
 		}
@@ -560,6 +570,7 @@ func GetServer(conf string) (string, int, http.Handler) {
 	handler.asyncFsync = serverconf.GetBool("DEFAULT", "async_fsync", false)
 	handler.dropCache = serverconf.GetBool("DEFAULT", "drop_cache", true)
 	handler.diskLimit = serverconf.GetInt("DEFAULT", "disk_limit", 100)
+	handler.checkEtags = serverconf.GetBool("DEFAULT", "check_etags", false)
 	bindIP := serverconf.GetDefault("DEFAULT", "bind_ip", "0.0.0.0")
 	bindPort := serverconf.GetInt("DEFAULT", "bind_port", 6000)
 	if allowedHeaders, ok := serverconf.Get("DEFAULT", "allowed_headers"); ok {
