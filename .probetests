@@ -1,0 +1,11 @@
+#!/bin/bash
+
+HUMMINGBIRD=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
+cd ${HUMMINGBIRD}
+make
+ln -sf ${HUMMINGBIRD}/bin/hummingbird ${HUMMINGBIRD}/bin/swift-object-server
+PATH=${HUMMINGBIRD}/bin:$PATH
+cd $(python -c "import swift, os; print os.path.dirname(os.path.dirname(swift.__file__))")/test/probe
+nosetests --exe $@
+exit $?
+
