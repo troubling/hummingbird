@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math"
 	"math/rand"
 	"net/http"
@@ -21,8 +22,6 @@ var client = &http.Client{}
 
 var storageURL = ""
 var authToken = ""
-
-var devNull, _ = os.OpenFile("/dev/null", os.O_WRONLY, 0666)
 
 func Auth(endpoint string, user string, key string) (string, string) {
 	req, err := http.NewRequest("GET", endpoint, nil)
@@ -75,7 +74,7 @@ func (obj *Object) Get() bool {
 	req.Header.Set("X-Auth-Token", authToken)
 	resp, err := client.Do(req)
 	if resp != nil {
-		io.Copy(devNull, resp.Body)
+		io.Copy(ioutil.Discard, resp.Body)
 	}
 	return err == nil && resp.StatusCode/100 == 2
 }
