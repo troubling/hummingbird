@@ -37,12 +37,7 @@ type ObjectHandler struct {
 
 func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	headers := writer.Header()
-	hashDir, err := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, server.checkMounts)
-	if err != nil {
-		vars["Method"] = request.Method
-		writer.CustomErrorResponse(507, vars)
-		return
-	}
+	hashDir := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix)
 	dataFile, metaFile := ObjectFiles(hashDir)
 	if dataFile == "" || strings.HasSuffix(dataFile, ".ts") {
 		if im := request.Header.Get("If-Match"); im != "" && strings.Contains(im, "*") {
@@ -192,11 +187,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 		http.Error(writer, "No content type", http.StatusBadRequest)
 		return
 	}
-	hashDir, err := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, server.checkMounts)
-	if err != nil {
-		writer.CustomErrorResponse(507, vars)
-		return
-	}
+	hashDir := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix)
 
 	if deleteAt := request.Header.Get("X-Delete-At"); deleteAt != "" {
 		if deleteTime, err := hummingbird.ParseDate(deleteAt); err != nil || deleteTime.Before(time.Now()) {
@@ -308,7 +299,7 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 		http.Error(writer, "Invalid X-Timestamp header", http.StatusBadRequest)
 		return
 	}
-	hashDir, err := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, server.checkMounts)
+	hashDir := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix)
 	if err != nil {
 		writer.CustomErrorResponse(507, vars)
 		return
@@ -436,6 +427,13 @@ func GetDefault(h http.Header, key string, dfl string) string {
 }
 
 func (server *ObjectHandler) AcquireDisk(disk string) bool {
+	if server.checkMounts {
+		devicePath := fmt.Sprintf("%s/%s", server.driveRoot, disk)
+		if mounted, err := hummingbird.IsMount(devicePath); err != nil || mounted != true {
+			return false
+		}
+	}
+
 	if _, ok := server.diskInUse[disk]; !ok {
 		server.diskInUse[disk] = 0
 	}
@@ -510,9 +508,11 @@ func (server ObjectHandler) ServeHTTP(writer http.ResponseWriter, request *http.
 	defer server.LogRequest(newWriter, newRequest) // log the request after return
 
 	if !server.AcquireDisk(vars["device"]) {
-		newWriter.StandardResponse(http.StatusInternalServerError)
+		vars["Method"] = request.Method
+		newWriter.CustomErrorResponse(507, vars)
 		return
 	}
+
 	defer server.ReleaseDisk(vars["device"])
 
 	switch request.Method {
