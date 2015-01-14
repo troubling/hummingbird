@@ -1,6 +1,7 @@
 package hummingbird
 
 import (
+	"errors"
 	"fmt"
 	"log/syslog"
 	"net"
@@ -190,6 +191,19 @@ func ShutdownStdio() {
 	devnull.Close()
 }
 
+func RetryListen(ip string, port int) (net.Listener, error) {
+	address := fmt.Sprintf("%s:%d", ip, port)
+	started := time.Now()
+	for {
+		if sock, err := net.Listen("tcp", address); err == nil {
+			return sock, nil
+		} else if time.Now().Sub(started) > 10*time.Second {
+			return nil, errors.New(fmt.Sprintf("Failed to bind for 10 seconds (%v)", err))
+		}
+		time.Sleep(time.Second / 5)
+	}
+}
+
 /*
 	SIGHUP - graceful restart
 	SIGINT - graceful shutdown
@@ -205,7 +219,7 @@ func RunServers(configFile string, GetServer func(string) (string, int, http.Han
 	}
 	for _, configFile := range configFiles {
 		ip, port, handler, logger := GetServer(configFile)
-		sock, err := net.Listen("tcp", fmt.Sprintf("%s:%d", ip, port))
+		sock, err := RetryListen(ip, port)
 		if err != nil {
 			logger.Err(fmt.Sprintf("Error listening: %v", err))
 			fmt.Printf("Error listening: %v\n", err)
