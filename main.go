@@ -228,6 +228,9 @@ func main() {
 	case "bench":
 		bench.RunBench(os.Args[2:])
 		return
+	case "dbench":
+		bench.RunDBench(os.Args[2:])
+		return
 	case "thrash":
 		bench.RunThrash(os.Args[2:])
 		return
