@@ -507,6 +507,11 @@ func (server ObjectHandler) ServeHTTP(writer http.ResponseWriter, request *http.
 	defer newRequest.LogPanics(newWriter)
 	defer server.LogRequest(newWriter, newRequest) // log the request after return
 
+	if !newRequest.ValidateRequest() {
+		newWriter.StandardResponse(400)
+		return
+	}
+
 	if !server.AcquireDisk(vars["device"]) {
 		vars["Method"] = request.Method
 		newWriter.CustomErrorResponse(507, vars)

@@ -14,6 +14,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode/utf8"
 )
 
 var responseTemplate = "<html><h1>%s</h1><p>%s</p></html>"
@@ -147,6 +148,10 @@ func (r WebRequest) LogPanics(w *WebWriter) {
 			w.StandardResponse(http.StatusInternalServerError)
 		}
 	}
+}
+
+func (r WebRequest) ValidateRequest() bool {
+	return utf8.ValidString(r.URL.Path) && utf8.ValidString(r.Header.Get("Content-Type"))
 }
 
 type LoggingContext interface {
