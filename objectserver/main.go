@@ -171,8 +171,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 	if request.Method == "GET" {
 		if server.checkEtags {
 			hash := md5.New()
-			mw := io.MultiWriter(writer, hash)
-			io.Copy(mw, file)
+			hummingbird.Copy(file, writer, hash)
 			if fmt.Sprintf("%x", hash.Sum(nil)) != metadata["ETag"].(string) && QuarantineHash(hashDir) == nil {
 				InvalidateHash(hashDir, !server.disableFsync)
 			}
@@ -257,7 +256,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 		}
 	}
 	hash := md5.New()
-	totalSize, err := io.Copy(hash, io.TeeReader(request.Body, tempFile))
+	totalSize, err := hummingbird.Copy(request.Body, tempFile, hash)
 	if err != nil {
 		request.LogError("Error writing to file %s: %s", tempFile.Name(), err.Error())
 		writer.StandardResponse(http.StatusInternalServerError)
