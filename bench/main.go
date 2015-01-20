@@ -240,13 +240,15 @@ func RunThrash(args []string) {
 
 	storageURL, authToken = Auth(authURL, authUser, authKey)
 
-	PutContainers(storageURL, authToken, concurrency, "")
+	salt := fmt.Sprintf("%d", rand.Int63())
+
+	PutContainers(storageURL, authToken, concurrency, salt)
 
 	data := make([]byte, objectSize)
 	objects := make([]*Object, numObjects)
 	for i, _ := range objects {
 		objects[i] = &Object{}
-		objects[i].Url = fmt.Sprintf("%s/%d/%d", storageURL, i%concurrency, rand.Int63())
+		objects[i].Url = fmt.Sprintf("%s/%d-%s/%d", storageURL, i%concurrency, salt, rand.Int63())
 		objects[i].Data = data
 		objects[i].Id = i
 		objects[i].State = 1
@@ -270,7 +272,8 @@ func RunThrash(args []string) {
 			workch <- objects[i].Get
 		} else if objects[i].State >= numGets+2 {
 			workch <- objects[i].Delete
-			objects[i] = &Object{Url: fmt.Sprintf("%s/%d/%d", storageURL, i%concurrency, rand.Int63()), Data: data, Id: i, State: 0}
+			objects[i] = &Object{Url: fmt.Sprintf("%s/%d-%s/%d", storageURL, i%concurrency, salt, rand.Int63()), Data: data, Id: i, State: 1}
+			continue
 		}
 		objects[i].State += 1
 	}
