@@ -3,6 +3,7 @@ package hummingbird
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log/syslog"
 	"math/rand"
@@ -334,4 +335,36 @@ func IsNotDir(err error) bool {
 		return se.Err == syscall.ENOTDIR
 	}
 	return false
+}
+
+var buf64kpool = NewFreePool(64)
+
+func Copy(src io.Reader, dsts ...io.Writer) (written int64, err error) {
+	var buf []byte
+	var ok bool
+	if buf, ok = buf64kpool.Get().([]byte); !ok {
+		buf = make([]byte, 64*1024)
+	}
+	defer buf64kpool.Put(buf)
+	for {
+		nr, er := src.Read(buf)
+		if nr > 0 {
+			written += int64(nr)
+			for _, dst := range dsts {
+				nw, ew := dst.Write(buf[0:nr])
+				if ew != nil {
+					return written, ew
+				}
+				if nr != nw {
+					return written, io.ErrShortWrite
+				}
+			}
+		}
+		if er != nil {
+			if er == io.EOF {
+				er = nil
+			}
+			return written, er
+		}
+	}
 }
