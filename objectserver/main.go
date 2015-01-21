@@ -197,6 +197,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 		return
 	}
 	hashDir := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix)
+	tempDir := ObjTempDir(vars, server.driveRoot)
 
 	if deleteAt := request.Header.Get("X-Delete-At"); deleteAt != "" {
 		if deleteTime, err := hummingbird.ParseDate(deleteAt); err != nil || deleteTime.Before(time.Now()) {
@@ -213,8 +214,8 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 		}
 	}
 
-	if os.MkdirAll(hashDir, 0770) != nil || os.MkdirAll(ObjTempDir(vars, server.driveRoot), 0770) != nil {
-		request.LogError("Error creating temp directory: %s", ObjTempDir(vars, server.driveRoot))
+	if os.MkdirAll(hashDir, 0770) != nil || os.MkdirAll(tempDir, 0770) != nil {
+		request.LogError("Error creating temp directory: %s", tempDir)
 		writer.StandardResponse(http.StatusInternalServerError)
 		return
 	}
@@ -226,7 +227,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 	}
 
 	fileName := fmt.Sprintf("%s/%s.data", hashDir, requestTimestamp)
-	tempFile, err := ioutil.TempFile(ObjTempDir(vars, server.driveRoot), "PUT")
+	tempFile, err := ioutil.TempFile(tempDir, "PUT")
 	if err != nil {
 		request.LogError("Error creating temporary file in %s: %s", server.driveRoot, err.Error())
 		writer.StandardResponse(http.StatusInternalServerError)
@@ -309,10 +310,7 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 		return
 	}
 	hashDir := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix)
-	if err != nil {
-		writer.CustomErrorResponse(507, vars)
-		return
-	}
+	tempDir := ObjTempDir(vars, server.driveRoot)
 	responseStatus := http.StatusNotFound
 
 	dataFile, metaFile := ObjectFiles(hashDir)
@@ -366,12 +364,12 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 		}
 	}
 
-	if os.MkdirAll(hashDir, 0770) != nil {
+	if os.MkdirAll(hashDir, 0770) != nil || os.MkdirAll(tempDir, 0770) != nil {
 		writer.StandardResponse(http.StatusInternalServerError)
 		return
 	}
 	fileName := fmt.Sprintf("%s/%s.ts", hashDir, requestTimestamp)
-	tempFile, err := ioutil.TempFile(ObjTempDir(vars, server.driveRoot), "PUT")
+	tempFile, err := ioutil.TempFile(tempDir, "PUT")
 	if err != nil {
 		request.LogError("Error creating temporary file in %s: %s", server.driveRoot, err.Error())
 		writer.StandardResponse(http.StatusInternalServerError)
