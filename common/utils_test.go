@@ -24,7 +24,7 @@ func TestParseRange(t *testing.T) {
 		{"bytes=12344-", 12344, 12345, ""},
 		{"bytes=12345-cv", 0, 0, "invalid end"},
 		{"bytes=cv-12345", 0, 0, "invalid begin"},
-		{"bytes=12346-12", 0, 0, "end before begin"},
+		{"bytes=12346-12", 0, 12346, ""},
 		{"bytes=12346-123457", 0, 0, "Begin bigger than file"},
 		{"bytes=12342-12343", 12342, 12344, ""},
 		{"bytes=12342-12344", 12342, 12345, ""},
@@ -180,4 +180,10 @@ func TestValidTimestamp(t *testing.T) {
 	assert.True(t, ValidTimestamp("12345.12345"))
 	assert.False(t, ValidTimestamp("12345"))
 	assert.False(t, ValidTimestamp("your.face"))
+}
+
+func TestUrlencode(t *testing.T) {
+	assert.True(t, Urlencode("HELLOTHERE") == "HELLOTHERE")
+	assert.True(t, Urlencode("HELLO THERE, YOU TWO//\x00\xFF") == "HELLO%20THERE%2C%20YOU%20TWO//%00%FF")
+	assert.True(t, Urlencode("鐋댋") == "%E9%90%8B%EB%8C%8B")
 }

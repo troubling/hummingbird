@@ -8,7 +8,6 @@ import (
 	"log/syslog"
 	"math/rand"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -139,8 +138,34 @@ func IsMount(dir string) (bool, error) {
 	}
 }
 
+var urlEscapeMap [256]bool = [256]bool{';': true, '?': true, ':': true, '@': true, '&': true, '=': true, '+': true, '$': true, ',': true}
+
 func Urlencode(str string) string {
-	return strings.Replace(url.QueryEscape(str), "+", "%20", -1)
+	// output matches python's urllib.quote()
+
+	finalSize := len(str)
+	for i := 0; i < len(str); i++ {
+		if urlEscapeMap[str[i]] || str[i] < '!' || str[i] > '~' {
+			finalSize += 2
+		}
+	}
+	if finalSize == len(str) {
+		return str
+	}
+	buf := make([]byte, finalSize)
+	j := 0
+	for i := 0; i < len(str); i++ {
+		if urlEscapeMap[str[i]] || str[i] < '!' || str[i] > '~' {
+			buf[j] = '%'
+			buf[j+1] = "0123456789ABCDEF"[str[i]>>4]
+			buf[j+2] = "0123456789ABCDEF"[str[i]&15]
+			j += 3
+		} else {
+			buf[j] = str[i]
+			j++
+		}
+	}
+	return string(buf)
 }
 
 func ParseDate(date string) (time.Time, error) {
