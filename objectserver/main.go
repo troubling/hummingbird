@@ -2,6 +2,7 @@ package objectserver
 
 import (
 	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -95,7 +96,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 		lastModifiedHeader = lastModified.Truncate(time.Second).Add(time.Second)
 	}
 	headers.Set("Last-Modified", lastModifiedHeader.Format(time.RFC1123))
-	headers.Set("ETag", fmt.Sprintf("\"%s\"", metadata["ETag"].(string)))
+	headers.Set("ETag", "\""+metadata["ETag"].(string)+"\"")
 	xTimestamp, err := hummingbird.GetEpochFromTimestamp(metadata["X-Timestamp"].(string))
 	if err != nil {
 		request.LogError("Error getting the epoch time from x-timestamp: %s", err.Error())
@@ -172,7 +173,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 		if server.checkEtags {
 			hash := md5.New()
 			hummingbird.Copy(file, writer, hash)
-			if fmt.Sprintf("%x", hash.Sum(nil)) != metadata["ETag"].(string) && QuarantineHash(hashDir) == nil {
+			if hex.EncodeToString(hash.Sum(nil)) != metadata["ETag"].(string) && QuarantineHash(hashDir) == nil {
 				InvalidateHash(hashDir, !server.disableFsync)
 			}
 		} else {
@@ -226,7 +227,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 		return
 	}
 
-	fileName := fmt.Sprintf("%s/%s.data", hashDir, requestTimestamp)
+	fileName := hashDir + "/" + requestTimestamp + ".data"
 	tempFile, err := ioutil.TempFile(tempDir, "PUT")
 	if err != nil {
 		request.LogError("Error creating temporary file in %s: %s", server.driveRoot, err.Error())
@@ -246,7 +247,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 		syscall.Fallocate(int(tempFile.Fd()), 1, 0, contentLength)
 	}
 	metadata := make(map[string]interface{})
-	metadata["name"] = fmt.Sprintf("/%s/%s/%s", vars["account"], vars["container"], vars["obj"])
+	metadata["name"] = "/" + vars["account"] + "/" + vars["container"] + "/" + vars["obj"]
 	metadata["X-Timestamp"] = requestTimestamp
 	metadata["Content-Type"] = request.Header.Get("Content-Type")
 	for key := range request.Header {
@@ -264,7 +265,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 		return
 	}
 	metadata["Content-Length"] = strconv.FormatInt(totalSize, 10)
-	metadata["ETag"] = fmt.Sprintf("%x", hash.Sum(nil))
+	metadata["ETag"] = hex.EncodeToString(hash.Sum(nil))
 	requestEtag := request.Header.Get("ETag")
 	if requestEtag != "" && requestEtag != metadata["ETag"].(string) {
 		http.Error(writer, "Unprocessable Entity", 422)
@@ -368,7 +369,7 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 		writer.StandardResponse(http.StatusInternalServerError)
 		return
 	}
-	fileName := fmt.Sprintf("%s/%s.ts", hashDir, requestTimestamp)
+	fileName := hashDir + "/" + requestTimestamp + ".ts"
 	tempFile, err := ioutil.TempFile(tempDir, "PUT")
 	if err != nil {
 		request.LogError("Error creating temporary file in %s: %s", server.driveRoot, err.Error())
@@ -379,7 +380,7 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 	defer os.RemoveAll(tempFile.Name())
 	metadata := make(map[string]interface{})
 	metadata["X-Timestamp"] = requestTimestamp
-	metadata["name"] = fmt.Sprintf("/%s/%s/%s", vars["account"], vars["container"], vars["obj"])
+	metadata["name"] = "/" + vars["account"] + "/" + vars["container"] + "/" + vars["obj"]
 	WriteMetadata(int(tempFile.Fd()), metadata)
 
 	if !server.disableFsync {
@@ -435,7 +436,7 @@ func GetDefault(h http.Header, key string, dfl string) string {
 
 func (server *ObjectHandler) AcquireDisk(disk string) bool {
 	if server.checkMounts {
-		devicePath := fmt.Sprintf("%s/%s", server.driveRoot, disk)
+		devicePath := server.driveRoot + "/" + disk
 		if mounted, err := hummingbird.IsMount(devicePath); err != nil || mounted != true {
 			return false
 		}

@@ -178,6 +178,14 @@ func FormatTimestamp(timestamp string) (string, error) {
 	return parsed.Format("2006-01-02T15:04:05.999999"), nil
 }
 
+func CanonicalTimestamp(t float64) string {
+	ret := strconv.FormatFloat(t, 'f', 5, 64)
+	for len(ret) < 16 {
+		ret = "0" + ret
+	}
+	return ret
+}
+
 func LooksTrue(check string) bool {
 	check = strings.TrimSpace(strings.ToLower(check))
 	return check == "true" || check == "yes" || check == "1" || check == "on" || check == "t" || check == "y"
@@ -206,7 +214,7 @@ func UUID() string {
 }
 
 func GetTimestamp() string {
-	return fmt.Sprintf("%016.05f", float64(time.Now().UnixNano())/1000000000.0)
+	return CanonicalTimestamp(float64(time.Now().UnixNano()) / 1000000000.0)
 }
 
 func GetTransactionId() string {
@@ -295,7 +303,7 @@ func GetEpochFromTimestamp(timestamp string) (string, error) {
 	if err != nil {
 		return "", errors.New(fmt.Sprintf("Could not parse float from '%s'.", split_timestamp[0]))
 	}
-	return fmt.Sprintf("%016.5f", floatTimestamp), nil
+	return CanonicalTimestamp(floatTimestamp), nil
 }
 
 func StandardizeTimestamp(timestamp string) (string, error) {
@@ -311,7 +319,7 @@ func StandardizeTimestamp(timestamp string) (string, error) {
 			return "", errors.New(fmt.Sprintf("Could not parse int from '%s'.", split_timestamp[1]))
 		}
 
-		split_timestamp[0] = fmt.Sprintf("%016.5f", floatTimestamp)
+		split_timestamp[0] = CanonicalTimestamp(floatTimestamp)
 		split_timestamp[1] = fmt.Sprintf("%016x", intOffset)
 		timestamp = strings.Join(split_timestamp, "_")
 	} else {
@@ -319,15 +327,16 @@ func StandardizeTimestamp(timestamp string) (string, error) {
 		if err != nil {
 			return "", errors.New(fmt.Sprintf("Could not parse float from '%s'.", timestamp))
 		}
-		timestamp = fmt.Sprintf("%016.5f", floatTimestamp)
+		timestamp = CanonicalTimestamp(floatTimestamp)
 	}
 	return timestamp, nil
 }
 
 func ValidTimestamp(timestamp string) bool {
-	var a, b int
-	count, err := fmt.Sscanf(timestamp, "%d.%d", &a, &b)
-	return err == nil && count == 2
+	if _, err := strconv.ParseFloat(timestamp, 64); err != nil {
+		return false
+	}
+	return strings.Contains(timestamp, ".")
 }
 
 func IsNotDir(err error) bool {
