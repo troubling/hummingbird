@@ -461,7 +461,7 @@ func (server *ObjectHandler) LogRequest(writer *hummingbird.WebWriter, request *
 		request.RemoteAddr,
 		time.Now().Format("02/Jan/2006:15:04:05 -0700"),
 		request.Method,
-		request.URL.Path,
+		hummingbird.Urlencode(request.URL.Path),
 		writer.Status,
 		GetDefault(writer.Header(), "Content-Length", "-"),
 		GetDefault(request.Header, "Referer", "-"),
