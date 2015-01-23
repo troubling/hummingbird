@@ -2,8 +2,8 @@ package objectserver
 
 import (
 	"crypto/md5"
+	"encoding/hex"
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
@@ -24,7 +24,7 @@ func ReadMetadataFilename(filename string) (map[interface{}]interface{}, error) 
 		if index == 0 {
 			metadataName = "user.swift.metadata"
 		} else {
-			metadataName = fmt.Sprintf("user.swift.metadata%d", index)
+			metadataName = "user.swift.metadata" + strconv.Itoa(index)
 		}
 		length, _ := syscall.Getxattr(filename, metadataName, pickledMetadata[offset:])
 		if length <= 0 {
@@ -50,7 +50,7 @@ func WriteMetadata(fd int, v map[string]interface{}) {
 		if index == 0 {
 			metadataName = "user.swift.metadata"
 		} else {
-			metadataName = fmt.Sprintf("user.swift.metadata%d", index)
+			metadataName = "user.swift.metadata" + strconv.Itoa(index)
 		}
 		writelen := 254
 		if len(buf) < writelen {
@@ -72,7 +72,7 @@ func QuarantineHash(hashDir string) error {
 	if err := os.MkdirAll(quarantineDir, 0770); err != nil {
 		return err
 	}
-	destDir := filepath.Join(quarantineDir, fmt.Sprintf("%s-%s", hash, hummingbird.UUID()))
+	destDir := filepath.Join(quarantineDir, hash+"-"+hummingbird.UUID())
 	if err := os.Rename(hashDir, destDir); err != nil {
 		return err
 	}
@@ -88,7 +88,7 @@ func InvalidateHash(hashDir string, atomic bool) {
 		return
 	}
 	defer partitionLock.Close()
-	pklFile := fmt.Sprintf("%s/hashes.pkl", partitionDir)
+	pklFile := partitionDir + "/hashes.pkl"
 	data, err := ioutil.ReadFile(pklFile)
 	if err != nil {
 		return
@@ -126,7 +126,7 @@ func HashCleanupListDir(hashDir string, logger hummingbird.LoggingContext) ([]st
 			}
 			timestamp, _ := strconv.ParseFloat(withoutSuffix, 64)
 			if time.Now().Unix()-int64(timestamp) > int64(hummingbird.ONE_WEEK) {
-				os.RemoveAll(fmt.Sprintf("%s/%s", hashDir, filename))
+				os.RemoveAll(hashDir + "/" + filename)
 				return returnList, nil
 			}
 		}
@@ -135,11 +135,11 @@ func HashCleanupListDir(hashDir string, logger hummingbird.LoggingContext) ([]st
 		for index := len(fileList) - 1; index >= 0; index-- {
 			filename := fileList[index].Name()
 			if deleteRest {
-				os.RemoveAll(fmt.Sprintf("%s/%s", hashDir, filename))
+				os.RemoveAll(hashDir + "/" + filename)
 			} else {
 				if strings.HasSuffix(filename, ".meta") {
 					if deleteRestMeta {
-						os.RemoveAll(fmt.Sprintf("%s/%s", hashDir, filename))
+						os.RemoveAll(hashDir + "/" + filename)
 						continue
 					}
 					deleteRestMeta = true
@@ -167,7 +167,7 @@ func RecalculateSuffixHash(suffixDir string, logger hummingbird.LoggingContext) 
 		return "", &hummingbird.BackendError{err, hummingbird.OsErrorCode}
 	}
 	for _, fullHash := range hashList {
-		hashPath := fmt.Sprintf("%s/%s", suffixDir, fullHash.Name())
+		hashPath := suffixDir + "/" + fullHash.Name()
 		fileList, err := HashCleanupListDir(hashPath, logger)
 		if err != nil {
 			if err.Code == hummingbird.PathNotDirErrorCode {
@@ -186,7 +186,7 @@ func RecalculateSuffixHash(suffixDir string, logger hummingbird.LoggingContext) 
 			os.Remove(hashPath) // leaves the suffix (swift removes it but who cares)
 		}
 	}
-	return fmt.Sprintf("%x", h.Sum(nil)), nil
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func GetHashes(driveRoot string, device string, partition string, recalculate []string, logger hummingbird.LoggingContext) (map[string]string, *hummingbird.BackendError) {
@@ -233,7 +233,7 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 	for suffix, hash := range hashes {
 		if hash == "" {
 			modified = true
-			suffixDir := fmt.Sprintf("%s/%s/objects/%s/%s", driveRoot, device, partition, suffix)
+			suffixDir := driveRoot + "/" + device + "/objects/" + partition + "/" + suffix
 			recalc_hash, err := RecalculateSuffixHash(suffixDir, logger)
 			if err == nil {
 				hashes[suffix] = recalc_hash
@@ -267,11 +267,10 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 
 func ObjHashDir(vars map[string]string, driveRoot string, hashPathPrefix string, hashPathSuffix string) string {
 	h := md5.New()
-	io.WriteString(h, fmt.Sprintf("%s/%s/%s/%s%s", hashPathPrefix, vars["account"],
-		vars["container"], vars["obj"], hashPathSuffix))
-	hexHash := fmt.Sprintf("%x", h.Sum(nil))
+	io.WriteString(h, hashPathPrefix+"/"+vars["account"]+"/"+vars["container"]+"/"+vars["obj"]+hashPathSuffix)
+	hexHash := hex.EncodeToString(h.Sum(nil))
 	suffix := hexHash[29:32]
-	return fmt.Sprintf("%s/%s/%s/%s/%s/%s", driveRoot, vars["device"], "objects", vars["partition"], suffix, hexHash)
+	return driveRoot + "/" + vars["device"] + "/objects/" + vars["partition"] + "/" + suffix + "/" + hexHash
 }
 
 func ObjectFiles(directory string) (string, string) {
@@ -297,7 +296,7 @@ func ObjectFiles(directory string) (string, string) {
 }
 
 func ObjTempDir(vars map[string]string, driveRoot string) string {
-	return fmt.Sprintf("%s/%s/%s", driveRoot, vars["device"], "tmp")
+	return driveRoot + "/" + vars["device"] + "/" + "tmp"
 }
 
 func ObjectMetadata(dataFile string, metaFile string) (map[interface{}]interface{}, error) {
