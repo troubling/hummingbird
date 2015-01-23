@@ -14,6 +14,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -33,7 +35,8 @@ type ObjectHandler struct {
 	allowedHeaders   map[string]bool
 	logger           *syslog.Writer
 	diskLimit        int64
-	diskInUse        map[string]int64
+	diskInUse        map[string]*int64
+	diskInUseLock    sync.Mutex
 	fallocateReserve int64
 }
 
@@ -442,18 +445,21 @@ func (server *ObjectHandler) AcquireDisk(disk string) bool {
 		}
 	}
 
-	if _, ok := server.diskInUse[disk]; !ok {
-		server.diskInUse[disk] = 0
-	}
-	if server.diskInUse[disk] > server.diskLimit {
+	if val, ok := server.diskInUse[disk]; !ok {
+		server.diskInUseLock.Lock()
+		if _, ok := server.diskInUse[disk]; !ok {
+			server.diskInUse[disk] = new(int64)
+		}
+		server.diskInUseLock.Unlock()
+	} else if *val > server.diskLimit {
 		return false
 	}
-	server.diskInUse[disk] += 1
+	atomic.AddInt64(server.diskInUse[disk], 1)
 	return true
 }
 
 func (server *ObjectHandler) ReleaseDisk(disk string) {
-	server.diskInUse[disk] -= 1
+	atomic.AddInt64(server.diskInUse[disk], -1)
 }
 
 func (server *ObjectHandler) LogRequest(writer *hummingbird.WebWriter, request *hummingbird.WebRequest) {
@@ -544,14 +550,13 @@ func (server ObjectHandler) ServeHTTP(writer http.ResponseWriter, request *http.
 
 func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 	handler := ObjectHandler{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: "",
-		checkMounts: true, disableFsync: false, asyncFinalize: false,
 		allowedHeaders: map[string]bool{"Content-Disposition": true,
 			"Content-Encoding":      true,
 			"X-Delete-At":           true,
 			"X-Object-Manifest":     true,
 			"X-Static-Large-Object": true,
 		},
-		diskInUse: map[string]int64{},
+		diskInUse: make(map[string]*int64),
 	}
 
 	if swiftconf, err := hummingbird.LoadIniFile("/etc/hummingbird/hummingbird.conf"); err == nil {
