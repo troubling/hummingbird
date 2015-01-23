@@ -24,7 +24,6 @@ func TestParseRange(t *testing.T) {
 		{"bytes=12344-", 12344, 12345, ""},
 		{"bytes=12345-cv", 0, 0, "invalid end"},
 		{"bytes=cv-12345", 0, 0, "invalid begin"},
-		{"bytes=12346-12", 0, 12346, ""},
 		{"bytes=12346-123457", 0, 0, "Begin bigger than file"},
 		{"bytes=12342-12343", 12342, 12344, ""},
 		{"bytes=12342-12344", 12342, 12345, ""},
@@ -46,6 +45,12 @@ func TestParseRange(t *testing.T) {
 			assert.Equal(t, err.Error(), test.exError)
 		}
 	}
+}
+
+func TestParseRange_BeginAfterEnd(t *testing.T) {
+	result, err := ParseRange("bytes=12346-12", 12345)
+	assert.Nil(t, err)
+	assert.Empty(t, result)
 }
 
 func TestParseRange_NoEnd_BeginLargerThanFilesize(t *testing.T) {
