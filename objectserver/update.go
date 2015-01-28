@@ -45,7 +45,9 @@ func UpdateContainer(metadata map[string]interface{}, request *hummingbird.WebRe
 		if err != nil {
 			continue
 		}
-		req.Header.Add("X-Trans-Id", request.Header.Get("X-Trans-Id"))
+		req.Header.Add("User-Agent", hummingbird.GetDefault(request.Header, "User-Agent", "-"))
+		req.Header.Add("Referer", hummingbird.GetDefault(request.Header, "Referer", "-"))
+		req.Header.Add("X-Trans-Id", hummingbird.GetDefault(request.Header, "X-Trans-Id", "-"))
 		req.Header.Add("X-Timestamp", metadata["X-Timestamp"].(string))
 		if request.Method != "DELETE" {
 			req.Header.Add("X-Content-Type", metadata["Content-Type"].(string))
@@ -101,7 +103,7 @@ func UpdateDeleteAt(request *hummingbird.WebRequest, vars map[string]string, met
 		return
 	}
 	req, err := http.NewRequest(request.Method, url, nil)
-	req.Header.Add("X-Trans-Id", request.Header.Get("X-Trans-Id"))
+	req.Header.Add("X-Trans-Id", hummingbird.GetDefault(request.Header, "X-Trans-Id", "-"))
 	req.Header.Add("X-Timestamp", request.Header.Get("X-Timestamp"))
 	req.Header.Add("X-Size", "0")
 	req.Header.Add("X-Content-Type", "text/plain")

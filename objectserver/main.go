@@ -429,14 +429,6 @@ func (server *ObjectHandler) ObjReplicateHandler(writer *hummingbird.WebWriter, 
 	writer.Write(hummingbird.PickleDumps(hashes))
 }
 
-func GetDefault(h http.Header, key string, dfl string) string {
-	val := h.Get(key)
-	if val == "" {
-		return dfl
-	}
-	return val
-}
-
 func (server *ObjectHandler) AcquireDisk(disk string) bool {
 	if server.checkMounts {
 		devicePath := server.driveRoot + "/" + disk
@@ -469,10 +461,10 @@ func (server *ObjectHandler) LogRequest(writer *hummingbird.WebWriter, request *
 		request.Method,
 		hummingbird.Urlencode(request.URL.Path),
 		writer.Status,
-		GetDefault(writer.Header(), "Content-Length", "-"),
-		GetDefault(request.Header, "Referer", "-"),
-		GetDefault(request.Header, "X-Trans-Id", "-"),
-		GetDefault(request.Header, "User-Agent", "-"),
+		hummingbird.GetDefault(writer.Header(), "Content-Length", "-"),
+		hummingbird.GetDefault(request.Header, "Referer", "-"),
+		hummingbird.GetDefault(request.Header, "X-Trans-Id", "-"),
+		hummingbird.GetDefault(request.Header, "User-Agent", "-"),
 		time.Since(request.Start).Seconds(),
 		"-")) // TODO: "additional info"?
 }
