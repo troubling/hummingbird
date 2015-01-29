@@ -402,3 +402,11 @@ func Copy(src io.Reader, dsts ...io.Writer) (written int64, err error) {
 		}
 	}
 }
+
+func GetDefault(h http.Header, key string, dfl string) string {
+	val := h.Get(key)
+	if val == "" {
+		return dfl
+	}
+	return val
+}
