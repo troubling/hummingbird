@@ -45,6 +45,15 @@ var GMT *time.Location
 
 type IniFile struct{ ini.File }
 
+func (f IniFile) Get(section string, key string) (string, bool) {
+	if value, ok := f.File.Get(section, key); ok {
+		return value, true
+	} else if value, ok := f.File.Get("DEFAULT", key); ok {
+		return value, true
+	}
+	return "", false
+}
+
 func (f IniFile) GetDefault(section string, key string, dfl string) string {
 	if value, ok := f.Get(section, key); ok {
 		return value

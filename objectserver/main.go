@@ -571,25 +571,25 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 	if err != nil {
 		panic(fmt.Sprintf("Unable to load %s", conf))
 	}
-	handler.driveRoot = serverconf.GetDefault("DEFAULT", "devices", "/srv/node")
-	handler.checkMounts = serverconf.GetBool("DEFAULT", "mount_check", true)
-	handler.disableFsync = serverconf.GetBool("DEFAULT", "disable_fsync", false)
-	handler.asyncFinalize = serverconf.GetBool("DEFAULT", "async_finalize", false)
-	handler.asyncFsync = serverconf.GetBool("DEFAULT", "async_fsync", false)
-	handler.dropCache = serverconf.GetBool("DEFAULT", "drop_cache", true)
-	handler.diskLimit = serverconf.GetInt("DEFAULT", "disk_limit", 100)
-	handler.checkEtags = serverconf.GetBool("DEFAULT", "check_etags", false)
-	bindIP := serverconf.GetDefault("DEFAULT", "bind_ip", "0.0.0.0")
-	bindPort := serverconf.GetInt("DEFAULT", "bind_port", 6000)
-	if allowedHeaders, ok := serverconf.Get("DEFAULT", "allowed_headers"); ok {
+	handler.driveRoot = serverconf.GetDefault("app:object-server", "devices", "/srv/node")
+	handler.checkMounts = serverconf.GetBool("app:object-server", "mount_check", true)
+	handler.disableFsync = serverconf.GetBool("app:object-server", "disable_fsync", false)
+	handler.asyncFinalize = serverconf.GetBool("app:object-server", "async_finalize", false)
+	handler.asyncFsync = serverconf.GetBool("app:object-server", "async_fsync", false)
+	handler.dropCache = serverconf.GetBool("app:object-server", "drop_cache", true)
+	handler.diskLimit = serverconf.GetInt("app:object-server", "disk_limit", 100)
+	handler.checkEtags = serverconf.GetBool("app:object-server", "check_etags", false)
+	bindIP := serverconf.GetDefault("app:object-server", "bind_ip", "0.0.0.0")
+	bindPort := serverconf.GetInt("app:object-server", "bind_port", 6000)
+	if allowedHeaders, ok := serverconf.Get("app:object-server", "allowed_headers"); ok {
 		headers := strings.Split(allowedHeaders, ",")
 		for i := range headers {
 			handler.allowedHeaders[textproto.CanonicalMIMEHeaderKey(strings.TrimSpace(headers[i]))] = true
 		}
 	}
 
-	handler.logger = hummingbird.SetupLogger(serverconf.GetDefault("DEFAULT", "log_facility", "LOG_LOCAL0"), "object-server")
-	hummingbird.DropPrivileges(serverconf.GetDefault("DEFAULT", "user", "swift"))
+	handler.logger = hummingbird.SetupLogger(serverconf.GetDefault("app:object-server", "log_facility", "LOG_LOCAL0"), "object-server")
+	hummingbird.DropPrivileges(serverconf.GetDefault("app:object-server", "user", "swift"))
 
 	return bindIP, int(bindPort), handler, handler.logger
 }
