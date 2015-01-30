@@ -188,6 +188,7 @@ func TestValidTimestamp(t *testing.T) {
 }
 
 func TestUrlencode(t *testing.T) {
+	assert.True(t, Urlencode("HELLO%2FTHERE") == "HELLO%252FTHERE")
 	assert.True(t, Urlencode("HELLOTHERE") == "HELLOTHERE")
 	assert.True(t, Urlencode("HELLO THERE, YOU TWO//\x00\xFF") == "HELLO%20THERE%2C%20YOU%20TWO//%00%FF")
 	assert.True(t, Urlencode("鐋댋") == "%E9%90%8B%EB%8C%8B")

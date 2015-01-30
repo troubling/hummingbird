@@ -138,14 +138,23 @@ func IsMount(dir string) (bool, error) {
 	}
 }
 
-var urlEscapeMap [256]bool = [256]bool{';': true, '?': true, ':': true, '@': true, '&': true, '=': true, '+': true, '$': true, ',': true}
+var urlSafeMap = [256]bool{'A': true, 'B': true, 'C': true, 'D': true, 'E': true, 'F': true,
+	'G': true, 'H': true, 'I': true, 'J': true, 'K': true, 'L': true, 'M': true, 'N': true,
+	'O': true, 'P': true, 'Q': true, 'R': true, 'S': true, 'T': true, 'U': true, 'V': true,
+	'W': true, 'X': true, 'Y': true, 'Z': true, 'a': true, 'b': true, 'c': true, 'd': true,
+	'e': true, 'f': true, 'g': true, 'h': true, 'i': true, 'j': true, 'k': true, 'l': true,
+	'm': true, 'n': true, 'o': true, 'p': true, 'q': true, 'r': true, 's': true, 't': true,
+	'u': true, 'v': true, 'w': true, 'x': true, 'y': true, 'z': true, '0': true, '1': true,
+	'2': true, '3': true, '4': true, '5': true, '6': true, '7': true, '8': true, '9': true,
+	'_': true, '.': true, '-': true, '/': true,
+}
 
 func Urlencode(str string) string {
 	// output matches python's urllib.quote()
 
 	finalSize := len(str)
 	for i := 0; i < len(str); i++ {
-		if urlEscapeMap[str[i]] || str[i] < '!' || str[i] > '~' {
+		if !urlSafeMap[str[i]] {
 			finalSize += 2
 		}
 	}
@@ -155,14 +164,14 @@ func Urlencode(str string) string {
 	buf := make([]byte, finalSize)
 	j := 0
 	for i := 0; i < len(str); i++ {
-		if urlEscapeMap[str[i]] || str[i] < '!' || str[i] > '~' {
+		if urlSafeMap[str[i]] {
+			buf[j] = str[i]
+			j++
+		} else {
 			buf[j] = '%'
 			buf[j+1] = "0123456789ABCDEF"[str[i]>>4]
 			buf[j+2] = "0123456789ABCDEF"[str[i]&15]
 			j += 3
-		} else {
-			buf[j] = str[i]
-			j++
 		}
 	}
 	return string(buf)
