@@ -159,7 +159,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 				responseLength += int64(len(fmt.Sprintf("%d-%d/%d", rng.Start, rng.End-1, contentLength))) + rng.End - rng.Start
 			}
 			headers.Set("Content-Length", strconv.FormatInt(responseLength, 10))
-			headers.Set("Content-Type", "multipart/byteranges; boundary="+w.Boundary())
+			headers.Set("Content-Type", "multipart/byteranges;boundary="+w.Boundary())
 			writer.WriteHeader(http.StatusPartialContent)
 			for _, rng := range ranges {
 				part, _ := w.CreatePart(textproto.MIMEHeader{"Content-Type": []string{metadata["Content-Type"].(string)},
