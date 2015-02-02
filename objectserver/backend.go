@@ -16,6 +16,8 @@ import (
 	"hummingbird/common"
 )
 
+const METADATA_CHUNK_SIZE = 65536
+
 func ReadMetadataFilename(filename string) (map[interface{}]interface{}, error) {
 	var pickledMetadata [8192]byte
 	offset := 0
@@ -52,7 +54,7 @@ func WriteMetadata(fd int, v map[string]interface{}) {
 		} else {
 			metadataName = "user.swift.metadata" + strconv.Itoa(index)
 		}
-		writelen := 254
+		writelen := METADATA_CHUNK_SIZE
 		if len(buf) < writelen {
 			writelen = len(buf)
 		}
