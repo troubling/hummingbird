@@ -37,7 +37,7 @@ func ReadMetadataFilename(filename string) (map[interface{}]interface{}, error) 
 	if offset == 0 {
 		return nil, errors.New("No metadata data")
 	}
-	v, err := hummingbird.PickleLoads(pickledMetadata[0:offset])
+	v, err := common.PickleLoads(pickledMetadata[0:offset])
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +46,7 @@ func ReadMetadataFilename(filename string) (map[interface{}]interface{}, error) 
 
 func WriteMetadata(fd int, v map[string]interface{}) {
 	// TODO: benchmark this with and without chunking up the metadata
-	buf := hummingbird.PickleDumps(v)
+	buf := common.PickleDumps(v)
 	for index := 0; len(buf) > 0; index++ {
 		var metadataName string
 		if index == 0 {
@@ -58,7 +58,7 @@ func WriteMetadata(fd int, v map[string]interface{}) {
 		if len(buf) < writelen {
 			writelen = len(buf)
 		}
-		hummingbird.FSetXattr(fd, metadataName, []byte(buf[0:writelen]))
+		common.FSetXattr(fd, metadataName, []byte(buf[0:writelen]))
 		buf = buf[writelen:len(buf)]
 	}
 }
@@ -74,7 +74,7 @@ func QuarantineHash(hashDir string) error {
 	if err := os.MkdirAll(quarantineDir, 0770); err != nil {
 		return err
 	}
-	destDir := filepath.Join(quarantineDir, hash+"-"+hummingbird.UUID())
+	destDir := filepath.Join(quarantineDir, hash+"-"+common.UUID())
 	if err := os.Rename(hashDir, destDir); err != nil {
 		return err
 	}
@@ -85,7 +85,7 @@ func InvalidateHash(hashDir string, atomic bool) {
 	// TODO: return errors
 	suffDir := filepath.Dir(hashDir)
 	partitionDir := filepath.Dir(suffDir)
-	partitionLock, err := hummingbird.LockPath(partitionDir, 10)
+	partitionLock, err := common.LockPath(partitionDir, 10)
 	if err != nil {
 		return
 	}
@@ -95,19 +95,19 @@ func InvalidateHash(hashDir string, atomic bool) {
 	if err != nil {
 		return
 	}
-	v, _ := hummingbird.PickleLoads(data)
+	v, _ := common.PickleLoads(data)
 	if current, ok := v.(map[interface{}]interface{})[suffDir]; ok && current == nil {
 		return
 	}
 	v.(map[interface{}]interface{})[suffDir] = nil
 	if atomic {
-		hummingbird.WriteFileAtomic(pklFile, hummingbird.PickleDumps(v), 0600)
+		common.WriteFileAtomic(pklFile, common.PickleDumps(v), 0600)
 	} else {
-		ioutil.WriteFile(pklFile, hummingbird.PickleDumps(v), 0600)
+		ioutil.WriteFile(pklFile, common.PickleDumps(v), 0600)
 	}
 }
 
-func HashCleanupListDir(hashDir string, logger hummingbird.LoggingContext) ([]string, *hummingbird.BackendError) {
+func HashCleanupListDir(hashDir string, logger common.LoggingContext) ([]string, *common.BackendError) {
 	fileList, err := ioutil.ReadDir(hashDir)
 	returnList := []string{}
 	if err != nil {
@@ -115,10 +115,10 @@ func HashCleanupListDir(hashDir string, logger hummingbird.LoggingContext) ([]st
 		if os.IsNotExist(err) {
 			return returnList, nil
 		}
-		if hummingbird.IsNotDir(err) {
-			return returnList, &hummingbird.BackendError{err, hummingbird.PathNotDirErrorCode}
+		if common.IsNotDir(err) {
+			return returnList, &common.BackendError{err, common.PathNotDirErrorCode}
 		}
-		return returnList, &hummingbird.BackendError{err, hummingbird.OsErrorCode}
+		return returnList, &common.BackendError{err, common.OsErrorCode}
 	}
 	deleteRest := false
 	deleteRestMeta := false
@@ -130,7 +130,7 @@ func HashCleanupListDir(hashDir string, logger hummingbird.LoggingContext) ([]st
 				withoutSuffix = strings.Split(withoutSuffix, "_")[0]
 			}
 			timestamp, _ := strconv.ParseFloat(withoutSuffix, 64)
-			if time.Now().Unix()-int64(timestamp) > int64(hummingbird.ONE_WEEK) {
+			if time.Now().Unix()-int64(timestamp) > int64(common.ONE_WEEK) {
 				os.RemoveAll(hashDir + "/" + filename)
 				return returnList, nil
 			}
@@ -160,22 +160,22 @@ func HashCleanupListDir(hashDir string, logger hummingbird.LoggingContext) ([]st
 	return returnList, nil
 }
 
-func RecalculateSuffixHash(suffixDir string, logger hummingbird.LoggingContext) (string, *hummingbird.BackendError) {
+func RecalculateSuffixHash(suffixDir string, logger common.LoggingContext) (string, *common.BackendError) {
 	// the is hash_suffix in swift
 	h := md5.New()
 
 	hashList, err := ioutil.ReadDir(suffixDir)
 	if err != nil {
-		if hummingbird.IsNotDir(err) {
-			return "", &hummingbird.BackendError{err, hummingbird.PathNotDirErrorCode}
+		if common.IsNotDir(err) {
+			return "", &common.BackendError{err, common.PathNotDirErrorCode}
 		}
-		return "", &hummingbird.BackendError{err, hummingbird.OsErrorCode}
+		return "", &common.BackendError{err, common.OsErrorCode}
 	}
 	for _, fullHash := range hashList {
 		hashPath := suffixDir + "/" + fullHash.Name()
 		fileList, err := HashCleanupListDir(hashPath, logger)
 		if err != nil {
-			if err.Code == hummingbird.PathNotDirErrorCode {
+			if err.Code == common.PathNotDirErrorCode {
 				if QuarantineHash(hashPath) == nil {
 					InvalidateHash(hashPath, true)
 				}
@@ -194,7 +194,7 @@ func RecalculateSuffixHash(suffixDir string, logger hummingbird.LoggingContext) 
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func GetHashes(driveRoot string, device string, partition string, recalculate []string, logger hummingbird.LoggingContext) (map[string]string, *hummingbird.BackendError) {
+func GetHashes(driveRoot string, device string, partition string, recalculate []string, logger common.LoggingContext) (map[string]string, *common.BackendError) {
 	partitionDir := filepath.Join(driveRoot, device, "objects", partition)
 	pklFile := filepath.Join(partitionDir, "hashes.pkl")
 
@@ -204,7 +204,7 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 	lsForSuffixes := true
 	data, err := ioutil.ReadFile(pklFile)
 	if err == nil {
-		v, err := hummingbird.PickleLoads(data)
+		v, err := common.PickleLoads(data)
 		if err == nil {
 			pickledHashes, ok := v.(map[string]string)
 			if ok {
@@ -244,23 +244,23 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 				hashes[suffix] = recalc_hash
 			} else {
 				switch {
-				case err.Code == hummingbird.PathNotDirErrorCode:
+				case err.Code == common.PathNotDirErrorCode:
 					delete(hashes, suffix)
-				case err.Code == hummingbird.OsErrorCode:
+				case err.Code == common.OsErrorCode:
 					logger.LogError("Error hashing suffix: %s/%s (%s)", partitionDir, suffix, "asdf")
 				}
 			}
 		}
 	}
 	if modified {
-		partitionLock, err := hummingbird.LockPath(partitionDir, 10)
+		partitionLock, err := common.LockPath(partitionDir, 10)
 		defer partitionLock.Close()
 		if err != nil {
-			return nil, &hummingbird.BackendError{err, hummingbird.LockPathError}
+			return nil, &common.BackendError{err, common.LockPathError}
 		} else {
 			fileInfo, err := os.Stat(pklFile)
 			if lsForSuffixes || os.IsNotExist(err) || mtime != fileInfo.ModTime().Unix() {
-				hummingbird.WriteFileAtomic(pklFile, hummingbird.PickleDumps(hashes), 0600)
+				common.WriteFileAtomic(pklFile, common.PickleDumps(hashes), 0600)
 				return hashes, nil
 			}
 			logger.LogError("Made recursive call to GetHashes: %s", partitionDir)

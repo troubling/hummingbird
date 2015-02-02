@@ -24,7 +24,7 @@ type DirectObject struct {
 func (obj *DirectObject) Put() bool {
 	req, _ := http.NewRequest("PUT", obj.Url, bytes.NewReader(obj.Data))
 	req.Header.Set("Content-Length", strconv.FormatInt(int64(len(obj.Data)), 10))
-	req.Header.Set("X-Timestamp", hummingbird.GetTimestamp())
+	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.ContentLength = int64(len(obj.Data))
 	resp, err := client.Do(req)
@@ -45,7 +45,7 @@ func (obj *DirectObject) Get() bool {
 
 func (obj *DirectObject) Delete() bool {
 	req, _ := http.NewRequest("DELETE", obj.Url, nil)
-	req.Header.Set("X-Timestamp", hummingbird.GetTimestamp())
+	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	resp, err := client.Do(req)
 	if resp != nil {
 		resp.Body.Close()
@@ -89,7 +89,7 @@ func RunDBench(args []string) {
 		os.Exit(1)
 	}
 
-	benchconf, err := hummingbird.LoadIniFile(args[0])
+	benchconf, err := common.LoadIniFile(args[0])
 	if err != nil {
 		fmt.Println("Error parsing ini file:", err)
 		os.Exit(1)

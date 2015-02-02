@@ -27,7 +27,7 @@ func HeaderToMap(headers http.Header) map[string]string {
 	return ret
 }
 
-func UpdateContainer(metadata map[string]interface{}, request *hummingbird.WebRequest, vars map[string]string, hashDir string) {
+func UpdateContainer(metadata map[string]interface{}, request *common.WebRequest, vars map[string]string, hashDir string) {
 	contpartition := request.Header.Get("X-Container-Partition")
 	if contpartition == "" {
 		return
@@ -41,13 +41,13 @@ func UpdateContainer(metadata map[string]interface{}, request *hummingbird.WebRe
 		host := conthosts[index]
 		device := contdevices[index]
 		obj_url := fmt.Sprintf("http://%s/%s/%s/%s/%s/%s", host, device, contpartition,
-			hummingbird.Urlencode(vars["account"]), hummingbird.Urlencode(vars["container"]), hummingbird.Urlencode(vars["obj"]))
+			common.Urlencode(vars["account"]), common.Urlencode(vars["container"]), common.Urlencode(vars["obj"]))
 		req, err := http.NewRequest(request.Method, obj_url, nil)
 		if err != nil {
 			continue
 		}
-		req.Header.Add("User-Agent", hummingbird.GetDefault(request.Header, "User-Agent", "-"))
-		referer := hummingbird.GetDefault(request.Header, "Referer", "-")
+		req.Header.Add("User-Agent", common.GetDefault(request.Header, "User-Agent", "-"))
+		referer := common.GetDefault(request.Header, "Referer", "-")
 		if len(referer) > 1 {
 			split_ref := strings.Split(referer, " ")
 			ref_url, err := url.Parse(split_ref[1])
@@ -57,7 +57,7 @@ func UpdateContainer(metadata map[string]interface{}, request *hummingbird.WebRe
 			referer = strings.Join(split_ref, " ")
 		}
 		req.Header.Add("Referer", referer)
-		req.Header.Add("X-Trans-Id", hummingbird.GetDefault(request.Header, "X-Trans-Id", "-"))
+		req.Header.Add("X-Trans-Id", common.GetDefault(request.Header, "X-Trans-Id", "-"))
 		req.Header.Add("X-Timestamp", metadata["X-Timestamp"].(string))
 		if request.Method != "DELETE" {
 			req.Header.Add("X-Content-Type", metadata["Content-Type"].(string))
@@ -86,17 +86,17 @@ func UpdateContainer(metadata map[string]interface{}, request *hummingbird.WebRe
 			asyncDir := filepath.Join(rootDir, "async_pending", suff)
 			os.MkdirAll(asyncDir, 0700)
 			asyncFile := filepath.Join(asyncDir, fmt.Sprintf("%s-%s", hash, request.XTimestamp))
-			hummingbird.WriteFileAtomic(asyncFile, hummingbird.PickleDumps(data), 0600)
+			common.WriteFileAtomic(asyncFile, common.PickleDumps(data), 0600)
 		}
 	}
 }
 
 // TODO: UNTESTED
-func UpdateDeleteAt(request *hummingbird.WebRequest, vars map[string]string, metadata map[string]interface{}, hashDir string) {
+func UpdateDeleteAt(request *common.WebRequest, vars map[string]string, metadata map[string]interface{}, hashDir string) {
 	if _, ok := metadata["X-Delete-At"]; !ok {
 		return
 	}
-	deleteAt, err := hummingbird.ParseDate(metadata["X-Delete-At"].(string))
+	deleteAt, err := common.ParseDate(metadata["X-Delete-At"].(string))
 	if err != nil {
 		return
 	}
@@ -107,13 +107,13 @@ func UpdateDeleteAt(request *hummingbird.WebRequest, vars map[string]string, met
 	deleteAtContainer := (deleteAt.Unix() / deleteAtDivisor) * deleteAtDivisor
 	// TODO: do the thing where it subtracts a randomish number so it doesn't hammer the containers
 	url := fmt.Sprintf("http://%s/%s/%s/%s/%d/%d-%s/%s/%s", host, device, partition, deleteAtAccount, deleteAtContainer,
-		deleteAt.Unix(), hummingbird.Urlencode(vars["account"]), hummingbird.Urlencode(vars["container"]), hummingbird.Urlencode(vars["obj"]))
+		deleteAt.Unix(), common.Urlencode(vars["account"]), common.Urlencode(vars["container"]), common.Urlencode(vars["obj"]))
 	if partition == "" || host == "" || device == "" {
 		request.LogError(fmt.Sprintf("Trying to save an x-delete-at but did not send required headers: %s", url))
 		return
 	}
 	req, err := http.NewRequest(request.Method, url, nil)
-	req.Header.Add("X-Trans-Id", hummingbird.GetDefault(request.Header, "X-Trans-Id", "-"))
+	req.Header.Add("X-Trans-Id", common.GetDefault(request.Header, "X-Trans-Id", "-"))
 	req.Header.Add("X-Timestamp", request.Header.Get("X-Timestamp"))
 	req.Header.Add("X-Size", "0")
 	req.Header.Add("X-Content-Type", "text/plain")
@@ -140,6 +140,6 @@ func UpdateDeleteAt(request *hummingbird.WebRequest, vars map[string]string, met
 		asyncDir := filepath.Join(rootDir, "async_pending", suff)
 		os.MkdirAll(asyncDir, 0700)
 		asyncFile := filepath.Join(asyncDir, fmt.Sprintf("%s-%s", hash, request.XTimestamp))
-		hummingbird.WriteFileAtomic(asyncFile, hummingbird.PickleDumps(data), 0600)
+		common.WriteFileAtomic(asyncFile, common.PickleDumps(data), 0600)
 	}
 }

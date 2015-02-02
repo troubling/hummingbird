@@ -1,4 +1,4 @@
-package hummingbird
+package common
 
 import (
 	"errors"
@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/vaughan0/go-ini"
+	ini "github.com/vaughan0/go-ini"
 )
 
 var (

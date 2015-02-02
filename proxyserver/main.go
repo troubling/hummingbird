@@ -16,9 +16,9 @@ import (
 )
 
 type ProxyHandler struct {
-	objectRing    *hummingbird.Ring
-	containerRing *hummingbird.Ring
-	accountRing   *hummingbird.Ring
+	objectRing    *common.Ring
+	containerRing *common.Ring
+	accountRing   *common.Ring
 	client        *http.Client
 	logger        *syslog.Writer
 	mc            *memcache.Client
@@ -32,7 +32,7 @@ type MultiClient struct {
 	done         []chan int
 }
 
-func (mc *MultiClient) Do(log hummingbird.LoggingContext, req *http.Request) {
+func (mc *MultiClient) Do(log common.LoggingContext, req *http.Request) {
 	donech := make(chan int)
 	mc.done = append(mc.done, donech)
 	go func(client *http.Client, req *http.Request, done chan int) {
@@ -51,7 +51,7 @@ func (mc *MultiClient) Do(log hummingbird.LoggingContext, req *http.Request) {
 	mc.requestCount += 1
 }
 
-func (mc *MultiClient) BestResponse(writer *hummingbird.WebWriter) {
+func (mc *MultiClient) BestResponse(writer *common.WebWriter) {
 	var responses []int
 	quorum := (mc.requestCount / 2) + 1
 	for chanIndex, done := range mc.done {
@@ -79,11 +79,11 @@ func (mc *MultiClient) BestResponse(writer *hummingbird.WebWriter) {
 
 // request handlers
 
-func (server *ProxyHandler) ObjectGetHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ProxyHandler) ObjectGetHandler(writer *common.WebWriter, request *common.WebRequest, vars map[string]string) {
 	partition := server.objectRing.GetPartition(vars["account"], vars["container"], vars["obj"])
 	for _, device := range server.objectRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", device.Ip, device.Port, device.Device, partition,
-			hummingbird.Urlencode(vars["account"]), hummingbird.Urlencode(vars["container"]), hummingbird.Urlencode(vars["obj"]))
+			common.Urlencode(vars["account"]), common.Urlencode(vars["container"]), common.Urlencode(vars["obj"]))
 		req, err := http.NewRequest(request.Method, url, nil)
 		if err != nil {
 			request.LogError("Error creating request to %s: %s", url, err.Error())
@@ -110,7 +110,7 @@ func (server *ProxyHandler) ObjectGetHandler(writer *hummingbird.WebWriter, requ
 	}
 }
 
-func (server *ProxyHandler) ObjectPutHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ProxyHandler) ObjectPutHandler(writer *common.WebWriter, request *common.WebRequest, vars map[string]string) {
 	partition := server.objectRing.GetPartition(vars["account"], vars["container"], vars["obj"])
 	containerPartition := server.containerRing.GetPartition(vars["account"], vars["container"], "")
 	containerDevices := server.containerRing.GetNodes(containerPartition)
@@ -118,7 +118,7 @@ func (server *ProxyHandler) ObjectPutHandler(writer *hummingbird.WebWriter, requ
 	resultSet := MultiClient{server.client, 0, nil}
 	for i, device := range server.objectRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", device.Ip, device.Port, device.Device, partition,
-			hummingbird.Urlencode(vars["account"]), hummingbird.Urlencode(vars["container"]), hummingbird.Urlencode(vars["obj"]))
+			common.Urlencode(vars["account"]), common.Urlencode(vars["container"]), common.Urlencode(vars["obj"]))
 		rp, wp := io.Pipe()
 		defer wp.Close()
 		defer rp.Close()
@@ -144,12 +144,12 @@ func (server *ProxyHandler) ObjectPutHandler(writer *hummingbird.WebWriter, requ
 	resultSet.BestResponse(writer)
 }
 
-func (server *ProxyHandler) ObjectDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ProxyHandler) ObjectDeleteHandler(writer *common.WebWriter, request *common.WebRequest, vars map[string]string) {
 	partition := server.objectRing.GetPartition(vars["account"], vars["container"], vars["obj"])
 	rs := MultiClient{server.client, 0, nil}
 	for _, device := range server.objectRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", device.Ip, device.Port, device.Device, partition,
-			hummingbird.Urlencode(vars["account"]), hummingbird.Urlencode(vars["container"]), hummingbird.Urlencode(vars["obj"]))
+			common.Urlencode(vars["account"]), common.Urlencode(vars["container"]), common.Urlencode(vars["obj"]))
 		req, _ := http.NewRequest("DELETE", url, nil)
 		request.CopyRequestHeaders(req)
 		rs.Do(request, req)
@@ -157,11 +157,11 @@ func (server *ProxyHandler) ObjectDeleteHandler(writer *hummingbird.WebWriter, r
 	rs.BestResponse(writer)
 }
 
-func (server *ProxyHandler) ContainerGetHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ProxyHandler) ContainerGetHandler(writer *common.WebWriter, request *common.WebRequest, vars map[string]string) {
 	partition := server.containerRing.GetPartition(vars["account"], vars["container"], "")
 	for _, device := range server.containerRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s?%s", device.Ip, device.Port, device.Device, partition,
-			hummingbird.Urlencode(vars["account"]), hummingbird.Urlencode(vars["container"]), request.URL.RawQuery)
+			common.Urlencode(vars["account"]), common.Urlencode(vars["container"]), request.URL.RawQuery)
 		req, err := http.NewRequest(request.Method, url, nil)
 		if err != nil {
 			request.LogError("Error creating request for container GET: %s", err.Error())
@@ -186,12 +186,12 @@ func (server *ProxyHandler) ContainerGetHandler(writer *hummingbird.WebWriter, r
 	}
 }
 
-func (server *ProxyHandler) ContainerPutHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ProxyHandler) ContainerPutHandler(writer *common.WebWriter, request *common.WebRequest, vars map[string]string) {
 	partition := server.containerRing.GetPartition(vars["account"], vars["container"], "")
 	rs := MultiClient{server.client, 0, nil}
 	for _, device := range server.containerRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", device.Ip, device.Port, device.Device, partition,
-			hummingbird.Urlencode(vars["account"]), hummingbird.Urlencode(vars["container"]))
+			common.Urlencode(vars["account"]), common.Urlencode(vars["container"]))
 		req, _ := http.NewRequest(request.Method, url, nil)
 		request.CopyRequestHeaders(req)
 		rs.Do(request, req)
@@ -199,12 +199,12 @@ func (server *ProxyHandler) ContainerPutHandler(writer *hummingbird.WebWriter, r
 	rs.BestResponse(writer)
 }
 
-func (server *ProxyHandler) ContainerDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ProxyHandler) ContainerDeleteHandler(writer *common.WebWriter, request *common.WebRequest, vars map[string]string) {
 	partition := server.containerRing.GetPartition(vars["account"], vars["container"], "")
 	rs := MultiClient{server.client, 0, nil}
 	for _, device := range server.containerRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", device.Ip, device.Port, device.Device, partition,
-			hummingbird.Urlencode(vars["account"]), hummingbird.Urlencode(vars["container"]))
+			common.Urlencode(vars["account"]), common.Urlencode(vars["container"]))
 		req, err := http.NewRequest(request.Method, url, nil)
 		if err != nil {
 			request.LogError("Error creating request for container DELETE: %s", err.Error())
@@ -215,16 +215,16 @@ func (server *ProxyHandler) ContainerDeleteHandler(writer *hummingbird.WebWriter
 	rs.BestResponse(writer)
 }
 
-func (server *ProxyHandler) AccountGetHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ProxyHandler) AccountGetHandler(writer *common.WebWriter, request *common.WebRequest, vars map[string]string) {
 	fmt.Println("ACCOUNT GET?!")
 	http.Error(writer, http.StatusText(http.StatusNotImplemented), http.StatusNotImplemented)
 }
 
-func (server *ProxyHandler) AccountPutHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ProxyHandler) AccountPutHandler(writer *common.WebWriter, request *common.WebRequest, vars map[string]string) {
 	partition := server.containerRing.GetPartition(vars["account"], "", "")
 	rs := MultiClient{server.client, 0, nil}
 	for _, device := range server.accountRing.GetNodes(partition) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", device.Ip, device.Port, device.Device, partition, hummingbird.Urlencode(vars["account"]))
+		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", device.Ip, device.Port, device.Device, partition, common.Urlencode(vars["account"]))
 		req, _ := http.NewRequest(request.Method, url, nil)
 		request.CopyRequestHeaders(req)
 		rs.Do(request, req)
@@ -232,11 +232,11 @@ func (server *ProxyHandler) AccountPutHandler(writer *hummingbird.WebWriter, req
 	rs.BestResponse(writer)
 }
 
-func (server *ProxyHandler) AccountDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ProxyHandler) AccountDeleteHandler(writer *common.WebWriter, request *common.WebRequest, vars map[string]string) {
 	partition := server.containerRing.GetPartition(vars["account"], "", "")
 	rs := MultiClient{server.client, 0, nil}
 	for _, device := range server.accountRing.GetNodes(partition) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", device.Ip, device.Port, device.Device, partition, hummingbird.Urlencode(vars["account"]))
+		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", device.Ip, device.Port, device.Device, partition, common.Urlencode(vars["account"]))
 		req, _ := http.NewRequest(request.Method, url, nil)
 		request.CopyRequestHeaders(req)
 		rs.Do(request, req)
@@ -244,7 +244,7 @@ func (server *ProxyHandler) AccountDeleteHandler(writer *hummingbird.WebWriter, 
 	rs.BestResponse(writer)
 }
 
-func (server *ProxyHandler) AuthHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ProxyHandler) AuthHandler(writer *common.WebWriter, request *common.WebRequest, vars map[string]string) {
 	token := make([]byte, 32)
 	for i := range token {
 		token[i] = byte('A' + (rand.Int() % 26))
@@ -260,17 +260,17 @@ func (server *ProxyHandler) AuthHandler(writer *hummingbird.WebWriter, request *
 
 // access log
 
-func (server *ProxyHandler) LogRequest(writer *hummingbird.WebWriter, request *hummingbird.WebRequest) {
+func (server *ProxyHandler) LogRequest(writer *common.WebWriter, request *common.WebRequest) {
 	go server.logger.Info(fmt.Sprintf("%s - - [%s] \"%s %s\" %d %s \"%s\" \"%s\" \"%s\" %.4f \"%s\"",
 		request.RemoteAddr,
 		time.Now().Format("02/Jan/2006:15:04:05 -0700"),
 		request.Method,
 		request.URL.Path,
 		writer.Status,
-		hummingbird.HeaderGetDefault(writer.Header(), "Content-Length", "-"),
-		hummingbird.HeaderGetDefault(request.Header, "Referer", "-"),
+		common.HeaderGetDefault(writer.Header(), "Content-Length", "-"),
+		common.HeaderGetDefault(request.Header, "Referer", "-"),
 		request.TransactionId,
-		hummingbird.HeaderGetDefault(request.Header, "User-Agent", "-"),
+		common.HeaderGetDefault(request.Header, "User-Agent", "-"),
 		time.Since(request.Start).Seconds(),
 		"-")) // TODO: "additional info", probably saved in request?
 }
@@ -293,8 +293,8 @@ func (server ProxyHandler) ServeHTTP(writer http.ResponseWriter, request *http.R
 			}
 		}
 	}
-	newWriter := &hummingbird.WebWriter{writer, 500, false}
-	newRequest := &hummingbird.WebRequest{request, hummingbird.GetTransactionId(), hummingbird.GetTimestamp(), time.Now(), server.logger}
+	newWriter := &common.WebWriter{writer, 500, false}
+	newRequest := &common.WebRequest{request, common.GetTransactionId(), common.GetTimestamp(), time.Now(), server.logger}
 	defer newRequest.LogPanics(newWriter)
 	defer server.LogRequest(newWriter, newRequest) // log the request after return
 
@@ -366,38 +366,38 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 	hashPathPrefix := ""
 	hashPathSuffix := ""
 
-	if swiftconf, err := hummingbird.LoadIniFile("/etc/hummingbird/hummingbird.conf"); err == nil {
+	if swiftconf, err := common.LoadIniFile("/etc/hummingbird/hummingbird.conf"); err == nil {
 		hashPathPrefix = swiftconf.GetDefault("swift-hash", "swift_hash_path_prefix", "")
 		hashPathSuffix = swiftconf.GetDefault("swift-hash", "swift_hash_path_suffix", "")
-	} else if swiftconf, err := hummingbird.LoadIniFile("/etc/swift/swift.conf"); err == nil {
+	} else if swiftconf, err := common.LoadIniFile("/etc/swift/swift.conf"); err == nil {
 		hashPathPrefix = swiftconf.GetDefault("swift-hash", "swift_hash_path_prefix", "")
 		hashPathSuffix = swiftconf.GetDefault("swift-hash", "swift_hash_path_suffix", "")
 	}
 
-	serverconf, err := hummingbird.LoadIniFile(conf)
+	serverconf, err := common.LoadIniFile(conf)
 	if err != nil {
 		panic(fmt.Sprintf("Unable to load %s", conf))
 	}
 	bindIP := serverconf.GetDefault("DEFAULT", "bind_ip", "0.0.0.0")
 	bindPort := serverconf.GetInt("DEFAULT", "bind_port", 8080)
 
-	handler.logger = hummingbird.SetupLogger(serverconf.GetDefault("DEFAULT", "log_facility", "LOG_LOCAL0"), "proxy-server")
-	if handler.objectRing, err = hummingbird.LoadRing("/etc/hummingbird/object.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
-		if handler.objectRing, err = hummingbird.LoadRing("/etc/swift/object.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
+	handler.logger = common.SetupLogger(serverconf.GetDefault("DEFAULT", "log_facility", "LOG_LOCAL0"), "proxy-server")
+	if handler.objectRing, err = common.LoadRing("/etc/hummingbird/object.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
+		if handler.objectRing, err = common.LoadRing("/etc/swift/object.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
 			panic("Error loading object ring: " + err.Error())
 		}
 	}
-	if handler.containerRing, err = hummingbird.LoadRing("/etc/hummingbird/container.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
-		if handler.containerRing, err = hummingbird.LoadRing("/etc/swift/container.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
+	if handler.containerRing, err = common.LoadRing("/etc/hummingbird/container.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
+		if handler.containerRing, err = common.LoadRing("/etc/swift/container.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
 			panic("Error loading container ring: " + err.Error())
 		}
 	}
-	if handler.accountRing, err = hummingbird.LoadRing("/etc/hummingbird/account.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
-		if handler.accountRing, err = hummingbird.LoadRing("/etc/swift/account.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
+	if handler.accountRing, err = common.LoadRing("/etc/hummingbird/account.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
+		if handler.accountRing, err = common.LoadRing("/etc/swift/account.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
 			panic("Error loading account ring: " + err.Error())
 		}
 	}
-	hummingbird.DropPrivileges(serverconf.GetDefault("DEFAULT", "user", "swift"))
+	common.DropPrivileges(serverconf.GetDefault("DEFAULT", "user", "swift"))
 
 	return bindIP, int(bindPort), handler, handler.logger
 }

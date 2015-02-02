@@ -1,4 +1,4 @@
-package hummingbird
+package common
 
 import (
 	"testing"

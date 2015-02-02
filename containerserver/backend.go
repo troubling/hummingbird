@@ -245,7 +245,7 @@ func (db *ContainerDB) CommitPendingAlreadyLocked() error {
 		if err != nil {
 			continue
 		}
-		r, err := hummingbird.PickleLoads(pickled)
+		r, err := common.PickleLoads(pickled)
 		if err != nil {
 			continue
 		}
@@ -268,7 +268,7 @@ func (db *ContainerDB) CommitPendingAlreadyLocked() error {
 }
 
 func (db *ContainerDB) CommitPending() error {
-	lock, err := hummingbird.LockParent(db.containerFile+".pending", 10)
+	lock, err := common.LockParent(db.containerFile+".pending", 10)
 	if err != nil {
 		return err
 	}
@@ -298,7 +298,7 @@ func (db *ContainerDB) ListObjectsSimple(limit int, marker *string, endMarker *s
 		if (endMarker != nil && record.Name >= *endMarker) || (prefix != nil && !strings.HasPrefix(record.Name, *prefix)) {
 			break
 		}
-		record.LastModified, _ = hummingbird.FormatTimestamp(createdAt)
+		record.LastModified, _ = common.FormatTimestamp(createdAt)
 		results = append(results, record)
 	}
 	rows.Close()
@@ -320,7 +320,7 @@ func (db *ContainerDB) ListObjectsPrefix(limit int, marker *string, endMarker *s
 		record := ObjectRecord{}
 		var createdAt string
 		rows.Scan(&record.Name, &createdAt, &record.Size, &record.ContentType, &record.Etag)
-		record.LastModified, _ = hummingbird.FormatTimestamp(createdAt)
+		record.LastModified, _ = common.FormatTimestamp(createdAt)
 		results = append(results, record)
 	}
 	rows.Close()
@@ -363,7 +363,7 @@ func (db *ContainerDB) ListObjectsPrefixDelimiter(limit int, marker *string, end
 				start = *prefix + parts[0] + string(rune((*delimiter)[0]+1))
 				break
 			} else {
-				record.LastModified, _ = hummingbird.FormatTimestamp(createdAt)
+				record.LastModified, _ = common.FormatTimestamp(createdAt)
 				results = append(results, record)
 				start = record.Name
 			}
@@ -418,7 +418,7 @@ func (db *ContainerDB) ListObjectsPath(limit int, marker *string, endMarker *str
 				start = prefix + parts[0] + "0"
 				break
 			} else {
-				record.LastModified, _ = hummingbird.FormatTimestamp(createdAt)
+				record.LastModified, _ = common.FormatTimestamp(createdAt)
 				results = append(results, record)
 				start = record.Name
 			}
@@ -677,12 +677,12 @@ func CreateDatabase(containerFile string, account string, container string, putT
 						  WHERE ROWID = new.ROWID;
 					  END`)
 	dbConn.Exec(`INSERT INTO container_info (account, container, created_at, id, put_timestamp, status_changed_at, storage_policy_index, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		account, container, hummingbird.GetTimestamp(), hummingbird.UUID(), putTimestamp, putTimestamp, policyIndex, serializedMetadata)
+		account, container, common.GetTimestamp(), common.UUID(), putTimestamp, putTimestamp, policyIndex, serializedMetadata)
 	return true, tx.Commit()
 }
 
 func PutObject(containerFile string, name string, timestamp string, size int64, contentType string, etag string, deleted int, storagePolicyIndex int) error {
-	lock, err := hummingbird.LockParent(containerFile, 10)
+	lock, err := common.LockParent(containerFile, 10)
 	if err != nil {
 		return err
 	}
@@ -701,7 +701,7 @@ func PutObject(containerFile string, name string, timestamp string, size int64, 
 	}
 	defer file.Close()
 	file.WriteString(":")
-	file.WriteString(base64.StdEncoding.EncodeToString(hummingbird.PickleDumps(tuple)))
+	file.WriteString(base64.StdEncoding.EncodeToString(common.PickleDumps(tuple)))
 	if info, err := file.Stat(); err == nil && info.Size() > PENDING_CAP {
 		db, err := OpenDatabase(containerFile)
 		if err != nil {

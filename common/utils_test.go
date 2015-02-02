@@ -1,8 +1,9 @@
-package hummingbird
+package common
 
 import (
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestParseRange(t *testing.T) {
