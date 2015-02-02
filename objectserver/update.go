@@ -3,6 +3,7 @@ package objectserver
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,14 +40,23 @@ func UpdateContainer(metadata map[string]interface{}, request *hummingbird.WebRe
 		}
 		host := conthosts[index]
 		device := contdevices[index]
-		url := fmt.Sprintf("http://%s/%s/%s/%s/%s/%s", host, device, contpartition,
+		obj_url := fmt.Sprintf("http://%s/%s/%s/%s/%s/%s", host, device, contpartition,
 			hummingbird.Urlencode(vars["account"]), hummingbird.Urlencode(vars["container"]), hummingbird.Urlencode(vars["obj"]))
-		req, err := http.NewRequest(request.Method, url, nil)
+		req, err := http.NewRequest(request.Method, obj_url, nil)
 		if err != nil {
 			continue
 		}
 		req.Header.Add("User-Agent", hummingbird.GetDefault(request.Header, "User-Agent", "-"))
-		req.Header.Add("Referer", hummingbird.GetDefault(request.Header, "Referer", "-"))
+		referer := hummingbird.GetDefault(request.Header, "Referer", "-")
+		if len(referer) > 1 {
+			split_ref := strings.Split(referer, " ")
+			ref_url, err := url.Parse(split_ref[1])
+			if err == nil {
+				split_ref[1] = ref_url.String()
+			}
+			referer = strings.Join(split_ref, " ")
+		}
+		req.Header.Add("Referer", referer)
 		req.Header.Add("X-Trans-Id", hummingbird.GetDefault(request.Header, "X-Trans-Id", "-"))
 		req.Header.Add("X-Timestamp", metadata["X-Timestamp"].(string))
 		if request.Method != "DELETE" {
