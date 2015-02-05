@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"hummingbird/common"
+	hummingbird "hummingbird/common"
 )
 
 type ContainerHandler struct {
@@ -34,14 +34,14 @@ func ContainerLocation(vars map[string]string, server *ContainerHandler) (string
 	suffix := hexHash[29:32]
 	devicePath := fmt.Sprintf("%s/%s", server.driveRoot, vars["device"])
 	if server.checkMounts {
-		if mounted, err := common.IsMount(devicePath); err != nil || mounted != true {
+		if mounted, err := hummingbird.IsMount(devicePath); err != nil || mounted != true {
 			return "", errors.New("Not mounted")
 		}
 	}
 	return fmt.Sprintf("%s/%s/%s/%s/%s/%s.db", devicePath, "containers", vars["partition"], suffix, hexHash, hexHash), nil
 }
 
-func (server *ContainerHandler) ContainerGetHandler(writer *common.WebWriter, request *common.WebRequest, vars map[string]string) {
+func (server *ContainerHandler) ContainerGetHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	containerFile, err := ContainerLocation(vars, server)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -138,7 +138,7 @@ func (server *ContainerHandler) ContainerGetHandler(writer *common.WebWriter, re
 	}
 }
 
-func (server *ContainerHandler) ContainerHeadHandler(writer *common.WebWriter, request *common.WebRequest, vars map[string]string) {
+func (server *ContainerHandler) ContainerHeadHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	containerFile, err := ContainerLocation(vars, server)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -177,7 +177,7 @@ func (server *ContainerHandler) ContainerHeadHandler(writer *common.WebWriter, r
 	writer.Write([]byte(""))
 }
 
-func (server *ContainerHandler) ContainerPutHandler(writer *common.WebWriter, request *common.WebRequest, vars map[string]string) {
+func (server *ContainerHandler) ContainerPutHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	containerFile, err := ContainerLocation(vars, server)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -215,7 +215,7 @@ func (server *ContainerHandler) ContainerPutHandler(writer *common.WebWriter, re
 	}
 }
 
-func (server *ContainerHandler) ContainerDeleteHandler(writer *common.WebWriter, request *common.WebRequest, vars map[string]string) {
+func (server *ContainerHandler) ContainerDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	containerFile, err := ContainerLocation(vars, server)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -240,7 +240,7 @@ func (server *ContainerHandler) ContainerDeleteHandler(writer *common.WebWriter,
 	writer.Write([]byte(""))
 }
 
-func (server *ContainerHandler) ContainerPostHandler(writer *common.WebWriter, request *common.WebRequest, vars map[string]string) {
+func (server *ContainerHandler) ContainerPostHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	containerFile, err := ContainerLocation(vars, server)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -266,7 +266,7 @@ func (server *ContainerHandler) ContainerPostHandler(writer *common.WebWriter, r
 	writer.Write([]byte(""))
 }
 
-func (server *ContainerHandler) ObjPutHandler(writer *common.WebWriter, request *common.WebRequest, vars map[string]string) {
+func (server *ContainerHandler) ObjPutHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	containerFile, err := ContainerLocation(vars, server)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -286,7 +286,7 @@ func (server *ContainerHandler) ObjPutHandler(writer *common.WebWriter, request 
 	http.Error(writer, http.StatusText(201), 201)
 }
 
-func (server *ContainerHandler) ObjDeleteHandler(writer *common.WebWriter, request *common.WebRequest, vars map[string]string) {
+func (server *ContainerHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	containerFile, err := ContainerLocation(vars, server)
 	if err != nil {
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -311,7 +311,7 @@ func GetDefault(h http.Header, key string, dfl string) string {
 	return val
 }
 
-func (server *ContainerHandler) LogRequest(writer *common.WebWriter, request *common.WebRequest) {
+func (server *ContainerHandler) LogRequest(writer *hummingbird.WebWriter, request *hummingbird.WebRequest) {
 	go request.LogInfo(fmt.Sprintf("%s - - [%s] \"%s %s\" %d %s \"%s\" \"%s\" \"%s\" %.4f \"%s\"",
 		request.RemoteAddr,
 		time.Now().Format("02/Jan/2006:15:04:05 -0700"),
@@ -334,7 +334,7 @@ func (server ContainerHandler) ServeHTTP(writer http.ResponseWriter, request *ht
 		writer.Write([]byte("OK"))
 		return
 	} else if strings.HasPrefix(request.URL.Path, "/recon/") {
-		common.ReconHandler(server.driveRoot, writer, request)
+		hummingbird.ReconHandler(server.driveRoot, writer, request)
 		return
 	}
 	parts := strings.SplitN(request.URL.Path, "/", 6)
@@ -355,8 +355,8 @@ func (server ContainerHandler) ServeHTTP(writer http.ResponseWriter, request *ht
 			}
 		}
 	}
-	newWriter := &common.WebWriter{writer, 500, false}
-	newRequest := &common.WebRequest{request, request.Header.Get("X-Trans-Id"), request.Header.Get("X-Timestamp"), time.Now(), server.logger}
+	newWriter := &hummingbird.WebWriter{writer, 500, false}
+	newRequest := &hummingbird.WebRequest{request, request.Header.Get("X-Trans-Id"), request.Header.Get("X-Timestamp"), time.Now(), server.logger}
 	defer newRequest.LogPanics(newWriter)
 	defer server.LogRequest(newWriter, newRequest) // log the request after return
 
@@ -390,15 +390,15 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 		checkMounts: true,
 	}
 
-	if swiftconf, err := common.LoadIniFile("/etc/hummingbird/hummingbird.conf"); err == nil {
+	if swiftconf, err := hummingbird.LoadIniFile("/etc/hummingbird/hummingbird.conf"); err == nil {
 		handler.hashPathPrefix = swiftconf.GetDefault("swift-hash", "swift_hash_path_prefix", "")
 		handler.hashPathSuffix = swiftconf.GetDefault("swift-hash", "swift_hash_path_suffix", "")
-	} else if swiftconf, err := common.LoadIniFile("/etc/swift/swift.conf"); err == nil {
+	} else if swiftconf, err := hummingbird.LoadIniFile("/etc/swift/swift.conf"); err == nil {
 		handler.hashPathPrefix = swiftconf.GetDefault("swift-hash", "swift_hash_path_prefix", "")
 		handler.hashPathSuffix = swiftconf.GetDefault("swift-hash", "swift_hash_path_suffix", "")
 	}
 
-	serverconf, err := common.LoadIniFile(conf)
+	serverconf, err := hummingbird.LoadIniFile(conf)
 	if err != nil {
 		panic(fmt.Sprintf("Unable to load %s", conf))
 	}
@@ -406,8 +406,8 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 	handler.checkMounts = serverconf.GetBool("DEFAULT", "mount_check", true)
 	bindIP := serverconf.GetDefault("DEFAULT", "bind_ip", "0.0.0.0")
 	bindPort := serverconf.GetInt("DEFAULT", "bind_port", 6001)
-	handler.logger = common.SetupLogger(serverconf.GetDefault("DEFAULT", "log_facility", "LOG_LOCAL0"), "object-server")
-	common.DropPrivileges(serverconf.GetDefault("DEFAULT", "user", "swift"))
+	handler.logger = hummingbird.SetupLogger(serverconf.GetDefault("DEFAULT", "log_facility", "LOG_LOCAL0"), "object-server")
+	hummingbird.DropPrivileges(serverconf.GetDefault("DEFAULT", "user", "swift"))
 
 	return bindIP, int(bindPort), handler, handler.logger
 }

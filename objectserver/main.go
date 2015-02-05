@@ -19,7 +19,7 @@ import (
 	"syscall"
 	"time"
 
-	"hummingbird/common"
+	hummingbird "hummingbird/common"
 )
 
 type ObjectHandler struct {
@@ -40,7 +40,7 @@ type ObjectHandler struct {
 	fallocateReserve int64
 }
 
-func (server *ObjectHandler) ObjGetHandler(writer *common.WebWriter, request *common.WebRequest, vars map[string]string) {
+func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	headers := writer.Header()
 	hashDir := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix)
 	dataFile, metaFile := ObjectFiles(hashDir)
@@ -82,13 +82,13 @@ func (server *ObjectHandler) ObjGetHandler(writer *common.WebWriter, request *co
 
 	headers.Set("X-Backend-Timestamp", metadata["X-Timestamp"].(string))
 	if deleteAt, ok := metadata["X-Delete-At"].(string); ok {
-		if deleteTime, err := common.ParseDate(deleteAt); err == nil && deleteTime.Before(time.Now()) {
+		if deleteTime, err := hummingbird.ParseDate(deleteAt); err == nil && deleteTime.Before(time.Now()) {
 			writer.StandardResponse(http.StatusNotFound)
 			return
 		}
 	}
 
-	lastModified, err := common.ParseDate(metadata["X-Timestamp"].(string))
+	lastModified, err := hummingbird.ParseDate(metadata["X-Timestamp"].(string))
 	if err != nil {
 		request.LogError("Error getting timestamp from %s: %s", dataFile, err.Error())
 		writer.StandardResponse(http.StatusInternalServerError)
@@ -100,7 +100,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *common.WebWriter, request *co
 	}
 	headers.Set("Last-Modified", lastModifiedHeader.Format(time.RFC1123))
 	headers.Set("ETag", "\""+metadata["ETag"].(string)+"\"")
-	xTimestamp, err := common.GetEpochFromTimestamp(metadata["X-Timestamp"].(string))
+	xTimestamp, err := hummingbird.GetEpochFromTimestamp(metadata["X-Timestamp"].(string))
 	if err != nil {
 		request.LogError("Error getting the epoch time from x-timestamp: %s", err.Error())
 		http.Error(writer, "Invalid X-Timestamp header", http.StatusBadRequest)
@@ -125,12 +125,12 @@ func (server *ObjectHandler) ObjGetHandler(writer *common.WebWriter, request *co
 		return
 	}
 
-	if ius, err := common.ParseDate(request.Header.Get("If-Unmodified-Since")); err == nil && lastModified.After(ius) {
+	if ius, err := hummingbird.ParseDate(request.Header.Get("If-Unmodified-Since")); err == nil && lastModified.After(ius) {
 		writer.StandardResponse(http.StatusPreconditionFailed)
 		return
 	}
 
-	if ims, err := common.ParseDate(request.Header.Get("If-Modified-Since")); err == nil && lastModified.Before(ims) {
+	if ims, err := hummingbird.ParseDate(request.Header.Get("If-Modified-Since")); err == nil && lastModified.Before(ims) {
 		writer.WriteHeader(http.StatusNotModified)
 		return
 	}
@@ -140,7 +140,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *common.WebWriter, request *co
 	headers.Set("Content-Length", metadata["Content-Length"].(string))
 
 	if rangeHeader := request.Header.Get("Range"); rangeHeader != "" {
-		ranges, err := common.ParseRange(rangeHeader, contentLength)
+		ranges, err := hummingbird.ParseRange(rangeHeader, contentLength)
 		if err != nil {
 			headers.Set("Content-Length", "0")
 			writer.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
@@ -175,7 +175,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *common.WebWriter, request *co
 	if request.Method == "GET" {
 		if server.checkEtags {
 			hash := md5.New()
-			common.Copy(file, writer, hash)
+			hummingbird.Copy(file, writer, hash)
 			if hex.EncodeToString(hash.Sum(nil)) != metadata["ETag"].(string) && QuarantineHash(hashDir) == nil {
 				InvalidateHash(hashDir, !server.disableFsync)
 			}
@@ -183,16 +183,16 @@ func (server *ObjectHandler) ObjGetHandler(writer *common.WebWriter, request *co
 			io.Copy(writer, file)
 		}
 		if server.dropCache {
-			go common.DropBufferCache(int(file.Fd()), contentLength)
+			go hummingbird.DropBufferCache(int(file.Fd()), contentLength)
 		}
 	} else {
 		writer.Write([]byte{})
 	}
 }
 
-func (server *ObjectHandler) ObjPutHandler(writer *common.WebWriter, request *common.WebRequest, vars map[string]string) {
+func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	outHeaders := writer.Header()
-	if !common.ValidTimestamp(request.Header.Get("X-Timestamp")) {
+	if !hummingbird.ValidTimestamp(request.Header.Get("X-Timestamp")) {
 		http.Error(writer, "Invalid X-Timestamp header", http.StatusBadRequest)
 		return
 	}
@@ -204,7 +204,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *common.WebWriter, request *co
 	tempDir := ObjTempDir(vars, server.driveRoot)
 
 	if deleteAt := request.Header.Get("X-Delete-At"); deleteAt != "" {
-		if deleteTime, err := common.ParseDate(deleteAt); err != nil || deleteTime.Before(time.Now()) {
+		if deleteTime, err := hummingbird.ParseDate(deleteAt); err != nil || deleteTime.Before(time.Now()) {
 			http.Error(writer, "Bad Request", 400)
 			return
 		}
@@ -223,7 +223,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *common.WebWriter, request *co
 		writer.StandardResponse(http.StatusInternalServerError)
 		return
 	}
-	requestTimestamp, err := common.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
+	requestTimestamp, err := hummingbird.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
 	if err != nil {
 		request.LogError("Error standardizing request X-Timestamp: %s", err.Error())
 		http.Error(writer, "Invalid X-Timestamp header", http.StatusBadRequest)
@@ -261,7 +261,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *common.WebWriter, request *co
 		}
 	}
 	hash := md5.New()
-	totalSize, err := common.Copy(request.Body, tempFile, hash)
+	totalSize, err := hummingbird.Copy(request.Body, tempFile, hash)
 	if err != nil {
 		request.LogError("Error writing to file %s: %s", tempFile.Name(), err.Error())
 		writer.StandardResponse(http.StatusInternalServerError)
@@ -286,7 +286,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *common.WebWriter, request *co
 	}
 	os.Rename(tempFile.Name(), fileName)
 	if server.dropCache {
-		go common.DropBufferCache(int(tempFile.Fd()), totalSize)
+		go hummingbird.DropBufferCache(int(tempFile.Fd()), totalSize)
 	}
 
 	finalize := func() {
@@ -305,9 +305,9 @@ func (server *ObjectHandler) ObjPutHandler(writer *common.WebWriter, request *co
 	writer.StandardResponse(http.StatusCreated)
 }
 
-func (server *ObjectHandler) ObjDeleteHandler(writer *common.WebWriter, request *common.WebRequest, vars map[string]string) {
+func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	headers := writer.Header()
-	requestTimestamp, err := common.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
+	requestTimestamp, err := hummingbird.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
 	if err != nil {
 		request.LogError("Error standardizing request X-Timestamp: %s", err.Error())
 		http.Error(writer, "Invalid X-Timestamp header", http.StatusBadRequest)
@@ -412,7 +412,7 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *common.WebWriter, request 
 	writer.StandardResponse(responseStatus)
 }
 
-func (server *ObjectHandler) ObjReplicateHandler(writer *common.WebWriter, request *common.WebRequest, vars map[string]string) {
+func (server *ObjectHandler) ObjReplicateHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
 	var recalculate []string
 	if len(vars["suffixes"]) > 0 {
 		recalculate = strings.Split(vars["suffixes"], "-")
@@ -426,13 +426,13 @@ func (server *ObjectHandler) ObjReplicateHandler(writer *common.WebWriter, reque
 		return
 	}
 	writer.WriteHeader(http.StatusOK)
-	writer.Write(common.PickleDumps(hashes))
+	writer.Write(hummingbird.PickleDumps(hashes))
 }
 
 func (server *ObjectHandler) AcquireDisk(disk string) bool {
 	if server.checkMounts {
 		devicePath := server.driveRoot + "/" + disk
-		if mounted, err := common.IsMount(devicePath); err != nil || mounted != true {
+		if mounted, err := hummingbird.IsMount(devicePath); err != nil || mounted != true {
 			return false
 		}
 	}
@@ -454,17 +454,17 @@ func (server *ObjectHandler) ReleaseDisk(disk string) {
 	atomic.AddInt64(server.diskInUse[disk], -1)
 }
 
-func (server *ObjectHandler) LogRequest(writer *common.WebWriter, request *common.WebRequest) {
+func (server *ObjectHandler) LogRequest(writer *hummingbird.WebWriter, request *hummingbird.WebRequest) {
 	go server.logger.Info(fmt.Sprintf("%s - - [%s] \"%s %s\" %d %s \"%s\" \"%s\" \"%s\" %.4f \"%s\"",
 		request.RemoteAddr,
 		time.Now().Format("02/Jan/2006:15:04:05 -0700"),
 		request.Method,
-		common.Urlencode(request.URL.Path),
+		hummingbird.Urlencode(request.URL.Path),
 		writer.Status,
-		common.GetDefault(writer.Header(), "Content-Length", "-"),
-		common.GetDefault(request.Header, "Referer", "-"),
-		common.GetDefault(request.Header, "X-Trans-Id", "-"),
-		common.GetDefault(request.Header, "User-Agent", "-"),
+		hummingbird.GetDefault(writer.Header(), "Content-Length", "-"),
+		hummingbird.GetDefault(request.Header, "Referer", "-"),
+		hummingbird.GetDefault(request.Header, "X-Trans-Id", "-"),
+		hummingbird.GetDefault(request.Header, "User-Agent", "-"),
 		time.Since(request.Start).Seconds(),
 		"-")) // TODO: "additional info"?
 }
@@ -476,7 +476,7 @@ func (server ObjectHandler) ServeHTTP(writer http.ResponseWriter, request *http.
 		writer.Write([]byte("OK"))
 		return
 	} else if strings.HasPrefix(request.URL.Path, "/recon/") {
-		common.ReconHandler(server.driveRoot, writer, request)
+		hummingbird.ReconHandler(server.driveRoot, writer, request)
 		return
 	} else if request.URL.Path == "/diskusage" {
 		data, err := json.Marshal(server.diskInUse)
@@ -508,8 +508,8 @@ func (server ObjectHandler) ServeHTTP(writer http.ResponseWriter, request *http.
 		}
 	}
 
-	newWriter := &common.WebWriter{writer, 500, false}
-	newRequest := &common.WebRequest{request, request.Header.Get("X-Trans-Id"), request.Header.Get("X-Timestamp"), time.Now(), server.logger}
+	newWriter := &hummingbird.WebWriter{writer, 500, false}
+	newRequest := &hummingbird.WebRequest{request, request.Header.Get("X-Trans-Id"), request.Header.Get("X-Timestamp"), time.Now(), server.logger}
 	defer newRequest.LogPanics(newWriter)
 	defer server.LogRequest(newWriter, newRequest) // log the request after return
 
@@ -551,15 +551,15 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 		diskInUse: make(map[string]*int64),
 	}
 
-	if swiftconf, err := common.LoadIniFile("/etc/hummingbird/hummingbird.conf"); err == nil {
+	if swiftconf, err := hummingbird.LoadIniFile("/etc/hummingbird/hummingbird.conf"); err == nil {
 		handler.hashPathPrefix = swiftconf.GetDefault("swift-hash", "swift_hash_path_prefix", "")
 		handler.hashPathSuffix = swiftconf.GetDefault("swift-hash", "swift_hash_path_suffix", "")
-	} else if swiftconf, err := common.LoadIniFile("/etc/swift/swift.conf"); err == nil {
+	} else if swiftconf, err := hummingbird.LoadIniFile("/etc/swift/swift.conf"); err == nil {
 		handler.hashPathPrefix = swiftconf.GetDefault("swift-hash", "swift_hash_path_prefix", "")
 		handler.hashPathSuffix = swiftconf.GetDefault("swift-hash", "swift_hash_path_suffix", "")
 	}
 
-	serverconf, err := common.LoadIniFile(conf)
+	serverconf, err := hummingbird.LoadIniFile(conf)
 	if err != nil {
 		panic(fmt.Sprintf("Unable to load %s", conf))
 	}
@@ -580,8 +580,8 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 		}
 	}
 
-	handler.logger = common.SetupLogger(serverconf.GetDefault("app:object-server", "log_facility", "LOG_LOCAL0"), "object-server")
-	common.DropPrivileges(serverconf.GetDefault("app:object-server", "user", "swift"))
+	handler.logger = hummingbird.SetupLogger(serverconf.GetDefault("app:object-server", "log_facility", "LOG_LOCAL0"), "object-server")
+	hummingbird.DropPrivileges(serverconf.GetDefault("app:object-server", "user", "swift"))
 
 	return bindIP, int(bindPort), handler, handler.logger
 }

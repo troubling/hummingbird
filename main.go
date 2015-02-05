@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"hummingbird/bench"
-	"hummingbird/common"
+	hummingbird "hummingbird/common"
 	"hummingbird/containerserver"
 	"hummingbird/objectserver"
 	"hummingbird/proxyserver"
@@ -160,11 +160,11 @@ func GracefulShutdownServer(name string) {
 func RunServer(name string) {
 	switch name {
 	case "object":
-		common.RunServers(os.Args[3], objectserver.GetServer)
+		hummingbird.RunServers(os.Args[3], objectserver.GetServer)
 	case "container":
-		common.RunServers(os.Args[3], containerserver.GetServer)
+		hummingbird.RunServers(os.Args[3], containerserver.GetServer)
 	case "proxy":
-		common.RunServers(os.Args[3], proxyserver.GetServer)
+		hummingbird.RunServers(os.Args[3], proxyserver.GetServer)
 	}
 }
 
@@ -189,12 +189,12 @@ func FakeSwiftObject(configFile string) {
 	syscall.Dup2(int(devnull.Fd()), int(os.Stdout.Fd()))
 	syscall.Dup2(int(devnull.Fd()), int(os.Stderr.Fd()))
 	devnull.Close()
-	common.RunServers(configFile, objectserver.GetServer)
+	hummingbird.RunServers(configFile, objectserver.GetServer)
 }
 
 func main() {
-	common.UseMaxProcs()
-	common.SetRlimits()
+	hummingbird.UseMaxProcs()
+	hummingbird.SetRlimits()
 	rand.Seed(time.Now().Unix())
 
 	var serverList []string

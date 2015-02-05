@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"hummingbird/common"
+	hummingbird "hummingbird/common"
 )
 
 var client = &http.Client{Timeout: time.Second * 10}
 
-func UpdateAccount(info *ContainerInfo, request *common.WebRequest, vars map[string]string) {
+func UpdateAccount(info *ContainerInfo, request *hummingbird.WebRequest, vars map[string]string) {
 	accpartition := request.Header.Get("X-Account-Partition")
 	if accpartition == "" {
 		return
@@ -26,7 +26,7 @@ func UpdateAccount(info *ContainerInfo, request *common.WebRequest, vars map[str
 		host := acchosts[index]
 		device := accdevices[index]
 		url := fmt.Sprintf("http://%s/%s/%s/%s/%s", host, device, accpartition,
-			common.Urlencode(vars["account"]), common.Urlencode(vars["container"]))
+			hummingbird.Urlencode(vars["account"]), hummingbird.Urlencode(vars["container"]))
 		req, err := http.NewRequest("PUT", url, nil)
 		if err != nil {
 			continue
