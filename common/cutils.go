@@ -25,10 +25,6 @@ func FSetXattr(fd int, attr string, value []byte) (int, error) {
 	return int(r0), nil
 }
 
-func DropBufferCache(fd int, length int64) {
-	syscall.Syscall6(syscall.SYS_FADVISE64, uintptr(fd), uintptr(0), uintptr(length), uintptr(4), 0, 0)
-}
-
 func DropPrivileges(name string) {
 	cname := C.CString(name)
 	home := C.CString("HOME")
