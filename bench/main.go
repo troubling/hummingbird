@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"hummingbird/common"
+	hummingbird "hummingbird/common"
 )
 
 var client = &http.Client{}

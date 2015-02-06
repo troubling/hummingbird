@@ -12,8 +12,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mattn/go-sqlite3"
-	"hummingbird/common"
+	hummingbird "hummingbird/common"
+
+	sqlite3 "github.com/mattn/go-sqlite3"
 )
 
 const PENDING_CAP = 131072

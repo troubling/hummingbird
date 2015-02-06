@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"hummingbird/common"
+	hummingbird "hummingbird/common"
 )
 
 type DirectObject struct {

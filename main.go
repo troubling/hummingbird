@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"hummingbird/bench"
-	"hummingbird/common"
+	hummingbird "hummingbird/common"
 	"hummingbird/containerserver"
 	"hummingbird/objectserver"
 	"hummingbird/proxyserver"

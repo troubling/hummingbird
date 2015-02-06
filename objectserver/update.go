@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"hummingbird/common"
+	hummingbird "hummingbird/common"
 )
 
 const deleteAtDivisor = 3600

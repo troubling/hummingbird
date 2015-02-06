@@ -11,8 +11,9 @@ import (
 	"strings"
 	"time"
 
+	hummingbird "hummingbird/common"
+
 	"github.com/bradfitz/gomemcache/memcache"
-	"hummingbird/common"
 )
 
 type ProxyHandler struct {

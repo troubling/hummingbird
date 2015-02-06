@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"hummingbird/common"
+	hummingbird "hummingbird/common"
 )
 
 const METADATA_CHUNK_SIZE = 65536

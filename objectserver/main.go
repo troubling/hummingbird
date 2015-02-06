@@ -19,7 +19,7 @@ import (
 	"syscall"
 	"time"
 
-	"hummingbird/common"
+	hummingbird "hummingbird/common"
 )
 
 type ObjectHandler struct {

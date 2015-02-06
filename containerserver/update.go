@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"hummingbird/common"
+	hummingbird "hummingbird/common"
 )
 
 var client = &http.Client{Timeout: time.Second * 10}
