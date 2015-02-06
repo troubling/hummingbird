@@ -31,7 +31,6 @@ type ObjectHandler struct {
 	disableFsync     bool
 	asyncFinalize    bool
 	asyncFsync       bool
-	dropCache        bool
 	allowedHeaders   map[string]bool
 	logger           *syslog.Writer
 	diskLimit        int64
@@ -182,9 +181,6 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 		} else {
 			io.Copy(writer, file)
 		}
-		if server.dropCache {
-			go hummingbird.DropBufferCache(int(file.Fd()), contentLength)
-		}
 	} else {
 		writer.Write([]byte{})
 	}
@@ -285,9 +281,6 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 		}
 	}
 	os.Rename(tempFile.Name(), fileName)
-	if server.dropCache {
-		go hummingbird.DropBufferCache(int(tempFile.Fd()), totalSize)
-	}
 
 	finalize := func() {
 		UpdateContainer(metadata, request, vars, hashDir)
@@ -568,7 +561,6 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 	handler.disableFsync = serverconf.GetBool("app:object-server", "disable_fsync", false)
 	handler.asyncFinalize = serverconf.GetBool("app:object-server", "async_finalize", false)
 	handler.asyncFsync = serverconf.GetBool("app:object-server", "async_fsync", false)
-	handler.dropCache = serverconf.GetBool("app:object-server", "drop_cache", true)
 	handler.diskLimit = serverconf.GetInt("app:object-server", "disk_limit", 100)
 	handler.checkEtags = serverconf.GetBool("app:object-server", "check_etags", false)
 	bindIP := serverconf.GetDefault("app:object-server", "bind_ip", "0.0.0.0")
