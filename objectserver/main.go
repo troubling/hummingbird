@@ -196,6 +196,10 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 		http.Error(writer, "Invalid X-Timestamp header", http.StatusBadRequest)
 		return
 	}
+	if vars["obj"] == "" {
+		http.Error(writer, fmt.Sprintf("Invalid path: %s", request.URL.Path), http.StatusBadRequest)
+		return
+	}
 	if request.Header.Get("Content-Type") == "" {
 		http.Error(writer, "No content type", http.StatusBadRequest)
 		return
@@ -205,13 +209,36 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 
 	if deleteAt := request.Header.Get("X-Delete-At"); deleteAt != "" {
 		if deleteTime, err := hummingbird.ParseDate(deleteAt); err != nil || deleteTime.Before(time.Now()) {
-			http.Error(writer, "Bad Request", 400)
+			http.Error(writer, "X-Delete-At in past", 400)
 			return
 		}
 	}
 
+	requestTimestamp, err := hummingbird.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
+	if err != nil {
+		request.LogError("Error standardizing request X-Timestamp: %s", err.Error())
+		http.Error(writer, "Invalid X-Timestamp header", http.StatusBadRequest)
+		return
+	}
+
+	dataFile, metaFile := ObjectFiles(hashDir)
+	if dataFile != "" {
+		if metadata, err := ObjectMetadata(dataFile, metaFile); err == nil {
+			if requestTime, err := hummingbird.ParseDate(requestTimestamp); err == nil {
+				if lastModified, err := hummingbird.ParseDate(metadata["X-Timestamp"].(string)); err == nil && !requestTime.After(lastModified) {
+					outHeaders.Set("X-Backend-Timestamp", metadata["X-Timestamp"].(string))
+					writer.StandardResponse(http.StatusConflict)
+					return
+				}
+			}
+			if inm := request.Header.Get("If-None-Match"); inm != "*" && strings.Contains(inm, metadata["ETag"].(string)) {
+				writer.StandardResponse(http.StatusPreconditionFailed)
+				return
+			}
+		}
+	}
+
 	if inm := request.Header.Get("If-None-Match"); inm == "*" {
-		dataFile, _ := ObjectFiles(hashDir)
 		if dataFile != "" && !strings.HasSuffix(dataFile, ".ts") {
 			writer.StandardResponse(http.StatusPreconditionFailed)
 			return
@@ -221,12 +248,6 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 	if os.MkdirAll(hashDir, 0770) != nil || os.MkdirAll(tempDir, 0770) != nil {
 		request.LogError("Error creating temp directory: %s", tempDir)
 		writer.StandardResponse(http.StatusInternalServerError)
-		return
-	}
-	requestTimestamp, err := hummingbird.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
-	if err != nil {
-		request.LogError("Error standardizing request X-Timestamp: %s", err.Error())
-		http.Error(writer, "Invalid X-Timestamp header", http.StatusBadRequest)
 		return
 	}
 
