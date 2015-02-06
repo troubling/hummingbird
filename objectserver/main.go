@@ -218,7 +218,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 	}
 
 	dataFile, metaFile := ObjectFiles(hashDir)
-	if dataFile != "" {
+	if dataFile != "" && !strings.HasSuffix(dataFile, ".ts") {
 		if metadata, err := ObjectMetadata(dataFile, metaFile); err == nil {
 			if requestTime, err := hummingbird.ParseDate(requestTimestamp); err == nil {
 				if lastModified, err := hummingbird.ParseDate(metadata["X-Timestamp"].(string)); err == nil && !requestTime.After(lastModified) {
