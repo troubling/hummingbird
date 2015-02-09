@@ -218,7 +218,11 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 	}
 
 	dataFile, metaFile := ObjectFiles(hashDir)
-	if dataFile != "" {
+	if dataFile != "" && !strings.HasSuffix(dataFile, ".ts") {
+		if inm := request.Header.Get("If-None-Match"); inm == "*" {
+			writer.StandardResponse(http.StatusPreconditionFailed)
+			return
+		}
 		if metadata, err := ObjectMetadata(dataFile, metaFile); err == nil {
 			if requestTime, err := hummingbird.ParseDate(requestTimestamp); err == nil {
 				if lastModified, err := hummingbird.ParseDate(metadata["X-Timestamp"].(string)); err == nil && !requestTime.After(lastModified) {
@@ -231,13 +235,6 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 				writer.StandardResponse(http.StatusPreconditionFailed)
 				return
 			}
-		}
-	}
-
-	if inm := request.Header.Get("If-None-Match"); inm == "*" {
-		if dataFile != "" && !strings.HasSuffix(dataFile, ".ts") {
-			writer.StandardResponse(http.StatusPreconditionFailed)
-			return
 		}
 	}
 
