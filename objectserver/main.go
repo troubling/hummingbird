@@ -554,6 +554,8 @@ func (server ObjectHandler) ServeHTTP(writer http.ResponseWriter, request *http.
 		server.ObjDeleteHandler(newWriter, newRequest, vars)
 	case "REPLICATE":
 		server.ObjReplicateHandler(newWriter, newRequest, vars)
+	default:
+		newWriter.StandardResponse(http.StatusMethodNotAllowed)
 	}
 }
 
