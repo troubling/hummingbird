@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +15,10 @@ import (
 
 const deleteAtDivisor = 3600
 const deleteAtAccount = ".expiring_objects"
+
+/*This hash is used to represent a zero byte async file that is
+  created for an expiring object*/
+const zeroByteHash = "d41d8cd98f00b204e9800998ecf8427e"
 
 var client = &http.Client{Timeout: time.Second * 10}
 
@@ -91,20 +96,13 @@ func UpdateContainer(metadata map[string]interface{}, request *hummingbird.WebRe
 	}
 }
 
-// TODO: UNTESTED
-func UpdateDeleteAt(request *hummingbird.WebRequest, vars map[string]string, metadata map[string]interface{}, hashDir string) {
-	if _, ok := metadata["X-Delete-At"]; !ok {
-		return
-	}
-	deleteAt, err := hummingbird.ParseDate(metadata["X-Delete-At"].(string))
-	if err != nil {
-		return
-	}
-	partition := request.Header.Get("X-Delete-At-Partition")
-	host := request.Header.Get("X-Delete-At-Host")
-	device := request.Header.Get("X-Delete-At-Device")
+func UpdateDeleteAt(request *hummingbird.WebRequest, vars map[string]string, hashDir string) {
+	deleteAt, err := hummingbird.ParseDate(request.Header.Get("X-Delete-At"))
+	deleteAtContainer := deleteAt.Unix()
+	partition := hummingbird.GetDefault(request.Header, "X-Delete-At-Partition", "")
+	host := hummingbird.GetDefault(request.Header, "X-Delete-At-Host", "")
+	device := hummingbird.GetDefault(request.Header, "X-Delete-At-Device", "")
 
-	deleteAtContainer := (deleteAt.Unix() / deleteAtDivisor) * deleteAtDivisor
 	// TODO: do the thing where it subtracts a randomish number so it doesn't hammer the containers
 	url := fmt.Sprintf("http://%s/%s/%s/%s/%d/%d-%s/%s/%s", host, device, partition, deleteAtAccount, deleteAtContainer,
 		deleteAt.Unix(), hummingbird.Urlencode(vars["account"]), hummingbird.Urlencode(vars["container"]), hummingbird.Urlencode(vars["obj"]))
@@ -117,22 +115,34 @@ func UpdateDeleteAt(request *hummingbird.WebRequest, vars map[string]string, met
 	req.Header.Add("X-Timestamp", request.Header.Get("X-Timestamp"))
 	req.Header.Add("X-Size", "0")
 	req.Header.Add("X-Content-Type", "text/plain")
-	req.Header.Add("X-Etag", metadata["ETag"].(string))
+	req.Header.Add("X-Etag", zeroByteHash)
 	resp, err := client.Do(req)
-	if err != nil {
+	if err != nil && resp != nil {
 		resp.Body.Close()
 	}
 	if err != nil || (resp.StatusCode/100) != 2 {
-		request.LogError("Container update failed with %s/%s, saving async", host, device) // TODO: should this really be a LogError? its just an async
-		data := map[string]interface{}{
-			"op":        request.Method,
-			"account":   vars["account"],
-			"container": vars["container"],
-			"obj":       vars["obj"],
-			"headers":   HeaderToMap(req.Header),
+		expiredObjData := map[string]string{
+			"account":   deleteAtAccount,
+			"container": strconv.FormatInt(deleteAtContainer, 10),
+			"obj":       strconv.FormatInt(deleteAtContainer, 10) + "-" + vars["account"] + "/" + vars["container"] + "/" + vars["obj"],
+			"device":    vars["device"],
+			"partition": vars["partition"],
 		}
-		suffDir, hash := filepath.Split(hashDir)
-		suffDir = filepath.Dir(hashDir)
+		expiredHashDir := ObjHashDir(expiredObjData, vars["driveRoot"], vars["hashPathPrefix"], vars["hashPathSuffix"])
+		headers := HeaderToMap(req.Header)
+		headers["Referer"] = hummingbird.GetDefault(request.Header, "Referer", "-")
+		headers["User-Agent"] = hummingbird.GetDefault(request.Header, "User-Agent", "-")
+
+		data := map[string]interface{}{
+			"op":      request.Method,
+			"headers": headers,
+		}
+		for k, v := range expiredObjData {
+			data[k] = v
+		}
+
+		suffDir, hash := filepath.Split(expiredHashDir)
+		suffDir = filepath.Dir(expiredHashDir)
 		partitionDir, suff := filepath.Split(suffDir)
 		partitionDir = filepath.Dir(suffDir)
 		objDir := filepath.Dir(partitionDir)

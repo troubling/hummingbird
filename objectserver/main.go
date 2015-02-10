@@ -303,7 +303,10 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 	finalize := func() {
 		UpdateContainer(metadata, request, vars, hashDir)
 		if request.Header.Get("X-Delete-At") != "" || request.Header.Get("X-Delete-After") != "" {
-			UpdateDeleteAt(request, vars, metadata, hashDir)
+			vars["driveRoot"] = server.driveRoot
+			vars["hashPathPrefix"] = server.hashPathPrefix
+			vars["hashPathSuffix"] = server.hashPathSuffix
+			UpdateDeleteAt(request, vars, hashDir)
 		}
 		HashCleanupListDir(hashDir, request)
 		InvalidateHash(hashDir, !server.disableFsync)
@@ -409,7 +412,10 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 	finalize := func() {
 		UpdateContainer(metadata, request, vars, hashDir)
 		if _, ok := metadata["X-Delete-At"]; ok {
-			UpdateDeleteAt(request, vars, metadata, hashDir)
+			vars["driveRoot"] = server.driveRoot
+			vars["hashPathPrefix"] = server.hashPathPrefix
+			vars["hashPathSuffix"] = server.hashPathSuffix
+			UpdateDeleteAt(request, vars, hashDir)
 		}
 		HashCleanupListDir(hashDir, request)
 		InvalidateHash(hashDir, !server.disableFsync)
