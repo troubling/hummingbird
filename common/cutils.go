@@ -12,13 +12,28 @@ import "C"
 import "unsafe"
 import "syscall"
 
-func FSetXattr(fd int, attr string, value []byte) (int, error) {
+func FGetXattr(fd uintptr, attr string, value []byte) (int, error) {
+	attrp, err := syscall.BytePtrFromString(attr)
+	if err != nil {
+		return 0, err
+	}
+	if len(value) == 0 {
+		r0, _, e1 := syscall.Syscall6(syscall.SYS_FGETXATTR, fd, uintptr(unsafe.Pointer(attrp)), 0, 0, 0, 0)
+		return int(r0), e1
+	} else {
+		valuep := unsafe.Pointer(&value[0])
+		r0, _, e1 := syscall.Syscall6(syscall.SYS_FGETXATTR, fd, uintptr(unsafe.Pointer(attrp)), uintptr(valuep), uintptr(len(value)), 0, 0)
+		return int(r0), e1
+	}
+}
+
+func FSetXattr(fd uintptr, attr string, value []byte) (int, error) {
 	attrp, err := syscall.BytePtrFromString(attr)
 	if err != nil {
 		return 0, err
 	}
 	valuep := unsafe.Pointer(&value[0])
-	r0, _, e1 := syscall.Syscall6(syscall.SYS_FSETXATTR, uintptr(fd), uintptr(unsafe.Pointer(attrp)), uintptr(valuep), uintptr(len(value)), 0, 0)
+	r0, _, e1 := syscall.Syscall6(syscall.SYS_FSETXATTR, fd, uintptr(unsafe.Pointer(attrp)), uintptr(valuep), uintptr(len(value)), 0, 0)
 	if e1 != 0 {
 		err = e1
 	}

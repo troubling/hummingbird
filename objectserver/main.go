@@ -53,7 +53,14 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 		}
 	}
 
-	metadata, err := ObjectMetadata(dataFile, metaFile)
+	file, err := os.Open(dataFile)
+	if err != nil {
+		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		return
+	}
+	defer file.Close()
+
+	metadata, err := OpenObjectMetadata(file.Fd(), metaFile)
 	if err != nil {
 		request.LogError("Error getting metadata from (%s, %s): %s", dataFile, metaFile, err.Error())
 		if QuarantineHash(hashDir) == nil {
@@ -63,13 +70,6 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 		return
 	}
 	contentLength, err := strconv.ParseInt(metadata["Content-Length"].(string), 10, 64)
-
-	file, err := os.Open(dataFile)
-	if err != nil {
-		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
-		return
-	}
-	defer file.Close()
 
 	if stat, _ := file.Stat(); stat.Size() != contentLength {
 		if QuarantineHash(hashDir) == nil {
@@ -289,7 +289,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 		return
 	}
 	outHeaders.Set("ETag", metadata["ETag"].(string))
-	WriteMetadata(int(tempFile.Fd()), metadata)
+	WriteMetadata(tempFile.Fd(), metadata)
 
 	if !server.disableFsync {
 		if server.asyncFsync {
@@ -398,7 +398,7 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 	metadata := make(map[string]interface{})
 	metadata["X-Timestamp"] = requestTimestamp
 	metadata["name"] = "/" + vars["account"] + "/" + vars["container"] + "/" + vars["obj"]
-	WriteMetadata(int(tempFile.Fd()), metadata)
+	WriteMetadata(tempFile.Fd(), metadata)
 
 	if !server.disableFsync {
 		if server.asyncFsync {

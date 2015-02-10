@@ -3,7 +3,6 @@ package objectserver
 import (
 	"crypto/md5"
 	"encoding/hex"
-	"errors"
 	"io"
 	"io/ioutil"
 	"os"
@@ -18,33 +17,69 @@ import (
 
 const METADATA_CHUNK_SIZE = 65536
 
-func ReadMetadataFilename(filename string) (map[interface{}]interface{}, error) {
-	var pickledMetadata [8192]byte
+func ReadMetadataFd(fd uintptr) (map[interface{}]interface{}, error) {
+	var pickledMetadata []byte
 	offset := 0
 	for index := 0; ; index += 1 {
 		var metadataName string
+		// get name of next xattr
 		if index == 0 {
 			metadataName = "user.swift.metadata"
 		} else {
 			metadataName = "user.swift.metadata" + strconv.Itoa(index)
 		}
-		length, _ := syscall.Getxattr(filename, metadataName, pickledMetadata[offset:])
+		// get size of xattr
+		length, _ := hummingbird.FGetXattr(fd, metadataName, nil)
 		if length <= 0 {
 			break
 		}
+		// grow buffer to hold xattr
+		for cap(pickledMetadata) < offset+length {
+			pickledMetadata = append(pickledMetadata, 0)
+		}
+		pickledMetadata = pickledMetadata[0 : offset+length]
+		hummingbird.FGetXattr(fd, metadataName, pickledMetadata[offset:])
 		offset += length
 	}
-	if offset == 0 {
-		return nil, errors.New("No metadata data")
-	}
-	v, err := hummingbird.PickleLoads(pickledMetadata[0:offset])
+	v, err := hummingbird.PickleLoads(pickledMetadata)
 	if err != nil {
 		return nil, err
 	}
 	return v.(map[interface{}]interface{}), nil
 }
 
-func WriteMetadata(fd int, v map[string]interface{}) {
+func ReadMetadataFilename(filename string) (map[interface{}]interface{}, error) {
+	var pickledMetadata []byte
+	offset := 0
+	for index := 0; ; index += 1 {
+		var metadataName string
+		// get name of next xattr
+		if index == 0 {
+			metadataName = "user.swift.metadata"
+		} else {
+			metadataName = "user.swift.metadata" + strconv.Itoa(index)
+		}
+		// get size of xattr
+		length, _ := syscall.Getxattr(filename, metadataName, nil)
+		if length <= 0 {
+			break
+		}
+		// grow buffer to hold xattr
+		for cap(pickledMetadata) < offset+length {
+			pickledMetadata = append(pickledMetadata, 0)
+		}
+		pickledMetadata = pickledMetadata[0 : offset+length]
+		syscall.Getxattr(filename, metadataName, pickledMetadata[offset:])
+		offset += length
+	}
+	v, err := hummingbird.PickleLoads(pickledMetadata)
+	if err != nil {
+		return nil, err
+	}
+	return v.(map[interface{}]interface{}), nil
+}
+
+func WriteMetadata(fd uintptr, v map[string]interface{}) {
 	// TODO: benchmark this with and without chunking up the metadata
 	buf := hummingbird.PickleDumps(v)
 	for index := 0; len(buf) > 0; index++ {
@@ -304,19 +339,10 @@ func ObjTempDir(vars map[string]string, driveRoot string) string {
 	return driveRoot + "/" + vars["device"] + "/" + "tmp"
 }
 
-func ObjectMetadata(dataFile string, metaFile string) (map[interface{}]interface{}, error) {
-	datafileMetadata, err := ReadMetadataFilename(dataFile)
-	if err != nil {
+func applyMetaFile(metaFile string, datafileMetadata map[interface{}]interface{}) (map[interface{}]interface{}, error) {
+	if metadata, err := ReadMetadataFilename(metaFile); err != nil {
 		return nil, err
-	}
-
-	if metaFile == "" {
-		return datafileMetadata, nil
 	} else {
-		metadata, err := ReadMetadataFilename(metaFile)
-		if err != nil {
-			return nil, err
-		}
 		for k, v := range datafileMetadata {
 			if k == "Content-Length" || k == "Content-Type" || k == "deleted" || k == "Etag" || strings.HasPrefix(k.(string), "X-Object-Sysmeta-") {
 				metadata[k] = v
@@ -324,4 +350,26 @@ func ObjectMetadata(dataFile string, metaFile string) (map[interface{}]interface
 		}
 		return metadata, nil
 	}
+}
+
+func OpenObjectMetadata(fd uintptr, metaFile string) (map[interface{}]interface{}, error) {
+	datafileMetadata, err := ReadMetadataFd(fd)
+	if err != nil {
+		return nil, err
+	}
+	if metaFile != "" {
+		return applyMetaFile(metaFile, datafileMetadata)
+	}
+	return datafileMetadata, nil
+}
+
+func ObjectMetadata(dataFile string, metaFile string) (map[interface{}]interface{}, error) {
+	datafileMetadata, err := ReadMetadataFilename(dataFile)
+	if err != nil {
+		return nil, err
+	}
+	if metaFile != "" {
+		return applyMetaFile(metaFile, datafileMetadata)
+	}
+	return datafileMetadata, nil
 }
