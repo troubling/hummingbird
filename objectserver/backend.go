@@ -81,7 +81,7 @@ func QuarantineHash(hashDir string) error {
 	return nil
 }
 
-func InvalidateHash(hashDir string, atomic bool) {
+func InvalidateHash(hashDir string, atomic bool, logger hummingbird.LoggingContext) {
 	// TODO: return errors
 	suffDir := filepath.Dir(hashDir)
 	partitionDir := filepath.Dir(suffDir)
@@ -96,10 +96,12 @@ func InvalidateHash(hashDir string, atomic bool) {
 		return
 	}
 	v, _ := hummingbird.PickleLoads(data)
-	if current, ok := v.(map[interface{}]interface{})[suffDir]; ok && current == nil {
+	suffixDirSplit := strings.Split(suffDir, "/")
+	suffix := suffixDirSplit[len(suffixDirSplit)-1]
+	if current, ok := v.(map[interface{}]interface{})[suffix]; ok && current == nil {
 		return
 	}
-	v.(map[interface{}]interface{})[suffDir] = nil
+	v.(map[interface{}]interface{})[suffix] = nil
 	if atomic {
 		hummingbird.WriteFileAtomic(pklFile, hummingbird.PickleDumps(v), 0600)
 	} else {
@@ -177,7 +179,7 @@ func RecalculateSuffixHash(suffixDir string, logger hummingbird.LoggingContext) 
 		if err != nil {
 			if err.Code == hummingbird.PathNotDirErrorCode {
 				if QuarantineHash(hashPath) == nil {
-					InvalidateHash(hashPath, true)
+					InvalidateHash(hashPath, true, logger)
 				}
 				continue
 			}
