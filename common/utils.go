@@ -377,6 +377,9 @@ func IsNotDir(err error) bool {
 	if se, ok := err.(*os.SyscallError); ok {
 		return se.Err == syscall.ENOTDIR
 	}
+	if se, ok := err.(*os.PathError); ok {
+		return os.IsNotExist(se)
+	}
 	return false
 }
 
