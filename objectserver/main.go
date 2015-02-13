@@ -73,7 +73,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 
 	if stat, _ := file.Stat(); stat.Size() != contentLength {
 		if QuarantineHash(hashDir) == nil {
-			InvalidateHash(hashDir, !server.disableFsync)
+			InvalidateHash(hashDir, !server.disableFsync, request)
 		}
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
@@ -176,7 +176,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 			hash := md5.New()
 			hummingbird.Copy(file, writer, hash)
 			if hex.EncodeToString(hash.Sum(nil)) != metadata["ETag"].(string) && QuarantineHash(hashDir) == nil {
-				InvalidateHash(hashDir, !server.disableFsync)
+				InvalidateHash(hashDir, !server.disableFsync, request)
 			}
 		} else {
 			io.Copy(writer, file)
@@ -309,7 +309,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 			UpdateDeleteAt(request, vars, hashDir)
 		}
 		HashCleanupListDir(hashDir, request)
-		InvalidateHash(hashDir, !server.disableFsync)
+		InvalidateHash(hashDir, !server.disableFsync, request)
 	}
 	if server.asyncFinalize {
 		go finalize()
@@ -376,7 +376,7 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 		} else {
 			request.LogError("Error getting metadata from (%s, %s): %s", dataFile, metaFile, err.Error())
 			if qerr := QuarantineHash(hashDir); qerr == nil {
-				InvalidateHash(hashDir, !server.disableFsync)
+				InvalidateHash(hashDir, !server.disableFsync, request)
 			}
 			responseStatus = http.StatusNotFound
 		}
@@ -418,7 +418,7 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 			UpdateDeleteAt(request, vars, hashDir)
 		}
 		HashCleanupListDir(hashDir, request)
-		InvalidateHash(hashDir, !server.disableFsync)
+		InvalidateHash(hashDir, !server.disableFsync, request)
 	}
 	if server.asyncFinalize {
 		go finalize()

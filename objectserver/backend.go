@@ -116,7 +116,7 @@ func QuarantineHash(hashDir string) error {
 	return nil
 }
 
-func InvalidateHash(hashDir string, atomic bool) {
+func InvalidateHash(hashDir string, atomic bool, logger hummingbird.LoggingContext) {
 	// TODO: return errors
 	suffDir := filepath.Dir(hashDir)
 	partitionDir := filepath.Dir(suffDir)
@@ -214,7 +214,7 @@ func RecalculateSuffixHash(suffixDir string, logger hummingbird.LoggingContext) 
 		if err != nil {
 			if err.Code == hummingbird.PathNotDirErrorCode {
 				if QuarantineHash(hashPath) == nil {
-					InvalidateHash(hashPath, true)
+					InvalidateHash(hashPath, true, logger)
 				}
 				continue
 			}
