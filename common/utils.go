@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -421,4 +422,20 @@ func GetDefault(h http.Header, key string, dfl string) string {
 		return dfl
 	}
 	return val
+}
+
+func ReadDirNames(path string) ([]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	list, err := f.Readdirnames(-1)
+	f.Close()
+	if err != nil {
+		return nil, err
+	}
+	if len(list) > 1 {
+		sort.Strings(list)
+	}
+	return list, nil
 }

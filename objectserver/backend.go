@@ -145,7 +145,7 @@ func InvalidateHash(hashDir string, atomic bool) {
 }
 
 func HashCleanupListDir(hashDir string, logger hummingbird.LoggingContext) ([]string, *hummingbird.BackendError) {
-	fileList, err := ioutil.ReadDir(hashDir)
+	fileList, err := hummingbird.ReadDirNames(hashDir)
 	returnList := []string{}
 	if err != nil {
 
@@ -160,7 +160,7 @@ func HashCleanupListDir(hashDir string, logger hummingbird.LoggingContext) ([]st
 	deleteRest := false
 	deleteRestMeta := false
 	if len(fileList) == 1 {
-		filename := fileList[0].Name()
+		filename := fileList[0]
 		if strings.HasSuffix(filename, ".ts") {
 			withoutSuffix := strings.Split(filename, ".")[0]
 			if strings.Contains(withoutSuffix, "_") {
@@ -175,7 +175,7 @@ func HashCleanupListDir(hashDir string, logger hummingbird.LoggingContext) ([]st
 		returnList = append(returnList, filename)
 	} else {
 		for index := len(fileList) - 1; index >= 0; index-- {
-			filename := fileList[index].Name()
+			filename := fileList[index]
 			if deleteRest {
 				os.RemoveAll(hashDir + "/" + filename)
 			} else {
@@ -201,7 +201,7 @@ func RecalculateSuffixHash(suffixDir string, logger hummingbird.LoggingContext) 
 	// the is hash_suffix in swift
 	h := md5.New()
 
-	hashList, err := ioutil.ReadDir(suffixDir)
+	hashList, err := hummingbird.ReadDirNames(suffixDir)
 	if err != nil {
 		if hummingbird.IsNotDir(err) {
 			return "", &hummingbird.BackendError{err, hummingbird.PathNotDirErrorCode}
@@ -209,7 +209,7 @@ func RecalculateSuffixHash(suffixDir string, logger hummingbird.LoggingContext) 
 		return "", &hummingbird.BackendError{err, hummingbird.OsErrorCode}
 	}
 	for _, fullHash := range hashList {
-		hashPath := suffixDir + "/" + fullHash.Name()
+		hashPath := suffixDir + "/" + fullHash
 		fileList, err := HashCleanupListDir(hashPath, logger)
 		if err != nil {
 			if err.Code == hummingbird.PathNotDirErrorCode {
@@ -258,10 +258,9 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 	}
 	if lsForSuffixes {
 		// couldn't load hashes pickle, start building new one
-		suffs, _ := ioutil.ReadDir(partitionDir)
+		suffs, _ := hummingbird.ReadDirNames(partitionDir)
 
-		for _, suff := range suffs {
-			suffName := suff.Name()
+		for _, suffName := range suffs {
 			if len(suffName) == 3 && hashes[suffName] == "" {
 				hashes[suffName] = ""
 			}
@@ -316,13 +315,13 @@ func ObjHashDir(vars map[string]string, driveRoot string, hashPathPrefix string,
 }
 
 func ObjectFiles(directory string) (string, string) {
-	fileList, err := ioutil.ReadDir(directory)
+	fileList, err := hummingbird.ReadDirNames(directory)
 	metaFile := ""
 	if err != nil {
 		return "", ""
 	}
 	for index := len(fileList) - 1; index >= 0; index-- {
-		filename := fileList[index].Name()
+		filename := fileList[index]
 		if strings.HasSuffix(filename, ".meta") {
 			metaFile = filename
 		}
