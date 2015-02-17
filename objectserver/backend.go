@@ -116,7 +116,7 @@ func QuarantineHash(hashDir string) error {
 	return nil
 }
 
-func InvalidateHash(hashDir string, atomic bool) {
+func InvalidateHash(hashDir string) {
 	// TODO: return errors
 	suffDir := filepath.Dir(hashDir)
 	partitionDir := filepath.Dir(suffDir)
@@ -137,11 +137,7 @@ func InvalidateHash(hashDir string, atomic bool) {
 		return
 	}
 	v.(map[interface{}]interface{})[suffix] = nil
-	if atomic {
-		hummingbird.WriteFileAtomic(pklFile, hummingbird.PickleDumps(v), 0600)
-	} else {
-		ioutil.WriteFile(pklFile, hummingbird.PickleDumps(v), 0600)
-	}
+	hummingbird.WriteFileAtomic(pklFile, hummingbird.PickleDumps(v), 0600)
 }
 
 func HashCleanupListDir(hashDir string, logger hummingbird.LoggingContext) ([]string, *hummingbird.BackendError) {
@@ -214,7 +210,7 @@ func RecalculateSuffixHash(suffixDir string, logger hummingbird.LoggingContext) 
 		if err != nil {
 			if err.Code == hummingbird.PathNotDirErrorCode {
 				if QuarantineHash(hashPath) == nil {
-					InvalidateHash(hashPath, true)
+					InvalidateHash(hashPath)
 				}
 				continue
 			}

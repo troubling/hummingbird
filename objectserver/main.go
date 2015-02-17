@@ -28,9 +28,7 @@ type ObjectHandler struct {
 	hashPathSuffix   string
 	checkEtags       bool
 	checkMounts      bool
-	disableFsync     bool
 	asyncFinalize    bool
-	asyncFsync       bool
 	allowedHeaders   map[string]bool
 	logger           *syslog.Writer
 	diskLimit        int64
@@ -64,7 +62,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 	if err != nil {
 		request.LogError("Error getting metadata from (%s, %s): %s", dataFile, metaFile, err.Error())
 		if QuarantineHash(hashDir) == nil {
-			InvalidateHash(hashDir, !server.disableFsync)
+			InvalidateHash(hashDir)
 		}
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
@@ -73,7 +71,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 
 	if stat, _ := file.Stat(); stat.Size() != contentLength {
 		if QuarantineHash(hashDir) == nil {
-			InvalidateHash(hashDir, !server.disableFsync)
+			InvalidateHash(hashDir)
 		}
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
@@ -176,7 +174,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 			hash := md5.New()
 			hummingbird.Copy(file, writer, hash)
 			if hex.EncodeToString(hash.Sum(nil)) != metadata["ETag"].(string) && QuarantineHash(hashDir) == nil {
-				InvalidateHash(hashDir, !server.disableFsync)
+				InvalidateHash(hashDir)
 			}
 		} else {
 			io.Copy(writer, file)
@@ -251,17 +249,19 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 		writer.StandardResponse(http.StatusInternalServerError)
 		return
 	}
-	defer tempFile.Close()
-	defer os.RemoveAll(tempFile.Name())
-	contentLength, cLErr := strconv.ParseInt(request.Header.Get("Content-Length"), 10, 64)
-
+	defer func() { // cleanup if we don't finish
+		if writer.Status != http.StatusCreated {
+			tempFile.Close()
+			os.RemoveAll(tempFile.Name())
+		}
+	}()
 	var st syscall.Statfs_t
-	if server.fallocateReserve > 0 && syscall.Fstatfs(int(tempFile.Fd()), &st) == nil && (int64(st.Frsize)*int64(st.Bavail)-contentLength) < server.fallocateReserve {
+	if server.fallocateReserve > 0 && syscall.Fstatfs(int(tempFile.Fd()), &st) == nil && (int64(st.Frsize)*int64(st.Bavail)-request.ContentLength) < server.fallocateReserve {
 		writer.CustomErrorResponse(507, vars)
 		return
 	}
-	if cLErr == nil && contentLength > 0 {
-		syscall.Fallocate(int(tempFile.Fd()), 1, 0, contentLength)
+	if request.ContentLength > 0 {
+		syscall.Fallocate(int(tempFile.Fd()), 1, 0, request.ContentLength)
 	}
 	metadata := make(map[string]interface{})
 	metadata["name"] = "/" + vars["account"] + "/" + vars["container"] + "/" + vars["obj"]
@@ -290,17 +290,21 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 	}
 	outHeaders.Set("ETag", metadata["ETag"].(string))
 	WriteMetadata(tempFile.Fd(), metadata)
-
-	if !server.disableFsync {
-		if server.asyncFsync {
-			go tempFile.Sync()
-		} else {
-			tempFile.Sync()
-		}
+	if !server.asyncFinalize { // for "super safe mode", this should happen before the rename.
+		tempFile.Sync()
 	}
 	os.Rename(tempFile.Name(), fileName)
-
 	finalize := func() {
+		if server.asyncFinalize { // for "fast, lazy mode", this can happen after the rename.
+			tempFile.Sync()
+		}
+		tempFile.Close()
+		HashCleanupListDir(hashDir, request)
+		if fd, _ := syscall.Open(hashDir, syscall.O_DIRECTORY|os.O_RDONLY, 0666); err == nil {
+			syscall.Fsync(fd)
+			syscall.Close(fd)
+		}
+		InvalidateHash(hashDir)
 		UpdateContainer(metadata, request, vars, hashDir)
 		if request.Header.Get("X-Delete-At") != "" || request.Header.Get("X-Delete-After") != "" {
 			vars["driveRoot"] = server.driveRoot
@@ -308,8 +312,6 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 			vars["hashPathSuffix"] = server.hashPathSuffix
 			UpdateDeleteAt(request, vars, hashDir)
 		}
-		HashCleanupListDir(hashDir, request)
-		InvalidateHash(hashDir, !server.disableFsync)
 	}
 	if server.asyncFinalize {
 		go finalize()
@@ -376,7 +378,7 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 		} else {
 			request.LogError("Error getting metadata from (%s, %s): %s", dataFile, metaFile, err.Error())
 			if qerr := QuarantineHash(hashDir); qerr == nil {
-				InvalidateHash(hashDir, !server.disableFsync)
+				InvalidateHash(hashDir)
 			}
 			responseStatus = http.StatusNotFound
 		}
@@ -393,39 +395,39 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 		writer.StandardResponse(http.StatusInternalServerError)
 		return
 	}
-	defer tempFile.Close()
-	defer os.RemoveAll(tempFile.Name())
 	metadata := make(map[string]interface{})
 	metadata["X-Timestamp"] = requestTimestamp
 	metadata["name"] = "/" + vars["account"] + "/" + vars["container"] + "/" + vars["obj"]
 	WriteMetadata(tempFile.Fd(), metadata)
-
-	if !server.disableFsync {
-		if server.asyncFsync {
-			go tempFile.Sync()
-		} else {
-			tempFile.Sync()
-		}
+	if !server.asyncFinalize {
+		tempFile.Sync()
 	}
 	os.Rename(tempFile.Name(), fileName)
-
+	headers.Set("X-Backend-Timestamp", metadata["X-Timestamp"].(string))
 	finalize := func() {
+		if server.asyncFinalize {
+			tempFile.Sync()
+		}
+		tempFile.Close()
+		HashCleanupListDir(hashDir, request)
+		if fd, err := syscall.Open(hashDir, syscall.O_DIRECTORY|os.O_RDONLY, 0666); err == nil {
+			syscall.Fsync(fd)
+			syscall.Close(fd)
+		}
+		InvalidateHash(hashDir)
 		UpdateContainer(metadata, request, vars, hashDir)
-		if _, ok := metadata["X-Delete-At"]; ok {
+		if request.Header.Get("X-Delete-At") != "" || request.Header.Get("X-Delete-After") != "" {
 			vars["driveRoot"] = server.driveRoot
 			vars["hashPathPrefix"] = server.hashPathPrefix
 			vars["hashPathSuffix"] = server.hashPathSuffix
 			UpdateDeleteAt(request, vars, hashDir)
 		}
-		HashCleanupListDir(hashDir, request)
-		InvalidateHash(hashDir, !server.disableFsync)
 	}
 	if server.asyncFinalize {
 		go finalize()
 	} else {
 		finalize()
 	}
-	headers.Set("X-Backend-Timestamp", metadata["X-Timestamp"].(string))
 	writer.StandardResponse(responseStatus)
 }
 
@@ -584,9 +586,7 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 	}
 	handler.driveRoot = serverconf.GetDefault("app:object-server", "devices", "/srv/node")
 	handler.checkMounts = serverconf.GetBool("app:object-server", "mount_check", true)
-	handler.disableFsync = serverconf.GetBool("app:object-server", "disable_fsync", false)
 	handler.asyncFinalize = serverconf.GetBool("app:object-server", "async_finalize", false)
-	handler.asyncFsync = serverconf.GetBool("app:object-server", "async_fsync", false)
 	handler.diskLimit = serverconf.GetInt("app:object-server", "disk_limit", 100)
 	handler.checkEtags = serverconf.GetBool("app:object-server", "check_etags", false)
 	bindIP := serverconf.GetDefault("app:object-server", "bind_ip", "0.0.0.0")
