@@ -273,13 +273,12 @@ func HeaderGetDefault(h http.Header, key string, dfl string) string {
 	return val
 }
 
-func ParseRange(rangeHeader string, fileSize int64) ([]httpRange, error) {
+func ParseRange(rangeHeader string, fileSize int64) (reqRanges []httpRange, err error) {
 	rangeHeader = strings.Replace(strings.ToLower(rangeHeader), " ", "", -1)
 	if !strings.HasPrefix(rangeHeader, "bytes=") {
-		return nil, nil
+		return reqRanges, nil
 	}
 	rangeHeader = rangeHeader[6:]
-	var reqRanges []httpRange
 	rangeStrings := strings.Split(rangeHeader, ",")
 	if len(rangeStrings) > 100 {
 		return nil, errors.New("Too many ranges")
