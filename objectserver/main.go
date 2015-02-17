@@ -62,7 +62,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 	if err != nil {
 		request.LogError("Error getting metadata from (%s, %s): %s", dataFile, metaFile, err.Error())
 		if QuarantineHash(hashDir) == nil {
-			InvalidateHash(hashDir, true)
+			InvalidateHash(hashDir)
 		}
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
@@ -71,7 +71,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 
 	if stat, _ := file.Stat(); stat.Size() != contentLength {
 		if QuarantineHash(hashDir) == nil {
-			InvalidateHash(hashDir, true)
+			InvalidateHash(hashDir)
 		}
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
@@ -174,7 +174,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 			hash := md5.New()
 			hummingbird.Copy(file, writer, hash)
 			if hex.EncodeToString(hash.Sum(nil)) != metadata["ETag"].(string) && QuarantineHash(hashDir) == nil {
-				InvalidateHash(hashDir, true)
+				InvalidateHash(hashDir)
 			}
 		} else {
 			io.Copy(writer, file)
@@ -304,7 +304,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 			syscall.Fsync(fd)
 			syscall.Close(fd)
 		}
-		InvalidateHash(hashDir, true)
+		InvalidateHash(hashDir)
 		UpdateContainer(metadata, request, vars, hashDir)
 		if request.Header.Get("X-Delete-At") != "" || request.Header.Get("X-Delete-After") != "" {
 			vars["driveRoot"] = server.driveRoot
@@ -378,7 +378,7 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 		} else {
 			request.LogError("Error getting metadata from (%s, %s): %s", dataFile, metaFile, err.Error())
 			if qerr := QuarantineHash(hashDir); qerr == nil {
-				InvalidateHash(hashDir, true)
+				InvalidateHash(hashDir)
 			}
 			responseStatus = http.StatusNotFound
 		}
@@ -414,7 +414,7 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 			syscall.Fsync(fd)
 			syscall.Close(fd)
 		}
-		InvalidateHash(hashDir, true)
+		InvalidateHash(hashDir)
 		UpdateContainer(metadata, request, vars, hashDir)
 		if request.Header.Get("X-Delete-At") != "" || request.Header.Get("X-Delete-After") != "" {
 			vars["driveRoot"] = server.driveRoot
