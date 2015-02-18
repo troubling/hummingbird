@@ -179,9 +179,14 @@ func PickleLoads(data []byte) (interface{}, error) {
 		case '\x85': // TUPLE1
 			stack.Push([]interface{}{stack.Pop()})
 		case '\x86': // TUPLE2
-			stack.Push([]interface{}{stack.Pop(), stack.Pop()})
+			a := stack.Pop()
+			b := stack.Pop()
+			stack.Push([]interface{}{b, a})
 		case '\x87': // TUPLE3
-			stack.Push([]interface{}{stack.Pop(), stack.Pop(), stack.Pop()})
+			a := stack.Pop()
+			b := stack.Pop()
+			c := stack.Pop()
+			stack.Push([]interface{}{c, b, a})
 		case 'e': // APPENDS
 			items := stack.Mark()
 			stack.Push(append(stack.Pop().([]interface{}), items...))
@@ -223,7 +228,7 @@ func PickleLoads(data []byte) (interface{}, error) {
 			if err != nil {
 				return nil, errors.New("Incomplete pickle (BININT4): " + err.Error())
 			}
-			stack.Push(int64(binary.LittleEndian.Uint32(valb)))
+			stack.Push(int64(int32(binary.LittleEndian.Uint32(valb))))
 		case '\x8a': // LONG1
 			length, err := buf.ReadByte()
 			if err != nil {

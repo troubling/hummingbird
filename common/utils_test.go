@@ -1,6 +1,9 @@
 package common
 
 import (
+	"bytes"
+	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,24 +13,31 @@ func TestParseRange(t *testing.T) {
 	//Setting up individual test data
 	tests := []struct {
 		rangeHeader string
-		exResBegin  int64
-		exResEnd    int64
 		exError     string
+		exRanges    []httpRange
 	}{
-		{" ", 0, 0, ""},
-		{"bytes=", 0, 0, "invalid range format"},
-		{"bytes=-", 0, 0, "invalid range format"},
-		{"bytes=-cv", 0, 0, "invalid end with no begin"},
-		{"bytes=cv-", 0, 0, "invalid begin with no end"},
-		{"bytes=-0", 0, 0, "zero end with no begin"},
-		{"bytes=-12346", 0, 12345, ""},
-		{"bytes=-12344", 1, 12345, ""},
-		{"bytes=12344-", 12344, 12345, ""},
-		{"bytes=12345-cv", 0, 0, "invalid end"},
-		{"bytes=cv-12345", 0, 0, "invalid begin"},
-		{"bytes=12346-123457", 0, 0, "Begin bigger than file"},
-		{"bytes=12342-12343", 12342, 12344, ""},
-		{"bytes=12342-12344", 12342, 12345, ""},
+		{"bytes=-0", "Zero end with no begin", nil},
+		{"bytes=12346-123457", "Begin bigger than file", nil},
+		{"bytes=12346-", "Begin bigger than file", nil},
+		{" ", "", []httpRange{}},
+		{"nonbytes=1-2", "", []httpRange{}},
+		{"bytes=", "", []httpRange{}},
+		{"bytes=-", "", []httpRange{}},
+		{"bytes=-cv", "", []httpRange{}},
+		{"bytes=cv-", "", []httpRange{}},
+		{"bytes=-12346", "", []httpRange{httpRange{0, 12345}}},
+		{"bytes=-12344", "", []httpRange{httpRange{1, 12345}}},
+		{"bytes=12344-", "", []httpRange{httpRange{12344, 12345}}},
+		{"bytes=12344-cv", "", []httpRange{}},
+		{"bytes=13-12", "", []httpRange{}},
+		{"bytes=cv-12345", "", []httpRange{}},
+		{"bytes=12342-12343", "", []httpRange{httpRange{12342, 12344}}},
+		{"bytes=12342-12344", "", []httpRange{httpRange{12342, 12345}}},
+		{"bytes=0-1,2-3", "", []httpRange{httpRange{0, 2}, httpRange{2, 4}}},
+		{"bytes=0-1,x-x", "", []httpRange{httpRange{0, 2}}},
+		{"bytes=0-1,x-x,2-3", "", []httpRange{httpRange{0, 2}, httpRange{2, 4}}},
+		{"bytes=0-1,x-", "", []httpRange{httpRange{0, 2}}},
+		{"bytes=0-1,2-3,4-5", "", []httpRange{httpRange{0, 2}, httpRange{2, 4}, httpRange{4, 6}}},
 	}
 
 	//Run tests with data from above
@@ -39,25 +49,15 @@ func TestParseRange(t *testing.T) {
 			continue
 		}
 		if test.exError == "" {
-			httpResult := httpRange{test.exResBegin, test.exResEnd}
 			assert.Nil(t, err)
-			assert.Contains(t, result, httpResult)
 		} else {
 			assert.Equal(t, err.Error(), test.exError)
 		}
+		assert.Equal(t, len(result), len(test.exRanges))
+		for i, _ := range result {
+			assert.Equal(t, test.exRanges[i], result[i])
+		}
 	}
-}
-
-func TestParseRange_BeginAfterEnd(t *testing.T) {
-	result, err := ParseRange("bytes=12346-12", 12345)
-	assert.Nil(t, err)
-	assert.Empty(t, result)
-}
-
-func TestParseRange_NoEnd_BeginLargerThanFilesize(t *testing.T) {
-	result, err := ParseRange("bytes=12346-", 12345)
-	assert.Nil(t, err)
-	assert.Empty(t, result)
 }
 
 func TestParseDate(t *testing.T) {
@@ -167,18 +167,10 @@ func TestParseTimestamp(t *testing.T) {
 
 func TestLooksTrue(t *testing.T) {
 	tests := []string{
-		"true ",
-		"true",
-		"t",
-		"yes",
-		"y",
-		"1",
-		"on",
+		"true ", "true", "t", "yes", "y", "1", "on",
 	}
-
 	for _, test := range tests {
-		isTrue := LooksTrue(test)
-		assert.True(t, isTrue)
+		assert.True(t, LooksTrue(test))
 	}
 }
 
@@ -193,4 +185,68 @@ func TestUrlencode(t *testing.T) {
 	assert.True(t, Urlencode("HELLOTHERE") == "HELLOTHERE")
 	assert.True(t, Urlencode("HELLO THERE, YOU TWO//\x00\xFF") == "HELLO%20THERE%2C%20YOU%20TWO//%00%FF")
 	assert.True(t, Urlencode("鐋댋") == "%E9%90%8B%EB%8C%8B")
+}
+
+func TestIniFile(t *testing.T) {
+	tempFile, err := ioutil.TempFile("", "INI")
+	assert.Nil(t, err)
+	defer os.RemoveAll(tempFile.Name())
+	tempFile.WriteString("[stuff]\ntruevalue=true\nfalsevalue=false\nintvalue=3\n")
+	iniFile, err := LoadIniFile(tempFile.Name())
+	assert.Equal(t, true, iniFile.GetBool("stuff", "truevalue", false))
+	assert.Equal(t, false, iniFile.GetBool("stuff", "falsevalue", true))
+	assert.Equal(t, true, iniFile.GetBool("stuff", "defaultvalue", true))
+	assert.Equal(t, 3, iniFile.GetInt("stuff", "intvalue", 2))
+	assert.Equal(t, 2, iniFile.GetInt("stuff", "missingvalue", 2))
+	assert.Equal(t, "false", iniFile.GetDefault("stuff", "falsevalue", "true"))
+	assert.Equal(t, "true", iniFile.GetDefault("stuff", "missingvalue", "true"))
+}
+
+func TestIsMount(t *testing.T) {
+	isMount, err := IsMount("/proc")
+	assert.Nil(t, err)
+	assert.True(t, isMount)
+	isMount, err = IsMount(".")
+	assert.Nil(t, err)
+	assert.False(t, isMount)
+	isMount, err = IsMount("/slartibartfast")
+	assert.NotNil(t, err)
+}
+
+func TestIsNotDir(t *testing.T) {
+	tempFile, _ := ioutil.TempFile("", "INI")
+	defer os.RemoveAll(tempFile.Name())
+	_, err := ioutil.ReadDir(tempFile.Name())
+	assert.True(t, IsNotDir(err))
+	_, err = ioutil.ReadDir("/aseagullstolemysailorhat")
+	assert.True(t, IsNotDir(err))
+}
+
+func TestCopy(t *testing.T) {
+	src := bytes.NewBuffer([]byte("WELL HELLO THERE"))
+	dst1 := &bytes.Buffer{}
+	dst2 := &bytes.Buffer{}
+	Copy(src, dst1, dst2)
+	assert.Equal(t, []byte("WELL HELLO THERE"), dst1.Bytes())
+	assert.Equal(t, []byte("WELL HELLO THERE"), dst2.Bytes())
+}
+
+func TestWriteFileAtomic(t *testing.T) {
+	tempFile, _ := ioutil.TempFile("", "INI")
+	defer os.RemoveAll(tempFile.Name())
+	WriteFileAtomic(tempFile.Name(), []byte("HI THERE"), 0600)
+	fi, err := os.Stat(tempFile.Name())
+	assert.Nil(t, err)
+	assert.Equal(t, 8, fi.Size())
+}
+
+func TestReadDirNames(t *testing.T) {
+	tempDir, _ := ioutil.TempDir("", "RDN")
+	defer os.RemoveAll(tempDir)
+	ioutil.WriteFile(tempDir+"/Z", []byte{}, 0666)
+	ioutil.WriteFile(tempDir+"/X", []byte{}, 0666)
+	ioutil.WriteFile(tempDir+"/Y", []byte{}, 0666)
+	fileNames, err := ReadDirNames(tempDir)
+	assert.Nil(t, err)
+	assert.Equal(t, fileNames, []string{"X", "Y", "Z"})
 }
