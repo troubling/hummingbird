@@ -341,7 +341,7 @@ func applyMetaFile(metaFile string, datafileMetadata map[interface{}]interface{}
 		return nil, err
 	} else {
 		for k, v := range datafileMetadata {
-			if k == "Content-Length" || k == "Content-Type" || k == "deleted" || k == "Etag" || strings.HasPrefix(k.(string), "X-Object-Sysmeta-") {
+			if k == "Content-Length" || k == "Content-Type" || k == "deleted" || k == "ETag" || strings.HasPrefix(k.(string), "X-Object-Sysmeta-") {
 				metadata[k] = v
 			}
 		}
