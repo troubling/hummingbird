@@ -31,6 +31,7 @@ type ObjectHandler struct {
 	asyncFinalize    bool
 	allowedHeaders   map[string]bool
 	logger           *syslog.Writer
+	logLevel         string
 	diskLimit        int64
 	diskInUse        map[string]*int64
 	diskInUseLock    sync.Mutex
@@ -530,7 +531,9 @@ func (server ObjectHandler) ServeHTTP(writer http.ResponseWriter, request *http.
 	newWriter := &hummingbird.WebWriter{writer, 500, false}
 	newRequest := &hummingbird.WebRequest{request, request.Header.Get("X-Trans-Id"), request.Header.Get("X-Timestamp"), time.Now(), server.logger}
 	defer newRequest.LogPanics(newWriter)
-	defer server.LogRequest(newWriter, newRequest) // log the request after return
+	if request.Method != "REPLICATE" || server.logLevel == "DEBUG" {
+		defer server.LogRequest(newWriter, newRequest) // log the request after return
+	}
 
 	if !newRequest.ValidateRequest() {
 		newWriter.StandardResponse(400)
@@ -589,6 +592,7 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 	handler.asyncFinalize = serverconf.GetBool("app:object-server", "async_finalize", false)
 	handler.diskLimit = serverconf.GetInt("app:object-server", "disk_limit", 100)
 	handler.checkEtags = serverconf.GetBool("app:object-server", "check_etags", false)
+	handler.logLevel = serverconf.GetDefault("app:object-server", "log_level", "INFO")
 	bindIP := serverconf.GetDefault("app:object-server", "bind_ip", "0.0.0.0")
 	bindPort := serverconf.GetInt("app:object-server", "bind_port", 6000)
 	if allowedHeaders, ok := serverconf.Get("app:object-server", "allowed_headers"); ok {
@@ -598,7 +602,7 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 		}
 	}
 
-	handler.logger = hummingbird.SetupLogger(serverconf.GetDefault("app:object-server", "log_facility", "LOG_LOCAL0"), "object-server")
+	handler.logger = hummingbird.SetupLogger(serverconf.GetDefault("app:object-server", "log_facility", "LOG_LOCAL1"), "object-server")
 	hummingbird.DropPrivileges(serverconf.GetDefault("app:object-server", "user", "swift"))
 
 	return bindIP, int(bindPort), handler, handler.logger
