@@ -341,7 +341,11 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 			writer.StandardResponse(http.StatusBadRequest)
 			return
 		}
-		if dataFile != "" && !strings.HasSuffix(dataFile, ".ts") {
+		if dataFile == "" {
+			writer.StandardResponse(http.StatusNotFound)
+			return
+		}
+		if !strings.HasSuffix(dataFile, ".data") {
 			writer.StandardResponse(http.StatusPreconditionFailed)
 			return
 		}
