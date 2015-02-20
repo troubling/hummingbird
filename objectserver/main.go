@@ -3,7 +3,6 @@ package objectserver
 import (
 	"crypto/md5"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -14,8 +13,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -32,10 +29,9 @@ type ObjectHandler struct {
 	allowedHeaders   map[string]bool
 	logger           *syslog.Writer
 	logLevel         string
-	diskLimit        int64
-	diskInUse        map[string]*int64
-	diskInUseLock    sync.Mutex
 	fallocateReserve int64
+	diskInUse        *hummingbird.KeyedLimit
+	replicationInUse *hummingbird.KeyedLimit
 }
 
 func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
@@ -440,38 +436,10 @@ func (server *ObjectHandler) ObjReplicateHandler(writer *hummingbird.WebWriter, 
 	hashes, err := GetHashes(server.driveRoot, vars["device"], vars["partition"], recalculate, request)
 	if err != nil {
 		writer.StandardResponse(http.StatusInternalServerError)
-		// TODO: need to check if this is  507 instead of a 500 for the drive unmounted
-		//        if err.(*BackEnd)
-		//		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 	writer.WriteHeader(http.StatusOK)
 	writer.Write(hummingbird.PickleDumps(hashes))
-}
-
-func (server *ObjectHandler) AcquireDisk(disk string) bool {
-	if server.checkMounts {
-		devicePath := server.driveRoot + "/" + disk
-		if mounted, err := hummingbird.IsMount(devicePath); err != nil || mounted != true {
-			return false
-		}
-	}
-
-	if val, ok := server.diskInUse[disk]; !ok {
-		server.diskInUseLock.Lock()
-		if _, ok := server.diskInUse[disk]; !ok {
-			server.diskInUse[disk] = new(int64)
-		}
-		server.diskInUseLock.Unlock()
-	} else if *val > server.diskLimit {
-		return false
-	}
-	atomic.AddInt64(server.diskInUse[disk], 1)
-	return true
-}
-
-func (server *ObjectHandler) ReleaseDisk(disk string) {
-	atomic.AddInt64(server.diskInUse[disk], -1)
 }
 
 func (server *ObjectHandler) LogRequest(writer *hummingbird.WebWriter, request *hummingbird.WebRequest) {
@@ -499,7 +467,7 @@ func (server ObjectHandler) ServeHTTP(writer http.ResponseWriter, request *http.
 		hummingbird.ReconHandler(server.driveRoot, writer, request)
 		return
 	} else if request.URL.Path == "/diskusage" {
-		data, err := json.Marshal(server.diskInUse)
+		data, err := server.diskInUse.MarshalJSON()
 		if err == nil {
 			writer.WriteHeader(http.StatusOK)
 			writer.Write(data)
@@ -540,13 +508,24 @@ func (server ObjectHandler) ServeHTTP(writer http.ResponseWriter, request *http.
 		return
 	}
 
-	if !server.AcquireDisk(vars["device"]) {
-		vars["Method"] = request.Method
-		newWriter.CustomErrorResponse(507, vars)
-		return
+	if server.checkMounts {
+		devicePath := server.driveRoot + "/" + vars["device"]
+		if mounted, err := hummingbird.IsMount(devicePath); err != nil || mounted != true {
+			vars["Method"] = request.Method
+			newWriter.CustomErrorResponse(507, vars)
+			return
+		}
 	}
 
-	defer server.ReleaseDisk(vars["device"])
+	var diskInUse = server.diskInUse
+	if request.Method == "REPLICATE" {
+		diskInUse = server.replicationInUse
+	}
+	if !diskInUse.Acquire(vars["device"]) {
+		newWriter.StandardResponse(500)
+		return
+	}
+	defer diskInUse.Release(vars["device"])
 
 	switch request.Method {
 	case "GET":
@@ -572,7 +551,6 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 			"X-Object-Manifest":     true,
 			"X-Static-Large-Object": true,
 		},
-		diskInUse: make(map[string]*int64),
 	}
 
 	if swiftconf, err := hummingbird.LoadIniFile("/etc/hummingbird/hummingbird.conf"); err == nil {
@@ -590,9 +568,10 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 	handler.driveRoot = serverconf.GetDefault("app:object-server", "devices", "/srv/node")
 	handler.checkMounts = serverconf.GetBool("app:object-server", "mount_check", true)
 	handler.asyncFinalize = serverconf.GetBool("app:object-server", "async_finalize", false)
-	handler.diskLimit = serverconf.GetInt("app:object-server", "disk_limit", 100)
 	handler.checkEtags = serverconf.GetBool("app:object-server", "check_etags", false)
 	handler.logLevel = serverconf.GetDefault("app:object-server", "log_level", "INFO")
+	handler.diskInUse = hummingbird.NewKeyedLimit(serverconf.GetInt("app:object-server", "disk_limit", 25))
+	handler.replicationInUse = hummingbird.NewKeyedLimit(serverconf.GetInt("app:object-server", "replication_limit", 5))
 	bindIP := serverconf.GetDefault("app:object-server", "bind_ip", "0.0.0.0")
 	bindPort := serverconf.GetInt("app:object-server", "bind_port", 6000)
 	if allowedHeaders, ok := serverconf.Get("app:object-server", "allowed_headers"); ok {

@@ -1,6 +1,7 @@
 package common
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -437,4 +439,39 @@ func ReadDirNames(path string) ([]string, error) {
 		sort.Strings(list)
 	}
 	return list, nil
+}
+
+// More like a map of semaphores.  I don't know what to call it.
+type KeyedLimit struct {
+	limit int64
+	lock  sync.Mutex
+	inUse map[string]int64
+}
+
+func (k *KeyedLimit) Acquire(key string) bool {
+	k.lock.Lock()
+	defer k.lock.Unlock()
+	if k.inUse[key] >= k.limit {
+		return false
+	} else {
+		k.inUse[key] += 1
+		return true
+	}
+}
+
+func (k *KeyedLimit) Release(key string) {
+	k.lock.Lock()
+	k.inUse[key] -= 1
+	k.lock.Unlock()
+}
+
+func (k *KeyedLimit) MarshalJSON() ([]byte, error) {
+	k.lock.Lock()
+	data, err := json.Marshal(k.inUse)
+	k.lock.Unlock()
+	return data, err
+}
+
+func NewKeyedLimit(limit int64) *KeyedLimit {
+	return &KeyedLimit{limit: limit, inUse: make(map[string]int64)}
 }
