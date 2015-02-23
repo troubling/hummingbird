@@ -13,7 +13,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -32,9 +31,7 @@ type ObjectHandler struct {
 	logLevel         string
 	fallocateReserve int64
 	diskInUse        *hummingbird.KeyedLimit
-	replicateLock    sync.Mutex
-	replicateGoingOn int64
-	replicateLimit   int64
+	replicationInUse *hummingbird.KeyedLimit
 }
 
 func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
@@ -529,11 +526,15 @@ func (server ObjectHandler) ServeHTTP(writer http.ResponseWriter, request *http.
 		}
 	}
 
-	if !server.diskInUse.Acquire(vars["device"]) {
+	var diskInUse = server.diskInUse
+	if request.Method == "REPLICATE" {
+		diskInUse = server.replicationInUse
+	}
+	if !diskInUse.Acquire(vars["device"]) {
 		newWriter.StandardResponse(500)
 		return
 	}
-	defer server.diskInUse.Release(vars["device"])
+	defer diskInUse.Release(vars["device"])
 
 	switch request.Method {
 	case "GET":
@@ -545,19 +546,6 @@ func (server ObjectHandler) ServeHTTP(writer http.ResponseWriter, request *http.
 	case "DELETE":
 		server.ObjDeleteHandler(newWriter, newRequest, vars)
 	case "REPLICATE":
-		server.replicateLock.Lock()
-		if server.replicateGoingOn >= server.replicateLimit {
-			server.replicateLock.Unlock()
-			newWriter.StandardResponse(500)
-			return
-		}
-		server.replicateGoingOn += 1
-		server.replicateLock.Unlock()
-		defer func() {
-			server.replicateLock.Lock()
-			server.replicateGoingOn -= 1
-			server.replicateLock.Unlock()
-		}()
 		server.ObjReplicateHandler(newWriter, newRequest, vars)
 	default:
 		newWriter.StandardResponse(http.StatusMethodNotAllowed)
@@ -591,8 +579,9 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 	handler.asyncFinalize = serverconf.GetBool("app:object-server", "async_finalize", false)
 	handler.checkEtags = serverconf.GetBool("app:object-server", "check_etags", false)
 	handler.logLevel = serverconf.GetDefault("app:object-server", "log_level", "INFO")
-	handler.diskInUse = hummingbird.NewKeyedLimit(serverconf.GetInt("app:object-server", "disk_limit", 25))
-	handler.replicateLimit = serverconf.GetInt("app:object-server", "replication_limit", 10)
+	handler.diskInUse = hummingbird.NewKeyedLimit(serverconf.GetInt("app:object-server", "disk_limit", 25), 10000)
+	handler.replicationInUse = hummingbird.NewKeyedLimit(2,
+		serverconf.GetInt("app:object-server", "replication_limit", 10))
 	bindIP := serverconf.GetDefault("app:object-server", "bind_ip", "0.0.0.0")
 	bindPort := serverconf.GetInt("app:object-server", "bind_port", 6000)
 	if allowedHeaders, ok := serverconf.Get("app:object-server", "allowed_headers"); ok {
