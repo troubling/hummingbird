@@ -58,7 +58,15 @@ func (r Ring) GetPartition(account string, container string, object string) uint
 }
 
 func LoadRing(path string, prefix string, suffix string) (*Ring, error) {
-	fp, _ := os.Open(path)
+	fp, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			errMsg := fmt.Sprintf("File at %s doesn't exists", path)
+			return nil, errors.New(errMsg)
+		} else {
+			return nil, err
+		}
+	}
 	gz, _ := gzip.NewReader(fp)
 	magicBuf := make([]byte, 4)
 	io.ReadFull(gz, magicBuf)
