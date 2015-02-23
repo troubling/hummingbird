@@ -500,8 +500,13 @@ func (server ObjectHandler) ServeHTTP(writer http.ResponseWriter, request *http.
 		}
 	}
 
-	newWriter := &hummingbird.WebWriter{writer, 500, false}
-	newRequest := &hummingbird.WebRequest{request, request.Header.Get("X-Trans-Id"), request.Header.Get("X-Timestamp"), time.Now(), server.logger}
+	newWriter := &hummingbird.WebWriter{ResponseWriter: writer, Status: 500, ResponseStarted: false}
+	newRequest := &hummingbird.WebRequest{
+		Request:       request,
+		TransactionId: request.Header.Get("X-Trans-Id"),
+		XTimestamp:    request.Header.Get("X-Timestamp"),
+		Start:         time.Now(),
+		Logger:        server.logger}
 	defer newRequest.LogPanics(newWriter)
 	if request.Method != "REPLICATE" || server.logLevel == "DEBUG" {
 		defer server.LogRequest(newWriter, newRequest) // log the request after return

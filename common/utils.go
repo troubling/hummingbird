@@ -330,7 +330,7 @@ func UseMaxProcs() {
 }
 
 func SetRlimits() {
-	syscall.Setrlimit(syscall.RLIMIT_NOFILE, &syscall.Rlimit{65536, 65536})
+	syscall.Setrlimit(syscall.RLIMIT_NOFILE, &syscall.Rlimit{Max: 65536, Cur: 65536})
 }
 
 func GetEpochFromTimestamp(timestamp string) (string, error) {

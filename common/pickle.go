@@ -104,7 +104,7 @@ func pickleobj(o interface{}, buf *bytes.Buffer) {
 		}
 		buf.WriteByte('l')
 	default:
-		panic(fmt.Sprintf("Unknown object type in pickle:", o))
+		panic(fmt.Sprintf("Unknown object type in pickle: %v", o))
 	}
 }
 

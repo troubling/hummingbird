@@ -149,9 +149,9 @@ func HashCleanupListDir(hashDir string, logger hummingbird.LoggingContext) ([]st
 			return returnList, nil
 		}
 		if hummingbird.IsNotDir(err) {
-			return returnList, &hummingbird.BackendError{err, hummingbird.PathNotDirErrorCode}
+			return returnList, &hummingbird.BackendError{Err: err, Code: hummingbird.PathNotDirErrorCode}
 		}
-		return returnList, &hummingbird.BackendError{err, hummingbird.OsErrorCode}
+		return returnList, &hummingbird.BackendError{Err: err, Code: hummingbird.OsErrorCode}
 	}
 	deleteRest := false
 	deleteRestMeta := false
@@ -200,9 +200,9 @@ func RecalculateSuffixHash(suffixDir string, logger hummingbird.LoggingContext) 
 	hashList, err := hummingbird.ReadDirNames(suffixDir)
 	if err != nil {
 		if hummingbird.IsNotDir(err) {
-			return "", &hummingbird.BackendError{err, hummingbird.PathNotDirErrorCode}
+			return "", &hummingbird.BackendError{Err: err, Code: hummingbird.PathNotDirErrorCode}
 		}
-		return "", &hummingbird.BackendError{err, hummingbird.OsErrorCode}
+		return "", &hummingbird.BackendError{Err: err, Code: hummingbird.OsErrorCode}
 	}
 	for _, fullHash := range hashList {
 		hashPath := suffixDir + "/" + fullHash
@@ -288,7 +288,7 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 		partitionLock, err := hummingbird.LockPath(partitionDir, 10)
 		defer partitionLock.Close()
 		if err != nil {
-			return nil, &hummingbird.BackendError{err, hummingbird.LockPathError}
+			return nil, &hummingbird.BackendError{Err: err, Code: hummingbird.LockPathError}
 		} else {
 			fileInfo, err := os.Stat(pklFile)
 			if lsForSuffixes || os.IsNotExist(err) || mtime != fileInfo.ModTime().Unix() {
