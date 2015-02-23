@@ -294,8 +294,13 @@ func (server ProxyHandler) ServeHTTP(writer http.ResponseWriter, request *http.R
 			}
 		}
 	}
-	newWriter := &hummingbird.WebWriter{writer, 500, false}
-	newRequest := &hummingbird.WebRequest{request, hummingbird.GetTransactionId(), hummingbird.GetTimestamp(), time.Now(), server.logger}
+	newWriter := &hummingbird.WebWriter{ResponseWriter: writer, Status: 500, ResponseStarted: false}
+	newRequest := &hummingbird.WebRequest{
+		Request:       request,
+		TransactionId: hummingbird.GetTransactionId(),
+		XTimestamp:    hummingbird.GetTimestamp(),
+		Start:         time.Now(),
+		Logger:        server.logger}
 	defer newRequest.LogPanics(newWriter)
 	defer server.LogRequest(newWriter, newRequest) // log the request after return
 
