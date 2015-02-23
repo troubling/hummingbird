@@ -443,18 +443,21 @@ func ReadDirNames(path string) ([]string, error) {
 
 // More like a map of semaphores.  I don't know what to call it.
 type KeyedLimit struct {
-	limit int64
-	lock  sync.Mutex
-	inUse map[string]int64
+	limitPerKey int64
+	totalLimit  int64
+	lock        sync.Mutex
+	inUse       map[string]int64
+	totalUse    int64
 }
 
 func (k *KeyedLimit) Acquire(key string) bool {
 	k.lock.Lock()
 	defer k.lock.Unlock()
-	if k.inUse[key] >= k.limit {
+	if k.inUse[key] >= k.limitPerKey || k.totalUse > k.totalLimit {
 		return false
 	} else {
 		k.inUse[key] += 1
+		k.totalUse += 1
 		return true
 	}
 }
@@ -462,6 +465,7 @@ func (k *KeyedLimit) Acquire(key string) bool {
 func (k *KeyedLimit) Release(key string) {
 	k.lock.Lock()
 	k.inUse[key] -= 1
+	k.totalUse -= 1
 	k.lock.Unlock()
 }
 
@@ -472,6 +476,6 @@ func (k *KeyedLimit) MarshalJSON() ([]byte, error) {
 	return data, err
 }
 
-func NewKeyedLimit(limit int64) *KeyedLimit {
-	return &KeyedLimit{limit: limit, inUse: make(map[string]int64)}
+func NewKeyedLimit(limitPerKey int64, totalLimit int64) *KeyedLimit {
+	return &KeyedLimit{limitPerKey: limitPerKey, totalLimit: totalLimit, inUse: make(map[string]int64)}
 }
