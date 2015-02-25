@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log/syslog"
 	"mime/multipart"
 	"net/http"
@@ -30,6 +29,7 @@ type ObjectHandler struct {
 	logger           *syslog.Writer
 	logLevel         string
 	fallocateReserve int64
+	disableFallocate bool
 	diskInUse        *hummingbird.KeyedLimit
 	replicationInUse *hummingbird.KeyedLimit
 }
@@ -196,7 +196,6 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 		return
 	}
 	hashDir := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix)
-	tempDir := ObjTempDir(vars, server.driveRoot)
 
 	if deleteAt := request.Header.Get("X-Delete-At"); deleteAt != "" {
 		if deleteTime, err := hummingbird.ParseDate(deleteAt); err != nil || deleteTime.Before(time.Now()) {
@@ -233,14 +232,8 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 		}
 	}
 
-	if os.MkdirAll(hashDir, 0770) != nil || os.MkdirAll(tempDir, 0770) != nil {
-		request.LogError("Error creating temp directory: %s", tempDir)
-		writer.StandardResponse(http.StatusInternalServerError)
-		return
-	}
-
 	fileName := hashDir + "/" + requestTimestamp + ".data"
-	tempFile, err := ioutil.TempFile(tempDir, "PUT")
+	tempFile, err := ObjTempFile(vars, server.driveRoot, "PUT")
 	if err != nil {
 		request.LogError("Error creating temporary file in %s: %s", server.driveRoot, err.Error())
 		writer.StandardResponse(http.StatusInternalServerError)
@@ -252,12 +245,12 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 			os.RemoveAll(tempFile.Name())
 		}
 	}()
-	var st syscall.Statfs_t
-	if server.fallocateReserve > 0 && syscall.Fstatfs(int(tempFile.Fd()), &st) == nil && (int64(st.Frsize)*int64(st.Bavail)-request.ContentLength) < server.fallocateReserve {
+	if freeSpace, err := FreeDiskSpace(tempFile.Fd()); err == nil && freeSpace-request.ContentLength < server.fallocateReserve {
+		request.LogError("Not enough space available: %d available, %d requested", freeSpace, request.ContentLength)
 		writer.CustomErrorResponse(507, vars)
 		return
 	}
-	if request.ContentLength > 0 {
+	if !server.disableFallocate && request.ContentLength > 0 {
 		syscall.Fallocate(int(tempFile.Fd()), 1, 0, request.ContentLength)
 	}
 	metadata := make(map[string]interface{})
@@ -290,7 +283,12 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 	if !server.asyncFinalize { // for "super safe mode", this should happen before the rename.
 		tempFile.Sync()
 	}
-	os.Rename(tempFile.Name(), fileName)
+
+	if os.MkdirAll(hashDir, 0770) != nil || os.Rename(tempFile.Name(), fileName) != nil {
+		request.LogError("Error renaming object file: %s -> %s", tempFile.Name(), fileName)
+		writer.StandardResponse(http.StatusInternalServerError)
+		return
+	}
 	finalize := func() {
 		if server.asyncFinalize { // for "fast, lazy mode", this can happen after the rename.
 			tempFile.Sync()
@@ -327,7 +325,6 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 		return
 	}
 	hashDir := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix)
-	tempDir := ObjTempDir(vars, server.driveRoot)
 	responseStatus := http.StatusNotFound
 
 	dataFile, metaFile := ObjectFiles(hashDir)
@@ -385,12 +382,8 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 		}
 	}
 
-	if os.MkdirAll(hashDir, 0770) != nil || os.MkdirAll(tempDir, 0770) != nil {
-		writer.StandardResponse(http.StatusInternalServerError)
-		return
-	}
 	fileName := hashDir + "/" + requestTimestamp + ".ts"
-	tempFile, err := ioutil.TempFile(tempDir, "PUT")
+	tempFile, err := ObjTempFile(vars, server.driveRoot, "DELETE")
 	if err != nil {
 		request.LogError("Error creating temporary file in %s: %s", server.driveRoot, err.Error())
 		writer.StandardResponse(http.StatusInternalServerError)
@@ -403,7 +396,11 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 	if !server.asyncFinalize {
 		tempFile.Sync()
 	}
-	os.Rename(tempFile.Name(), fileName)
+	if os.MkdirAll(hashDir, 0770) != nil || os.Rename(tempFile.Name(), fileName) != nil {
+		request.LogError("Error renaming tombstone file: %s -> %s", tempFile.Name(), fileName)
+		writer.StandardResponse(http.StatusInternalServerError)
+		return
+	}
 	headers.Set("X-Backend-Timestamp", metadata["X-Timestamp"].(string))
 	finalize := func() {
 		if server.asyncFinalize {
@@ -578,6 +575,7 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 	handler.checkMounts = serverconf.GetBool("app:object-server", "mount_check", true)
 	handler.asyncFinalize = serverconf.GetBool("app:object-server", "async_finalize", false)
 	handler.checkEtags = serverconf.GetBool("app:object-server", "check_etags", false)
+	handler.disableFallocate = serverconf.GetBool("app:object-server", "disable_fallocate", false)
 	handler.logLevel = serverconf.GetDefault("app:object-server", "log_level", "INFO")
 	handler.diskInUse = hummingbird.NewKeyedLimit(serverconf.GetInt("app:object-server", "disk_limit", 25), 10000)
 	handler.replicationInUse = hummingbird.NewKeyedLimit(2,

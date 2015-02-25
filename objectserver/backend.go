@@ -332,8 +332,12 @@ func ObjectFiles(directory string) (string, string) {
 	return "", ""
 }
 
-func ObjTempDir(vars map[string]string, driveRoot string) string {
-	return driveRoot + "/" + vars["device"] + "/" + "tmp"
+func ObjTempFile(vars map[string]string, driveRoot, prefix string) (*os.File, error) {
+	tempDir := driveRoot + "/" + vars["device"] + "/" + "tmp"
+	if err := os.MkdirAll(tempDir, 0770); err != nil {
+		return nil, err
+	}
+	return ioutil.TempFile(tempDir, prefix)
 }
 
 func applyMetaFile(metaFile string, datafileMetadata map[interface{}]interface{}) (map[interface{}]interface{}, error) {
@@ -369,4 +373,13 @@ func ObjectMetadata(dataFile string, metaFile string) (map[interface{}]interface
 		return applyMetaFile(metaFile, datafileMetadata)
 	}
 	return datafileMetadata, nil
+}
+
+func FreeDiskSpace(fd uintptr) (int64, error) {
+	var st syscall.Statfs_t
+	if err := syscall.Fstatfs(int(fd), &st); err != nil {
+		return 0, err
+	} else {
+		return int64(st.Frsize) * int64(st.Bavail), nil
+	}
 }
