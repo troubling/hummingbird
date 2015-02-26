@@ -18,12 +18,18 @@ func FGetXattr(fd uintptr, attr string, value []byte) (int, error) {
 		return 0, err
 	}
 	if len(value) == 0 {
-		r0, _, e1 := syscall.Syscall6(syscall.SYS_FGETXATTR, fd, uintptr(unsafe.Pointer(attrp)), 0, 0, 0, 0)
-		return int(r0), e1
+		if r0, _, e1 := syscall.Syscall6(syscall.SYS_FGETXATTR, fd, uintptr(unsafe.Pointer(attrp)), 0, 0, 0, 0); e1 == 0 {
+			return int(r0), nil
+		} else {
+			return 0, e1
+		}
 	} else {
 		valuep := unsafe.Pointer(&value[0])
-		r0, _, e1 := syscall.Syscall6(syscall.SYS_FGETXATTR, fd, uintptr(unsafe.Pointer(attrp)), uintptr(valuep), uintptr(len(value)), 0, 0)
-		return int(r0), e1
+		if r0, _, e1 := syscall.Syscall6(syscall.SYS_FGETXATTR, fd, uintptr(unsafe.Pointer(attrp)), uintptr(valuep), uintptr(len(value)), 0, 0); e1 == 0 {
+			return int(r0), nil
+		} else {
+			return int(r0), e1
+		}
 	}
 }
 
