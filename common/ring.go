@@ -8,40 +8,78 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
+	"strconv"
+	"strings"
 )
 
 type Device struct {
-	Id              uint    `json:"id"`
+	Id              int     `json:"id"`
 	Device          string  `json:"device"`
 	Ip              string  `json:"ip"`
 	Meta            string  `json:"meta"`
-	Port            uint    `json:"port"`
-	Region          uint    `json:"region"`
+	Port            int     `json:"port"`
+	Region          int     `json:"region"`
 	ReplicationIp   string  `json:"replication_ip"`
-	ReplicationPort uint    `json:"replication_port"`
+	ReplicationPort int     `json:"replication_port"`
 	Weight          float64 `json:"weight"`
-	Zone            uint    `json:"zone"`
+	Zone            int     `json:"zone"`
 }
 
 type Ring struct {
-	Devs                []Device `json:"devs"`
-	ReplicaCount        uint     `json:"replica_count"`
-	PartShift           uint     `json:"part_shift"`
-	replica2part2dev_id [][]uint16
-	prefix              string
-	suffix              string
+	Devs                                []Device `json:"devs"`
+	ReplicaCount                        int      `json:"replica_count"`
+	PartShift                           uint64   `json:"part_shift"`
+	replica2part2devId                  [][]uint16
+	prefix                              string
+	suffix                              string
+	regionCount, zoneCount, ipPortCount int
 }
 
-func (r Ring) GetNodes(partition uint64) []Device {
-	var response []Device
-	for i := uint(0); i < r.ReplicaCount; i++ {
-		response = append(response, r.Devs[r.replica2part2dev_id[i][partition]])
+type regionZone struct {
+	region, zone int
+}
+
+type ipPort struct {
+	region, zone, port int
+	ip                 string
+}
+
+type MoreNodes struct {
+	r                 *Ring
+	used, sameRegions map[int]bool
+	sameZones         map[regionZone]bool
+	sameIpPorts       map[ipPort]bool
+	parts, start, inc int
+	partition         uint64
+}
+
+func (d *Device) String() string {
+	return fmt.Sprintf("Device{Id: %d, Device: %s, Ip: %s, Port: %d}", d.Id, d.Device, d.Ip, d.Port)
+}
+
+func (r *Ring) GetNodes(partition uint64) (response []*Device) {
+	for i := 0; i < r.ReplicaCount; i++ {
+		response = append(response, &r.Devs[r.replica2part2devId[i][partition]])
 	}
 	return response
 }
 
-func (r Ring) GetPartition(account string, container string, object string) uint64 {
+func (r *Ring) GetJobNodes(partition uint64, localDevice int) (response []*Device, handoff bool) {
+	handoff = true
+	for i := 0; i < r.ReplicaCount; i++ {
+		dev := &r.Devs[r.replica2part2devId[i][partition]]
+		if dev.Id == localDevice {
+			handoff = false
+		} else {
+			response = append(response, dev)
+		}
+	}
+	return response, handoff
+}
+
+func (r *Ring) GetPartition(account string, container string, object string) uint64 {
 	hash := md5.New()
 	hash.Write([]byte(r.prefix + "/" + account + "/"))
 	if container != "" {
@@ -52,9 +90,83 @@ func (r Ring) GetPartition(account string, container string, object string) uint
 	}
 	// treat as big endian unsigned int
 	hash.Write([]byte(r.suffix))
-	digest := hash.Sum([]byte(""))
+	digest := hash.Sum(nil)
 	val := uint64(digest[0])<<24 | uint64(digest[1])<<16 | uint64(digest[2])<<8 | uint64(digest[3])
 	return val >> r.PartShift
+}
+
+func (r *Ring) LocalDevices(localPort int) (devs []Device) {
+	var localIPs = make(map[string]bool)
+
+	localAddrs, _ := net.InterfaceAddrs()
+	for _, addr := range localAddrs {
+		localIPs[strings.Split(addr.String(), "/")[0]] = true
+	}
+
+	for _, dev := range r.Devs {
+		if localIPs[dev.ReplicationIp] && dev.ReplicationPort == localPort {
+			devs = append(devs, dev)
+		}
+	}
+	return devs
+}
+
+func (r *Ring) GetMoreNodes(partition uint64) *MoreNodes {
+	return &MoreNodes{r: r, partition: partition, used: nil}
+}
+
+func (m *MoreNodes) addDevice(d *Device) {
+	m.used[d.Id] = true
+	m.sameRegions[d.Region] = true
+	m.sameZones[regionZone{d.Region, d.Zone}] = true
+	m.sameIpPorts[ipPort{d.Region, d.Zone, d.Port, d.Ip}] = true
+}
+
+func (m *MoreNodes) initialize() {
+	m.parts = len(m.r.replica2part2devId[0])
+	m.used = make(map[int]bool)
+	m.sameRegions = make(map[int]bool)
+	m.sameZones = make(map[regionZone]bool)
+	m.sameIpPorts = make(map[ipPort]bool)
+	for _, mp := range m.r.replica2part2devId {
+		m.addDevice(&m.r.Devs[mp[m.partition]])
+	}
+	hash := md5.New()
+	hash.Write([]byte(strconv.FormatUint(m.partition, 10)))
+	digest := hash.Sum(nil)
+	m.start = int((uint64(digest[0])<<24 | uint64(digest[1])<<16 | uint64(digest[2])<<8 | uint64(digest[3])) >> m.r.PartShift)
+	m.inc = m.parts / 65536
+	if m.inc == 0 {
+		m.inc = 1
+	}
+}
+
+func (m *MoreNodes) Next() *Device {
+	if m.used == nil {
+		m.initialize()
+	}
+	var check func(d *Device) bool
+	if len(m.sameRegions) < m.r.regionCount {
+		check = func(d *Device) bool { return !m.sameRegions[d.Region] }
+	} else if len(m.sameZones) < m.r.zoneCount {
+		check = func(d *Device) bool { return !m.sameZones[regionZone{d.Region, d.Zone}] }
+	} else if len(m.sameIpPorts) < m.r.ipPortCount {
+		check = func(d *Device) bool { return !m.sameIpPorts[ipPort{d.Region, d.Zone, d.Port, d.Ip}] }
+	} else {
+		check = func(d *Device) bool { return !m.used[d.Id] }
+	}
+	for i := 0; i < m.parts; i += m.inc {
+		handoffPart := (i + m.start) % m.parts
+		for _, part2devId := range m.r.replica2part2devId {
+			if handoffPart < len(part2devId) {
+				if check(&m.r.Devs[part2devId[handoffPart]]) {
+					m.addDevice(&m.r.Devs[part2devId[handoffPart]])
+					return &m.r.Devs[part2devId[handoffPart]]
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func LoadRing(path string, prefix string, suffix string) (*Ring, error) {
@@ -88,10 +200,21 @@ func LoadRing(path string, prefix string, suffix string) (*Ring, error) {
 	ring.prefix = prefix
 	ring.suffix = suffix
 	partitionCount := 1 << (32 - ring.PartShift)
-	for i := uint(0); i < ring.ReplicaCount; i++ {
+	for i := 0; i < ring.ReplicaCount; i++ {
 		part2dev := make([]uint16, partitionCount)
 		binary.Read(gz, binary.LittleEndian, &part2dev)
-		ring.replica2part2dev_id = append(ring.replica2part2dev_id, part2dev)
+		ring.replica2part2devId = append(ring.replica2part2devId, part2dev)
 	}
+	regionCount := make(map[int]bool)
+	zoneCount := make(map[regionZone]bool)
+	ipPortCount := make(map[ipPort]bool)
+	for _, d := range ring.Devs {
+		regionCount[d.Region] = true
+		zoneCount[regionZone{d.Region, d.Zone}] = true
+		ipPortCount[ipPort{d.Region, d.Zone, d.Port, d.Ip}] = true
+	}
+	ring.regionCount = len(regionCount)
+	ring.zoneCount = len(zoneCount)
+	ring.ipPortCount = len(ipPortCount)
 	return &ring, nil
 }
