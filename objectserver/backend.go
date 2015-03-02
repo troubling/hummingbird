@@ -3,6 +3,7 @@ package objectserver
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"io"
 	"io/ioutil"
 	"os"
@@ -17,38 +18,17 @@ import (
 
 const METADATA_CHUNK_SIZE = 65536
 
-func ReadMetadataFd(fd uintptr) (map[interface{}]interface{}, error) {
-	var pickledMetadata []byte
-	offset := 0
-	for index := 0; ; index += 1 {
-		var metadataName string
-		// get name of next xattr
-		if index == 0 {
-			metadataName = "user.swift.metadata"
-		} else {
-			metadataName = "user.swift.metadata" + strconv.Itoa(index)
-		}
-		// get size of xattr
-		length, _ := hummingbird.FGetXattr(fd, metadataName, nil)
-		if length <= 0 {
-			break
-		}
-		// grow buffer to hold xattr
-		for cap(pickledMetadata) < offset+length {
-			pickledMetadata = append(pickledMetadata, 0)
-		}
-		pickledMetadata = pickledMetadata[0 : offset+length]
-		hummingbird.FGetXattr(fd, metadataName, pickledMetadata[offset:])
-		offset += length
+func GetXAttr(fileNameOrFd interface{}, attr string, value []byte) (int, error) {
+	switch v := fileNameOrFd.(type) {
+	case string:
+		return syscall.Getxattr(v, attr, value)
+	case uintptr:
+		return hummingbird.FGetXattr(v, attr, value)
 	}
-	v, err := hummingbird.PickleLoads(pickledMetadata)
-	if err != nil {
-		return nil, err
-	}
-	return v.(map[interface{}]interface{}), nil
+	return 0, &hummingbird.BackendError{Err: errors.New("Invalid fileNameOrFd"), Code: hummingbird.UnhandledError}
 }
 
-func ReadMetadataFilename(filename string) (map[interface{}]interface{}, error) {
+func ReadMetadata(fileNameOrFd interface{}) (map[interface{}]interface{}, error) {
 	var pickledMetadata []byte
 	offset := 0
 	for index := 0; ; index += 1 {
@@ -60,7 +40,7 @@ func ReadMetadataFilename(filename string) (map[interface{}]interface{}, error) 
 			metadataName = "user.swift.metadata" + strconv.Itoa(index)
 		}
 		// get size of xattr
-		length, _ := syscall.Getxattr(filename, metadataName, nil)
+		length, _ := GetXAttr(fileNameOrFd, metadataName, nil)
 		if length <= 0 {
 			break
 		}
@@ -69,7 +49,7 @@ func ReadMetadataFilename(filename string) (map[interface{}]interface{}, error) 
 			pickledMetadata = append(pickledMetadata, 0)
 		}
 		pickledMetadata = pickledMetadata[0 : offset+length]
-		syscall.Getxattr(filename, metadataName, pickledMetadata[offset:])
+		GetXAttr(fileNameOrFd, metadataName, pickledMetadata[offset:])
 		offset += length
 	}
 	v, err := hummingbird.PickleLoads(pickledMetadata)
@@ -337,7 +317,7 @@ func ObjTempDir(vars map[string]string, driveRoot string) string {
 }
 
 func applyMetaFile(metaFile string, datafileMetadata map[interface{}]interface{}) (map[interface{}]interface{}, error) {
-	if metadata, err := ReadMetadataFilename(metaFile); err != nil {
+	if metadata, err := ReadMetadata(metaFile); err != nil {
 		return nil, err
 	} else {
 		for k, v := range datafileMetadata {
@@ -350,7 +330,7 @@ func applyMetaFile(metaFile string, datafileMetadata map[interface{}]interface{}
 }
 
 func OpenObjectMetadata(fd uintptr, metaFile string) (map[interface{}]interface{}, error) {
-	datafileMetadata, err := ReadMetadataFd(fd)
+	datafileMetadata, err := ReadMetadata(fd)
 	if err != nil {
 		return nil, err
 	}
@@ -361,7 +341,7 @@ func OpenObjectMetadata(fd uintptr, metaFile string) (map[interface{}]interface{
 }
 
 func ObjectMetadata(dataFile string, metaFile string) (map[interface{}]interface{}, error) {
-	datafileMetadata, err := ReadMetadataFilename(dataFile)
+	datafileMetadata, err := ReadMetadata(dataFile)
 	if err != nil {
 		return nil, err
 	}
