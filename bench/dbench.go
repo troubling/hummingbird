@@ -103,6 +103,7 @@ func RunDBench(args []string) {
 	objectSize := benchconf.GetInt("dbench", "object_size", 131072)
 	numObjects := benchconf.GetInt("dbench", "num_objects", 5000)
 	numGets := benchconf.GetInt("dbench", "num_gets", 30000)
+	minPartition := benchconf.GetInt("dbench", "minimum_partition_number", 1000000000)
 	delete := benchconf.GetBool("dbench", "delete", true)
 
 	deviceList := GetDevices(address)
@@ -110,7 +111,7 @@ func RunDBench(args []string) {
 	data := make([]byte, objectSize)
 	objects := make([]DirectObject, numObjects)
 	for i, _ := range objects {
-		objects[i].Url = fmt.Sprintf("%s%s/%d/%s/%s/%d", address, deviceList[i%len(deviceList)], rand.Int63()%100, "a", "c", rand.Int63())
+		objects[i].Url = fmt.Sprintf("%s%s/%d/%s/%s/%d", address, deviceList[i%len(deviceList)], rand.Int63()%100 + minPartition, "a", "c", rand.Int63())
 		objects[i].Data = data
 	}
 
