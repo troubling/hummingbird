@@ -527,7 +527,9 @@ func (server ObjectHandler) ServeHTTP(writer http.ResponseWriter, request *http.
 	if request.Method == "REPLICATE" {
 		diskInUse = server.replicationInUse
 	}
-	if !diskInUse.Acquire(vars["device"]) {
+	forceAcquire := request.Header.Get("X-Force-Acquire") == "true"
+	if concRequests := diskInUse.Acquire(vars["device"], forceAcquire); concRequests > 0 {
+		newWriter.Header().Set("X-Disk-Usage", strconv.FormatInt(concRequests, 10))
 		newWriter.StandardResponse(500)
 		return
 	}
