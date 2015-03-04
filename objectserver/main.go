@@ -245,8 +245,8 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 			os.RemoveAll(tempFile.Name())
 		}
 	}()
-	if freeSpace, err := FreeDiskSpace(tempFile.Fd()); err == nil && freeSpace-request.ContentLength < server.fallocateReserve {
-		request.LogError("Not enough space available: %d available, %d requested", freeSpace, request.ContentLength)
+	if freeSpace, err := FreeDiskSpace(tempFile.Fd()); err == nil && server.fallocateReserve > 0 && freeSpace-request.ContentLength < server.fallocateReserve {
+		request.LogError("Hummingbird Not enough space available: %d available, %d requested", freeSpace, request.ContentLength)
 		writer.CustomErrorResponse(507, vars)
 		return
 	}
@@ -576,6 +576,7 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 	handler.asyncFinalize = serverconf.GetBool("app:object-server", "async_finalize", false)
 	handler.checkEtags = serverconf.GetBool("app:object-server", "check_etags", false)
 	handler.disableFallocate = serverconf.GetBool("app:object-server", "disable_fallocate", false)
+	handler.fallocateReserve = serverconf.GetInt("app:object-server", "fallocate_reserve", 0)
 	handler.logLevel = serverconf.GetDefault("app:object-server", "log_level", "INFO")
 	handler.diskInUse = hummingbird.NewKeyedLimit(serverconf.GetInt("app:object-server", "disk_limit", 25), 10000)
 	handler.replicationInUse = hummingbird.NewKeyedLimit(2,
