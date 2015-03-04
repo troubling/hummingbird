@@ -86,6 +86,7 @@ func RunDBench(args []string) {
 		fmt.Println("    num_objects = 5000")
 		fmt.Println("    num_gets = 30000")
 		fmt.Println("    delete = yes")
+		fmt.Println("    minimum_partition_number = 1000000000")
 		os.Exit(1)
 	}
 
@@ -111,7 +112,7 @@ func RunDBench(args []string) {
 	data := make([]byte, objectSize)
 	objects := make([]DirectObject, numObjects)
 	for i, _ := range objects {
-		objects[i].Url = fmt.Sprintf("%s%s/%d/%s/%s/%d", address, deviceList[i%len(deviceList)], rand.Int63()%100 + minPartition, "a", "c", rand.Int63())
+		objects[i].Url = fmt.Sprintf("%s%s/%d/%s/%s/%d", address, deviceList[i%len(deviceList)], rand.Int63()%100+minPartition, "a", "c", rand.Int63())
 		objects[i].Data = data
 	}
 
