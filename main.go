@@ -25,7 +25,7 @@ func Exists(file string) bool {
 }
 
 func WritePid(name string, pid int) error {
-	file, err := os.OpenFile(fmt.Sprintf("/var/run/hummingbird/%s.pid", name), os.O_CREATE|os.O_WRONLY, 0600)
+	file, err := os.Create(fmt.Sprintf("/var/run/hummingbird/%s.pid", name))
 	if err != nil {
 		return err
 	}
