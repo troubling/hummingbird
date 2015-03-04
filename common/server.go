@@ -216,14 +216,19 @@ func RetryListen(ip string, port int) (net.Listener, error) {
 
 	Graceful shutdown/restart gives any open connections 5 minutes to complete, then exits.
 */
-func RunServers(configFile string, GetServer func(string) (string, int, http.Handler, *syslog.Writer)) {
+func RunServers(configFile string, GetServer func(string) (string, int, http.Handler, *syslog.Writer, error)) {
 	var servers []*HummingbirdServer
 	configFiles, err := filepath.Glob(fmt.Sprintf("%s/*.conf", configFile))
 	if err != nil || len(configFiles) <= 0 {
 		configFiles = []string{configFile}
 	}
 	for _, configFile := range configFiles {
-		ip, port, handler, logger := GetServer(configFile)
+		ip, port, handler, logger, err := GetServer(configFile)
+		if err != nil {
+			logger.Err(fmt.Sprintf("%s", err.Error))
+			fmt.Printf("%s\n", err.Error())
+			os.Exit(1)
+		}
 		sock, err := RetryListen(ip, port)
 		if err != nil {
 			logger.Err(fmt.Sprintf("Error listening: %v", err))

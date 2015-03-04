@@ -218,3 +218,17 @@ func LoadRing(path string, prefix string, suffix string) (*Ring, error) {
 	ring.ipPortCount = len(ipPortCount)
 	return &ring, nil
 }
+
+// GetRing returns the current ring given the ring_type ("account", "container", "object"),
+// hash path prefix, and hash path suffix. An error is raised if the requested ring does
+// not exist.
+func GetRing(ring_type, prefix, suffix string) (*Ring, error) {
+	var ring *Ring
+	var err error
+	if ring, err = LoadRing(fmt.Sprintf("/etc/hummingbird/%s.ring.gz", ring_type), prefix, suffix); err != nil {
+		if ring, err = LoadRing(fmt.Sprintf("/etc/swift/%s.ring.gz", ring_type), prefix, suffix); err != nil {
+			return nil, errors.New(fmt.Sprintf("Error loading %s ring", ring_type))
+		}
+	}
+	return ring, nil
+}
