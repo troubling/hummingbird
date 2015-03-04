@@ -27,7 +27,7 @@ var (
 	OsErrorCode         = 2
 	NotMountedErrorCode = 3
 	LockPathError       = 4
-	BlowUp              = 5 // :)
+	UnhandledError      = 5
 	ONE_WEEK            = 604800
 )
 
