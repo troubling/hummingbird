@@ -81,6 +81,13 @@ func (f IniFile) GetInt(section string, key string, dfl int64) int64 {
 	return dfl
 }
 
+func (f IniFile) GetLimit(section string, key string, dfla int64, dflb int64) (int64, int64) {
+	if value, ok := f.Get(section, key); ok {
+		fmt.Sscanf(value, "%d/%d", &dfla, &dflb)
+	}
+	return dfla, dflb
+}
+
 func LoadIniFile(filename string) (IniFile, error) {
 	file := IniFile{make(ini.File)}
 	return file, file.LoadFile(filename)

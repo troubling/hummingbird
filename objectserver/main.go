@@ -578,9 +578,8 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 	handler.disableFallocate = serverconf.GetBool("app:object-server", "disable_fallocate", false)
 	handler.fallocateReserve = serverconf.GetInt("app:object-server", "fallocate_reserve", 0)
 	handler.logLevel = serverconf.GetDefault("app:object-server", "log_level", "INFO")
-	handler.diskInUse = hummingbird.NewKeyedLimit(serverconf.GetInt("app:object-server", "disk_limit", 25), 10000)
-	handler.replicationInUse = hummingbird.NewKeyedLimit(2,
-		serverconf.GetInt("app:object-server", "replication_limit", 10))
+	handler.diskInUse = hummingbird.NewKeyedLimit(serverconf.GetLimit("app:object-server", "disk_limit", 25, 10000))
+	handler.replicationInUse = hummingbird.NewKeyedLimit(serverconf.GetLimit("app:object-server", "replication_limit", 2, 10))
 	bindIP := serverconf.GetDefault("app:object-server", "bind_ip", "0.0.0.0")
 	bindPort := serverconf.GetInt("app:object-server", "bind_port", 6000)
 	if allowedHeaders, ok := serverconf.Get("app:object-server", "allowed_headers"); ok {
