@@ -530,7 +530,7 @@ func (server ObjectHandler) ServeHTTP(writer http.ResponseWriter, request *http.
 	forceAcquire := request.Header.Get("X-Force-Acquire") == "true"
 	if concRequests := diskInUse.Acquire(vars["device"], forceAcquire); concRequests > 0 {
 		newWriter.Header().Set("X-Disk-Usage", strconv.FormatInt(concRequests, 10))
-		newWriter.StandardResponse(500)
+		newWriter.StandardResponse(503)
 		return
 	}
 	defer diskInUse.Release(vars["device"])
