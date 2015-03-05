@@ -14,6 +14,18 @@ import (
 	"strings"
 )
 
+type Ring interface {
+	GetNodes(partition uint64) (response []*Device)
+	GetJobNodes(partition uint64, localDevice int) (response []*Device, handoff bool)
+	GetPartition(account string, container string, object string) uint64
+	LocalDevices(localPort int) (devs []*Device)
+	GetMoreNodes(partition uint64) MoreNodes
+}
+
+type MoreNodes interface {
+	Next() *Device
+}
+
 type Device struct {
 	Id              int     `json:"id"`
 	Device          string  `json:"device"`
@@ -27,7 +39,7 @@ type Device struct {
 	Zone            int     `json:"zone"`
 }
 
-type Ring struct {
+type hashRing struct {
 	Devs                                []Device `json:"devs"`
 	ReplicaCount                        int      `json:"replica_count"`
 	PartShift                           uint64   `json:"part_shift"`
@@ -46,8 +58,8 @@ type ipPort struct {
 	ip                 string
 }
 
-type MoreNodes struct {
-	r                 *Ring
+type hashMoreNodes struct {
+	r                 *hashRing
 	used, sameRegions map[int]bool
 	sameZones         map[regionZone]bool
 	sameIpPorts       map[ipPort]bool
@@ -59,14 +71,14 @@ func (d *Device) String() string {
 	return fmt.Sprintf("Device{Id: %d, Device: %s, Ip: %s, Port: %d}", d.Id, d.Device, d.Ip, d.Port)
 }
 
-func (r *Ring) GetNodes(partition uint64) (response []*Device) {
+func (r *hashRing) GetNodes(partition uint64) (response []*Device) {
 	for i := 0; i < r.ReplicaCount; i++ {
 		response = append(response, &r.Devs[r.replica2part2devId[i][partition]])
 	}
 	return response
 }
 
-func (r *Ring) GetJobNodes(partition uint64, localDevice int) (response []*Device, handoff bool) {
+func (r *hashRing) GetJobNodes(partition uint64, localDevice int) (response []*Device, handoff bool) {
 	handoff = true
 	for i := 0; i < r.ReplicaCount; i++ {
 		dev := &r.Devs[r.replica2part2devId[i][partition]]
@@ -79,7 +91,7 @@ func (r *Ring) GetJobNodes(partition uint64, localDevice int) (response []*Devic
 	return response, handoff
 }
 
-func (r *Ring) GetPartition(account string, container string, object string) uint64 {
+func (r *hashRing) GetPartition(account string, container string, object string) uint64 {
 	hash := md5.New()
 	hash.Write([]byte(r.prefix + "/" + account + "/"))
 	if container != "" {
@@ -95,7 +107,7 @@ func (r *Ring) GetPartition(account string, container string, object string) uin
 	return val >> r.PartShift
 }
 
-func (r *Ring) LocalDevices(localPort int) (devs []Device) {
+func (r *hashRing) LocalDevices(localPort int) (devs []*Device) {
 	var localIPs = make(map[string]bool)
 
 	localAddrs, _ := net.InterfaceAddrs()
@@ -105,24 +117,24 @@ func (r *Ring) LocalDevices(localPort int) (devs []Device) {
 
 	for _, dev := range r.Devs {
 		if localIPs[dev.ReplicationIp] && dev.ReplicationPort == localPort {
-			devs = append(devs, dev)
+			devs = append(devs, &dev)
 		}
 	}
 	return devs
 }
 
-func (r *Ring) GetMoreNodes(partition uint64) *MoreNodes {
-	return &MoreNodes{r: r, partition: partition, used: nil}
+func (r *hashRing) GetMoreNodes(partition uint64) MoreNodes {
+	return &hashMoreNodes{r: r, partition: partition, used: nil}
 }
 
-func (m *MoreNodes) addDevice(d *Device) {
+func (m *hashMoreNodes) addDevice(d *Device) {
 	m.used[d.Id] = true
 	m.sameRegions[d.Region] = true
 	m.sameZones[regionZone{d.Region, d.Zone}] = true
 	m.sameIpPorts[ipPort{d.Region, d.Zone, d.Port, d.Ip}] = true
 }
 
-func (m *MoreNodes) initialize() {
+func (m *hashMoreNodes) initialize() {
 	m.parts = len(m.r.replica2part2devId[0])
 	m.used = make(map[int]bool)
 	m.sameRegions = make(map[int]bool)
@@ -141,7 +153,7 @@ func (m *MoreNodes) initialize() {
 	}
 }
 
-func (m *MoreNodes) Next() *Device {
+func (m *hashMoreNodes) Next() *Device {
 	if m.used == nil {
 		m.initialize()
 	}
@@ -169,7 +181,7 @@ func (m *MoreNodes) Next() *Device {
 	return nil
 }
 
-func LoadRing(path string, prefix string, suffix string) (*Ring, error) {
+func LoadRing(path string, prefix string, suffix string) (Ring, error) {
 	fp, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -195,7 +207,7 @@ func LoadRing(path string, prefix string, suffix string) (*Ring, error) {
 	binary.Read(gz, binary.BigEndian, &json_len)
 	jsonBuf := make([]byte, json_len)
 	io.ReadFull(gz, jsonBuf)
-	var ring Ring
+	var ring hashRing
 	json.Unmarshal(jsonBuf, &ring)
 	ring.prefix = prefix
 	ring.suffix = suffix
