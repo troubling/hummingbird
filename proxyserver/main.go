@@ -17,9 +17,9 @@ import (
 )
 
 type ProxyHandler struct {
-	objectRing    *hummingbird.Ring
-	containerRing *hummingbird.Ring
-	accountRing   *hummingbird.Ring
+	objectRing    hummingbird.Ring
+	containerRing hummingbird.Ring
+	accountRing   hummingbird.Ring
 	client        *http.Client
 	logger        *syslog.Writer
 	mc            *memcache.Client
