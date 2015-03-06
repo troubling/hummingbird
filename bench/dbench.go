@@ -43,6 +43,15 @@ func (obj *DirectObject) Get() bool {
 	return err == nil && resp.StatusCode/100 == 2
 }
 
+func (obj *DirectObject) Replicate() bool {
+	req, _ := http.NewRequest("REPLICATE", obj.Url, nil)
+	resp, err := client.Do(req)
+	if resp != nil {
+		io.Copy(ioutil.Discard, resp.Body)
+	}
+	return err == nil && resp.StatusCode/100 == 2
+}
+
 func (obj *DirectObject) Delete() bool {
 	req, _ := http.NewRequest("DELETE", obj.Url, nil)
 	req.Header.Set("X-Timestamp", hummingbird.GetTimestamp())
@@ -58,7 +67,7 @@ func GetDevices(address string) []string {
 	req, err := http.NewRequest("GET", deviceUrl, nil)
 	resp, err := client.Do(req)
 	if err != nil {
-		fmt.Println("ERROR GETTING DEVICES")
+		fmt.Println(fmt.Sprintf("ERROR GETTING DEVICES: %s", err))
 		os.Exit(1)
 	}
 	body, _ := ioutil.ReadAll(resp.Body)
@@ -85,6 +94,7 @@ func RunDBench(args []string) {
 		fmt.Println("    object_size = 131072")
 		fmt.Println("    num_objects = 5000")
 		fmt.Println("    num_gets = 30000")
+		fmt.Println("    do_replicates = false")
 		fmt.Println("    delete = yes")
 		fmt.Println("    minimum_partition_number = 1000000000")
 		os.Exit(1)
@@ -104,6 +114,8 @@ func RunDBench(args []string) {
 	objectSize := benchconf.GetInt("dbench", "object_size", 131072)
 	numObjects := benchconf.GetInt("dbench", "num_objects", 5000)
 	numGets := benchconf.GetInt("dbench", "num_gets", 30000)
+	doReplicates := benchconf.GetBool("dbench", "do_replicates", false)
+	numPartitions := int64(100)
 	minPartition := benchconf.GetInt("dbench", "minimum_partition_number", 1000000000)
 	delete := benchconf.GetBool("dbench", "delete", true)
 
@@ -111,9 +123,14 @@ func RunDBench(args []string) {
 
 	data := make([]byte, objectSize)
 	objects := make([]DirectObject, numObjects)
+	deviceParts := make(map[string]bool)
 	for i, _ := range objects {
-		objects[i].Url = fmt.Sprintf("%s%s/%d/%s/%s/%d", address, deviceList[i%len(deviceList)], rand.Int63()%100+minPartition, "a", "c", rand.Int63())
+		device := deviceList[i%len(deviceList)]
+		part := rand.Int63()%numPartitions+minPartition
+		objects[i].Url = fmt.Sprintf("%s%s/%d/%s/%s/%d", address, device, part, "a", "c", rand.Int63())
 		objects[i].Data = data
+
+		deviceParts[fmt.Sprintf("%s/%d", device, part)] = true
 	}
 
 	work := make([]func() bool, len(objects))
@@ -123,6 +140,15 @@ func RunDBench(args []string) {
 	DoJobs("PUT", work, concurrency)
 
 	time.Sleep(time.Second * 2)
+
+	replWork := make([]func() bool, 0)
+	for replKey := range(deviceParts) {
+		devicePart := strings.Split(replKey, "/")
+		replWork = append(replWork, (&DirectObject{Url: fmt.Sprintf("%s%s/%s", address, devicePart[0], devicePart[1])}).Replicate)
+	}
+	if doReplicates {
+		DoJobs("REPLICATE", replWork, concurrency)
+	}
 
 	work = make([]func() bool, numGets)
 	for i := int64(0); i < numGets; i++ {
@@ -137,4 +163,9 @@ func RunDBench(args []string) {
 		}
 		DoJobs("DELETE", work, concurrency)
 	}
+
+	if doReplicates {
+		DoJobs("REPLICATE", replWork, concurrency)
+	}
+
 }
