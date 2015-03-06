@@ -246,8 +246,8 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 			os.RemoveAll(tempFile.Name())
 		}
 	}()
-	if freeSpace, err := FreeDiskSpace(tempFile.Fd()); err == nil && freeSpace-request.ContentLength < server.fallocateReserve {
-		request.LogError("Not enough space available: %d available, %d requested", freeSpace, request.ContentLength)
+	if freeSpace, err := FreeDiskSpace(tempFile.Fd()); err == nil && server.fallocateReserve > 0 && freeSpace-request.ContentLength < server.fallocateReserve {
+		request.LogError("Hummingbird Not enough space available: %d available, %d requested", freeSpace, request.ContentLength)
 		writer.CustomErrorResponse(507, vars)
 		return
 	}
@@ -528,8 +528,10 @@ func (server ObjectHandler) ServeHTTP(writer http.ResponseWriter, request *http.
 	if request.Method == "REPLICATE" {
 		diskInUse = server.replicationInUse
 	}
-	if !diskInUse.Acquire(vars["device"]) {
-		newWriter.StandardResponse(500)
+	forceAcquire := request.Header.Get("X-Force-Acquire") == "true"
+	if concRequests := diskInUse.Acquire(vars["device"], forceAcquire); concRequests > 0 {
+		newWriter.Header().Set("X-Disk-Usage", strconv.FormatInt(concRequests, 10))
+		newWriter.StandardResponse(503)
 		return
 	}
 	defer diskInUse.Release(vars["device"])
@@ -574,10 +576,10 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer, error) {
 	handler.asyncFinalize = serverconf.GetBool("app:object-server", "async_finalize", false)
 	handler.checkEtags = serverconf.GetBool("app:object-server", "check_etags", false)
 	handler.disableFallocate = serverconf.GetBool("app:object-server", "disable_fallocate", false)
+	handler.fallocateReserve = serverconf.GetInt("app:object-server", "fallocate_reserve", 0)
 	handler.logLevel = serverconf.GetDefault("app:object-server", "log_level", "INFO")
-	handler.diskInUse = hummingbird.NewKeyedLimit(serverconf.GetInt("app:object-server", "disk_limit", 25), 10000)
-	handler.replicationInUse = hummingbird.NewKeyedLimit(2,
-		serverconf.GetInt("app:object-server", "replication_limit", 10))
+	handler.diskInUse = hummingbird.NewKeyedLimit(serverconf.GetLimit("app:object-server", "disk_limit", 25, 10000))
+	handler.replicationInUse = hummingbird.NewKeyedLimit(serverconf.GetLimit("app:object-server", "replication_limit", 2, 10))
 	bindIP := serverconf.GetDefault("app:object-server", "bind_ip", "0.0.0.0")
 	bindPort := serverconf.GetInt("app:object-server", "bind_port", 6000)
 	if allowedHeaders, ok := serverconf.Get("app:object-server", "allowed_headers"); ok {

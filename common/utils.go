@@ -81,6 +81,13 @@ func (f IniFile) GetInt(section string, key string, dfl int64) int64 {
 	return dfl
 }
 
+func (f IniFile) GetLimit(section string, key string, dfla int64, dflb int64) (int64, int64) {
+	if value, ok := f.Get(section, key); ok {
+		fmt.Sscanf(value, "%d/%d", &dfla, &dflb)
+	}
+	return dfla, dflb
+}
+
 func LoadIniFile(filename string) (IniFile, error) {
 	file := IniFile{make(ini.File)}
 	return file, file.LoadFile(filename)
@@ -450,15 +457,16 @@ type KeyedLimit struct {
 	totalUse    int64
 }
 
-func (k *KeyedLimit) Acquire(key string) bool {
+func (k *KeyedLimit) Acquire(key string, force bool) int64 {
+	// returns 0 if Acquire is successful, otherwise the number of requests inUse by disk
 	k.lock.Lock()
 	defer k.lock.Unlock()
-	if k.inUse[key] >= k.limitPerKey || k.totalUse > k.totalLimit {
-		return false
+	if !force && (k.inUse[key] >= k.limitPerKey || k.totalUse > k.totalLimit) {
+		return k.inUse[key]
 	} else {
 		k.inUse[key] += 1
 		k.totalUse += 1
-		return true
+		return 0
 	}
 }
 
