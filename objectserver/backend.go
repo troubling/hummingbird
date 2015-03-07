@@ -215,18 +215,16 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 	mtime := int64(-1)
 	hashes := make(map[string]string, 4096)
 	lsForSuffixes := true
-	data, err := ioutil.ReadFile(pklFile)
-	if err == nil {
-		v, err := hummingbird.PickleLoads(data)
-		if err == nil {
-			pickledHashes, ok := v.(map[string]string)
-			if ok {
-				fileInfo, err := os.Stat(pklFile)
-				if err == nil {
+	if data, err := ioutil.ReadFile(pklFile); err == nil {
+		if v, err := hummingbird.PickleLoads(data); err == nil {
+			if pickledHashes, ok := v.(map[interface{}]interface{}); ok {
+				if fileInfo, err := os.Stat(pklFile); err == nil {
 					mtime = fileInfo.ModTime().Unix()
 					lsForSuffixes = false
 					for suff, hash := range pickledHashes {
-						hashes[suff] = hash
+						if hashes[suff.(string)], ok = hash.(string); !ok {
+							hashes[suff.(string)] = ""
+						}
 					}
 				}
 			}
@@ -271,7 +269,7 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 			return nil, &hummingbird.BackendError{Err: err, Code: hummingbird.LockPathError}
 		} else {
 			fileInfo, err := os.Stat(pklFile)
-			if lsForSuffixes || os.IsNotExist(err) || mtime != fileInfo.ModTime().Unix() {
+			if lsForSuffixes || os.IsNotExist(err) || mtime == fileInfo.ModTime().Unix() {
 				hummingbird.WriteFileAtomic(pklFile, hummingbird.PickleDumps(hashes), 0600)
 				return hashes, nil
 			}
