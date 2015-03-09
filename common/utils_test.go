@@ -191,7 +191,7 @@ func TestIniFile(t *testing.T) {
 	tempFile, err := ioutil.TempFile("", "INI")
 	assert.Nil(t, err)
 	defer os.RemoveAll(tempFile.Name())
-	tempFile.WriteString("[stuff]\ntruevalue=true\nfalsevalue=false\nintvalue=3\n")
+	tempFile.WriteString("[stuff]\ntruevalue=true\nfalsevalue=false\nintvalue=3\nset log_facility = LOG_LOCAL1\n")
 	iniFile, err := LoadIniFile(tempFile.Name())
 	assert.Equal(t, true, iniFile.GetBool("stuff", "truevalue", false))
 	assert.Equal(t, false, iniFile.GetBool("stuff", "falsevalue", true))
@@ -200,6 +200,7 @@ func TestIniFile(t *testing.T) {
 	assert.Equal(t, 2, iniFile.GetInt("stuff", "missingvalue", 2))
 	assert.Equal(t, "false", iniFile.GetDefault("stuff", "falsevalue", "true"))
 	assert.Equal(t, "true", iniFile.GetDefault("stuff", "missingvalue", "true"))
+	assert.Equal(t, "LOG_LOCAL1", iniFile.GetDefault("stuff", "log_facility", "LOG_LOCAL0"))
 }
 
 func TestIsMount(t *testing.T) {

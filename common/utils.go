@@ -53,6 +53,10 @@ func (f IniFile) Get(section string, key string) (string, bool) {
 		return value, true
 	} else if value, ok := f.File.Get("DEFAULT", key); ok {
 		return value, true
+	} else if value, ok := f.File.Get(section, "set "+key); ok {
+		return value, true
+	} else if value, ok := f.File.Get("DEFAULT", "set "+key); ok {
+		return value, true
 	}
 	return "", false
 }
