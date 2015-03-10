@@ -126,7 +126,7 @@ func RunDBench(args []string) {
 	deviceParts := make(map[string]bool)
 	for i, _ := range objects {
 		device := deviceList[i%len(deviceList)]
-		part := rand.Int63()%numPartitions+minPartition
+		part := rand.Int63()%numPartitions + minPartition
 		objects[i].Url = fmt.Sprintf("%s%s/%d/%s/%s/%d", address, device, part, "a", "c", rand.Int63())
 		objects[i].Data = data
 
@@ -142,7 +142,7 @@ func RunDBench(args []string) {
 	time.Sleep(time.Second * 2)
 
 	replWork := make([]func() bool, 0)
-	for replKey := range(deviceParts) {
+	for replKey := range deviceParts {
 		devicePart := strings.Split(replKey, "/")
 		replWork = append(replWork, (&DirectObject{Url: fmt.Sprintf("%s%s/%s", address, devicePart[0], devicePart[1])}).Replicate)
 	}
