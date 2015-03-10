@@ -5,10 +5,8 @@ env:
   - GOROOT=/usr/local/go
   - PATH=$PATH:$GOROOT/bin
 script:
-  - go get -t hummingbird/common hummingbird/objectserver hummingbird/proxyserver hummingbird/containerserver
-  - go test -cover hummingbird/proxyserver
-  - go test -cover hummingbird/common
-  - go test -cover hummingbird/objectserver
+  - go get -t ./...
+  - go test -cover ./...
   - go build
   - service memcached start
   - sudo -u swift swift-init start proxy-server
