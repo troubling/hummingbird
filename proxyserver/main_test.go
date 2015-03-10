@@ -2,6 +2,7 @@ package proxyserver
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -42,7 +43,7 @@ func TestGetServer(t *testing.T) {
 		}
 		ip, port, handler, _, _ := GetServer(test.conf)
 		if proxy_handler, ok := handler.(ProxyHandler); ok {
-			assert.Equal(t, ip, "0.0.0.0")
+			assert.NotNil(t, net.ParseIP(ip))
 			assert.Equal(t, port, 8080)
 			assert.NotNil(t, proxy_handler.mc)
 			assert.NotNil(t, proxy_handler.client)
@@ -52,5 +53,4 @@ func TestGetServer(t *testing.T) {
 			assert.NotNil(t, proxy_handler.containerRing)
 		}
 	}
-
 }
