@@ -3,6 +3,7 @@ package objectserver
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/syslog"
@@ -551,7 +552,7 @@ func (server ObjectHandler) ServeHTTP(writer http.ResponseWriter, request *http.
 	}
 }
 
-func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
+func GetServer(conf string) (string, int, http.Handler, *syslog.Writer, error) {
 	handler := ObjectHandler{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: "",
 		allowedHeaders: map[string]bool{"Content-Disposition": true,
 			"Content-Encoding":      true,
@@ -560,18 +561,15 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 			"X-Static-Large-Object": true,
 		},
 	}
-
-	if swiftconf, err := hummingbird.LoadIniFile("/etc/hummingbird/hummingbird.conf"); err == nil {
-		handler.hashPathPrefix = swiftconf.GetDefault("swift-hash", "swift_hash_path_prefix", "")
-		handler.hashPathSuffix = swiftconf.GetDefault("swift-hash", "swift_hash_path_suffix", "")
-	} else if swiftconf, err := hummingbird.LoadIniFile("/etc/swift/swift.conf"); err == nil {
-		handler.hashPathPrefix = swiftconf.GetDefault("swift-hash", "swift_hash_path_prefix", "")
-		handler.hashPathSuffix = swiftconf.GetDefault("swift-hash", "swift_hash_path_suffix", "")
+	var err error
+	handler.hashPathPrefix, handler.hashPathSuffix, err = hummingbird.GetHashPrefixAndSuffix()
+	if err != nil {
+		return "", 0, nil, nil, err
 	}
 
 	serverconf, err := hummingbird.LoadIniFile(conf)
 	if err != nil {
-		panic(fmt.Sprintf("Unable to load %s", conf))
+		return "", 0, nil, nil, errors.New(fmt.Sprintf("Unable to load %s", conf))
 	}
 	handler.driveRoot = serverconf.GetDefault("app:object-server", "devices", "/srv/node")
 	handler.checkMounts = serverconf.GetBool("app:object-server", "mount_check", true)
@@ -594,5 +592,5 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 	handler.logger = hummingbird.SetupLogger(serverconf.GetDefault("app:object-server", "log_facility", "LOG_LOCAL1"), "object-server")
 	hummingbird.DropPrivileges(serverconf.GetDefault("app:object-server", "user", "swift"))
 
-	return bindIP, int(bindPort), handler, handler.logger
+	return bindIP, int(bindPort), handler, handler.logger, nil
 }

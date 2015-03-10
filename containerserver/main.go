@@ -389,24 +389,21 @@ func (server ContainerHandler) ServeHTTP(writer http.ResponseWriter, request *ht
 	}
 }
 
-func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
+func GetServer(conf string) (string, int, http.Handler, *syslog.Writer, error) {
 	InitializeDatabase()
 
 	handler := ContainerHandler{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: "",
 		checkMounts: true,
 	}
-
-	if swiftconf, err := hummingbird.LoadIniFile("/etc/hummingbird/hummingbird.conf"); err == nil {
-		handler.hashPathPrefix = swiftconf.GetDefault("swift-hash", "swift_hash_path_prefix", "")
-		handler.hashPathSuffix = swiftconf.GetDefault("swift-hash", "swift_hash_path_suffix", "")
-	} else if swiftconf, err := hummingbird.LoadIniFile("/etc/swift/swift.conf"); err == nil {
-		handler.hashPathPrefix = swiftconf.GetDefault("swift-hash", "swift_hash_path_prefix", "")
-		handler.hashPathSuffix = swiftconf.GetDefault("swift-hash", "swift_hash_path_suffix", "")
+	var err error
+	handler.hashPathPrefix, handler.hashPathSuffix, err = hummingbird.GetHashPrefixAndSuffix()
+	if err != nil {
+		return "", 0, nil, nil, err
 	}
 
 	serverconf, err := hummingbird.LoadIniFile(conf)
 	if err != nil {
-		panic(fmt.Sprintf("Unable to load %s", conf))
+		return "", 0, nil, nil, errors.New(fmt.Sprintf("Unable to load %s", conf))
 	}
 	handler.driveRoot = serverconf.GetDefault("DEFAULT", "devices", "/srv/node")
 	handler.checkMounts = serverconf.GetBool("DEFAULT", "mount_check", true)
@@ -415,5 +412,5 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 	handler.logger = hummingbird.SetupLogger(serverconf.GetDefault("DEFAULT", "log_facility", "LOG_LOCAL0"), "object-server")
 	hummingbird.DropPrivileges(serverconf.GetDefault("DEFAULT", "user", "swift"))
 
-	return bindIP, int(bindPort), handler, handler.logger
+	return bindIP, int(bindPort), handler, handler.logger, nil
 }

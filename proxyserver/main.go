@@ -1,6 +1,7 @@
 package proxyserver
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/syslog"
@@ -357,7 +358,7 @@ func (server ProxyHandler) ServeHTTP(writer http.ResponseWriter, request *http.R
 	}
 }
 
-func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
+func GetServer(conf string) (string, int, http.Handler, *syslog.Writer, error) {
 	handler := ProxyHandler{}
 
 	transport := http.Transport{
@@ -369,41 +370,28 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer) {
 
 	handler.client = &http.Client{Transport: &transport, Timeout: 30 * time.Second}
 	handler.mc = memcache.New("127.0.0.1:11211")
-	hashPathPrefix := ""
-	hashPathSuffix := ""
-
-	if swiftconf, err := hummingbird.LoadIniFile("/etc/hummingbird/hummingbird.conf"); err == nil {
-		hashPathPrefix = swiftconf.GetDefault("swift-hash", "swift_hash_path_prefix", "")
-		hashPathSuffix = swiftconf.GetDefault("swift-hash", "swift_hash_path_suffix", "")
-	} else if swiftconf, err := hummingbird.LoadIniFile("/etc/swift/swift.conf"); err == nil {
-		hashPathPrefix = swiftconf.GetDefault("swift-hash", "swift_hash_path_prefix", "")
-		hashPathSuffix = swiftconf.GetDefault("swift-hash", "swift_hash_path_suffix", "")
+	hashPathPrefix, hashPathSuffix, err := hummingbird.GetHashPrefixAndSuffix()
+	if err != nil {
+		return "", 0, nil, nil, err
 	}
 
 	serverconf, err := hummingbird.LoadIniFile(conf)
 	if err != nil {
-		panic(fmt.Sprintf("Unable to load %s", conf))
+		return "", 0, nil, nil, errors.New(fmt.Sprintf("Unable to load %s", conf))
 	}
+
 	bindIP := serverconf.GetDefault("DEFAULT", "bind_ip", "0.0.0.0")
 	bindPort := serverconf.GetInt("DEFAULT", "bind_port", 8080)
 
 	handler.logger = hummingbird.SetupLogger(serverconf.GetDefault("DEFAULT", "log_facility", "LOG_LOCAL0"), "proxy-server")
-	if handler.objectRing, err = hummingbird.LoadRing("/etc/hummingbird/object.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
-		if handler.objectRing, err = hummingbird.LoadRing("/etc/swift/object.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
-			panic("Error loading object ring: " + err.Error())
-		}
+	handler.objectRing, err = hummingbird.GetRing("object", hashPathPrefix, hashPathSuffix)
+	handler.containerRing, err = hummingbird.GetRing("container", hashPathPrefix, hashPathSuffix)
+	handler.accountRing, err = hummingbird.GetRing("account", hashPathPrefix, hashPathSuffix)
+	if err != nil {
+		return "", 0, nil, nil, err
 	}
-	if handler.containerRing, err = hummingbird.LoadRing("/etc/hummingbird/container.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
-		if handler.containerRing, err = hummingbird.LoadRing("/etc/swift/container.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
-			panic("Error loading container ring: " + err.Error())
-		}
-	}
-	if handler.accountRing, err = hummingbird.LoadRing("/etc/hummingbird/account.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
-		if handler.accountRing, err = hummingbird.LoadRing("/etc/swift/account.ring.gz", hashPathPrefix, hashPathSuffix); err != nil {
-			panic("Error loading account ring: " + err.Error())
-		}
-	}
+
 	hummingbird.DropPrivileges(serverconf.GetDefault("DEFAULT", "user", "swift"))
 
-	return bindIP, int(bindPort), handler, handler.logger
+	return bindIP, int(bindPort), handler, handler.logger, nil
 }

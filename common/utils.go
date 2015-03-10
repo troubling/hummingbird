@@ -491,3 +491,25 @@ func (k *KeyedLimit) MarshalJSON() ([]byte, error) {
 func NewKeyedLimit(limitPerKey int64, totalLimit int64) *KeyedLimit {
 	return &KeyedLimit{limitPerKey: limitPerKey, totalLimit: totalLimit, inUse: make(map[string]int64)}
 }
+
+// GetHashPrefixAndSuffix retrieves the hash path prefix and suffix from
+// the correct configs based on the environments setup.
+func GetHashPrefixAndSuffix() (prefix string, suffix string, err error) {
+	config_locations := []string{"/etc/hummingbird/hummingbird.conf", "/etc/swift/swift.conf"}
+
+	for _, loc := range config_locations {
+		if conf, e := LoadIniFile(loc); e == nil {
+			var ok bool
+			if prefix, ok = conf.Get("swift-hash", "swift_hash_path_prefix"); !ok {
+				err = errors.New("Hash path prefix not defined")
+				return
+			}
+			if suffix, ok = conf.Get("swift-hash", "swift_hash_path_prefix"); !ok {
+				err = errors.New("Hash path suffix not defined")
+				return
+			}
+			break
+		}
+	}
+	return
+}
