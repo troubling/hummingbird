@@ -17,6 +17,8 @@ import (
 	"hummingbird/proxyserver"
 )
 
+var Version = "0.1"
+
 func Exists(file string) bool {
 	if _, err := os.Stat(file); os.IsNotExist(err) {
 		return false
@@ -210,6 +212,9 @@ func main() {
 	}
 
 	switch strings.ToLower(os.Args[1]) {
+	case "version":
+		fmt.Println(Version)
+		os.Exit(0)
 	case "run":
 		if len(os.Args) < 4 {
 			goto USAGE

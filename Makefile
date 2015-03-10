@@ -4,18 +4,13 @@ bin:
 	mkdir -p bin
 
 bin/hummingbird: main.go */*.go
-	go build -o bin/hummingbird
+	go build -o bin/hummingbird -ldflags "-X main.Version '`git describe --tags`'"
 
 get:
-	go get hummingbird
+	go get ./...
 
 fmt:
-	go fmt hummingbird
-	go fmt hummingbird/common
-	go fmt hummingbird/objectserver
-	go fmt hummingbird/proxyserver
-	go fmt hummingbird/containerserver
-	go fmt hummingbird/bench
+	go fmt ./...
 
 install: all
 	cp bin/* $(DESTDIR)/usr/bin
