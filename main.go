@@ -12,7 +12,6 @@ import (
 
 	"hummingbird/bench"
 	hummingbird "hummingbird/common"
-	"hummingbird/containerserver"
 	"hummingbird/objectserver"
 	"hummingbird/proxyserver"
 )
@@ -163,8 +162,6 @@ func RunServer(name string) {
 	switch name {
 	case "object":
 		hummingbird.RunServers(os.Args[3], objectserver.GetServer)
-	case "container":
-		hummingbird.RunServers(os.Args[3], containerserver.GetServer)
 	case "proxy":
 		hummingbird.RunServers(os.Args[3], proxyserver.GetServer)
 	}
@@ -257,10 +254,10 @@ func main() {
 	}
 
 	switch strings.ToLower(os.Args[2]) {
-	case "container", "proxy", "object":
+	case "proxy", "object":
 		serverList = []string{strings.ToLower(os.Args[2])}
 	case "all":
-		serverList = []string{"container", "proxy", "object"}
+		serverList = []string{"proxy", "object"}
 	default:
 		goto USAGE
 	}
@@ -273,7 +270,7 @@ func main() {
 USAGE:
 	fmt.Println("Usage: hummingbird [command] [args...]")
 	fmt.Println("")
-	fmt.Println("Process control: args=[object,container,proxy,all]")
+	fmt.Println("Process control: args=[object,proxy,all]")
 	fmt.Println("              run: run a server (attached)")
 	fmt.Println("            start: start a server (detached)")
 	fmt.Println("             stop: stop a server immediately")
