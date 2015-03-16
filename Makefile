@@ -20,6 +20,7 @@ develop: all
 
 test:
 	@test -z "$(shell find . -name '*.go' | xargs gofmt -l)" || (echo "Need to run 'go fmt ./...'"; exit 1)
+	@test -z "$(shell find . -name '*.go' | xargs grep -L 'Copyright.*Rackspace')" || (echo "Go files missing copyright notice."; exit 1)
 	go vet ./...
 	go test -cover ./...
 

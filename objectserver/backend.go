@@ -43,7 +43,7 @@ func GetXAttr(fileNameOrFd interface{}, attr string, value []byte) (int, error) 
 	return 0, &hummingbird.BackendError{Err: errors.New("Invalid fileNameOrFd"), Code: hummingbird.UnhandledError}
 }
 
-func ReadMetadata(fileNameOrFd interface{}) (map[interface{}]interface{}, error) {
+func RawReadMetadata(fileNameOrFd interface{}) ([]byte, error) {
 	var pickledMetadata []byte
 	offset := 0
 	for index := 0; ; index += 1 {
@@ -64,8 +64,18 @@ func ReadMetadata(fileNameOrFd interface{}) (map[interface{}]interface{}, error)
 			pickledMetadata = append(pickledMetadata, 0)
 		}
 		pickledMetadata = pickledMetadata[0 : offset+length]
-		GetXAttr(fileNameOrFd, metadataName, pickledMetadata[offset:])
+		if _, err := GetXAttr(fileNameOrFd, metadataName, pickledMetadata[offset:]); err != nil {
+			return nil, err
+		}
 		offset += length
+	}
+	return pickledMetadata, nil
+}
+
+func ReadMetadata(fileNameOrFd interface{}) (map[interface{}]interface{}, error) {
+	pickledMetadata, err := RawReadMetadata(fileNameOrFd)
+	if err != nil {
+		return nil, err
 	}
 	v, err := hummingbird.PickleLoads(pickledMetadata)
 	if err != nil {
@@ -74,9 +84,7 @@ func ReadMetadata(fileNameOrFd interface{}) (map[interface{}]interface{}, error)
 	return v.(map[interface{}]interface{}), nil
 }
 
-func WriteMetadata(fd uintptr, v map[string]string) {
-	// TODO: benchmark this with and without chunking up the metadata
-	buf := hummingbird.PickleDumps(v)
+func RawWriteMetadata(fd uintptr, buf []byte) error {
 	for index := 0; len(buf) > 0; index++ {
 		var metadataName string
 		if index == 0 {
@@ -88,9 +96,16 @@ func WriteMetadata(fd uintptr, v map[string]string) {
 		if len(buf) < writelen {
 			writelen = len(buf)
 		}
-		hummingbird.FSetXattr(fd, metadataName, []byte(buf[0:writelen]))
+		if _, err := hummingbird.FSetXattr(fd, metadataName, buf[0:writelen]); err != nil {
+			return err
+		}
 		buf = buf[writelen:len(buf)]
 	}
+	return nil
+}
+
+func WriteMetadata(fd uintptr, v map[string]string) error {
+	return RawWriteMetadata(fd, hummingbird.PickleDumps(v))
 }
 
 func QuarantineHash(hashDir string) error {
@@ -347,9 +362,17 @@ func applyMetaFile(metaFile string, datafileMetadata map[interface{}]interface{}
 }
 
 func OpenObjectMetadata(fd uintptr, metaFile string) (map[interface{}]interface{}, error) {
-	datafileMetadata, err := ReadMetadata(fd)
+	pickledMetadata, err := RawReadMetadata(fd)
 	if err != nil {
 		return nil, err
+	}
+	v, err := hummingbird.PickleLoads(pickledMetadata)
+	if err != nil {
+		return nil, err
+	}
+	datafileMetadata, ok := v.(map[interface{}]interface{})
+	if !ok {
+		return nil, errors.New("Metadata unpickled to wrong type.")
 	}
 	if metaFile != "" {
 		return applyMetaFile(metaFile, datafileMetadata)
