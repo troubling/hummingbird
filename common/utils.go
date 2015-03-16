@@ -464,9 +464,9 @@ type KeyedLimit struct {
 func (k *KeyedLimit) Acquire(key string, force bool) int64 {
 	// returns 0 if Acquire is successful, otherwise the number of requests inUse by disk
 	k.lock.Lock()
-	if !force && (k.inUse[key] >= k.limitPerKey || k.totalUse > k.totalLimit) {
+	if v := k.inUse[key]; !force && (v >= k.limitPerKey || k.totalUse > k.totalLimit) {
 		k.lock.Unlock()
-		return k.inUse[key]
+		return v
 	} else {
 		k.inUse[key] += 1
 		k.totalUse += 1
