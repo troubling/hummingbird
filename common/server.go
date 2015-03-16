@@ -225,7 +225,7 @@ func RunServers(configFile string, GetServer func(string) (string, int, http.Han
 	for _, configFile := range configFiles {
 		ip, port, handler, logger, err := GetServer(configFile)
 		if err != nil {
-			logger.Err(fmt.Sprintf("%s", err.Error))
+			logger.Err(fmt.Sprintf("%s", err.Error()))
 			fmt.Printf("%s\n", err.Error())
 			os.Exit(1)
 		}
