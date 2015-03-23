@@ -5,11 +5,17 @@
 # Adding this line to /etc/default/docker will convince Docker to use XFS:
 # DOCKER_OPTS="--storage-driver=devicemapper --storage-opt dm.fs=xfs"
 
+# Or, I'm now testing out btrfs:
+# DOCKER_OPTS="--storage-driver=btrfs"
+
 FROM   ubuntu:14.04
 
 RUN     apt-get update
 RUN     apt-get -y upgrade
-RUN     apt-get install -y curl build-essential memcached rsync sqlite3 git-core libffi-dev python-setuptools python-coverage python-dev python-nose python-simplejson python-xattr python-eventlet python-greenlet python-pastedeploy python-netifaces python-pip python-dnspython python-mock wget pkg-config libsqlite3-dev sudo
+RUN     apt-get install -y curl build-essential memcached rsync sqlite3 git-core libffi-dev python-setuptools python-coverage python-dev python-nose python-simplejson python-xattr python-eventlet python-greenlet python-pastedeploy python-netifaces python-pip python-dnspython python-mock wget pkg-config libsqlite3-dev autoconf libtool sudo
+
+RUN     cd /root; git clone https://bitbucket.org/tsg-/liberasurecode.git
+RUN     cd /root/liberasurecode; ./autogen.sh; ./configure; make install
 
 RUN     /usr/sbin/useradd -m -d /home/swift -U swift
 
