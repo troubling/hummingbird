@@ -444,7 +444,7 @@ func (server *ObjectHandler) ObjReplicateHandler(writer *hummingbird.WebWriter, 
 	writer.Write(hummingbird.PickleDumps(hashes))
 }
 
-func (server *ObjectHandler) LogRequest(writer *hummingbird.WebWriter, request *hummingbird.WebRequest) {
+func (server *ObjectHandler) LogRequest(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, extraInfo string) {
 	go server.logger.Info(fmt.Sprintf("%s - - [%s] \"%s %s\" %d %s \"%s\" \"%s\" \"%s\" %.4f \"%s\"",
 		request.RemoteAddr,
 		time.Now().Format("02/Jan/2006:15:04:05 -0700"),
@@ -456,7 +456,7 @@ func (server *ObjectHandler) LogRequest(writer *hummingbird.WebWriter, request *
 		hummingbird.GetDefault(request.Header, "X-Trans-Id", "-"),
 		hummingbird.GetDefault(request.Header, "User-Agent", "-"),
 		time.Since(request.Start).Seconds(),
-		"-")) // TODO: "additional info"?
+		extraInfo))
 }
 
 func (server ObjectHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -506,8 +506,13 @@ func (server ObjectHandler) ServeHTTP(writer http.ResponseWriter, request *http.
 		Start:         time.Now(),
 		Logger:        server.logger}
 	defer newRequest.LogPanics(newWriter)
+	forceAcquire := request.Header.Get("X-Force-Acquire") == "true"
 	if request.Method != "REPLICATE" || server.logLevel == "DEBUG" {
-		defer server.LogRequest(newWriter, newRequest) // log the request after return
+		extraInfo := "-"
+		if forceAcquire {
+			extraInfo = "FA"
+		}
+		defer server.LogRequest(newWriter, newRequest, extraInfo) // log the request after return
 	}
 
 	if !newRequest.ValidateRequest() {
@@ -528,7 +533,6 @@ func (server ObjectHandler) ServeHTTP(writer http.ResponseWriter, request *http.
 	if request.Method == "REPLICATE" {
 		diskInUse = server.replicationInUse
 	}
-	forceAcquire := request.Header.Get("X-Force-Acquire") == "true"
 	if concRequests := diskInUse.Acquire(vars["device"], forceAcquire); concRequests > 0 {
 		newWriter.Header().Set("X-Disk-Usage", strconv.FormatInt(concRequests, 10))
 		newWriter.StandardResponse(503)
