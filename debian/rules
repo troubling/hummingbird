@@ -1,6 +1,7 @@
 #!/usr/bin/make -f
 
 BUILDPATH := $(shell mktemp -d)
+export GOPATH=${BUILDPATH}
 
 %:
 	dh $@
@@ -8,7 +9,8 @@ BUILDPATH := $(shell mktemp -d)
 override_dh_auto_build:
 	mkdir -p ${BUILDPATH}/src
 	ln -s $(CURDIR) ${BUILDPATH}/src/
-	GOPATH=${BUILDPATH} make get all
+	cd ${BUILDPATH}/src/hummingbird; make get all
 	rm -rf ${BUILDPATH}
 
 override_dh_auto_install:
+override_dh_auto_test:
