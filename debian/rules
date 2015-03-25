@@ -8,7 +8,7 @@ export GOPATH=${BUILDPATH}
 
 override_dh_auto_build:
 	mkdir -p ${BUILDPATH}/src
-	ln -s $(CURDIR) ${BUILDPATH}/src/
+	ln -s $(CURDIR) ${BUILDPATH}/src/hummingbird
 	cd ${BUILDPATH}/src/hummingbird; make get all
 	rm -rf ${BUILDPATH}
 
