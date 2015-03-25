@@ -2,12 +2,12 @@ Source: hummingbird
 Section: devel
 Priority: extra
 Maintainer: Michael Barton <michael.barton@rackspace.com>
-Build-Depends: debhelper (>= 7.0.50~), libsqlite3-dev
+Build-Depends: debhelper (>= 7.0.50~)
 Standards-Version: 3.9.3
 Homepage: http://github.com/rackerlabs/hummingbird
 
 Package: hummingbird
 Architecture: amd64
-Depends: ${misc:Depends}, libsqlite3
+Depends: ${misc:Depends}
 Description: stuff and stuff
  Whatevers fill this in later.
