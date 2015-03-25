@@ -250,10 +250,15 @@ func RunServers(configFile string, GetServer func(string) (string, int, http.Han
 			fmt.Printf("Error listening: %v\n", err)
 			os.Exit(1)
 		}
-		srv := HummingbirdServer{}
-		srv.Handler = handler
-		srv.ConnState = srv.ConnStateChange
-		srv.Listener = sock
+		srv := HummingbirdServer{
+			Server: http.Server{
+				Handler:      handler,
+				ReadTimeout:  24 * time.Hour,
+				WriteTimeout: 24 * time.Hour,
+			},
+			Listener: sock,
+		}
+		srv.Server.ConnState = srv.ConnStateChange
 		go srv.Serve(sock)
 		servers = append(servers, &srv)
 		logger.Err(fmt.Sprintf("Server started on port %d", port))
