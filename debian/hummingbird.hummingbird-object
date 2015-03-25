@@ -1,0 +1,13 @@
+#! /bin/sh
+### BEGIN INIT INFO
+# Provides:          hummingbird-object-server
+# Required-Start:    $remote_fs
+# Required-Stop:     $remote_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Hummingbird Object Server
+# Description:       Object server for hummingbird.
+### END INIT INFO
+
+/usr/bin/hummingbird $1 object
+
