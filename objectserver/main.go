@@ -609,7 +609,6 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer, error) {
 	}
 
 	handler.logger = hummingbird.SetupLogger(serverconf.GetDefault("app:object-server", "log_facility", "LOG_LOCAL1"), "object-server")
-	hummingbird.DropPrivileges(serverconf.GetDefault("app:object-server", "user", "swift"))
 
 	return bindIP, int(bindPort), handler, handler.logger, nil
 }

@@ -15,17 +15,15 @@
 
 package common
 
-/*
-#include <unistd.h>
-#include <stdlib.h>
-// #include <fcntl.h>
-#include <pwd.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-*/
-import "C"
-import "unsafe"
-import "syscall"
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"syscall"
+	"unsafe"
+)
 
 func FGetXattr(fd uintptr, attr string, value []byte) (int, error) {
 	attrp, err := syscall.BytePtrFromString(attr)
@@ -61,18 +59,26 @@ func FSetXattr(fd uintptr, attr string, value []byte) (int, error) {
 	return int(r0), nil
 }
 
-func DropPrivileges(name string) {
-	cname := C.CString(name)
-	home := C.CString("HOME")
-	slash := C.CString("/")
-	defer C.cfree(unsafe.Pointer(home))
-	defer C.cfree(unsafe.Pointer(cname))
-	defer C.cfree(unsafe.Pointer(slash))
-	cpw := C.getpwnam(cname)
-	C.setgid(cpw.pw_gid)
-	C.setuid(cpw.pw_uid)
-	C.setenv(home, cpw.pw_dir, 1)
-	C.setsid()
-	C.chdir(slash)
-	C.umask(022)
+func Getpwnam(username string) (uint32, uint32, error) {
+	file, err := os.Open("/etc/passwd")
+	if err != nil {
+		return 0, 0, err
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		parts := strings.Split(scanner.Text(), ":")
+		if len(parts) > 6 && parts[0] == username {
+			uid, err := strconv.ParseUint(parts[2], 0, 32)
+			if err != nil {
+				return 0, 0, fmt.Errorf("Error parsing uid from /etc/passwd")
+			}
+			gid, err := strconv.ParseUint(parts[3], 0, 32)
+			if err != nil {
+				return 0, 0, fmt.Errorf("Error parsing uid from /etc/passwd")
+			}
+			return uint32(uid), uint32(gid), nil
+		}
+	}
+	return 0, 0, fmt.Errorf("User %s not found in /etc/passwd", username)
 }
