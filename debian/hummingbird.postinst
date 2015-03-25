@@ -1,0 +1,7 @@
+#!/bin/sh -e
+
+#DEBHELPER#
+
+if [ -d /var/cache/swift ]; then
+    chown swift:swift /var/cache/swift
+fi
