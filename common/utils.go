@@ -509,17 +509,15 @@ func NewKeyedLimit(limitPerKey int64, totalLimit int64) *KeyedLimit {
 }
 
 // GetHashPrefixAndSuffix retrieves the hash path prefix and suffix from
-// the correct configs based on the environments setup.
+// the correct configs based on the environments setup. The suffix cannot
+// be nil
 func GetHashPrefixAndSuffix() (prefix string, suffix string, err error) {
 	config_locations := []string{"/etc/hummingbird/hummingbird.conf", "/etc/swift/swift.conf"}
 
 	for _, loc := range config_locations {
 		if conf, e := LoadIniFile(loc); e == nil {
 			var ok bool
-			if prefix, ok = conf.Get("swift-hash", "swift_hash_path_prefix"); !ok {
-				err = errors.New("Hash path prefix not defined")
-				return
-			}
+			prefix, _ = conf.Get("swift-hash", "swift_hash_path_prefix")
 			if suffix, ok = conf.Get("swift-hash", "swift_hash_path_prefix"); !ok {
 				err = errors.New("Hash path suffix not defined")
 				return

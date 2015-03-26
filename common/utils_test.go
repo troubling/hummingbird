@@ -268,11 +268,10 @@ func TestReadDirNames(t *testing.T) {
 }
 
 func TestGetHashPrefixAndSuffix(t *testing.T) {
-	prefix, suffix, err := GetHashPrefixAndSuffix()
+	_, suffix, err := GetHashPrefixAndSuffix()
 	assert.Nil(t, err, "Error getting hash path prefix or suffix")
 
-	//Are the prefix and suffix allowed to be blank?
-	if prefix == "" && suffix == "" {
+	if suffix == "" {
 		t.Error("Error prefix and suffix not being set")
 	}
 }
