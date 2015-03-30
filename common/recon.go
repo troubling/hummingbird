@@ -102,13 +102,17 @@ func getMounts() interface{} {
 }
 
 func fromReconCache(source string, keys ...string) (interface{}, error) {
+	results := make(map[string]interface{})
+	for _, key := range keys {
+		results[key] = nil
+	}
 	filedata, err := ioutil.ReadFile(fmt.Sprintf("/var/cache/swift/%s.recon", source))
 	if err != nil {
-		return nil, err
+		results["recon_error"] = fmt.Sprintf("Error: %s", err)
+		return results, nil
 	}
 	var data interface{}
 	json.Unmarshal(filedata, &data)
-	results := make(map[string]interface{})
 	switch data := data.(type) {
 	case map[string]interface{}:
 		for _, key := range keys {
@@ -121,7 +125,7 @@ func fromReconCache(source string, keys ...string) (interface{}, error) {
 }
 
 func getUnmounted(driveRoot string) (interface{}, error) {
-	unmounted := make([]map[string]bool, 0)
+	unmounted := make([]map[string]interface{}, 0)
 	dirInfo, err := os.Stat(driveRoot)
 	if err != nil {
 		return nil, err
@@ -132,7 +136,7 @@ func getUnmounted(driveRoot string) (interface{}, error) {
 	}
 	for _, info := range fileInfo {
 		if info.Sys().(*syscall.Stat_t).Dev == dirInfo.Sys().(*syscall.Stat_t).Dev {
-			unmounted = append(unmounted, map[string]bool{info.Name(): false})
+			unmounted = append(unmounted, map[string]interface{}{"device": info.Name(), "mounted": false})
 		}
 	}
 	return unmounted, nil
