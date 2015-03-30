@@ -112,6 +112,18 @@ func LoadIniFile(filename string) (IniFile, error) {
 	return file, file.LoadFile(filename)
 }
 
+func UidFromConf(serverConf string) (uint32, uint32, error) {
+	if ini, err := LoadIniFile(serverConf); err == nil {
+		username := ini.GetDefault("DEFAULT", "user", "swift")
+		return Getpwnam(username)
+	} else {
+		if matches, err := filepath.Glob(serverConf + "/*.conf"); err == nil && len(matches) > 0 {
+			return UidFromConf(matches[0])
+		}
+	}
+	return 0, 0, fmt.Errorf("Unable to find config file")
+}
+
 func WriteFileAtomic(filename string, data []byte, perm os.FileMode) error {
 	partDir := filepath.Dir(filename)
 	tmpFile, err := ioutil.TempFile(partDir, ".tmp-o-file")
