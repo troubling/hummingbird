@@ -47,7 +47,7 @@ func HeaderToMap(headers http.Header) map[string]string {
 	return ret
 }
 
-func UpdateContainer(metadata map[string]interface{}, request *hummingbird.WebRequest, vars map[string]string, hashDir string) {
+func UpdateContainer(metadata map[string]string, request *hummingbird.WebRequest, vars map[string]string, hashDir string) {
 	contpartition := request.Header.Get("X-Container-Partition")
 	if contpartition == "" {
 		return
@@ -78,11 +78,11 @@ func UpdateContainer(metadata map[string]interface{}, request *hummingbird.WebRe
 		}
 		req.Header.Add("Referer", referer)
 		req.Header.Add("X-Trans-Id", hummingbird.GetDefault(request.Header, "X-Trans-Id", "-"))
-		req.Header.Add("X-Timestamp", metadata["X-Timestamp"].(string))
+		req.Header.Add("X-Timestamp", metadata["X-Timestamp"])
 		if request.Method != "DELETE" {
-			req.Header.Add("X-Content-Type", metadata["Content-Type"].(string))
-			req.Header.Add("X-Size", metadata["Content-Length"].(string))
-			req.Header.Add("X-Etag", metadata["ETag"].(string))
+			req.Header.Add("X-Content-Type", metadata["Content-Type"])
+			req.Header.Add("X-Size", metadata["Content-Length"])
+			req.Header.Add("X-Etag", metadata["ETag"])
 		}
 		resp, err := client.Do(req)
 		if err == nil {

@@ -27,7 +27,7 @@ import (
 
 func TestWriteReadMetadata(t *testing.T) {
 
-	data := map[string]interface{}{
+	data := map[string]string{
 		strings.Repeat("la", 5):    strings.Repeat("la", 30),
 		strings.Repeat("moo", 500): strings.Repeat("moo", 300),
 	}
