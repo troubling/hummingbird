@@ -104,8 +104,15 @@ func StartServer(name string) {
 		return
 	}
 	cmd := exec.Command(serverExecutable, "run", name, serverConf)
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setsid: true,
+
+	uid, gid, err := hummingbird.UidFromConf(serverConf)
+	if err != nil {
+		fmt.Println("Unable to find uid to execute process:", err)
+		return
+	}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if uint32(os.Getuid()) != uid { // This is goofy.
+		cmd.SysProcAttr.Credential = &syscall.Credential{Uid: uid, Gid: gid}
 	}
 	rdp, err := cmd.StdoutPipe()
 	cmd.Stderr = cmd.Stdout
@@ -114,6 +121,7 @@ func StartServer(name string) {
 		return
 	}
 
+	syscall.Umask(022)
 	err = cmd.Start()
 	if err != nil {
 		fmt.Println("Error starting server:", err)

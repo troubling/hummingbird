@@ -269,17 +269,6 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 	if !server.disableFallocate && request.ContentLength > 0 {
 		syscall.Fallocate(int(tempFile.Fd()), 1, 0, request.ContentLength)
 	}
-	metadata := make(map[string]interface{})
-	metadata["name"] = "/" + vars["account"] + "/" + vars["container"] + "/" + vars["obj"]
-	metadata["X-Timestamp"] = requestTimestamp
-	metadata["Content-Type"] = request.Header.Get("Content-Type")
-	for key := range request.Header {
-		if allowed, ok := server.allowedHeaders[key]; (ok && allowed) ||
-			strings.HasPrefix(key, "X-Object-Meta-") ||
-			strings.HasPrefix(key, "X-Object-Sysmeta-") {
-			metadata[key] = request.Header.Get(key)
-		}
-	}
 	hash := md5.New()
 	totalSize, err := hummingbird.Copy(request.Body, tempFile, hash)
 	if err != nil {
@@ -287,14 +276,26 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 		writer.StandardResponse(http.StatusInternalServerError)
 		return
 	}
-	metadata["Content-Length"] = strconv.FormatInt(totalSize, 10)
-	metadata["ETag"] = hex.EncodeToString(hash.Sum(nil))
+	metadata := map[string]string{
+		"name":           "/" + vars["account"] + "/" + vars["container"] + "/" + vars["obj"],
+		"X-Timestamp":    requestTimestamp,
+		"Content-Type":   request.Header.Get("Content-Type"),
+		"Content-Length": strconv.FormatInt(totalSize, 10),
+		"ETag":           hex.EncodeToString(hash.Sum(nil)),
+	}
+	for key := range request.Header {
+		if allowed, ok := server.allowedHeaders[key]; (ok && allowed) ||
+			strings.HasPrefix(key, "X-Object-Meta-") ||
+			strings.HasPrefix(key, "X-Object-Sysmeta-") {
+			metadata[key] = request.Header.Get(key)
+		}
+	}
 	requestEtag := request.Header.Get("ETag")
-	if requestEtag != "" && requestEtag != metadata["ETag"].(string) {
+	if requestEtag != "" && requestEtag != metadata["ETag"] {
 		http.Error(writer, "Unprocessable Entity", 422)
 		return
 	}
-	outHeaders.Set("ETag", metadata["ETag"].(string))
+	outHeaders.Set("ETag", metadata["ETag"])
 	WriteMetadata(tempFile.Fd(), metadata)
 	if !server.asyncFinalize { // for "super safe mode", this should happen before the rename.
 		tempFile.Sync()
@@ -405,9 +406,10 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 		writer.StandardResponse(http.StatusInternalServerError)
 		return
 	}
-	metadata := make(map[string]interface{})
-	metadata["X-Timestamp"] = requestTimestamp
-	metadata["name"] = "/" + vars["account"] + "/" + vars["container"] + "/" + vars["obj"]
+	metadata := map[string]string{
+		"X-Timestamp": requestTimestamp,
+		"name":        "/" + vars["account"] + "/" + vars["container"] + "/" + vars["obj"],
+	}
 	WriteMetadata(tempFile.Fd(), metadata)
 	if !server.asyncFinalize {
 		tempFile.Sync()
@@ -417,7 +419,7 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 		writer.StandardResponse(http.StatusInternalServerError)
 		return
 	}
-	headers.Set("X-Backend-Timestamp", metadata["X-Timestamp"].(string))
+	headers.Set("X-Backend-Timestamp", metadata["X-Timestamp"])
 	finalize := func() {
 		if server.asyncFinalize {
 			tempFile.Sync()
@@ -609,7 +611,6 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer, error) {
 	}
 
 	handler.logger = hummingbird.SetupLogger(serverconf.GetDefault("app:object-server", "log_facility", "LOG_LOCAL1"), "object-server")
-	hummingbird.DropPrivileges(serverconf.GetDefault("app:object-server", "user", "swift"))
 
 	return bindIP, int(bindPort), handler, handler.logger, nil
 }

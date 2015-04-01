@@ -74,7 +74,7 @@ func ReadMetadata(fileNameOrFd interface{}) (map[interface{}]interface{}, error)
 	return v.(map[interface{}]interface{}), nil
 }
 
-func WriteMetadata(fd uintptr, v map[string]interface{}) {
+func WriteMetadata(fd uintptr, v map[string]string) {
 	// TODO: benchmark this with and without chunking up the metadata
 	buf := hummingbird.PickleDumps(v)
 	for index := 0; len(buf) > 0; index++ {

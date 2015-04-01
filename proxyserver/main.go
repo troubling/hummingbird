@@ -406,7 +406,5 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer, error) {
 		return "", 0, nil, nil, err
 	}
 
-	hummingbird.DropPrivileges(serverconf.GetDefault("DEFAULT", "user", "swift"))
-
 	return bindIP, int(bindPort), handler, handler.logger, nil
 }
