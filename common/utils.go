@@ -530,7 +530,7 @@ func GetHashPrefixAndSuffix() (prefix string, suffix string, err error) {
 		if conf, e := LoadIniFile(loc); e == nil {
 			var ok bool
 			prefix, _ = conf.Get("swift-hash", "swift_hash_path_prefix")
-			if suffix, ok = conf.Get("swift-hash", "swift_hash_path_prefix"); !ok {
+			if suffix, ok = conf.Get("swift-hash", "swift_hash_path_suffix"); !ok {
 				err = errors.New("Hash path suffix not defined")
 				return
 			}
