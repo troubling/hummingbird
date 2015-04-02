@@ -1,3 +1,9 @@
+hummingbird (0.1.3) precise; urgency=low
+
+  * fix the bug with the bug with the swift_hash_prefix bug
+
+ -- David Goetz <david.goetz@rackspace.com>  Thu, 02 Apr 2015 00:00:00 +0000
+
 hummingbird (0.1.2) precise; urgency=low
 
   * Couple small changes including recon fix and limit request times to 1 day
