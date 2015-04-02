@@ -9,6 +9,7 @@ Homepage: http://github.com/rackerlabs/hummingbird
 Package: hummingbird
 Architecture: amd64
 Depends: ${misc:Depends}
-Description: golang implementation of some parts of Swift
- Whatevs- its not that big of a deal.
+Description: A golang implementation of some parts of Swift
+ Currently implements the swift object server functionality 
+ in golang.
 
