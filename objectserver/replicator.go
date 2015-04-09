@@ -134,7 +134,7 @@ func (r *Replicator) syncFile(filePath string, relPath string, dev *hummingbird.
 		return false
 	}
 	resp.Body.Close()
-	return err == nil && (resp.StatusCode == http.StatusConflict || (resp.StatusCode/100) == 2)
+	return resp.StatusCode == http.StatusConflict || (resp.StatusCode/100) == 2
 }
 
 // Request hashes from the remote side.  This also now begins a new "replication session".
@@ -187,10 +187,10 @@ func (r *Replicator) replicateLocal(j *job, nodes []*hummingbird.Device, moreNod
 	syncCount := 0
 	remoteHashes := make(map[int]map[interface{}]interface{})
 	for i := 0; i < len(nodes); i++ {
-		if rhashes, unmounted := r.getRemoteHashes(nodes[i], j.partition, repid); rhashes != nil {
+		if rhashes, remoteUnmounted := r.getRemoteHashes(nodes[i], j.partition, repid); rhashes != nil {
 			remoteHashes[nodes[i].Id] = rhashes
 			defer r.endReplication(nodes[i], j.partition, repid)
-		} else if unmounted == true {
+		} else if remoteUnmounted == true {
 			if nextNode := moreNodes.Next(); nextNode != nil {
 				nodes = append(nodes, nextNode)
 			}
@@ -216,12 +216,8 @@ func (r *Replicator) replicateLocal(j *job, nodes []*hummingbird.Device, moreNod
 		for _, remoteHash := range remoteHashes {
 			if remoteHash[suffix] != nil && localHash != remoteHash[suffix] {
 				recalc = append(recalc, suffix)
-				break
-			}
-		}
-		for _, remoteHash := range remoteHashes { // temporary, just for stats
-			if remoteHash[suffix] != nil && localHash != remoteHash[suffix] {
 				wrongCount++
+				break
 			}
 		}
 	}
@@ -241,7 +237,10 @@ func (r *Replicator) replicateLocal(j *job, nodes []*hummingbird.Device, moreNod
 	for suffix, localHash := range hashes {
 		needSync := false
 		for _, remoteHash := range remoteHashes {
-			needSync = needSync || (localHash != remoteHash[suffix])
+			if localHash != remoteHash[suffix] {
+				needSync = true
+				break
+			}
 		}
 		if !needSync {
 			continue
@@ -279,14 +278,14 @@ func (r *Replicator) replicateHandoff(j *job, nodes []*hummingbird.Device) {
 	path := filepath.Join(j.objPath, j.partition)
 	repid := hummingbird.UUID()
 	syncCount := 0
-	allowed := make(map[int]bool)
+	remoteDriveAvailable := make(map[int]bool)
 	for _, dev := range nodes {
 		if rhashes, _ := r.getRemoteHashes(dev, j.partition, repid); rhashes != nil {
-			allowed[dev.Id] = true
+			remoteDriveAvailable[dev.Id] = true
 			defer r.endReplication(dev, j.partition, repid)
 		}
 	}
-	if len(allowed) == 0 {
+	if len(remoteDriveAvailable) == 0 {
 		return
 	}
 	suffixDirs, err := filepath.Glob(filepath.Join(path, "[a-f0-9][a-f0-9][a-f0-9]"))
@@ -311,17 +310,20 @@ func (r *Replicator) replicateHandoff(j *job, nodes []*hummingbird.Device) {
 			if err != nil {
 				continue
 			}
-			success := true
+			fullyReplicated := true
 			for _, objFile := range fileList {
 				for _, dev := range nodes {
 					relPath, _ := filepath.Rel(filepath.Dir(path), objFile)
-					if !allowed[dev.Id] || !r.syncFile(objFile, relPath, dev, repid) {
-						success = false
+					if !remoteDriveAvailable[dev.Id] {
+						fullyReplicated = false
+					} else if !r.syncFile(objFile, relPath, dev, repid) {
+						fullyReplicated = false
+					} else {
+						syncCount++
 					}
-					syncCount++
 				}
 			}
-			if success {
+			if fullyReplicated {
 				os.RemoveAll(hashDir)
 			}
 		}
