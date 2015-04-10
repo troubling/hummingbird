@@ -19,6 +19,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -386,6 +387,10 @@ func (r *Replicator) replicateDevice(dev *hummingbird.Device) {
 	if err != nil {
 		r.LogError("[replicateDevice] Error getting partition list: %s (%v)", objPath, err)
 		return
+	}
+	for i := len(partitionList) - 1; i > 0; i-- { // shuffle partition list
+		j := rand.Intn(i + 1)
+		partitionList[j], partitionList[i] = partitionList[i], partitionList[j]
 	}
 	r.jobCountIncrement <- uint64(len(partitionList))
 	for _, partition := range partitionList {
