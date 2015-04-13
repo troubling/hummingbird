@@ -31,6 +31,25 @@ import (
 	"syscall"
 )
 
+func DumpReconCache(reconCachePath string, cacheData map[string]interface{}, source string) error {
+	reconFile := fmt.Sprintf("%s/%s.recon", reconCachePath, source)
+	filedata, _ := ioutil.ReadFile(reconFile)
+	var reconData = make(map[string]interface{})
+	if filedata != nil {
+		var data interface{}
+		if json.Unmarshal(filedata, &data) == nil {
+			if _, ok := data.(map[string]interface{}); ok {
+				reconData = data.(map[string]interface{})
+			}
+		}
+	}
+	for k, v := range cacheData {
+		reconData[k] = v
+	}
+	newdata, _ := json.Marshal(reconData)
+	return WriteFileAtomic(reconFile, newdata, 0600)
+}
+
 func getMem() interface{} {
 	results := make(map[string]string)
 	fp, _ := os.Open("/proc/meminfo")

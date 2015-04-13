@@ -107,6 +107,10 @@ func (f IniFile) GetLimit(section string, key string, dfla int64, dflb int64) (i
 	return dfla, dflb
 }
 
+func (f IniFile) HasSection(section string) bool {
+	return f.File[section] != nil
+}
+
 func LoadIniFile(filename string) (IniFile, error) {
 	file := IniFile{make(ini.File)}
 	return file, file.LoadFile(filename)
@@ -538,4 +542,11 @@ func GetHashPrefixAndSuffix() (prefix string, suffix string, err error) {
 		}
 	}
 	return
+}
+
+func Exists(file string) bool {
+	if _, err := os.Stat(file); os.IsNotExist(err) {
+		return false
+	}
+	return true
 }

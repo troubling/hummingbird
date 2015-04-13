@@ -26,19 +26,13 @@ import (
 	"time"
 
 	"hummingbird/bench"
-	hummingbird "hummingbird/common"
 	"hummingbird/objectserver"
 	"hummingbird/proxyserver"
+
+	hummingbird "hummingbird/common"
 )
 
 var Version = "0.1"
-
-func Exists(file string) bool {
-	if _, err := os.Stat(file); os.IsNotExist(err) {
-		return false
-	}
-	return true
-}
 
 func WritePid(name string, pid int) error {
 	file, err := os.Create(fmt.Sprintf("/var/run/hummingbird/%s.pid", name))
@@ -82,20 +76,21 @@ func StartServer(name string) {
 		return
 	}
 	serverConf := ""
+	configName := strings.Split(name, "-")[0]
 	configSearch := []string{
-		fmt.Sprintf("/etc/hummingbird/%s-server.conf", name),
-		fmt.Sprintf("/etc/hummingbird/%s-server", name),
-		fmt.Sprintf("/etc/swift/%s-server.conf", name),
-		fmt.Sprintf("/etc/swift/%s-server", name),
+		fmt.Sprintf("/etc/hummingbird/%s-server.conf", configName),
+		fmt.Sprintf("/etc/hummingbird/%s-server", configName),
+		fmt.Sprintf("/etc/swift/%s-server.conf", configName),
+		fmt.Sprintf("/etc/swift/%s-server", configName),
 	}
 	for _, config := range configSearch {
-		if Exists(config) {
+		if hummingbird.Exists(config) {
 			serverConf = config
 			break
 		}
 	}
 	if serverConf == "" {
-		fmt.Println("Unable to find", name, "configuration file.")
+		fmt.Println("Unable to find", configName, "configuration file.")
 		return
 	}
 	serverExecutable, err := exec.LookPath(os.Args[0])
@@ -187,6 +182,8 @@ func RunServer(name string) {
 		hummingbird.RunServers(os.Args[3], objectserver.GetServer)
 	case "proxy":
 		hummingbird.RunServers(os.Args[3], proxyserver.GetServer)
+	case "object-replicator":
+		hummingbird.RunDaemon(os.Args[3], objectserver.NewReplicator)
 	}
 }
 
@@ -267,7 +264,7 @@ func main() {
 		goto USAGE
 	}
 
-	if !Exists("/var/run/hummingbird") {
+	if !hummingbird.Exists("/var/run/hummingbird") {
 		err := os.MkdirAll("/var/run/hummingbird", 0600)
 		if err != nil {
 			fmt.Println("Unable to create /var/run/hummingbird")
@@ -277,10 +274,10 @@ func main() {
 	}
 
 	switch strings.ToLower(os.Args[2]) {
-	case "proxy", "object":
+	case "proxy", "object", "object-replicator":
 		serverList = []string{strings.ToLower(os.Args[2])}
 	case "all":
-		serverList = []string{"proxy", "object"}
+		serverList = []string{"proxy", "object", "object-replicator"}
 	default:
 		goto USAGE
 	}

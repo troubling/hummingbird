@@ -130,9 +130,9 @@ func (r *hashRing) LocalDevices(localPort int) (devs []*Device) {
 		localIPs[strings.Split(addr.String(), "/")[0]] = true
 	}
 
-	for _, dev := range r.Devs {
+	for i, dev := range r.Devs {
 		if localIPs[dev.ReplicationIp] && dev.ReplicationPort == localPort {
-			devs = append(devs, &dev)
+			devs = append(devs, &r.Devs[i])
 		}
 	}
 	return devs

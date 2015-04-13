@@ -175,6 +175,12 @@ type LoggingContext interface {
 	LogDebug(format string, args ...interface{})
 }
 
+type SysLogLike interface {
+	Err(string) error
+	Info(string) error
+	Debug(string) error
+}
+
 /* http.Server that knows how to shut down gracefully */
 
 type HummingbirdServer struct {
@@ -280,8 +286,37 @@ func RunServers(configFile string, GetServer func(string) (string, int, http.Han
 		}()
 		for _, srv := range servers {
 			srv.Wait()
-			time.Sleep(time.Second * 5)
+		}
+		time.Sleep(time.Second * 5)
+	}
+}
+
+type Daemon interface {
+	Run()
+	RunForever()
+	LogError(format string, args ...interface{})
+}
+
+func RunDaemon(configFile string, GetDaemon func(string) (Daemon, error)) {
+	var daemons []Daemon
+	configFiles, err := filepath.Glob(fmt.Sprintf("%s/*.conf", configFile))
+	if err != nil || len(configFiles) <= 0 {
+		configFiles = []string{configFile}
+	}
+	for _, configFile := range configFiles {
+		if daemon, err := GetDaemon(configFile); err == nil {
+			daemons = append(daemons, daemon)
+			go daemon.RunForever()
+			daemon.LogError("Daemon started.")
+			fmt.Printf("Daemon started.\n")
+		} else {
+			fmt.Println("Failed to start daemon:", err)
 		}
 	}
-	os.Exit(0)
+	if len(daemons) > 0 {
+		ShutdownStdio()
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
+		<-c
+	}
 }
