@@ -184,6 +184,8 @@ func RunServer(name string) {
 		hummingbird.RunServers(os.Args[3], proxyserver.GetServer)
 	case "object-replicator":
 		hummingbird.RunDaemon(os.Args[3], objectserver.NewReplicator)
+	case "object-auditor":
+		hummingbird.RunDaemon(os.Args[3], objectserver.NewAuditor)
 	}
 }
 
@@ -274,10 +276,10 @@ func main() {
 	}
 
 	switch strings.ToLower(os.Args[2]) {
-	case "proxy", "object", "object-replicator":
+	case "proxy", "object", "object-replicator", "object-auditor":
 		serverList = []string{strings.ToLower(os.Args[2])}
 	case "all":
-		serverList = []string{"proxy", "object", "object-replicator"}
+		serverList = []string{"proxy", "object", "object-replicator", "object-auditor"}
 	default:
 		goto USAGE
 	}

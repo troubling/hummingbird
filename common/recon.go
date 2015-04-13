@@ -31,11 +31,18 @@ import (
 	"syscall"
 )
 
-func DumpReconCache(reconCachePath string, cacheData map[string]interface{}, source string) error {
-	reconFile := fmt.Sprintf("%s/%s.recon", reconCachePath, source)
+func DumpReconCache(reconCachePath string, source string, cacheData map[string]interface{}) error {
+	reconFile := filepath.Join(reconCachePath, source+".recon")
+
+	if lock, err := LockParent(reconFile, 5); err != nil {
+		return err
+	} else {
+		defer lock.Close()
+	}
+
 	filedata, _ := ioutil.ReadFile(reconFile)
 	var reconData = make(map[string]interface{})
-	if filedata != nil {
+	if filedata != nil && len(filedata) > 0 {
 		var data interface{}
 		if json.Unmarshal(filedata, &data) == nil {
 			if _, ok := data.(map[string]interface{}); ok {
@@ -43,8 +50,30 @@ func DumpReconCache(reconCachePath string, cacheData map[string]interface{}, sou
 			}
 		}
 	}
-	for k, v := range cacheData {
-		reconData[k] = v
+	for key, item := range cacheData {
+		switch item := item.(type) {
+		case map[string]interface{}:
+			if len(item) == 0 {
+				delete(reconData, key)
+				continue
+			}
+			if _, ok := reconData[key].(map[string]interface{}); !ok {
+				reconData[key] = make(map[string]interface{})
+			}
+			for itemk, itemv := range item {
+				if itemvmap, ok := itemv.(map[string]interface{}); ok && len(itemvmap) == 0 {
+					delete(reconData[key].(map[string]interface{}), itemk)
+				} else if itemv == nil {
+					delete(reconData[key].(map[string]interface{}), itemk)
+				} else {
+					reconData[key].(map[string]interface{})[itemk] = itemv
+				}
+			}
+		case nil:
+			delete(reconData, key)
+		default:
+			reconData[key] = item
+		}
 	}
 	newdata, _ := json.Marshal(reconData)
 	return WriteFileAtomic(reconFile, newdata, 0600)

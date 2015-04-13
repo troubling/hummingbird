@@ -462,10 +462,11 @@ func (r *Replicator) run(c <-chan time.Time) {
 		r.partRateTicker.Stop()
 		statsTicker.Stop()
 		r.statsReporter(OneTimeChan())
-		hummingbird.DumpReconCache(r.reconCachePath, map[string]interface{}{
-			"object_replication_time": float64(time.Since(r.startTime)) / float64(time.Second),
-			"object_replication_last": float64(time.Now().UnixNano()) / float64(time.Second),
-		}, "object")
+		hummingbird.DumpReconCache(r.reconCachePath, "object",
+			map[string]interface{}{
+				"object_replication_time": float64(time.Since(r.startTime)) / float64(time.Second),
+				"object_replication_last": float64(time.Now().UnixNano()) / float64(time.Second),
+			})
 	}
 }
 
