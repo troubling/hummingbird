@@ -21,6 +21,7 @@ import (
 	"errors"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -143,7 +144,7 @@ func InvalidateHash(hashDir string) {
 	v, _ := hummingbird.PickleLoads(data)
 	suffixDirSplit := strings.Split(suffDir, "/")
 	suffix := suffixDirSplit[len(suffixDirSplit)-1]
-	if current, ok := v.(map[interface{}]interface{})[suffix]; ok && current == nil {
+	if current, ok := v.(map[interface{}]interface{})[suffix]; ok && (current == nil || current == "") {
 		return
 	}
 	v.(map[interface{}]interface{})[suffix] = nil
@@ -259,6 +260,10 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 				}
 			}
 		}
+	}
+	// check occasionally to see if there are any suffixes not in the hashes.pkl
+	if !lsForSuffixes && len(hashes) < 4096 {
+		lsForSuffixes = rand.Int31n(10) == 0
 	}
 	if lsForSuffixes {
 		// couldn't load hashes pickle, start building new one
