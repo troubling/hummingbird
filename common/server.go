@@ -86,13 +86,13 @@ func (w *WebWriter) WriteHeader(status int) {
 	w.ResponseStarted = true
 }
 
-func (w *WebWriter) CopyResponseHeaders(src *http.Response) {
+func CopyResponseHeaders(w http.ResponseWriter, src *http.Response) {
 	for key := range src.Header {
 		w.Header().Set(key, src.Header.Get(key))
 	}
 }
 
-func (w *WebWriter) StandardResponse(statusCode int) {
+func StandardResponse(w http.ResponseWriter, statusCode int) {
 	body := responseBodies[statusCode]
 	w.Header().Set("Content-Type", "text/html")
 	w.Header().Set("Content-Length", strconv.FormatInt(int64(len(body)), 10))
@@ -100,7 +100,7 @@ func (w *WebWriter) StandardResponse(statusCode int) {
 	w.Write([]byte(body))
 }
 
-func (w *WebWriter) CustomErrorResponse(statusCode int, vars map[string]string) {
+func CustomErrorResponse(w http.ResponseWriter, statusCode int, vars map[string]string) {
 	body := ""
 	switch statusCode {
 	case 507:
@@ -114,59 +114,45 @@ func (w *WebWriter) CustomErrorResponse(statusCode int, vars map[string]string) 
 	w.Write([]byte(body))
 }
 
-// http.Request that also contains swift-specific info about the request
-
-type WebRequest struct {
-	*http.Request
-	TransactionId string
-	XTimestamp    string
-	Start         time.Time
-	Logger        *syslog.Writer
-}
-
-func (r *WebRequest) CopyRequestHeaders(dst *http.Request) {
+func CopyRequestHeaders(r *http.Request, dst *http.Request) {
 	for key := range r.Header {
 		dst.Header.Set(key, r.Header.Get(key))
 	}
-	dst.Header.Set("X-Timestamp", r.XTimestamp)
-	dst.Header.Set("X-Trans-Id", r.TransactionId)
 }
 
-func (r *WebRequest) NillableFormValue(key string) *string {
-	if r.Form == nil {
-		r.ParseForm()
-	}
-	if vs, ok := r.Form[key]; !ok {
-		return nil
-	} else {
-		return &vs[0]
-	}
+func ValidateRequest(r *http.Request) bool {
+	return utf8.ValidString(r.URL.Path) && utf8.ValidString(r.Header.Get("Content-Type"))
 }
 
-func (r WebRequest) LogError(format string, args ...interface{}) {
-	r.Logger.Err(fmt.Sprintf(format, args...) + " (txn:" + r.TransactionId + ")")
+type RequestLogger struct {
+	Request *http.Request
+	Logger  SysLogLike
 }
 
-func (r WebRequest) LogInfo(format string, args ...interface{}) {
-	r.Logger.Info(fmt.Sprintf(format, args...) + " (txn:" + r.TransactionId + ")")
+func (r RequestLogger) LogError(format string, args ...interface{}) {
+	transactionId := r.Request.Header.Get("X-Trans-Id")
+	r.Logger.Err(fmt.Sprintf(format, args...) + " (txn:" + transactionId + ")")
 }
 
-func (r WebRequest) LogDebug(format string, args ...interface{}) {
-	r.Logger.Debug(fmt.Sprintf(format, args...) + " (txn:" + r.TransactionId + ")")
+func (r RequestLogger) LogInfo(format string, args ...interface{}) {
+	transactionId := r.Request.Header.Get("X-Trans-Id")
+	r.Logger.Info(fmt.Sprintf(format, args...) + " (txn:" + transactionId + ")")
 }
 
-func (r WebRequest) LogPanics(w *WebWriter) {
+func (r RequestLogger) LogDebug(format string, args ...interface{}) {
+	transactionId := r.Request.Header.Get("X-Trans-Id")
+	r.Logger.Debug(fmt.Sprintf(format, args...) + " (txn:" + transactionId + ")")
+}
+
+func (r RequestLogger) LogPanics(w *WebWriter) {
 	if e := recover(); e != nil {
-		r.Logger.Err(fmt.Sprintf("PANIC: %s: %s", e, debug.Stack()) + " (txn:" + r.TransactionId + ")")
+		transactionId := r.Request.Header.Get("X-Trans-Id")
+		r.Logger.Err(fmt.Sprintf("PANIC: %s: %s", e, debug.Stack()) + " (txn:" + transactionId + ")")
 		// if we haven't set a status code yet, we can send a 500 response.
 		if !w.ResponseStarted {
-			w.StandardResponse(http.StatusInternalServerError)
+			StandardResponse(w, http.StatusInternalServerError)
 		}
 	}
-}
-
-func (r WebRequest) ValidateRequest() bool {
-	return utf8.ValidString(r.URL.Path) && utf8.ValidString(r.Header.Get("Content-Type"))
 }
 
 type LoggingContext interface {

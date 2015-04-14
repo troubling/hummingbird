@@ -13,33 +13,20 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-package proxyserver
+package middleware
 
 import (
-	"net"
-	"testing"
-
-	"github.com/stretchr/testify/assert"
+	hummingbird "hummingbird/common"
+	"net/http"
 )
 
-func TestGetServer(t *testing.T) {
-	tests := []struct {
-		conf    string
-		err_msg string
-	}{
-		{"/etc/swift/proxy-server.conf", ""},
-		{"/tmp/asdf", "Unable to load /tmp/asdf"},
-	}
-	for _, test := range tests {
-		if test.err_msg != "" {
-			_, _, _, _, err := GetServer(test.conf)
-			assert.Equal(t, test.err_msg, err.Error())
-			continue
+func ValidateRequest(next http.Handler) http.Handler {
+	fn := func(writer http.ResponseWriter, request *http.Request) {
+		if !hummingbird.ValidateRequest(request) {
+			hummingbird.StandardResponse(writer, 400)
+			return
 		}
-		ip, port, handler, logger, _ := GetServer(test.conf)
-		assert.NotNil(t, net.ParseIP(ip))
-		assert.Equal(t, port, 8080)
-		assert.NotNil(t, logger)
-		assert.NotNil(t, handler)
+		next.ServeHTTP(writer, request)
 	}
+	return http.HandlerFunc(fn)
 }

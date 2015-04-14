@@ -13,33 +13,17 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-package proxyserver
+package middleware
 
 import (
-	"net"
-	"testing"
+	"net/http"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/gorilla/context"
 )
 
-func TestGetServer(t *testing.T) {
-	tests := []struct {
-		conf    string
-		err_msg string
-	}{
-		{"/etc/swift/proxy-server.conf", ""},
-		{"/tmp/asdf", "Unable to load /tmp/asdf"},
-	}
-	for _, test := range tests {
-		if test.err_msg != "" {
-			_, _, _, _, err := GetServer(test.conf)
-			assert.Equal(t, test.err_msg, err.Error())
-			continue
-		}
-		ip, port, handler, logger, _ := GetServer(test.conf)
-		assert.NotNil(t, net.ParseIP(ip))
-		assert.Equal(t, port, 8080)
-		assert.NotNil(t, logger)
-		assert.NotNil(t, handler)
-	}
+func ClearHandler(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer context.Clear(r)
+		h.ServeHTTP(w, r)
+	})
 }

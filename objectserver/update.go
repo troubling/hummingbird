@@ -47,7 +47,7 @@ func HeaderToMap(headers http.Header) map[string]string {
 	return ret
 }
 
-func UpdateContainer(metadata map[string]string, request *hummingbird.WebRequest, vars map[string]string, hashDir string) {
+func UpdateContainer(metadata map[string]string, request *http.Request, vars map[string]string, hashDir string) {
 	contpartition := request.Header.Get("X-Container-Partition")
 	if contpartition == "" {
 		return
@@ -79,6 +79,7 @@ func UpdateContainer(metadata map[string]string, request *hummingbird.WebRequest
 		req.Header.Add("Referer", referer)
 		req.Header.Add("X-Trans-Id", hummingbird.GetDefault(request.Header, "X-Trans-Id", "-"))
 		req.Header.Add("X-Timestamp", metadata["X-Timestamp"])
+		xTimestamp := request.Header.Get("X-Timestamp")
 		if request.Method != "DELETE" {
 			req.Header.Add("X-Content-Type", metadata["Content-Type"])
 			req.Header.Add("X-Size", metadata["Content-Length"])
@@ -89,7 +90,7 @@ func UpdateContainer(metadata map[string]string, request *hummingbird.WebRequest
 			resp.Body.Close()
 		}
 		if err != nil || (resp.StatusCode/100) != 2 {
-			request.LogError("Container update failed with %s/%s, saving async", host, device)
+			hummingbird.GetLogger(request).LogError("Container update failed with %s/%s, saving async", host, device)
 			data := map[string]interface{}{
 				"op":        request.Method,
 				"account":   vars["account"],
@@ -105,13 +106,13 @@ func UpdateContainer(metadata map[string]string, request *hummingbird.WebRequest
 			rootDir := filepath.Dir(objDir)
 			asyncDir := filepath.Join(rootDir, "async_pending", suff)
 			os.MkdirAll(asyncDir, 0700)
-			asyncFile := filepath.Join(asyncDir, fmt.Sprintf("%s-%s", hash, request.XTimestamp))
+			asyncFile := filepath.Join(asyncDir, fmt.Sprintf("%s-%s", hash, xTimestamp))
 			hummingbird.WriteFileAtomic(asyncFile, hummingbird.PickleDumps(data), 0600)
 		}
 	}
 }
 
-func UpdateDeleteAt(request *hummingbird.WebRequest, vars map[string]string, hashDir string) {
+func UpdateDeleteAt(request *http.Request, vars map[string]string, hashDir string) {
 	deleteAt, err := hummingbird.ParseDate(request.Header.Get("X-Delete-At"))
 	deleteAtContainer := deleteAt.Unix()
 	partition := hummingbird.GetDefault(request.Header, "X-Delete-At-Partition", "")
@@ -122,7 +123,7 @@ func UpdateDeleteAt(request *hummingbird.WebRequest, vars map[string]string, has
 	url := fmt.Sprintf("http://%s/%s/%s/%s/%d/%d-%s/%s/%s", host, device, partition, deleteAtAccount, deleteAtContainer,
 		deleteAt.Unix(), hummingbird.Urlencode(vars["account"]), hummingbird.Urlencode(vars["container"]), hummingbird.Urlencode(vars["obj"]))
 	if partition == "" || host == "" || device == "" {
-		request.LogError(fmt.Sprintf("Trying to save an x-delete-at but did not send required headers: %s", url))
+		hummingbird.GetLogger(request).LogError(fmt.Sprintf("Trying to save an x-delete-at but did not send required headers: %s", url))
 		return
 	}
 	req, err := http.NewRequest(request.Method, url, nil)
@@ -131,6 +132,7 @@ func UpdateDeleteAt(request *hummingbird.WebRequest, vars map[string]string, has
 	req.Header.Add("X-Size", "0")
 	req.Header.Add("X-Content-Type", "text/plain")
 	req.Header.Add("X-Etag", zeroByteHash)
+	xTimestamp := request.Header.Get("X-Timestamp")
 	resp, err := client.Do(req)
 	if err != nil && resp != nil {
 		resp.Body.Close()
@@ -164,7 +166,7 @@ func UpdateDeleteAt(request *hummingbird.WebRequest, vars map[string]string, has
 		rootDir := filepath.Dir(objDir)
 		asyncDir := filepath.Join(rootDir, "async_pending", suff)
 		os.MkdirAll(asyncDir, 0700)
-		asyncFile := filepath.Join(asyncDir, fmt.Sprintf("%s-%s", hash, request.XTimestamp))
+		asyncFile := filepath.Join(asyncDir, fmt.Sprintf("%s-%s", hash, xTimestamp))
 		hummingbird.WriteFileAtomic(asyncFile, hummingbird.PickleDumps(data), 0600)
 	}
 }
