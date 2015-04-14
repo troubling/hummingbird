@@ -298,8 +298,9 @@ type Daemon interface {
 }
 
 func RunDaemon(configFile string, GetDaemon func(string) (Daemon, error)) {
+	// TODO(redbo): figure out how to get -once etc. into here
 	var daemons []Daemon
-	configFiles, err := filepath.Glob(fmt.Sprintf("%s/*.conf", configFile))
+	configFiles, err := filepath.Glob(filepath.Join(configFile, "*.conf"))
 	if err != nil || len(configFiles) <= 0 {
 		configFiles = []string{configFile}
 	}
