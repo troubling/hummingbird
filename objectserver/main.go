@@ -577,7 +577,7 @@ func (server *ObjectServer) LogRequest(next http.Handler) http.Handler {
 		hummingbird.SetLogger(request, requestLogger)
 		next.ServeHTTP(newWriter, request)
 		forceAcquire := request.Header.Get("X-Force-Acquire") == "true"
-		if request.Method != "REPLICATE" || server.logLevel == "DEBUG" {
+		if (request.Method != "REPLICATE" && request.Method != "SYNC") || server.logLevel == "DEBUG" {
 			extraInfo := "-"
 			if forceAcquire {
 				extraInfo = "FA"
@@ -640,14 +640,14 @@ func (server *ObjectServer) getHandler() http.Handler {
 	router.Delete("/:device/:partition/:account/:container/*obj", commonHandlers.ThenFunc(server.ObjDeleteHandler))
 	router.Replicate("/:device/:partition/:suffixes", commonHandlers.ThenFunc(server.ReplicateHandler))
 	router.Replicate("/:device/:partition", commonHandlers.ThenFunc(server.ReplicateHandler))
-	router.NotFoundHandler = func(w http.ResponseWriter, r *http.Request) {
+	router.Sync("/:device/*relpath", commonHandlers.ThenFunc(server.SyncHandler))
+	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Invalid path: %s", r.URL.Path), http.StatusBadRequest)
-		return
-	}
+	})
 	return router
 }
 
-func GetServer(conf string) (bindIP string, bindPort int, handler http.Handler, logger *syslog.Writer, err error) {
+func GetServer(conf string) (bindIP string, bindPort int, handler http.Handler, logger hummingbird.SysLogLike, err error) {
 	server := ObjectServer{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: "",
 		allowedHeaders: map[string]bool{"Content-Disposition": true,
 			"Content-Encoding":      true,

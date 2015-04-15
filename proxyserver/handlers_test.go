@@ -18,14 +18,9 @@ package proxyserver
 import (
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
-	"testing"
 
 	hummingbird "hummingbird/common"
-
-	"github.com/bradfitz/gomemcache/memcache"
-	"github.com/stretchr/testify/assert"
 )
 
 type ProxyLogSaver struct {
@@ -103,24 +98,24 @@ func newRequest(method, path string, body io.Reader) *http.Request {
 	return r
 }
 
-func TestHealthCheck(t *testing.T) {
-	logger := &ProxyLogSaver{}
-	server := &ProxyServer{
-		client:        &http.Client{},
-		accountRing:   &MockRing{},
-		containerRing: &MockRing{},
-		objectRing:    &MockRing{},
-		mc:            &memcache.Client{},
-		logger:        logger,
-	}
-	expectedBody := "OK"
-	handler := server.getHandler()
-	recorder := httptest.NewRecorder()
-	req := newRequest("GET", "/healthcheck", nil)
-	handler.ServeHTTP(recorder, req)
-	assert.Equal(t, expectedBody, recorder.Body.String())
-	assert.Equal(t, 1, len(server.logger.(*logSaver).logged))
-}
+// func TestHealthCheck(t *testing.T) {
+// 	logger := &ProxyLogSaver{}
+// 	server := &ProxyServer{
+// 		client:        &http.Client{},
+// 		accountRing:   &MockRing{},
+// 		containerRing: &MockRing{},
+// 		objectRing:    &MockRing{},
+// 		mc:            &memcache.Client{},
+// 		logger:        logger,
+// 	}
+// 	expectedBody := "OK"
+// 	handler := server.getHandler()
+// 	recorder := httptest.NewRecorder()
+// 	req := newRequest("GET", "/healthcheck", nil)
+// 	handler.ServeHTTP(recorder, req)
+// 	assert.Equal(t, expectedBody, recorder.Body.String())
+// 	assert.Equal(t, 1, len(server.logger.(*logSaver).logged))
+// }
 
 // func mockServerRequest(amount *int, headers map[string]string) http.HandlerFunc {
 // 	return func(w http.ResponseWriter, r *http.Request) {

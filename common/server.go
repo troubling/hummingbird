@@ -18,7 +18,6 @@ package common
 import (
 	"errors"
 	"fmt"
-	"log/syslog"
 	"net"
 	"net/http"
 	"os"
@@ -223,7 +222,7 @@ func RetryListen(ip string, port int) (net.Listener, error) {
 
 	Graceful shutdown/restart gives any open connections 5 minutes to complete, then exits.
 */
-func RunServers(configFile string, GetServer func(string) (string, int, http.Handler, *syslog.Writer, error)) {
+func RunServers(configFile string, GetServer func(string) (string, int, http.Handler, SysLogLike, error)) {
 	var servers []*HummingbirdServer
 	configFiles, err := filepath.Glob(fmt.Sprintf("%s/*.conf", configFile))
 	if err != nil || len(configFiles) <= 0 {
