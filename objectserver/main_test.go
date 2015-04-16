@@ -52,6 +52,7 @@ func makeObjectServer(settings ...string) (ts *httptest.Server, host string, por
 func TestSyncWorks(t *testing.T) {
 	driveRoot, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(driveRoot)
+	os.MkdirAll(driveRoot+"/sda/objects/1/fff/ffffffffffffffffffffffffffffffff", 0770)
 	ts, host, port := makeObjectServer("devices", driveRoot, "mount_check", "false")
 	defer ts.Close()
 	client := &http.Client{}
@@ -87,6 +88,7 @@ func TestSyncOlderData(t *testing.T) {
 func TestSyncBadFilename(t *testing.T) {
 	driveRoot, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(driveRoot)
+	os.MkdirAll(driveRoot+"/sda/objects/1/fff/ffffffffffffffffffffffffffffffff", 0770)
 	ts, host, port := makeObjectServer("devices", driveRoot, "mount_check", "false")
 	defer ts.Close()
 	client := &http.Client{}
@@ -103,6 +105,7 @@ func TestSyncBadFilename(t *testing.T) {
 func TestSyncBadXattrs(t *testing.T) {
 	driveRoot, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(driveRoot)
+	os.MkdirAll(driveRoot+"/sda/objects/1/fff/ffffffffffffffffffffffffffffffff", 0770)
 	ts, host, port := makeObjectServer("devices", driveRoot, "mount_check", "false")
 	defer ts.Close()
 	client := &http.Client{}
@@ -119,6 +122,7 @@ func TestSyncBadXattrs(t *testing.T) {
 func TestSyncConflictOnExists(t *testing.T) {
 	driveRoot, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(driveRoot)
+	os.MkdirAll(driveRoot+"/sda/objects/1/fff/ffffffffffffffffffffffffffffffff", 0770)
 	ts, host, port := makeObjectServer("devices", driveRoot, "mount_check", "false")
 	defer ts.Close()
 	client := &http.Client{}

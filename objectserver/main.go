@@ -604,7 +604,7 @@ func (server *ObjectServer) AcquireDevice(next http.Handler) http.Handler {
 		parts := strings.Split(request.URL.Path, "/")
 		if len(parts) > 1 {
 			device := parts[1]
-			devicePath := server.driveRoot + "/" + device
+			devicePath := filepath.Join(server.driveRoot, device)
 			if hummingbird.Exists(devicePath) {
 				if server.checkMounts {
 					if mounted, err := hummingbird.IsMount(devicePath); err != nil || mounted != true {
@@ -621,6 +621,10 @@ func (server *ObjectServer) AcquireDevice(next http.Handler) http.Handler {
 					return
 				}
 				defer server.diskInUse.Release(device)
+			} else {
+				vars := map[string]string{"Method": request.Method, "device": device}
+				hummingbird.CustomErrorResponse(writer, 507, vars)
+				return
 			}
 		}
 		next.ServeHTTP(writer, request)
@@ -629,18 +633,19 @@ func (server *ObjectServer) AcquireDevice(next http.Handler) http.Handler {
 }
 
 func (server *ObjectServer) getHandler() http.Handler {
-	commonHandlers := alice.New(middleware.ClearHandler, server.LogRequest, middleware.ValidateRequest, server.AcquireDevice)
+	commonHandlers := alice.New(middleware.ClearHandler, server.LogRequest, middleware.ValidateRequest)
+	devicePrefixedHandlers := commonHandlers.Append(server.AcquireDevice)
 	router := hummingbird.NewRouter()
 	router.Get("/healthcheck", commonHandlers.ThenFunc(server.HealthcheckHandler))
 	router.Get("/diskusage", commonHandlers.ThenFunc(server.DiskUsageHandler))
 	router.Get("/recon/:method", commonHandlers.ThenFunc(server.ReconHandler))
-	router.Get("/:device/:partition/:account/:container/*obj", commonHandlers.ThenFunc(server.ObjGetHandler))
-	router.Head("/:device/:partition/:account/:container/*obj", commonHandlers.ThenFunc(server.ObjGetHandler))
-	router.Put("/:device/:partition/:account/:container/*obj", commonHandlers.ThenFunc(server.ObjPutHandler))
-	router.Delete("/:device/:partition/:account/:container/*obj", commonHandlers.ThenFunc(server.ObjDeleteHandler))
-	router.Replicate("/:device/:partition/:suffixes", commonHandlers.ThenFunc(server.ReplicateHandler))
-	router.Replicate("/:device/:partition", commonHandlers.ThenFunc(server.ReplicateHandler))
-	router.Sync("/:device/*relpath", commonHandlers.ThenFunc(server.SyncHandler))
+	router.Get("/:device/:partition/:account/:container/*obj", devicePrefixedHandlers.ThenFunc(server.ObjGetHandler))
+	router.Head("/:device/:partition/:account/:container/*obj", devicePrefixedHandlers.ThenFunc(server.ObjGetHandler))
+	router.Put("/:device/:partition/:account/:container/*obj", devicePrefixedHandlers.ThenFunc(server.ObjPutHandler))
+	router.Delete("/:device/:partition/:account/:container/*obj", devicePrefixedHandlers.ThenFunc(server.ObjDeleteHandler))
+	router.Replicate("/:device/:partition/:suffixes", devicePrefixedHandlers.ThenFunc(server.ReplicateHandler))
+	router.Replicate("/:device/:partition", devicePrefixedHandlers.ThenFunc(server.ReplicateHandler))
+	router.Sync("/:device/*relpath", devicePrefixedHandlers.ThenFunc(server.SyncHandler))
 	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Invalid path: %s", r.URL.Path), http.StatusBadRequest)
 	})
