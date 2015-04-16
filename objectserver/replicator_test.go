@@ -233,10 +233,10 @@ func setupDirectory() string {
 	os.MkdirAll(filepath.Join(dir, "sda", "objects", "1", "abc", "00000000000000000000000000000abc"), 0777)
 	f, _ := os.Create(filepath.Join(dir, "sda", "objects", "1", "abc", "fffffffffffffffffffffffffffffabc", "12345.data"))
 	defer f.Close()
-	WriteMetadata(f.Fd(), map[string]string{"name": "/a/c/o", "Content-Length": "0", "Content-Type": "text/plain", "X-Timestamp": "12345.00000"})
+	WriteMetadata(f.Fd(), map[string]string{"name": "/a/c/o", "Content-Length": "0", "Content-Type": "text/plain", "X-Timestamp": "12345.00000", "ETag": ""})
 	f, _ = os.Create(filepath.Join(dir, "sda", "objects", "1", "abc", "00000000000000000000000000000abc", "67890.data"))
 	defer f.Close()
-	WriteMetadata(f.Fd(), map[string]string{"name": "/a/c/o2", "Content-Length": "0", "Content-Type": "text/plain", "X-Timestamp": "12345.00000"})
+	WriteMetadata(f.Fd(), map[string]string{"name": "/a/c/o2", "Content-Length": "0", "Content-Type": "text/plain", "X-Timestamp": "12345.00000", "ETag": ""})
 	return dir
 }
 
