@@ -104,23 +104,56 @@ func (r *Replicator) syncFile(filePath string, relPath string, dev *hummingbird.
 	fileUrl := fmt.Sprintf("http://%s:%d/%s/objects/%s", dev.ReplicationIp, dev.ReplicationPort, dev.Device, hummingbird.Urlencode(relPath))
 	fp, err := os.Open(filePath)
 	if err != nil {
-		r.LogError("[syncFile] unable to open file: %v", err)
+		r.LogError("[syncFile] unable to open file (%v): %s", err, filePath)
 		return false
 	}
 	defer fp.Close()
 	finfo, err := fp.Stat()
 	if err != nil || !finfo.Mode().IsRegular() {
-		r.LogError("[syncFile] file doesn't check out: %v", err)
-		return false
-	}
-	req, err := http.NewRequest("SYNC", fileUrl, fp)
-	if err != nil {
-		r.LogError("[syncFile] error creating new request: %v", err)
+		r.LogError("[syncFile] file is weird (%v): %s", err, filePath)
 		return false
 	}
 	rawxattr, err := RawReadMetadata(fp.Fd())
 	if err != nil || len(rawxattr) == 0 {
-		r.LogError("[syncFile] error loading metadata: %v", err)
+		r.LogError("[syncFile] error loading metadata (%v): %s", err, filePath)
+		return false
+	}
+
+	// Perform a mini-audit, since it's cheap and we can potentially avoid spreading bad data around.
+	v, err := hummingbird.PickleLoads(rawxattr)
+	if err != nil {
+		r.LogError("[syncFile] error parsing metadata (%v): %s", err, filePath)
+		return false
+	}
+	metadata, ok := v.(map[interface{}]interface{})
+	if !ok {
+		r.LogError("[syncFile] error parsing metadata (not map): %s", err, filePath)
+		return false
+	}
+	switch filepath.Ext(filePath) {
+	case ".data":
+		for _, reqEntry := range []string{"Content-Length", "Content-Type", "name", "ETag", "X-Timestamp"} {
+			if _, ok := metadata[reqEntry]; !ok {
+				r.LogError("[syncFile] Required metadata entry %s not found in %s", reqEntry, filePath)
+				return false
+			}
+		}
+		if contentLength, err := strconv.ParseInt(metadata["Content-Length"].(string), 10, 64); err != nil || contentLength != finfo.Size() {
+			r.LogError("[syncFile] Content-Length check failure: %s", filePath)
+			return false
+		}
+	case ".ts":
+		for _, reqEntry := range []string{"name", "X-Timestamp"} {
+			if _, ok := metadata[reqEntry]; !ok {
+				r.LogError("[syncFile] Required metadata entry %s not found in %s", reqEntry, filePath)
+				return false
+			}
+		}
+	}
+
+	req, err := http.NewRequest("SYNC", fileUrl, fp)
+	if err != nil {
+		r.LogError("[syncFile] error creating new request: %v", err)
 		return false
 	}
 	req.ContentLength = finfo.Size()
