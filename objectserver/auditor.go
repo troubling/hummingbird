@@ -28,9 +28,10 @@ import (
 	hummingbird "hummingbird/common"
 )
 
+// AuditForeverInterval represents how often a auditor check should be performed.
 var AuditForeverInterval = 30 * time.Second
 
-// Object auditor daemon object
+// AuditorDaemon keeps track of object specific audit data.
 type AuditorDaemon struct {
 	checkMounts       bool
 	driveRoot         string
@@ -42,6 +43,7 @@ type AuditorDaemon struct {
 	reconCachePath    string
 }
 
+// Auditor keeps track of general audit data.
 type Auditor struct {
 	*AuditorDaemon
 	auditorType                   string
@@ -54,7 +56,7 @@ type Auditor struct {
 	errors, totalErrors           int64
 }
 
-// Sleeps long enough to achieve the target rate limit.
+// rateLimitSleep long enough to achieve the target rate limit.
 func rateLimitSleep(startTime time.Time, done int64, rate int64) {
 	shouldHaveDone := int64(time.Since(startTime)/time.Second) * rate
 	if done > shouldHaveDone {
@@ -62,7 +64,7 @@ func rateLimitSleep(startTime time.Time, done int64, rate int64) {
 	}
 }
 
-// Audit an object hash dir.
+// auditHash of object hash dir.
 func auditHash(hashPath string, skipMd5 bool) (bytesProcessed int64, err error) {
 	objFiles, err := hummingbird.ReadDirNames(hashPath)
 	if err != nil {
@@ -125,7 +127,7 @@ func auditHash(hashPath string, skipMd5 bool) (bytesProcessed int64, err error) 
 	return bytesProcessed, nil
 }
 
-// Audit a suffix directory.  Lists hash dirs, calls auditHash() for each, and quarantines any with errors.
+// auditSuffix directory.  Lists hash dirs, calls auditHash() for each, and quarantines any with errors.
 func (a *Auditor) auditSuffix(suffixDir string) {
 	hashes, err := hummingbird.ReadDirNames(suffixDir)
 	if err != nil {
@@ -158,7 +160,7 @@ func (a *Auditor) auditSuffix(suffixDir string) {
 	}
 }
 
-// Audit a partition directory.  Lists suffixes in the partition and calls auditSuffix() for each.
+// auditPartition directory.  Lists suffixes in the partition and calls auditSuffix() for each.
 func (a *Auditor) auditPartition(partitionDir string) {
 	suffixes, err := hummingbird.ReadDirNames(partitionDir)
 	if err != nil {
@@ -184,7 +186,7 @@ func (a *Auditor) auditPartition(partitionDir string) {
 	}
 }
 
-// Audit a device.  Checks for mount, list partitions, then call auditPartition() for each.
+// auditDevice, checking for mount, list partitions, then call auditPartition() for each.
 func (a *Auditor) auditDevice(devPath string) {
 	defer a.LogPanics("PANIC WHILE AUDITING DEVICE")
 
@@ -212,7 +214,7 @@ func (a *Auditor) auditDevice(devPath string) {
 	}
 }
 
-// Log auditing stats and dump recon cache.  Called periodically by auditPartition().
+// statsReport logs auditing stats and dump recon cache.  Called periodically by auditPartition().
 func (a *Auditor) statsReport() {
 	now := time.Now()
 	total := float64(now.Sub(a.passStart)) / float64(time.Second)
@@ -240,7 +242,7 @@ func (a *Auditor) statsReport() {
 	a.lastLog = now
 }
 
-// Log final stats for the audit pass.
+// finalLog final stats summary for the audit pass.
 func (a *Auditor) finalLog() {
 	elapsed := float64(time.Since(a.passStart)) / float64(time.Second)
 	frate := float64(a.totalPasses) / elapsed
@@ -252,7 +254,7 @@ func (a *Auditor) finalLog() {
 		a.auditorType, a.mode, elapsed, a.totalQuarantines, a.totalErrors, frate, brate, audit, audit_rate)
 }
 
-// Run audit passes of the whole server until c is closed.
+// run audit passes of the whole server until c is closed.
 func (a *Auditor) run(c <-chan time.Time) {
 	for a.passStart = range c {
 		hummingbird.DumpReconCache(a.reconCachePath, "object",
@@ -278,14 +280,17 @@ func (a *Auditor) run(c <-chan time.Time) {
 	}
 }
 
+// LogError with AuditorDaemon
 func (a *AuditorDaemon) LogError(format string, args ...interface{}) {
 	a.logger.Err(fmt.Sprintf(format, args...))
 }
 
+// LogInfo with AuditorDaemon
 func (a *AuditorDaemon) LogInfo(format string, args ...interface{}) {
 	a.logger.Info(fmt.Sprintf(format, args...))
 }
 
+// LogPanics with AuditorDaemon
 func (a *AuditorDaemon) LogPanics(m string) {
 	if e := recover(); e != nil {
 		a.LogError("%s: %s: %s", m, e, debug.Stack())
@@ -302,7 +307,7 @@ func (d *AuditorDaemon) Run() {
 	reg.run(OneTimeChan())
 }
 
-// Run audit passes in a loop until forever.
+// RunForever triggering audit passes every time AuditForeverInterval has passed.
 func (d *AuditorDaemon) RunForever() {
 	if d.zbFilesPerSecond > 0 {
 		zba := Auditor{AuditorDaemon: d, auditorType: "ZBF", mode: "forever", filesPerSecond: d.zbFilesPerSecond}
@@ -312,6 +317,7 @@ func (d *AuditorDaemon) RunForever() {
 	reg.run(time.Tick(AuditForeverInterval))
 }
 
+// NewAuditor returns a new AuditorDaemon with the given conf.
 func NewAuditor(conf string) (hummingbird.Daemon, error) {
 	d := &AuditorDaemon{}
 	serverconf, err := hummingbird.LoadIniFile(conf)
