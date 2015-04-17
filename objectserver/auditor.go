@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strconv"
+	"sync"
 	"time"
 
 	hummingbird "hummingbird/common"
@@ -299,12 +300,18 @@ func (a *AuditorDaemon) LogPanics(m string) {
 
 // Run a single audit pass.
 func (d *AuditorDaemon) Run() {
+	wg := sync.WaitGroup{}
 	if d.zbFilesPerSecond > 0 {
-		zba := Auditor{AuditorDaemon: d, auditorType: "ZBF", mode: "once", filesPerSecond: d.zbFilesPerSecond}
-		go zba.run(OneTimeChan())
+		wg.Add(1)
+		go func() {
+			zba := Auditor{AuditorDaemon: d, auditorType: "ZBF", mode: "once", filesPerSecond: d.zbFilesPerSecond}
+			zba.run(OneTimeChan())
+			wg.Done()
+		}()
 	}
 	reg := Auditor{AuditorDaemon: d, auditorType: "ALL", mode: "once", filesPerSecond: d.regFilesPerSecond}
 	reg.run(OneTimeChan())
+	wg.Wait()
 }
 
 // RunForever triggering audit passes every time AuditForeverInterval has passed.
