@@ -18,3 +18,5 @@ override_dh_auto_test:
 override_dh_installinit:
 	dh_installinit --no-start
 	dh_installinit --no-start -phummingbird --init-script=hummingbird-object
+	dh_installinit --no-start -phummingbird --init-script=hummingbird-object-auditor
+	dh_installinit --no-start -phummingbird --init-script=hummingbird-object-replicator
