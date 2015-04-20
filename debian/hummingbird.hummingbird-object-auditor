@@ -1,0 +1,67 @@
+#! /bin/bash
+### BEGIN INIT INFO
+# Provides:          hummingbird-object-server
+# Required-Start:    $remote_fs
+# Required-Stop:     $remote_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Hummingbird Object Server
+# Description:       Object server for hummingbird.
+### END INIT INFO
+
+PATH=/sbin:/usr/sbin:/bin:/usr/bin
+HUMMINGBIRD=/usr/bin/hummingbird
+PIDFILE="/var/run/hummingbird/object-auditor.pid"
+SERVICE=$(basename $0 | sed 's/hummingbird-//')
+
+test -x $HUMMINGBIRD || exit 0
+
+# Make sure only root can run our script
+if [[ $EUID -ne 0 ]]; then
+   echo "This script must be run as root" 1>&2
+   exit 1
+fi
+
+
+hummingbird_status()
+{
+  if [ ! -f $PIDFILE ] ; then
+    # program not running
+    return 3
+  fi
+
+  for pid in $(cat $PIDFILE) ; do
+    if ! ps --no-headers p "$pid" | egrep "[h]ummingbird run $SERVICE" > /dev/null ; then
+      # program running, bogus pidfile
+      return 1
+    fi
+  done
+
+  return 0
+}
+
+
+case "$1" in 
+  status)
+      hummingbird_status
+      ret=$?
+      case "$ret" in
+          0)
+            echo "hummingbird $SERVICE is running."
+            ;;
+          1)
+            echo "hummingbird $SERVICE dead, but $PIDFILE exists."
+            ;;
+          *)
+            echo "hummingbird $SERVICE running."
+            ;;
+      esac
+      exit $ret
+      ;;
+  *)
+      $HUMMINGBIRD $1 object-auditor
+      ;;
+esac 
+
+
+
