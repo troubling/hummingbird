@@ -533,7 +533,7 @@ func NewReplicator(conf string) (hummingbird.Daemon, error) {
 	if serverconf.GetBool("object-replicator", "vm_test_mode", false) {
 		replicator.timePerPart = time.Duration(serverconf.GetInt("object-replicator", "ms_per_part", 2000)) * time.Millisecond
 	} else {
-		replicator.timePerPart = time.Duration(serverconf.GetInt("object-replicator", "ms_per_part", 200)) * time.Millisecond
+		replicator.timePerPart = time.Duration(serverconf.GetInt("object-replicator", "ms_per_part", 25)) * time.Millisecond
 	}
 	replicator.concurrency = int(serverconf.GetInt("object-replicator", "concurrency", 1))
 	if replicator.ring, err = hummingbird.GetRing("object", hashPathPrefix, hashPathSuffix); err != nil {
