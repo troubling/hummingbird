@@ -33,7 +33,6 @@ import (
 )
 
 var Version = "0.1"
-var LastCommit = "(unknown)"
 
 func WritePid(name string, pid int) error {
 	file, err := os.Create(fmt.Sprintf("/var/run/hummingbird/%s.pid", name))
@@ -233,11 +232,7 @@ func main() {
 
 	switch strings.ToLower(os.Args[1]) {
 	case "version":
-		fmt.Println(fmt.Sprintf("Version: %s", Version))
-		if LastCommit != "(unknown)" {
-			LastCommit = fmt.Sprintf("https://github.com/rackerlabs/hummingbird/commit/%s", LastCommit)
-		}
-		fmt.Println(fmt.Sprintf("Last Commit: %s", LastCommit))
+		fmt.Println(Version)
 		os.Exit(0)
 	case "run":
 		if len(os.Args) < 4 {
