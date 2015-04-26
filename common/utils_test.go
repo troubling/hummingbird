@@ -20,6 +20,7 @@ import (
 	"io/ioutil"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -91,12 +92,12 @@ func TestParseDate(t *testing.T) {
 	for _, timestamp := range tests {
 		timeResult, err := ParseDate(timestamp)
 		if err == nil {
-			assert.Equal(t, timeResult.Day(), 02)
-			assert.Equal(t, timeResult.Month(), 01)
+			assert.Equal(t, timeResult.Day(), 2)
+			assert.Equal(t, timeResult.Month(), time.Month(1))
 			assert.Equal(t, timeResult.Year(), 2006)
 			assert.Equal(t, timeResult.Hour(), 15)
-			assert.Equal(t, timeResult.Minute(), 04)
-			assert.Equal(t, timeResult.Second(), 05)
+			assert.Equal(t, timeResult.Minute(), 4)
+			assert.Equal(t, timeResult.Second(), 5)
 		} else {
 			assert.Equal(t, err.Error(), "invalid time")
 		}
@@ -211,8 +212,8 @@ func TestIniFile(t *testing.T) {
 	assert.Equal(t, true, iniFile.GetBool("stuff", "truevalue", false))
 	assert.Equal(t, false, iniFile.GetBool("stuff", "falsevalue", true))
 	assert.Equal(t, true, iniFile.GetBool("stuff", "defaultvalue", true))
-	assert.Equal(t, 3, iniFile.GetInt("stuff", "intvalue", 2))
-	assert.Equal(t, 2, iniFile.GetInt("stuff", "missingvalue", 2))
+	assert.Equal(t, int64(3), iniFile.GetInt("stuff", "intvalue", 2))
+	assert.Equal(t, int64(2), iniFile.GetInt("stuff", "missingvalue", 2))
 	assert.Equal(t, "false", iniFile.GetDefault("stuff", "falsevalue", "true"))
 	assert.Equal(t, "true", iniFile.GetDefault("stuff", "missingvalue", "true"))
 	assert.Equal(t, "LOG_LOCAL1", iniFile.GetDefault("stuff", "log_facility", "LOG_LOCAL0"))
@@ -253,7 +254,7 @@ func TestWriteFileAtomic(t *testing.T) {
 	WriteFileAtomic(tempFile.Name(), []byte("HI THERE"), 0600)
 	fi, err := os.Stat(tempFile.Name())
 	assert.Nil(t, err)
-	assert.Equal(t, 8, fi.Size())
+	assert.Equal(t, 8, int(fi.Size()))
 }
 
 func TestReadDirNames(t *testing.T) {

@@ -99,7 +99,7 @@ func newServer(handler http.Handler) (ts *httptest.Server, host string, port int
 func TestReplicatorSyncFile(t *testing.T) {
 	ts, host, port := newServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		data, _ := ioutil.ReadAll(r.Body)
-		assert.Equal(t, r.ContentLength, len("hello there!"))
+		assert.Equal(t, r.ContentLength, int64(len("hello there!")))
 		assert.Equal(t, string(data), "hello there!")
 		assert.NotEqual(t, "", r.Header.Get("X-Attrs"))
 		assert.Equal(t, "12345", r.Header.Get("X-Replication-Id"))

@@ -40,7 +40,7 @@ func TestAuditHashPasses(t *testing.T) {
 	WriteMetadata(f.Fd(), map[string]string{"name": "somename", "X-Timestamp": ""})
 	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
 	assert.Nil(t, err)
-	assert.Equal(t, bytesProcessed, 12)
+	assert.Equal(t, bytesProcessed, int64(12))
 }
 
 func TestAuditHashDataMissingMetadata(t *testing.T) {
@@ -53,7 +53,7 @@ func TestAuditHashDataMissingMetadata(t *testing.T) {
 	f.Write([]byte("testcontents"))
 	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
 	assert.NotNil(t, err)
-	assert.Equal(t, bytesProcessed, 0)
+	assert.Equal(t, bytesProcessed, int64(0))
 }
 
 func TestAuditHashTSMissingMetadata(t *testing.T) {
@@ -65,7 +65,7 @@ func TestAuditHashTSMissingMetadata(t *testing.T) {
 	WriteMetadata(f.Fd(), map[string]string{"name": "somename"})
 	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
 	assert.NotNil(t, err)
-	assert.Equal(t, bytesProcessed, 0)
+	assert.Equal(t, bytesProcessed, int64(0))
 }
 
 func TestAuditHashIncorrectContentLength(t *testing.T) {
@@ -78,7 +78,7 @@ func TestAuditHashIncorrectContentLength(t *testing.T) {
 	f.Write([]byte("testcontents"))
 	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
 	assert.NotNil(t, err)
-	assert.Equal(t, bytesProcessed, 0)
+	assert.Equal(t, bytesProcessed, int64(0))
 }
 
 func TestAuditHashInvalidContentLength(t *testing.T) {
@@ -91,7 +91,7 @@ func TestAuditHashInvalidContentLength(t *testing.T) {
 	f.Write([]byte("testcontents"))
 	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
 	assert.NotNil(t, err)
-	assert.Equal(t, bytesProcessed, 0)
+	assert.Equal(t, bytesProcessed, int64(0))
 }
 
 func TestAuditHashBadHash(t *testing.T) {
@@ -104,7 +104,7 @@ func TestAuditHashBadHash(t *testing.T) {
 	f.Write([]byte("testcontents"))
 	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
 	assert.NotNil(t, err)
-	assert.Equal(t, bytesProcessed, 12)
+	assert.Equal(t, bytesProcessed, int64(12))
 }
 
 func TestAuditHashBadFilename(t *testing.T) {
@@ -117,7 +117,7 @@ func TestAuditHashBadFilename(t *testing.T) {
 	f.Write([]byte("testcontents"))
 	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
 	assert.NotNil(t, err)
-	assert.Equal(t, bytesProcessed, 0)
+	assert.Equal(t, bytesProcessed, int64(0))
 }
 
 func TestAuditHashNonfileInDir(t *testing.T) {
@@ -126,7 +126,7 @@ func TestAuditHashNonfileInDir(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "fffffffffffffffffffffffffffffabc", "12345.data"), 0777)
 	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
 	assert.NotNil(t, err)
-	assert.Equal(t, bytesProcessed, 0)
+	assert.Equal(t, bytesProcessed, int64(0))
 }
 
 func TestAuditHashNoMetadata(t *testing.T) {
@@ -138,7 +138,7 @@ func TestAuditHashNoMetadata(t *testing.T) {
 	f.Write([]byte("testcontents"))
 	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
 	assert.NotNil(t, err)
-	assert.Equal(t, bytesProcessed, 0)
+	assert.Equal(t, bytesProcessed, int64(0))
 }
 
 type auditLogSaver struct {
@@ -206,7 +206,7 @@ func TestAuditSuffixPasses(t *testing.T) {
 	totalPasses := auditor.totalPasses
 	auditor.auditSuffix(filepath.Join(dir, "abc"))
 	assert.Equal(t, totalPasses+1, auditor.totalPasses)
-	assert.Equal(t, 12, auditor.totalBytes)
+	assert.Equal(t, int64(12), auditor.totalBytes)
 }
 
 func TestAuditSuffixQuarantine(t *testing.T) {
@@ -257,7 +257,7 @@ func TestAuditPartitionPasses(t *testing.T) {
 	totalPasses := auditor.totalPasses
 	auditor.auditPartition(filepath.Join(dir, "1"))
 	assert.Equal(t, totalPasses+1, auditor.totalPasses)
-	assert.Equal(t, 12, auditor.totalBytes)
+	assert.Equal(t, int64(12), auditor.totalBytes)
 }
 
 func TestAuditPartitionSkipsBadData(t *testing.T) {
@@ -277,7 +277,7 @@ func TestAuditPartitionSkipsBadData(t *testing.T) {
 	totalPasses := auditor.totalPasses
 	auditor.auditPartition(filepath.Join(dir, "1"))
 	assert.Equal(t, totalPasses+1, auditor.totalPasses)
-	assert.Equal(t, 12, auditor.totalBytes)
+	assert.Equal(t, int64(12), auditor.totalBytes)
 }
 
 func TestAuditDeviceNotDir(t *testing.T) {
@@ -304,7 +304,7 @@ func TestAuditDevicePasses(t *testing.T) {
 	totalPasses := auditor.totalPasses
 	auditor.auditDevice(filepath.Join(dir, "sda"))
 	assert.Equal(t, totalPasses+1, auditor.totalPasses)
-	assert.Equal(t, 12, auditor.totalBytes)
+	assert.Equal(t, int64(12), auditor.totalBytes)
 }
 
 func TestAuditDeviceSkipsBadData(t *testing.T) {
@@ -320,7 +320,7 @@ func TestAuditDeviceSkipsBadData(t *testing.T) {
 	totalPasses := auditor.totalPasses
 	auditor.auditDevice(filepath.Join(dir, "sda"))
 	assert.Equal(t, totalPasses+1, auditor.totalPasses)
-	assert.Equal(t, 12, auditor.totalBytes)
+	assert.Equal(t, int64(12), auditor.totalBytes)
 }
 
 func TestAuditDeviceUnmounted(t *testing.T) {
@@ -363,7 +363,7 @@ func TestAuditRun(t *testing.T) {
 	totalPasses := auditor.totalPasses
 	auditor.run(OneTimeChan())
 	assert.Equal(t, totalPasses+1, auditor.totalPasses)
-	assert.Equal(t, 12, auditor.totalBytes)
+	assert.Equal(t, int64(12), auditor.totalBytes)
 }
 
 func TestStatReport(t *testing.T) {
@@ -385,10 +385,10 @@ func TestStatReport(t *testing.T) {
 		auditor.logger.(*auditLogSaver).logged[0],
 		"Object audit (). Since %s %s %f %f:%f:%f %f: Locally: %f passed, %f quarantined, %f errors, files/sec: %f , bytes/sec: %f, Total time: %f, Auditing time: %f, Rate: %f",
 		pargs...)
-	assert.Equal(t, 120, args[5])
-	assert.Equal(t, 17, args[6])
-	assert.Equal(t, 41, args[7])
-	assert.Equal(t, 1, args[8])
-	assert.Equal(t, 1000, args[9])
-	assert.Equal(t, 120, args[10])
+	assert.Equal(t, 120.0, args[5])
+	assert.Equal(t, 17.0, args[6])
+	assert.Equal(t, 41.0, args[7])
+	assert.Equal(t, 1.0, args[8])
+	assert.Equal(t, 1000.0, args[9])
+	assert.Equal(t, 120.0, args[10])
 }
