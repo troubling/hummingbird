@@ -685,7 +685,7 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer, error) {
 		}
 	}
 	handler.logger = hummingbird.SetupLogger(serverconf.GetDefault("app:object-server", "log_facility", "LOG_LOCAL1"), "object-server")
-	handler.replicationMan = NewReplicationManager(serverconf.GetLimit("app:object-server", "replication_limit", 3, 16))
+	handler.replicationMan = NewReplicationManager(serverconf.GetLimit("app:object-server", "replication_limit", 3, 100))
 
 	return bindIP, int(bindPort), handler, handler.logger, nil
 }
