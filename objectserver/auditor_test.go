@@ -25,6 +25,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+
+	hummingbird "hummingbird/common"
 )
 
 func TestAuditHashPasses(t *testing.T) {
@@ -41,6 +43,34 @@ func TestAuditHashPasses(t *testing.T) {
 	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
 	assert.Nil(t, err)
 	assert.Equal(t, bytesProcessed, int64(12))
+}
+
+func TestAuditNonStringKey(t *testing.T) {
+	dir, _ := ioutil.TempDir("", "")
+	defer os.RemoveAll(dir)
+	os.MkdirAll(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), 0777)
+	f, _ := os.Create(filepath.Join(dir, "fffffffffffffffffffffffffffffabc", "12345.data"))
+	defer f.Close()
+	metadata := map[interface{}]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "Content-Type": "", "X-Timestamp": "", "name": "", 3: "hi"}
+	RawWriteMetadata(f.Fd(), hummingbird.PickleDumps(metadata))
+	f.Write([]byte("testcontents"))
+	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
+	assert.NotNil(t, err)
+	assert.Equal(t, bytesProcessed, int64(0))
+}
+
+func TestAuditNonStringValue(t *testing.T) {
+	dir, _ := ioutil.TempDir("", "")
+	defer os.RemoveAll(dir)
+	os.MkdirAll(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), 0777)
+	f, _ := os.Create(filepath.Join(dir, "fffffffffffffffffffffffffffffabc", "12345.data"))
+	defer f.Close()
+	metadata := map[string]interface{}{"Content-Length": 12, "ETag": "d3ac5112fe464b81184352ccba743001", "Content-Type": "", "X-Timestamp": "", "name": ""}
+	RawWriteMetadata(f.Fd(), hummingbird.PickleDumps(metadata))
+	f.Write([]byte("testcontents"))
+	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
+	assert.NotNil(t, err)
+	assert.Equal(t, bytesProcessed, int64(0))
 }
 
 func TestAuditHashDataMissingMetadata(t *testing.T) {
