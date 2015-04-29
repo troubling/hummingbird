@@ -127,8 +127,18 @@ func (r *Replicator) syncFile(filePath string, relPath string, dev *hummingbird.
 	}
 	metadata, ok := v.(map[interface{}]interface{})
 	if !ok {
-		r.LogError("[syncFile] error parsing metadata (not map): %s", err, filePath)
+		r.LogError("[syncFile] error parsing metadata (not map): %s", filePath)
 		return false
+	}
+	for key, value := range metadata {
+		if _, ok := key.(string); !ok {
+			r.LogError("[syncFile] metadata key not string (%v): %s", key, filePath)
+			return false
+		}
+		if _, ok := value.(string); !ok {
+			r.LogError("[syncFile] metadata value not string (%v): %s", value, filePath)
+			return false
+		}
 	}
 	switch filepath.Ext(filePath) {
 	case ".data":
