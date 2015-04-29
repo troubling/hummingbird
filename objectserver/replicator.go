@@ -55,7 +55,7 @@ type Replicator struct {
 	reconCachePath string
 	logger         hummingbird.SysLogLike
 	port           int
-	ring           hummingbird.Ring
+	Ring           hummingbird.Ring
 	devGroup       sync.WaitGroup
 	partGroup      sync.WaitGroup
 	partRateTicker *time.Ticker
@@ -389,10 +389,10 @@ func (r *Replicator) partitionReplicator() {
 		if err != nil {
 			continue
 		}
-		if nodes, handoff := r.ring.GetJobNodes(partitioni, j.dev.Id); handoff {
+		if nodes, handoff := r.Ring.GetJobNodes(partitioni, j.dev.Id); handoff {
 			r.replicateHandoff(j, nodes)
 		} else {
-			moreNodes := r.ring.GetMoreNodes(partitioni)
+			moreNodes := r.Ring.GetMoreNodes(partitioni)
 			r.replicateLocal(j, nodes, moreNodes)
 		}
 		r.partitionTimesAdd <- float64(time.Since(partStart)) / float64(time.Second)
@@ -495,7 +495,7 @@ func (r *Replicator) run(c <-chan time.Time) {
 			r.partGroup.Add(1)
 			go r.partitionReplicator()
 		}
-		for _, dev := range r.ring.LocalDevices(r.port) {
+		for _, dev := range r.Ring.LocalDevices(r.port) {
 			r.devGroup.Add(1)
 			go r.replicateDevice(dev)
 		}
@@ -546,7 +546,7 @@ func NewReplicator(conf string) (hummingbird.Daemon, error) {
 		replicator.timePerPart = time.Duration(serverconf.GetInt("object-replicator", "ms_per_part", 25)) * time.Millisecond
 	}
 	replicator.concurrency = int(serverconf.GetInt("object-replicator", "concurrency", 1))
-	if replicator.ring, err = hummingbird.GetRing("object", hashPathPrefix, hashPathSuffix); err != nil {
+	if replicator.Ring, err = hummingbird.GetRing("object", hashPathPrefix, hashPathSuffix); err != nil {
 		return nil, fmt.Errorf("Unable to load ring.")
 	}
 	replicator.client = &http.Client{

@@ -320,7 +320,7 @@ func ObjHashDir(vars map[string]string, driveRoot string, hashPathPrefix string,
 	io.WriteString(h, hashPathPrefix+"/"+vars["account"]+"/"+vars["container"]+"/"+vars["obj"]+hashPathSuffix)
 	hexHash := hex.EncodeToString(h.Sum(nil))
 	suffix := hexHash[29:32]
-	return driveRoot + "/" + vars["device"] + "/objects/" + vars["partition"] + "/" + suffix + "/" + hexHash
+	return filepath.Join(driveRoot, vars["device"], "objects", vars["partition"], suffix, hexHash)
 }
 
 func ObjectFiles(directory string) (string, string) {

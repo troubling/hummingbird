@@ -441,7 +441,7 @@ func TestReplicatorReplicateDeviceLocal(t *testing.T) {
 	go replicator.statsReporter(statsTicker.C)
 	replicator.partRateTicker = time.NewTicker(1)
 	defer replicator.partRateTicker.Stop()
-	replicator.ring = &FakeLocalRing{dev: dev}
+	replicator.Ring = &FakeLocalRing{dev: dev}
 	replicator.replicateDevice(dev)
 	close(replicator.jobChan)
 	replicator.partGroup.Wait()
@@ -479,7 +479,7 @@ func TestReplicatorReplicateDeviceHandoff(t *testing.T) {
 	go replicator.statsReporter(statsTicker.C)
 	replicator.partRateTicker = time.NewTicker(1)
 	defer replicator.partRateTicker.Stop()
-	replicator.ring = &FakeHandoffRing{dev: dev}
+	replicator.Ring = &FakeHandoffRing{dev: dev}
 	replicator.replicateDevice(dev)
 	close(replicator.jobChan)
 	replicator.partGroup.Wait()
@@ -515,7 +515,7 @@ func TestReplicatorRun(t *testing.T) {
 	replicator := makeReplicator("devices", driveRoot, "mount_check", "false")
 	replicator.partRateTicker = time.NewTicker(1)
 	defer replicator.partRateTicker.Stop()
-	replicator.ring = &FakeRunRing{dev: dev}
+	replicator.Ring = &FakeRunRing{dev: dev}
 	replicator.partitionTimes = append(replicator.partitionTimes, 10.0)
 	replicator.Run()
 	assert.Equal(t, uint64(1), replicator.replicationCount)
