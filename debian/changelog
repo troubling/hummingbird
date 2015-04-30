@@ -1,3 +1,12 @@
+hummingbird (0.1.5) precise; urgency=low
+
+  * d2711f5 have audit catch non-string metadata values
+  * f5e3ffd object-auditor has incorrect name
+  * e7169ca some probe-like tests
+  * 6e36eeb fix stupid test errors
+
+ -- David Goetz <david.goetz@rackspace.com>  Thu, 30 Apr 2015 00:00:00 +0000
+
 hummingbird (0.1.4) precise; urgency=low
 
   * f9b4f25 use the HUMMINGBIRD_VERSION env variable if it is there
