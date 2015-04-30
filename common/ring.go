@@ -87,6 +87,9 @@ func (d *Device) String() string {
 }
 
 func (r *hashRing) GetNodes(partition uint64) (response []*Device) {
+	if partition >= uint64(len(r.replica2part2devId[0])) {
+		return nil
+	}
 	for i := 0; i < r.ReplicaCount; i++ {
 		response = append(response, &r.Devs[r.replica2part2devId[i][partition]])
 	}
@@ -95,6 +98,9 @@ func (r *hashRing) GetNodes(partition uint64) (response []*Device) {
 
 func (r *hashRing) GetJobNodes(partition uint64, localDevice int) (response []*Device, handoff bool) {
 	handoff = true
+	if partition >= uint64(len(r.replica2part2devId[0])) {
+		return nil, false
+	}
 	for i := 0; i < r.ReplicaCount; i++ {
 		dev := &r.Devs[r.replica2part2devId[i][partition]]
 		if dev.Id == localDevice {
