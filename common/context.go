@@ -13,33 +13,36 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-package proxyserver
+package common
 
 import (
-	"net"
-	"testing"
+	"net/http"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/gorilla/context"
 )
 
-func TestGetServer(t *testing.T) {
-	tests := []struct {
-		conf    string
-		err_msg string
-	}{
-		{"/etc/swift/proxy-server.conf", ""},
-		{"/tmp/asdf", "Unable to load /tmp/asdf"},
+type KeyType int
+
+const logkey KeyType = iota
+
+func GetLogger(r *http.Request) LoggingContext {
+	if rv := context.Get(r, logkey); rv != nil {
+		return rv.(LoggingContext)
 	}
-	for _, test := range tests {
-		if test.err_msg != "" {
-			_, _, _, _, err := GetServer(test.conf)
-			assert.Equal(t, test.err_msg, err.Error())
-			continue
-		}
-		ip, port, handler, logger, _ := GetServer(test.conf)
-		assert.NotNil(t, net.ParseIP(ip))
-		assert.Equal(t, port, 8080)
-		assert.NotNil(t, logger)
-		assert.NotNil(t, handler)
+	return nil
+}
+
+func SetLogger(r *http.Request, val LoggingContext) {
+	context.Set(r, logkey, val)
+}
+
+func GetVars(r *http.Request) map[string]string {
+	if rv := context.Get(r, "vars"); rv != nil {
+		return rv.(map[string]string)
 	}
+	return nil
+}
+
+func SetVars(r *http.Request, val map[string]string) {
+	context.Set(r, "vars", val)
 }

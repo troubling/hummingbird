@@ -32,10 +32,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/justinas/alice"
+
 	hummingbird "hummingbird/common"
+	"hummingbird/middleware"
 )
 
-type ObjectHandler struct {
+type ObjectServer struct {
 	driveRoot        string
 	hashPathPrefix   string
 	hashPathSuffix   string
@@ -51,16 +54,17 @@ type ObjectHandler struct {
 	replicationMan   *ReplicationManager
 }
 
-func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ObjectServer) ObjGetHandler(writer http.ResponseWriter, request *http.Request) {
+	vars := hummingbird.GetVars(request)
 	headers := writer.Header()
 	hashDir := ObjHashDir(vars, server.driveRoot, server.hashPathPrefix, server.hashPathSuffix)
 	dataFile, metaFile := ObjectFiles(hashDir)
 	if dataFile == "" || strings.HasSuffix(dataFile, ".ts") {
 		if im := request.Header.Get("If-Match"); im != "" && strings.Contains(im, "*") {
-			writer.StandardResponse(http.StatusPreconditionFailed)
+			hummingbird.StandardResponse(writer, http.StatusPreconditionFailed)
 			return
 		} else {
-			writer.StandardResponse(http.StatusNotFound)
+			hummingbird.StandardResponse(writer, http.StatusNotFound)
 			return
 		}
 	}
@@ -74,7 +78,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 
 	metadata, err := OpenObjectMetadata(file.Fd(), metaFile)
 	if err != nil {
-		request.LogError("Error getting metadata from (%s, %s): %s", dataFile, metaFile, err.Error())
+		hummingbird.GetLogger(request).LogError("Error getting metadata from (%s, %s): %s", dataFile, metaFile, err.Error())
 		if QuarantineHash(hashDir) == nil {
 			InvalidateHash(hashDir)
 		}
@@ -94,15 +98,15 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 	headers.Set("X-Backend-Timestamp", metadata["X-Timestamp"].(string))
 	if deleteAt, ok := metadata["X-Delete-At"].(string); ok {
 		if deleteTime, err := hummingbird.ParseDate(deleteAt); err == nil && deleteTime.Before(time.Now()) {
-			writer.StandardResponse(http.StatusNotFound)
+			hummingbird.StandardResponse(writer, http.StatusNotFound)
 			return
 		}
 	}
 
 	lastModified, err := hummingbird.ParseDate(metadata["X-Timestamp"].(string))
 	if err != nil {
-		request.LogError("Error getting timestamp from %s: %s", dataFile, err.Error())
-		writer.StandardResponse(http.StatusInternalServerError)
+		hummingbird.GetLogger(request).LogError("Error getting timestamp from %s: %s", dataFile, err.Error())
+		hummingbird.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 	lastModifiedHeader := lastModified
@@ -113,7 +117,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 	headers.Set("ETag", "\""+metadata["ETag"].(string)+"\"")
 	xTimestamp, err := hummingbird.GetEpochFromTimestamp(metadata["X-Timestamp"].(string))
 	if err != nil {
-		request.LogError("Error getting the epoch time from x-timestamp: %s", err.Error())
+		hummingbird.GetLogger(request).LogError("Error getting the epoch time from x-timestamp: %s", err.Error())
 		http.Error(writer, "Invalid X-Timestamp header", http.StatusBadRequest)
 		return
 	}
@@ -127,7 +131,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 	}
 
 	if im := request.Header.Get("If-Match"); im != "" && !strings.Contains(im, metadata["ETag"].(string)) && !strings.Contains(im, "*") {
-		writer.StandardResponse(http.StatusPreconditionFailed)
+		hummingbird.StandardResponse(writer, http.StatusPreconditionFailed)
 		return
 	}
 
@@ -137,7 +141,7 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 	}
 
 	if ius, err := hummingbird.ParseDate(request.Header.Get("If-Unmodified-Since")); err == nil && lastModified.After(ius) {
-		writer.StandardResponse(http.StatusPreconditionFailed)
+		hummingbird.StandardResponse(writer, http.StatusPreconditionFailed)
 		return
 	}
 
@@ -198,7 +202,8 @@ func (server *ObjectHandler) ObjGetHandler(writer *hummingbird.WebWriter, reques
 	}
 }
 
-func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ObjectServer) ObjPutHandler(writer http.ResponseWriter, request *http.Request) {
+	vars := hummingbird.GetVars(request)
 	outHeaders := writer.Header()
 	if !hummingbird.ValidTimestamp(request.Header.Get("X-Timestamp")) {
 		http.Error(writer, "Invalid X-Timestamp header", http.StatusBadRequest)
@@ -223,7 +228,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 
 	requestTimestamp, err := hummingbird.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
 	if err != nil {
-		request.LogError("Error standardizing request X-Timestamp: %s", err.Error())
+		hummingbird.GetLogger(request).LogError("Error standardizing request X-Timestamp: %s", err.Error())
 		http.Error(writer, "Invalid X-Timestamp header", http.StatusBadRequest)
 		return
 	}
@@ -231,19 +236,19 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 	dataFile, metaFile := ObjectFiles(hashDir)
 	if dataFile != "" && !strings.HasSuffix(dataFile, ".ts") {
 		if inm := request.Header.Get("If-None-Match"); inm == "*" {
-			writer.StandardResponse(http.StatusPreconditionFailed)
+			hummingbird.StandardResponse(writer, http.StatusPreconditionFailed)
 			return
 		}
 		if metadata, err := ObjectMetadata(dataFile, metaFile); err == nil {
 			if requestTime, err := hummingbird.ParseDate(requestTimestamp); err == nil {
 				if lastModified, err := hummingbird.ParseDate(metadata["X-Timestamp"].(string)); err == nil && !requestTime.After(lastModified) {
 					outHeaders.Set("X-Backend-Timestamp", metadata["X-Timestamp"].(string))
-					writer.StandardResponse(http.StatusConflict)
+					hummingbird.StandardResponse(writer, http.StatusConflict)
 					return
 				}
 			}
 			if inm := request.Header.Get("If-None-Match"); inm != "*" && strings.Contains(inm, metadata["ETag"].(string)) {
-				writer.StandardResponse(http.StatusPreconditionFailed)
+				hummingbird.StandardResponse(writer, http.StatusPreconditionFailed)
 				return
 			}
 		}
@@ -252,19 +257,19 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 	fileName := hashDir + "/" + requestTimestamp + ".data"
 	tempFile, err := ObjTempFile(vars, server.driveRoot, "PUT")
 	if err != nil {
-		request.LogError("Error creating temporary file in %s: %s", server.driveRoot, err.Error())
-		writer.StandardResponse(http.StatusInternalServerError)
+		hummingbird.GetLogger(request).LogError("Error creating temporary file in %s: %s", server.driveRoot, err.Error())
+		hummingbird.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 	defer func() { // cleanup if we don't finish
-		if writer.Status != http.StatusCreated {
+		if writer.(*hummingbird.WebWriter).Status != http.StatusCreated {
 			tempFile.Close()
 			os.RemoveAll(tempFile.Name())
 		}
 	}()
 	if freeSpace, err := FreeDiskSpace(tempFile.Fd()); err == nil && server.fallocateReserve > 0 && freeSpace-request.ContentLength < server.fallocateReserve {
-		request.LogError("Hummingbird Not enough space available: %d available, %d requested", freeSpace, request.ContentLength)
-		writer.CustomErrorResponse(507, vars)
+		hummingbird.GetLogger(request).LogError("Hummingbird Not enough space available: %d available, %d requested", freeSpace, request.ContentLength)
+		hummingbird.CustomErrorResponse(writer, 507, vars)
 		return
 	}
 	if !server.disableFallocate && request.ContentLength > 0 {
@@ -273,8 +278,8 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 	hash := md5.New()
 	totalSize, err := hummingbird.Copy(request.Body, tempFile, hash)
 	if err != nil {
-		request.LogError("Error writing to file %s: %s", tempFile.Name(), err.Error())
-		writer.StandardResponse(http.StatusInternalServerError)
+		hummingbird.GetLogger(request).LogError("Error writing to file %s: %s", tempFile.Name(), err.Error())
+		hummingbird.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 	metadata := map[string]string{
@@ -303,8 +308,8 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 	}
 
 	if os.MkdirAll(hashDir, 0770) != nil || os.Rename(tempFile.Name(), fileName) != nil {
-		request.LogError("Error renaming object file: %s -> %s", tempFile.Name(), fileName)
-		writer.StandardResponse(http.StatusInternalServerError)
+		hummingbird.GetLogger(request).LogError("Error renaming object file: %s -> %s", tempFile.Name(), fileName)
+		hummingbird.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 	finalize := func() {
@@ -312,7 +317,7 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 			tempFile.Sync()
 		}
 		tempFile.Close()
-		HashCleanupListDir(hashDir, request)
+		HashCleanupListDir(hashDir, hummingbird.GetLogger(request))
 		if fd, _ := syscall.Open(hashDir, syscall.O_DIRECTORY|os.O_RDONLY, 0666); err == nil {
 			syscall.Fsync(fd)
 			syscall.Close(fd)
@@ -331,14 +336,15 @@ func (server *ObjectHandler) ObjPutHandler(writer *hummingbird.WebWriter, reques
 	} else {
 		finalize()
 	}
-	writer.StandardResponse(http.StatusCreated)
+	hummingbird.StandardResponse(writer, http.StatusCreated)
 }
 
-func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ObjectServer) ObjDeleteHandler(writer http.ResponseWriter, request *http.Request) {
+	vars := hummingbird.GetVars(request)
 	headers := writer.Header()
 	requestTimestamp, err := hummingbird.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
 	if err != nil {
-		request.LogError("Error standardizing request X-Timestamp: %s", err.Error())
+		hummingbird.GetLogger(request).LogError("Error standardizing request X-Timestamp: %s", err.Error())
 		http.Error(writer, "Invalid X-Timestamp header", http.StatusBadRequest)
 		return
 	}
@@ -349,26 +355,26 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 	if ida := request.Header.Get("X-If-Delete-At"); ida != "" {
 		_, err = strconv.ParseInt(ida, 10, 64)
 		if err != nil {
-			writer.StandardResponse(http.StatusBadRequest)
+			hummingbird.StandardResponse(writer, http.StatusBadRequest)
 			return
 		}
 		if dataFile == "" {
-			writer.StandardResponse(http.StatusNotFound)
+			hummingbird.StandardResponse(writer, http.StatusNotFound)
 			return
 		}
 		if !strings.HasSuffix(dataFile, ".data") {
-			writer.StandardResponse(http.StatusPreconditionFailed)
+			hummingbird.StandardResponse(writer, http.StatusPreconditionFailed)
 			return
 		}
 		metadata, err := ObjectMetadata(dataFile, metaFile)
 		if err != nil {
-			request.LogError("Error getting metadata from (%s, %s): %s", dataFile, metaFile, err.Error())
-			writer.StandardResponse(http.StatusInternalServerError)
+			hummingbird.GetLogger(request).LogError("Error getting metadata from (%s, %s): %s", dataFile, metaFile, err.Error())
+			hummingbird.StandardResponse(writer, http.StatusInternalServerError)
 			return
 		}
 		if _, ok := metadata["X-Delete-At"]; ok {
 			if ida != metadata["X-Delete-At"] {
-				writer.StandardResponse(http.StatusPreconditionFailed)
+				hummingbird.StandardResponse(writer, http.StatusPreconditionFailed)
 				return
 			}
 		}
@@ -384,15 +390,15 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 			if origTimestamp, ok := origMetadata["X-Timestamp"]; ok && origTimestamp.(string) >= requestTimestamp {
 				headers.Set("X-Backend-Timestamp", origTimestamp.(string))
 				if strings.HasSuffix(dataFile, ".data") {
-					writer.StandardResponse(http.StatusConflict)
+					hummingbird.StandardResponse(writer, http.StatusConflict)
 					return
 				} else {
-					writer.StandardResponse(http.StatusNotFound)
+					hummingbird.StandardResponse(writer, http.StatusNotFound)
 					return
 				}
 			}
 		} else {
-			request.LogError("Error getting metadata from (%s, %s): %s", dataFile, metaFile, err.Error())
+			hummingbird.GetLogger(request).LogError("Error getting metadata from (%s, %s): %s", dataFile, metaFile, err.Error())
 			if qerr := QuarantineHash(hashDir); qerr == nil {
 				InvalidateHash(hashDir)
 			}
@@ -403,8 +409,8 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 	fileName := hashDir + "/" + requestTimestamp + ".ts"
 	tempFile, err := ObjTempFile(vars, server.driveRoot, "DELETE")
 	if err != nil {
-		request.LogError("Error creating temporary file in %s: %s", server.driveRoot, err.Error())
-		writer.StandardResponse(http.StatusInternalServerError)
+		hummingbird.GetLogger(request).LogError("Error creating temporary file in %s: %s", server.driveRoot, err.Error())
+		hummingbird.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 	metadata := map[string]string{
@@ -416,8 +422,8 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 		tempFile.Sync()
 	}
 	if os.MkdirAll(hashDir, 0770) != nil || os.Rename(tempFile.Name(), fileName) != nil {
-		request.LogError("Error renaming tombstone file: %s -> %s", tempFile.Name(), fileName)
-		writer.StandardResponse(http.StatusInternalServerError)
+		hummingbird.GetLogger(request).LogError("Error renaming tombstone file: %s -> %s", tempFile.Name(), fileName)
+		hummingbird.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 	headers.Set("X-Backend-Timestamp", metadata["X-Timestamp"])
@@ -426,7 +432,7 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 			tempFile.Sync()
 		}
 		tempFile.Close()
-		HashCleanupListDir(hashDir, request)
+		HashCleanupListDir(hashDir, hummingbird.GetLogger(request))
 		if fd, err := syscall.Open(hashDir, syscall.O_DIRECTORY|os.O_RDONLY, 0666); err == nil {
 			syscall.Fsync(fd)
 			syscall.Close(fd)
@@ -445,10 +451,11 @@ func (server *ObjectHandler) ObjDeleteHandler(writer *hummingbird.WebWriter, req
 	} else {
 		finalize()
 	}
-	writer.StandardResponse(responseStatus)
+	hummingbird.StandardResponse(writer, responseStatus)
 }
 
-func (server *ObjectHandler) ObjReplicateHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ObjectServer) ReplicateHandler(writer http.ResponseWriter, request *http.Request) {
+	vars := hummingbird.GetVars(request)
 	repid := request.Header.Get("X-Replication-Id")
 	if repid == "" { // if they didn't give us a repid, make one up so we can account for them
 		repid = request.RemoteAddr + "/" + vars["device"] + "/" + vars["partition"]
@@ -465,192 +472,188 @@ func (server *ObjectHandler) ObjReplicateHandler(writer *hummingbird.WebWriter, 
 			return
 		}
 	}
-
 	var recalculate []string
 	if len(vars["suffixes"]) > 0 {
 		recalculate = strings.Split(vars["suffixes"], "-")
 	}
-	hashes, err := GetHashes(server.driveRoot, vars["device"], vars["partition"], recalculate, request)
+	hashes, err := GetHashes(server.driveRoot, vars["device"], vars["partition"], recalculate, hummingbird.GetLogger(request))
 	if err != nil {
-		writer.StandardResponse(http.StatusInternalServerError)
+		hummingbird.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 	writer.WriteHeader(http.StatusOK)
 	writer.Write(hummingbird.PickleDumps(hashes))
 }
 
-func (server *ObjectHandler) ObjSyncHandler(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, vars map[string]string) {
+func (server *ObjectServer) SyncHandler(writer http.ResponseWriter, request *http.Request) {
+	vars := hummingbird.GetVars(request)
 	repid := request.Header.Get("X-Replication-Id")
 	server.replicationMan.UpdateSession(vars["device"], repid)
 	fileName := filepath.Clean(server.driveRoot + strings.Replace(request.URL.Path, "/", string(os.PathSeparator), -1))
 	hashDir := filepath.Dir(fileName)
 
 	if ext := filepath.Ext(fileName); (ext != ".data" && ext != ".ts" && ext != ".meta") || len(filepath.Base(filepath.Dir(fileName))) != 32 {
-		writer.StandardResponse(http.StatusBadRequest)
+		hummingbird.StandardResponse(writer, http.StatusBadRequest)
 		return
 	}
 	if hummingbird.Exists(fileName) {
-		writer.StandardResponse(http.StatusConflict)
+		hummingbird.StandardResponse(writer, http.StatusConflict)
 		return
 	}
 	dataFile, metaFile := ObjectFiles(hashDir)
 	if filepath.Base(dataFile) >= filepath.Base(fileName) || metaFile == fileName {
-		writer.StandardResponse(http.StatusConflict)
+		hummingbird.StandardResponse(writer, http.StatusConflict)
 		return
 	}
 	tempFile, err := ObjTempFile(vars, server.driveRoot, "SYNC")
 	if err != nil {
-		writer.StandardResponse(http.StatusInternalServerError)
+		hummingbird.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 	defer func() {
 		tempFile.Close()
-		if writer.Status != http.StatusCreated {
-			os.RemoveAll(tempFile.Name())
-		}
+		os.RemoveAll(tempFile.Name()) // TODO(redbo): we can skip this unlink if the function completes
 	}()
 	if freeSpace, err := FreeDiskSpace(tempFile.Fd()); err != nil && freeSpace-request.ContentLength < server.fallocateReserve {
-		writer.CustomErrorResponse(507, vars)
+		hummingbird.CustomErrorResponse(writer, 507, vars)
 		return
 	}
 	if xattrs, err := hex.DecodeString(request.Header.Get("X-Attrs")); err != nil || len(xattrs) == 0 {
-		writer.StandardResponse(http.StatusBadRequest)
+		hummingbird.StandardResponse(writer, http.StatusBadRequest)
 		return
 	} else if RawWriteMetadata(tempFile.Fd(), xattrs) != nil {
-		writer.StandardResponse(http.StatusInternalServerError)
+		hummingbird.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 	if !server.disableFallocate && request.ContentLength > 0 {
 		syscall.Fallocate(int(tempFile.Fd()), 1, 0, request.ContentLength)
 	}
 	if _, err := hummingbird.Copy(request.Body, tempFile); err != nil {
-		writer.StandardResponse(http.StatusInternalServerError)
+		hummingbird.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 	tempFile.Sync()
 	if os.MkdirAll(hashDir, 0770) != nil || os.Rename(tempFile.Name(), fileName) != nil {
-		writer.StandardResponse(http.StatusInternalServerError)
+		hummingbird.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 	if dataFile != "" || metaFile != "" {
-		HashCleanupListDir(hashDir, request)
+		HashCleanupListDir(hashDir, hummingbird.GetLogger(request))
 	}
 	InvalidateHash(hashDir)
-	writer.StandardResponse(http.StatusCreated)
+	hummingbird.StandardResponse(writer, http.StatusCreated)
 }
 
-func (server *ObjectHandler) LogRequest(writer *hummingbird.WebWriter, request *hummingbird.WebRequest, extraInfo string) {
-	go server.logger.Info(fmt.Sprintf("%s - - [%s] \"%s %s\" %d %s \"%s\" \"%s\" \"%s\" %.4f \"%s\"",
-		request.RemoteAddr,
-		time.Now().Format("02/Jan/2006:15:04:05 -0700"),
-		request.Method,
-		hummingbird.Urlencode(request.URL.Path),
-		writer.Status,
-		hummingbird.GetDefault(writer.Header(), "Content-Length", "-"),
-		hummingbird.GetDefault(request.Header, "Referer", "-"),
-		hummingbird.GetDefault(request.Header, "X-Trans-Id", "-"),
-		hummingbird.GetDefault(request.Header, "User-Agent", "-"),
-		time.Since(request.Start).Seconds(),
-		extraInfo))
+func (server *ObjectServer) HealthcheckHandler(writer http.ResponseWriter, request *http.Request) {
+	writer.Header().Set("Content-Length", "2")
+	writer.WriteHeader(http.StatusOK)
+	writer.Write([]byte("OK"))
+	return
 }
 
-func (server *ObjectHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
-	if request.URL.Path == "/healthcheck" {
-		writer.Header().Set("Content-Length", "2")
+func (server *ObjectServer) ReconHandler(writer http.ResponseWriter, request *http.Request) {
+	hummingbird.ReconHandler(server.driveRoot, writer, request)
+	return
+}
+
+func (server *ObjectServer) DiskUsageHandler(writer http.ResponseWriter, request *http.Request) {
+	data, err := server.diskInUse.MarshalJSON()
+	if err == nil {
 		writer.WriteHeader(http.StatusOK)
-		writer.Write([]byte("OK"))
-		return
-	} else if strings.HasPrefix(request.URL.Path, "/recon/") {
-		hummingbird.ReconHandler(server.driveRoot, writer, request)
-		return
-	} else if request.URL.Path == "/diskusage" {
-		data, err := server.diskInUse.MarshalJSON()
-		if err == nil {
-			writer.WriteHeader(http.StatusOK)
-			writer.Write(data)
-		} else {
-			writer.WriteHeader(http.StatusInternalServerError)
-			writer.Write([]byte(err.Error()))
-		}
-		return
+		writer.Write(data)
+	} else {
+		writer.WriteHeader(http.StatusInternalServerError)
+		writer.Write([]byte(err.Error()))
 	}
-	parts := strings.SplitN(request.URL.Path, "/", 6)
-	vars := make(map[string]string)
-	if len(parts) > 1 {
-		vars["device"] = parts[1]
-		if len(parts) > 2 {
-			vars["partition"] = parts[2]
-			if len(parts) > 3 {
-				vars["account"] = parts[3]
-				vars["suffixes"] = parts[3]
-				if len(parts) > 4 {
-					vars["container"] = parts[4]
-					if len(parts) > 5 {
-						vars["obj"] = parts[5]
+	return
+}
+
+func (server *ObjectServer) LogRequest(next http.Handler) http.Handler {
+	fn := func(writer http.ResponseWriter, request *http.Request) {
+		requestLogger := &hummingbird.RequestLogger{Request: request, Logger: server.logger}
+		newWriter := &hummingbird.WebWriter{ResponseWriter: writer, Status: 500, ResponseStarted: false}
+		defer requestLogger.LogPanics(newWriter)
+		start := time.Now()
+		hummingbird.SetLogger(request, requestLogger)
+		next.ServeHTTP(newWriter, request)
+		forceAcquire := request.Header.Get("X-Force-Acquire") == "true"
+		if (request.Method != "REPLICATE" && request.Method != "SYNC") || server.logLevel == "DEBUG" {
+			extraInfo := "-"
+			if forceAcquire {
+				extraInfo = "FA"
+			}
+			server.logger.Info(fmt.Sprintf("%s - - [%s] \"%s %s\" %d %s \"%s\" \"%s\" \"%s\" %.4f \"%s\"",
+				request.RemoteAddr,
+				time.Now().Format("02/Jan/2006:15:04:05 -0700"),
+				request.Method,
+				hummingbird.Urlencode(request.URL.Path),
+				newWriter.Status,
+				hummingbird.GetDefault(newWriter.Header(), "Content-Length", "-"),
+				hummingbird.GetDefault(request.Header, "Referer", "-"),
+				hummingbird.GetDefault(request.Header, "X-Trans-Id", "-"),
+				hummingbird.GetDefault(request.Header, "User-Agent", "-"),
+				time.Since(start).Seconds(),
+				extraInfo))
+		}
+	}
+	return http.HandlerFunc(fn)
+}
+
+func (server *ObjectServer) AcquireDevice(next http.Handler) http.Handler {
+	fn := func(writer http.ResponseWriter, request *http.Request) {
+		parts := strings.Split(request.URL.Path, "/")
+		if len(parts) > 1 {
+			device := parts[1]
+			devicePath := filepath.Join(server.driveRoot, device)
+			if hummingbird.Exists(devicePath) {
+				if server.checkMounts {
+					if mounted, err := hummingbird.IsMount(devicePath); err != nil || mounted != true {
+						vars := map[string]string{"Method": request.Method, "device": device}
+						hummingbird.CustomErrorResponse(writer, 507, vars)
+						return
 					}
 				}
+
+				forceAcquire := request.Header.Get("X-Force-Acquire") == "true"
+				if concRequests := server.diskInUse.Acquire(device, forceAcquire); concRequests > 0 {
+					writer.Header().Set("X-Disk-Usage", strconv.FormatInt(concRequests, 10))
+					hummingbird.StandardResponse(writer, 503)
+					return
+				}
+				defer server.diskInUse.Release(device)
+			} else {
+				vars := map[string]string{"Method": request.Method, "device": device}
+				hummingbird.CustomErrorResponse(writer, 507, vars)
+				return
 			}
 		}
+		next.ServeHTTP(writer, request)
 	}
-
-	newWriter := &hummingbird.WebWriter{ResponseWriter: writer, Status: 500, ResponseStarted: false}
-	newRequest := &hummingbird.WebRequest{
-		Request:       request,
-		TransactionId: request.Header.Get("X-Trans-Id"),
-		XTimestamp:    request.Header.Get("X-Timestamp"),
-		Start:         time.Now(),
-		Logger:        server.logger}
-	defer newRequest.LogPanics(newWriter)
-	forceAcquire := request.Header.Get("X-Force-Acquire") == "true"
-	if server.logLevel == "DEBUG" || (request.Method != "SYNC" && request.Method != "REPLICATE") {
-		extraInfo := "-"
-		if forceAcquire {
-			extraInfo = "FA"
-		}
-		defer server.LogRequest(newWriter, newRequest, extraInfo) // log the request after return
-	}
-
-	if !newRequest.ValidateRequest() {
-		newWriter.StandardResponse(400)
-		return
-	}
-
-	if server.checkMounts {
-		devicePath := server.driveRoot + "/" + vars["device"]
-		if mounted, err := hummingbird.IsMount(devicePath); err != nil || mounted != true {
-			vars["Method"] = request.Method
-			newWriter.CustomErrorResponse(507, vars)
-			return
-		}
-	}
-
-	if concRequests := server.diskInUse.Acquire(vars["device"], forceAcquire); concRequests > 0 {
-		newWriter.Header().Set("X-Disk-Usage", strconv.FormatInt(concRequests, 10))
-		newWriter.StandardResponse(503)
-		return
-	}
-	defer server.diskInUse.Release(vars["device"])
-
-	switch request.Method {
-	case "GET":
-		server.ObjGetHandler(newWriter, newRequest, vars)
-	case "HEAD":
-		server.ObjGetHandler(newWriter, newRequest, vars)
-	case "PUT":
-		server.ObjPutHandler(newWriter, newRequest, vars)
-	case "DELETE":
-		server.ObjDeleteHandler(newWriter, newRequest, vars)
-	case "REPLICATE":
-		server.ObjReplicateHandler(newWriter, newRequest, vars)
-	case "SYNC":
-		server.ObjSyncHandler(newWriter, newRequest, vars)
-	default:
-		newWriter.StandardResponse(http.StatusMethodNotAllowed)
-	}
+	return http.HandlerFunc(fn)
 }
 
-func GetServer(conf string) (string, int, http.Handler, *syslog.Writer, error) {
-	handler := &ObjectHandler{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: "",
+func (server *ObjectServer) getHandler() http.Handler {
+	commonHandlers := alice.New(middleware.ClearHandler, server.LogRequest, middleware.ValidateRequest)
+	devicePrefixedHandlers := commonHandlers.Append(server.AcquireDevice)
+	router := hummingbird.NewRouter()
+	router.Get("/healthcheck", commonHandlers.ThenFunc(server.HealthcheckHandler))
+	router.Get("/diskusage", commonHandlers.ThenFunc(server.DiskUsageHandler))
+	router.Get("/recon/:method", commonHandlers.ThenFunc(server.ReconHandler))
+	router.Get("/:device/:partition/:account/:container/*obj", devicePrefixedHandlers.ThenFunc(server.ObjGetHandler))
+	router.Head("/:device/:partition/:account/:container/*obj", devicePrefixedHandlers.ThenFunc(server.ObjGetHandler))
+	router.Put("/:device/:partition/:account/:container/*obj", devicePrefixedHandlers.ThenFunc(server.ObjPutHandler))
+	router.Delete("/:device/:partition/:account/:container/*obj", devicePrefixedHandlers.ThenFunc(server.ObjDeleteHandler))
+	router.Replicate("/:device/:partition/:suffixes", devicePrefixedHandlers.ThenFunc(server.ReplicateHandler))
+	router.Replicate("/:device/:partition", devicePrefixedHandlers.ThenFunc(server.ReplicateHandler))
+	router.Sync("/:device/*relpath", devicePrefixedHandlers.ThenFunc(server.SyncHandler))
+	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, fmt.Sprintf("Invalid path: %s", r.URL.Path), http.StatusBadRequest)
+	})
+	return router
+}
+
+func GetServer(conf string) (bindIP string, bindPort int, handler http.Handler, logger hummingbird.SysLogLike, err error) {
+	server := ObjectServer{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: "",
 		allowedHeaders: map[string]bool{"Content-Disposition": true,
 			"Content-Encoding":      true,
 			"X-Delete-At":           true,
@@ -658,8 +661,7 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer, error) {
 			"X-Static-Large-Object": true,
 		},
 	}
-	var err error
-	handler.hashPathPrefix, handler.hashPathSuffix, err = hummingbird.GetHashPrefixAndSuffix()
+	server.hashPathPrefix, server.hashPathSuffix, err = hummingbird.GetHashPrefixAndSuffix()
 	if err != nil {
 		return "", 0, nil, nil, err
 	}
@@ -668,24 +670,24 @@ func GetServer(conf string) (string, int, http.Handler, *syslog.Writer, error) {
 	if err != nil {
 		return "", 0, nil, nil, errors.New(fmt.Sprintf("Unable to load %s", conf))
 	}
-	handler.driveRoot = serverconf.GetDefault("app:object-server", "devices", "/srv/node")
-	handler.checkMounts = serverconf.GetBool("app:object-server", "mount_check", true)
-	handler.asyncFinalize = serverconf.GetBool("app:object-server", "async_finalize", false)
-	handler.checkEtags = serverconf.GetBool("app:object-server", "check_etags", false)
-	handler.disableFallocate = serverconf.GetBool("app:object-server", "disable_fallocate", false)
-	handler.fallocateReserve = serverconf.GetInt("app:object-server", "fallocate_reserve", 0)
-	handler.logLevel = serverconf.GetDefault("app:object-server", "log_level", "INFO")
-	handler.diskInUse = hummingbird.NewKeyedLimit(serverconf.GetLimit("app:object-server", "disk_limit", 25, 10000))
-	bindIP := serverconf.GetDefault("app:object-server", "bind_ip", "0.0.0.0")
-	bindPort := serverconf.GetInt("app:object-server", "bind_port", 6000)
+	server.driveRoot = serverconf.GetDefault("app:object-server", "devices", "/srv/node")
+	server.checkMounts = serverconf.GetBool("app:object-server", "mount_check", true)
+	server.asyncFinalize = serverconf.GetBool("app:object-server", "async_finalize", false)
+	server.checkEtags = serverconf.GetBool("app:object-server", "check_etags", false)
+	server.disableFallocate = serverconf.GetBool("app:object-server", "disable_fallocate", false)
+	server.fallocateReserve = serverconf.GetInt("app:object-server", "fallocate_reserve", 0)
+	server.logLevel = serverconf.GetDefault("app:object-server", "log_level", "INFO")
+	server.diskInUse = hummingbird.NewKeyedLimit(serverconf.GetLimit("app:object-server", "disk_limit", 25, 10000))
+	bindIP = serverconf.GetDefault("app:object-server", "bind_ip", "0.0.0.0")
+	bindPort = int(serverconf.GetInt("app:object-server", "bind_port", 6000))
 	if allowedHeaders, ok := serverconf.Get("app:object-server", "allowed_headers"); ok {
 		headers := strings.Split(allowedHeaders, ",")
 		for i := range headers {
-			handler.allowedHeaders[textproto.CanonicalMIMEHeaderKey(strings.TrimSpace(headers[i]))] = true
+			server.allowedHeaders[textproto.CanonicalMIMEHeaderKey(strings.TrimSpace(headers[i]))] = true
 		}
 	}
-	handler.logger = hummingbird.SetupLogger(serverconf.GetDefault("app:object-server", "log_facility", "LOG_LOCAL1"), "object-server")
-	handler.replicationMan = NewReplicationManager(serverconf.GetLimit("app:object-server", "replication_limit", 3, 100))
+	server.logger = hummingbird.SetupLogger(serverconf.GetDefault("app:object-server", "log_facility", "LOG_LOCAL1"), "object-server", "")
+	server.replicationMan = NewReplicationManager(serverconf.GetLimit("app:object-server", "replication_limit", 3, 100))
 
-	return bindIP, int(bindPort), handler, handler.logger, nil
+	return bindIP, int(bindPort), server.getHandler(), server.logger, nil
 }
