@@ -79,7 +79,7 @@ func (server *ObjectServer) ObjGetHandler(writer http.ResponseWriter, request *h
 	metadata, err := OpenObjectMetadata(file.Fd(), metaFile)
 	if err != nil {
 		hummingbird.GetLogger(request).LogError("Error getting metadata from (%s, %s): %s", dataFile, metaFile, err.Error())
-		if QuarantineHash(hashDir) == nil {
+		if !os.IsNotExist(err) && QuarantineHash(hashDir) == nil {
 			InvalidateHash(hashDir)
 		}
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -87,7 +87,7 @@ func (server *ObjectServer) ObjGetHandler(writer http.ResponseWriter, request *h
 	}
 	contentLength, err := strconv.ParseInt(metadata["Content-Length"].(string), 10, 64)
 
-	if stat, _ := file.Stat(); stat.Size() != contentLength {
+	if stat, err := file.Stat(); err != nil || stat.Size() != contentLength {
 		if QuarantineHash(hashDir) == nil {
 			InvalidateHash(hashDir)
 		}
@@ -397,6 +397,9 @@ func (server *ObjectServer) ObjDeleteHandler(writer http.ResponseWriter, request
 					return
 				}
 			}
+		} else if os.IsNotExist(err) {
+			hummingbird.GetLogger(request).LogError("Listed data file now missing: %s", dataFile)
+			responseStatus = http.StatusNotFound
 		} else {
 			hummingbird.GetLogger(request).LogError("Error getting metadata from (%s, %s): %s", dataFile, metaFile, err.Error())
 			if qerr := QuarantineHash(hashDir); qerr == nil {
