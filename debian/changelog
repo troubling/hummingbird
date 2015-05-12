@@ -1,3 +1,9 @@
+hummingbird (0.1.7) precise; urgency=low
+
+  * 58cc937 Fixing ReconHandler to work with new routing code
+
+ -- David Goetz <david.goetz@rackspace.com>  Tue, 12 May 2015 00:00:00 +0000
+
 hummingbird (0.1.6) precise; urgency=low
 
   * 8b2440d Don't quarantine on missing data files
