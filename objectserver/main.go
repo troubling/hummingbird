@@ -641,6 +641,7 @@ func (server *ObjectServer) getHandler() http.Handler {
 	router := hummingbird.NewRouter()
 	router.Get("/healthcheck", commonHandlers.ThenFunc(server.HealthcheckHandler))
 	router.Get("/diskusage", commonHandlers.ThenFunc(server.DiskUsageHandler))
+	router.Get("/recon/:method/:recon_type", commonHandlers.ThenFunc(server.ReconHandler))
 	router.Get("/recon/:method", commonHandlers.ThenFunc(server.ReconHandler))
 	router.Get("/:device/:partition/:account/:container/*obj", devicePrefixedHandlers.ThenFunc(server.ObjGetHandler))
 	router.Head("/:device/:partition/:account/:container/*obj", devicePrefixedHandlers.ThenFunc(server.ObjGetHandler))
