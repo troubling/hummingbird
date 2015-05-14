@@ -1,3 +1,9 @@
+hummingbird (0.1.8) precise; urgency=low
+
+  * eac55be lowercase incoming etags
+
+ -- David Goetz <david.goetz@rackspace.com>  Thu, 14 May 2015 00:00:00 +0000
+
 hummingbird (0.1.7) precise; urgency=low
 
   * 58cc937 Fixing ReconHandler to work with new routing code
