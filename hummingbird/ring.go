@@ -42,6 +42,8 @@ type Ring interface {
 	LocalDevices(localPort int) (devs []*Device, err error)
 	AllDevices() (devs []Device)
 	GetMoreNodes(partition uint64) MoreNodes
+	ReplicaCount() (cnt uint64)
+	PartitionCount() (cnt uint64)
 }
 
 type MoreNodes interface {
@@ -190,6 +192,16 @@ func (r *hashRing) AllDevices() (devs []Device) {
 
 func (r *hashRing) GetMoreNodes(partition uint64) MoreNodes {
 	return &hashMoreNodes{r: r, partition: partition, used: nil}
+}
+
+func (r *hashRing) ReplicaCount() (cnt uint64) {
+	d := r.getData()
+	return uint64(len(d.replica2part2devId))
+}
+
+func (r *hashRing) PartitionCount() (cnt uint64) {
+	d := r.getData()
+	return uint64(len(d.replica2part2devId[0]))
 }
 
 func (r *hashRing) reload() error {

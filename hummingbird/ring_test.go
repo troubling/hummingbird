@@ -140,3 +140,14 @@ func TestRingReload(t *testing.T) {
 	require.Equal(t, 3, ring.getData().ReplicaCount)
 	require.Equal(t, uint64(30), ring.getData().PartShift)
 }
+
+func TestCounts(t *testing.T) {
+	fp, err := ioutil.TempFile("", "")
+	require.Nil(t, err)
+	defer fp.Close()
+	defer os.RemoveAll(fp.Name())
+	require.Nil(t, writeARing(fp, 4, 2, 29))
+	r, err := LoadRing(fp.Name(), "prefix", "suffix")
+	require.Equal(t, uint64(2), r.ReplicaCount())
+	require.Equal(t, uint64(8), r.PartitionCount())
+}

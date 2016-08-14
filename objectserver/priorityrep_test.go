@@ -73,6 +73,14 @@ func (p *priFakeRing) GetNodesInOrder(partition uint64) (response []*hummingbird
 	return p.GetNodes(partition)
 }
 
+func (p *priFakeRing) ReplicaCount() (cnt uint64) {
+	return uint64(0)
+}
+
+func (p *priFakeRing) PartitionCount() (cnt uint64) {
+	return uint64(0)
+}
+
 func TestGetPartMoveJobs(t *testing.T) {
 	t.Parallel()
 	oldRing := &priFakeRing{

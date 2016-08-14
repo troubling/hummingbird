@@ -101,6 +101,14 @@ func (t *TestReplicatorWebServer) Close() {
 	t.Server.Close()
 }
 
+func (r *FakeRing) ReplicaCount() (cnt uint64) {
+	return uint64(0)
+}
+
+func (r *FakeRing) PartitionCount() (cnt uint64) {
+	return uint64(0)
+}
+
 // Environment encapsulates a temporary SAIO-style environment for the object server, replicator, and auditor
 // and provides a few utility functions for manipulating it.
 type Environment struct {

@@ -118,6 +118,7 @@ func (f *mockRepConn) Read(data []byte) (l int, err error) {
 	}
 	return len(data), nil
 }
+
 func (f *mockRepConn) Disconnected() bool {
 	if f._Disconnected != nil {
 		return f._Disconnected()
