@@ -120,7 +120,6 @@ func (ta *TempAuth) createAccount(account string) bool {
 
 func (ta *TempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	if request.URL.Path == "/auth/v1.0" {
-		token := hummingbird.UUID()
 		user := request.Header.Get("X-Auth-User")
 		parts := strings.Split(user, ":")
 		if len(parts) != 2 {
@@ -143,7 +142,7 @@ func (ta *TempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 			writer.Header().Set("X-Storage-URL", fmt.Sprintf("http://%s/v1/AUTH_%s", request.Host, account))
 		}
 		hummingbird.StandardResponse(writer, 200)
-	} else {
+	} else if strings.HasPrefix(request.URL.Path, "/v1") || strings.HasPrefix(request.URL.Path, "/V1") {
 		token := request.Header.Get("X-Auth-Token")
 		valid, err := ta.mc.Get(token)
 		if err != nil {
@@ -160,6 +159,8 @@ func (ta *TempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 				return v
 			}
 		}
+		ta.next.ServeHTTP(writer, request)
+	} else {
 		ta.next.ServeHTTP(writer, request)
 	}
 }
