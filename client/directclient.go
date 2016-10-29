@@ -263,7 +263,7 @@ func (c *ProxyDirectClient) GetContainer(account string, container string, optio
 }
 
 func (c *ProxyDirectClient) HeadContainer(account string, container string, headers http.Header) (http.Header, int) {
-	partition := c.ObjectRing.GetPartition(account, container, "")
+	partition := c.ContainerRing.GetPartition(account, container, "")
 	reqs := make([]*http.Request, 0)
 	for _, device := range c.ContainerRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", device.Ip, device.Port, device.Device, partition,
