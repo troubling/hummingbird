@@ -400,7 +400,7 @@ func (server *ObjectServer) LogRequest(next http.Handler) http.Handler {
 		requestLogger := &hummingbird.RequestLogger{Request: request, Logger: server.logger, W: newWriter}
 		defer requestLogger.LogPanics("LOGGING REQUEST")
 		start := time.Now()
-		hummingbird.SetLogger(request, requestLogger)
+		request = hummingbird.SetLogger(request, requestLogger)
 		next.ServeHTTP(newWriter, request)
 		forceAcquire := request.Header.Get("X-Force-Acquire") == "true"
 
@@ -476,7 +476,7 @@ func (server *ObjectServer) updateDeviceLocks(seconds int64) {
 }
 
 func (server *ObjectServer) GetHandler(config hummingbird.Config) http.Handler {
-	commonHandlers := alice.New(middleware.ClearHandler, server.LogRequest, middleware.ValidateRequest, server.AcquireDevice)
+	commonHandlers := alice.New(server.LogRequest, middleware.ValidateRequest, server.AcquireDevice)
 	router := hummingbird.NewRouter()
 	router.Get("/healthcheck", commonHandlers.ThenFunc(server.HealthcheckHandler))
 	router.Get("/diskusage", commonHandlers.ThenFunc(server.DiskUsageHandler))

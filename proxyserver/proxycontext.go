@@ -16,13 +16,13 @@
 package proxyserver
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 
-	"github.com/gorilla/context"
 	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/hummingbird"
 )
@@ -162,7 +162,7 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 		}
 	}
 	wg.Wait()
-	context.Set(request, "proxycontext", ctx)
+	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", ctx))
 	m.next.ServeHTTP(writer, request)
 }
 
@@ -180,7 +180,7 @@ func NewProxyContextMiddleware(mc hummingbird.MemcacheRing, c client.ProxyClient
 }
 
 func GetProxyContext(r *http.Request) *ProxyContext {
-	if rv := context.Get(r, "proxycontext"); rv != nil {
+	if rv := r.Context().Value("proxycontext"); rv != nil {
 		return rv.(*ProxyContext)
 	}
 	return nil

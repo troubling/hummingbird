@@ -26,7 +26,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gorilla/context"
 	"github.com/troubling/hummingbird/hummingbird"
 )
 
@@ -91,8 +90,7 @@ func TestUpdateDeleteAt(t *testing.T) {
 	dl := DummyLogger{}
 
 	vars := map[string]string{"account": "a", "container": "c", "obj": "o", "device": "sda"}
-	hummingbird.SetVars(req, vars)
-	defer context.Clear(req)
+	req = hummingbird.SetVars(req, vars)
 	deleteAtStr := "1434707411"
 	server.updateDeleteAt(req, deleteAtStr, vars, &dl)
 	require.True(t, requestSent)
@@ -124,8 +122,7 @@ func TestUpdateDeleteAtNoHeaders(t *testing.T) {
 	req.Header.Add("X-Timestamp", "12345.6789")
 
 	vars := map[string]string{"account": "a", "container": "c", "obj": "o", "device": "sda"}
-	hummingbird.SetVars(req, vars)
-	defer context.Clear(req)
+	req = hummingbird.SetVars(req, vars)
 	deleteAtStr := "1434707411"
 	server.updateDeleteAt(req, deleteAtStr, vars, &DummyLogger{})
 	expectedFile := filepath.Join(ts.root, "sda", "async_pending", "8fc", "02cc012fe572f27e455edbea32da78fc-12345.6789")
@@ -170,8 +167,7 @@ func TestUpdateContainer(t *testing.T) {
 	dl := DummyLogger{}
 
 	vars := map[string]string{"account": "a", "container": "c", "obj": "o", "device": "sda"}
-	hummingbird.SetVars(req, vars)
-	defer context.Clear(req)
+	req = hummingbird.SetVars(req, vars)
 	metadata := map[string]string{
 		"X-Timestamp":    "12345.789",
 		"Content-Type":   "text/plain",
@@ -214,8 +210,7 @@ func TestUpdateContainerNoHeaders(t *testing.T) {
 	req.Header.Add("X-Timestamp", "12345.6789")
 
 	vars := map[string]string{"account": "a", "container": "c", "obj": "o", "device": "sda"}
-	hummingbird.SetVars(req, vars)
-	defer context.Clear(req)
+	req = hummingbird.SetVars(req, vars)
 	metadata := map[string]string{
 		"X-Timestamp":    "12345.789",
 		"Content-Type":   "text/plain",
