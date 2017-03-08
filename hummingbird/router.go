@@ -183,7 +183,7 @@ func (r *router) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		policy = 0
 	}
 	handler, vars := r.route(request.Method, request.URL.Path, policy)
-	SetVars(request, vars)
+	request = SetVars(request, vars)
 	handler.ServeHTTP(writer, request)
 }
 

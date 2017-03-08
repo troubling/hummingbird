@@ -49,7 +49,7 @@ func (server *ProxyServer) LogRequest(next http.Handler) http.Handler {
 		requestLogger := &hummingbird.RequestLogger{Request: request, Logger: server.logger, W: newWriter}
 		defer requestLogger.LogPanics("LOGGING REQUEST")
 		start := time.Now()
-		hummingbird.SetLogger(request, requestLogger)
+		request = hummingbird.SetLogger(request, requestLogger)
 		request.Header.Set("X-Trans-Id", transId)
 		newWriter.Header().Set("X-Trans-Id", transId)
 		request.Header.Set("X-Timestamp", hummingbird.GetTimestamp())
@@ -102,7 +102,6 @@ func (server *ProxyServer) GetHandler(config hummingbird.Config) http.Handler {
 	router.Post("/v1/:account/", http.HandlerFunc(server.AccountPutHandler))
 
 	return alice.New(
-		middleware.ClearHandler,
 		server.LogRequest,
 		middleware.ValidateRequest,
 		NewProxyContextMiddleware(server.mc, server.C),

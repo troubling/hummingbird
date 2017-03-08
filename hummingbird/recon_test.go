@@ -24,7 +24,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gorilla/context"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -153,8 +152,7 @@ func (w *testWriter) WriteHeader(s int) {
 func TestGetMem(t *testing.T) {
 	r, _ := http.NewRequest("GET", "/I/dont/think/this/matters", nil)
 	vars := map[string]string{"method": "mem"}
-	SetVars(r, vars)
-	defer context.Clear(r)
+	r = SetVars(r, vars)
 	w := &testWriter{make(http.Header), bytes.NewBuffer(nil), 0}
 	ReconHandler("", w, r)
 	output := w.f.Bytes()
@@ -168,8 +166,7 @@ func TestGetMem(t *testing.T) {
 func TestGetLoad(t *testing.T) {
 	r, _ := http.NewRequest("GET", "/I/dont/think/this/matters", nil)
 	vars := map[string]string{"method": "load"}
-	SetVars(r, vars)
-	defer context.Clear(r)
+	r = SetVars(r, vars)
 	w := &testWriter{make(http.Header), bytes.NewBuffer(nil), 0}
 	ReconHandler("", w, r)
 	output := w.f.Bytes()

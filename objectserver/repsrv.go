@@ -271,7 +271,7 @@ func (r *Replicator) LogRequest(next http.Handler) http.Handler {
 		requestLogger := &hummingbird.RequestLogger{Request: request, Logger: r.logger, W: newWriter}
 		defer requestLogger.LogPanics("LOGGING REQUEST")
 		start := time.Now()
-		hummingbird.SetLogger(request, requestLogger)
+		request = hummingbird.SetLogger(request, requestLogger)
 		next.ServeHTTP(newWriter, request)
 		if (request.Method != "REPLICATE" && request.Method != "REPCONN") || r.logLevel == "DEBUG" {
 			r.logger.Info(fmt.Sprintf("%s - - [%s] \"%s %s\" %d %s \"%s\" \"%s\" \"%s\" %.4f \"%s\"",
@@ -292,7 +292,7 @@ func (r *Replicator) LogRequest(next http.Handler) http.Handler {
 }
 
 func (r *Replicator) GetHandler() http.Handler {
-	commonHandlers := alice.New(middleware.ClearHandler, r.LogRequest, middleware.ValidateRequest)
+	commonHandlers := alice.New(r.LogRequest, middleware.ValidateRequest)
 	router := hummingbird.NewRouter()
 	router.Get("/priorityrep", commonHandlers.ThenFunc(r.priorityRepHandler))
 	router.Get("/progress", commonHandlers.ThenFunc(r.ProgressReportHandler))

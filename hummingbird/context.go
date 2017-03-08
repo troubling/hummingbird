@@ -16,9 +16,8 @@
 package hummingbird
 
 import (
+	"context"
 	"net/http"
-
-	"github.com/gorilla/context"
 )
 
 type KeyType int
@@ -26,23 +25,23 @@ type KeyType int
 const logkey KeyType = iota
 
 func GetLogger(r *http.Request) LoggingContext {
-	if rv := context.Get(r, logkey); rv != nil {
+	if rv := r.Context().Value(logkey); rv != nil {
 		return rv.(LoggingContext)
 	}
 	return nil
 }
 
-func SetLogger(r *http.Request, val LoggingContext) {
-	context.Set(r, logkey, val)
+func SetLogger(r *http.Request, l LoggingContext) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), logkey, l))
 }
 
 func GetVars(r *http.Request) map[string]string {
-	if rv := context.Get(r, "vars"); rv != nil {
+	if rv := r.Context().Value("vars"); rv != nil {
 		return rv.(map[string]string)
 	}
 	return nil
 }
 
-func SetVars(r *http.Request, val map[string]string) {
-	context.Set(r, "vars", val)
+func SetVars(r *http.Request, v map[string]string) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), "vars", v))
 }
