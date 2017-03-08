@@ -43,12 +43,15 @@ func (server *ProxyServer) HealthcheckHandler(writer http.ResponseWriter, reques
 
 func (server *ProxyServer) LogRequest(next http.Handler) http.Handler {
 	fn := func(writer http.ResponseWriter, request *http.Request) {
+		transId := hummingbird.GetTransactionId()
+
 		newWriter := &hummingbird.WebWriter{ResponseWriter: writer, Status: 500, ResponseStarted: false}
 		requestLogger := &hummingbird.RequestLogger{Request: request, Logger: server.logger, W: newWriter}
 		defer requestLogger.LogPanics("LOGGING REQUEST")
 		start := time.Now()
 		request = hummingbird.SetLogger(request, requestLogger)
-		request.Header.Set("X-Trans-Id", hummingbird.GetTransactionId())
+		request.Header.Set("X-Trans-Id", transId)
+		newWriter.Header().Set("X-Trans-Id", transId)
 		request.Header.Set("X-Timestamp", hummingbird.GetTimestamp())
 		next.ServeHTTP(newWriter, request)
 		server.logger.Info(fmt.Sprintf("%s - - [%s] \"%s %s\" %d %s \"%s\" \"%s\" \"%s\" %.4f \"%s\"",
