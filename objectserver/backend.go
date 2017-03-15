@@ -140,7 +140,7 @@ func RawWriteMetadata(fd uintptr, buf []byte) error {
 		if _, err := xattr.Setxattr(fd, metadataName, buf[0:writelen]); err != nil {
 			return err
 		}
-		buf = buf[writelen:len(buf)]
+		buf = buf[writelen:]
 	}
 	return nil
 }

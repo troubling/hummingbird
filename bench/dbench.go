@@ -155,7 +155,7 @@ func RunDBench(args []string) {
 	data := make([]byte, objectSize)
 	objects := make([]*DirectObject, numObjects)
 	deviceParts := make(map[string]bool)
-	for i, _ := range objects {
+	for i := range objects {
 		device := strings.Trim(deviceList[i%len(deviceList)], " ")
 		part := rand.Int63()%numPartitions + minPartition
 		objects[i] = &DirectObject{
@@ -166,7 +166,7 @@ func RunDBench(args []string) {
 	}
 
 	work := make([]func() bool, len(objects))
-	for i, _ := range objects {
+	for i := range objects {
 		work[i] = objects[i].Put
 	}
 	DoJobs("PUT", work, concurrency)
@@ -190,7 +190,7 @@ func RunDBench(args []string) {
 
 	if delete {
 		work = make([]func() bool, len(objects))
-		for i, _ := range objects {
+		for i := range objects {
 			work[i] = objects[i].Delete
 		}
 		DoJobs("DELETE", work, concurrency)

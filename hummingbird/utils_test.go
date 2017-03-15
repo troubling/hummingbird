@@ -42,25 +42,25 @@ func TestParseRange(t *testing.T) {
 		{12345, "bytes=-", "", nil},
 		{12345, "bytes=-cv", "", nil},
 		{12345, "bytes=cv-", "", nil},
-		{12345, "bytes=-12346", "", []httpRange{httpRange{0, 12345}}},
-		{12345, "bytes=-12345", "", []httpRange{httpRange{0, 12345}}},
-		{12345, "bytes=-12344", "", []httpRange{httpRange{1, 12345}}},
-		{12345, "bytes=12344-", "", []httpRange{httpRange{12344, 12345}}},
+		{12345, "bytes=-12346", "", []httpRange{{0, 12345}}},
+		{12345, "bytes=-12345", "", []httpRange{{0, 12345}}},
+		{12345, "bytes=-12344", "", []httpRange{{1, 12345}}},
+		{12345, "bytes=12344-", "", []httpRange{{12344, 12345}}},
 		{12345, "bytes=12344-cv", "", nil},
 		{12345, "bytes=13-12", "", nil},
 		{12345, "bytes=cv-12345", "", nil},
-		{12345, "bytes=12342-12343", "", []httpRange{httpRange{12342, 12344}}},
-		{12345, "bytes=12342-12344", "", []httpRange{httpRange{12342, 12345}}},
-		{12345, "bytes=12342-12345", "", []httpRange{httpRange{12342, 12345}}},
-		{12345, "bytes=0-1,2-3", "", []httpRange{httpRange{0, 2}, httpRange{2, 4}}},
+		{12345, "bytes=12342-12343", "", []httpRange{{12342, 12344}}},
+		{12345, "bytes=12342-12344", "", []httpRange{{12342, 12345}}},
+		{12345, "bytes=12342-12345", "", []httpRange{{12342, 12345}}},
+		{12345, "bytes=0-1,2-3", "", []httpRange{{0, 2}, {2, 4}}},
 		{12345, "bytes=0-1,x-x", "", nil},
 		{12345, "bytes=0-1,x-x,2-3", "", nil},
 		{12345, "bytes=0-1,x-", "", nil},
-		{12345, "bytes=0-1,2-3,4-5", "", []httpRange{httpRange{0, 2}, httpRange{2, 4}, httpRange{4, 6}}},
-		{10000, "bytes=0-99,200-299,10000-10099", "", []httpRange{httpRange{0, 100}, httpRange{200, 300}}},
+		{12345, "bytes=0-1,2-3,4-5", "", []httpRange{{0, 2}, {2, 4}, {4, 6}}},
+		{10000, "bytes=0-99,200-299,10000-10099", "", []httpRange{{0, 100}, {200, 300}}},
 		{10000, "bytes=-0", "Unsatisfiable range", nil},
 		{10000, "bytes=-0", "Unsatisfiable range", nil},
-		{10000, "bytes=0-1,-0", "", []httpRange{httpRange{0, 2}}},
+		{10000, "bytes=0-1,-0", "", []httpRange{{0, 2}}},
 		{0, "bytes=-0", "Unsatisfiable range", nil},
 		{0, "bytes=0-", "Unsatisfiable range", nil},
 		{0, "bytes=0-1", "Unsatisfiable range", nil},
@@ -88,7 +88,7 @@ func TestParseRange(t *testing.T) {
 			require.Equal(t, test.exError, err.Error(), test.rangeHeader)
 		}
 		require.Equal(t, len(result), len(test.exRanges), test.rangeHeader)
-		for i, _ := range result {
+		for i := range result {
 			require.Equal(t, test.exRanges[i], result[i], test.rangeHeader)
 		}
 	}

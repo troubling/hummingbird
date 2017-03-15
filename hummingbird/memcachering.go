@@ -279,7 +279,7 @@ func (ring *memcacheRing) SetMulti(serverKey string, values map[string]interface
 				return err
 			}
 		}
-		for _ = range values {
+		for range values {
 			if _, _, err := conn.receivePacket(); err != nil {
 				return err
 			}

@@ -268,7 +268,7 @@ func quarantineCounts(driveRoot string) (map[string]interface{}, error) {
 		return nil, err
 	}
 	for _, info := range deviceList {
-		for key, _ := range qcounts {
+		for key := range qcounts {
 			stat, err := os.Stat(filepath.Join(driveRoot, info.Name(), "quarantined", key))
 			if err == nil {
 				qcounts[key] = stat.Sys().(*syscall.Stat_t).Nlink
