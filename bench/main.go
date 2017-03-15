@@ -176,7 +176,7 @@ func RunBench(args []string) {
 
 	data := make([]byte, objectSize)
 	objects := make([]*Object, numObjects)
-	for i, _ := range objects {
+	for i := range objects {
 		objects[i] = &Object{
 			state:     0,
 			container: fmt.Sprintf("%d-%s", i%concurrency, salt),
@@ -187,7 +187,7 @@ func RunBench(args []string) {
 	}
 
 	work := make([]func() bool, len(objects))
-	for i, _ := range objects {
+	for i := range objects {
 		work[i] = objects[i].Put
 	}
 	DoJobs("PUT", work, concurrency)
@@ -202,7 +202,7 @@ func RunBench(args []string) {
 
 	if delete {
 		work = make([]func() bool, len(objects))
-		for i, _ := range objects {
+		for i := range objects {
 			work[i] = objects[i].Delete
 		}
 		DoJobs("DELETE", work, concurrency)
@@ -263,7 +263,7 @@ func RunThrash(args []string) {
 
 	data := make([]byte, objectSize)
 	objects := make([]*Object, numObjects)
-	for i, _ := range objects {
+	for i := range objects {
 		objects[i] = &Object{
 			state:     0,
 			container: fmt.Sprintf("%d-%s", i%concurrency, salt),

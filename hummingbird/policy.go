@@ -34,7 +34,7 @@ type PolicyList map[int]*Policy
 
 // LoadPolicies loads policies, probably from /etc/swift/swift.conf
 func normalLoadPolicies() PolicyList {
-	policies := map[int]*Policy{0: &Policy{
+	policies := map[int]*Policy{0: {
 		Index:      0,
 		Type:       "replication",
 		Name:       "Policy-0",

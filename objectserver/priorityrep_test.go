@@ -150,11 +150,11 @@ func TestPriRepJobs(t *testing.T) {
 	host, ports, _ := net.SplitHostPort(u.Host)
 	port, _ := strconv.Atoi(ports)
 	jobs := []*PriorityRepJob{
-		&PriorityRepJob{
+		{
 			Partition:  0,
 			FromDevice: &hummingbird.Device{Device: "sda", Ip: host, Port: port - 500, ReplicationIp: host, ReplicationPort: port - 500},
 			ToDevices: []*hummingbird.Device{
-				&hummingbird.Device{Device: "sdb"},
+				{Device: "sdb"},
 			},
 		},
 	}
@@ -166,15 +166,15 @@ func TestDevLimiter(t *testing.T) {
 	t.Parallel()
 	job1 := &PriorityRepJob{
 		FromDevice: &hummingbird.Device{Id: 0},
-		ToDevices:  []*hummingbird.Device{&hummingbird.Device{Id: 1, Device: "sdb"}},
+		ToDevices:  []*hummingbird.Device{{Id: 1, Device: "sdb"}},
 	}
 	job2 := &PriorityRepJob{
 		FromDevice: &hummingbird.Device{Id: 1},
-		ToDevices:  []*hummingbird.Device{&hummingbird.Device{Id: 2, Device: "sdb"}},
+		ToDevices:  []*hummingbird.Device{{Id: 2, Device: "sdb"}},
 	}
 	job3 := &PriorityRepJob{
 		FromDevice: &hummingbird.Device{Id: 1},
-		ToDevices:  []*hummingbird.Device{&hummingbird.Device{Id: 0, Device: "sdb"}},
+		ToDevices:  []*hummingbird.Device{{Id: 0, Device: "sdb"}},
 	}
 	limiter := &devLimiter{inUse: make(map[int]int), max: 2, somethingFinished: make(chan struct{}, 1)}
 	require.True(t, limiter.start(job1))

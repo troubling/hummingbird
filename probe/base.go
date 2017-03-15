@@ -193,7 +193,7 @@ func NewEnvironment(settings ...string) *Environment {
 	oldLoadPolicies := hummingbird.LoadPolicies
 	hummingbird.LoadPolicies = func() hummingbird.PolicyList {
 		return hummingbird.PolicyList(map[int]*hummingbird.Policy{
-			0: &hummingbird.Policy{
+			0: {
 				Index:      0,
 				Type:       "replication",
 				Name:       "Policy-0",
@@ -201,7 +201,7 @@ func NewEnvironment(settings ...string) *Environment {
 				Default:    false,
 				Deprecated: false,
 			},
-			1: &hummingbird.Policy{
+			1: {
 				Index:      1,
 				Type:       "replication",
 				Name:       "Policy-1",
