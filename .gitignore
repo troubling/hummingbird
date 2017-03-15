@@ -1,19 +1,17 @@
-go/bin
-*.py[co]
-*.sw?
-*~
-doc/build/*
-dist
-build
-cover
-ChangeLog
-.coverage
-*.egg
-*.egg-info
+# Mac related files
 .DS_Store
-.tox
-pycscope.*
-.idea
-MANIFEST
 
-test/probe/.noseids
+# Binaries for programs and plugins
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary, build with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+#Hummingbird related build directory
+bin
