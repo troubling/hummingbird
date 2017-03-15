@@ -17,6 +17,7 @@ package hummingbird
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -26,7 +27,6 @@ import (
 	"os/signal"
 	"runtime/debug"
 	"strconv"
-	"sync"
 	"syscall"
 	"time"
 	"unicode/utf8"
@@ -179,24 +179,7 @@ type LowLevelLogger interface {
 type HummingbirdServer struct {
 	http.Server
 	Listener net.Listener
-	wg       sync.WaitGroup
-}
-
-func (srv *HummingbirdServer) ConnStateChange(conn net.Conn, state http.ConnState) {
-	if state == http.StateNew {
-		srv.wg.Add(1)
-	} else if state == http.StateClosed {
-		srv.wg.Done()
-	}
-}
-
-func (srv *HummingbirdServer) BeginShutdown() {
-	srv.SetKeepAlivesEnabled(false)
-	srv.Listener.Close()
-}
-
-func (srv *HummingbirdServer) Wait() {
-	srv.wg.Wait()
+	logger   LowLevelLogger
 }
 
 func ShutdownStdio() {
@@ -267,8 +250,8 @@ func RunServers(GetServer func(Config, *flag.FlagSet) (string, int, Server, LowL
 				WriteTimeout: 24 * time.Hour,
 			},
 			Listener: sock,
+			logger:   logger,
 		}
-		srv.Server.ConnState = srv.ConnStateChange
 		go srv.Serve(sock)
 		servers = append(servers, &srv)
 		logger.Err(fmt.Sprintf("Server started on port %d", port))
@@ -284,19 +267,22 @@ func RunServers(GetServer func(Config, *flag.FlagSet) (string, int, Server, LowL
 		s := <-c
 		if s == syscall.SIGINT {
 			for _, srv := range servers {
-				srv.BeginShutdown()
+				ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
+				defer cancel()
+				if err := srv.Shutdown(ctx); err != nil {
+					// failure/timeout shutting down the server gracefully
+					srv.logger.Err(fmt.Sprintf("Error while graceful shutdown: %v", err))
+				}
 			}
-			go func() {
-				time.Sleep(time.Minute * 5)
-				os.Exit(0)
-			}()
-			for _, srv := range servers {
-				srv.Wait()
-			}
-			time.Sleep(time.Second * 5)
 		} else if s == syscall.SIGABRT {
 			pid := os.Getpid()
 			DumpGoroutinesStackTrace(pid)
+		} else {
+			for _, srv := range servers {
+				if err := srv.Close(); err != nil {
+					srv.logger.Err(fmt.Sprintf("Error shutdown: %v", err))
+				}
+			}
 		}
 	}
 }
