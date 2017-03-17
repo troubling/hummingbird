@@ -17,6 +17,7 @@ package pickle
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -27,6 +28,19 @@ import (
 var markster = "HI, I'M MARK!"
 var mark = interface{}(&markster)
 
+type PickleTuple struct {
+	Len int
+	A   interface{}
+	B   interface{}
+	C   interface{}
+	D   interface{}
+}
+
+type PickleArray struct {
+	Type string
+	Data []interface{}
+}
+
 type unpickleState struct {
 	stack      []interface{}
 	top        int
@@ -34,6 +48,10 @@ type unpickleState struct {
 	dataOffset int
 	memoKey    []int
 	memoVal    []interface{}
+}
+
+type pickleGlobal struct {
+	name string
 }
 
 func (s *unpickleState) push(item interface{}) {
@@ -104,32 +122,40 @@ func (s *unpickleState) readString(delim byte) (string, error) {
 	return retval, nil
 }
 
+func (s *unpickleState) readFloat64() (float64, error) {
+	if len(s.data)-s.dataOffset < 8 {
+		return 0, io.EOF
+	}
+	v := binary.BigEndian.Uint64(s.data[s.dataOffset : s.dataOffset+8])
+	s.dataOffset += 8
+	return math.Float64frombits(v), nil
+}
+
 func (s *unpickleState) readUint64() (uint64, error) {
 	if len(s.data)-s.dataOffset < 8 {
 		return 0, io.EOF
 	}
-	r := uint64(s.data[s.dataOffset]) | uint64(s.data[s.dataOffset+1])<<8 | uint64(s.data[s.dataOffset+2])<<16 | uint64(s.data[s.dataOffset+3])<<24 |
-		uint64(s.data[s.dataOffset+4])<<32 | uint64(s.data[s.dataOffset+5])<<40 | uint64(s.data[s.dataOffset+6])<<48 | uint64(s.data[s.dataOffset+7])<<56
+	v := binary.LittleEndian.Uint64(s.data[s.dataOffset : s.dataOffset+8])
 	s.dataOffset += 8
-	return r, nil
+	return v, nil
 }
 
 func (s *unpickleState) readUint32() (uint32, error) {
 	if len(s.data)-s.dataOffset < 4 {
 		return 0, io.EOF
 	}
-	r := uint32(s.data[s.dataOffset]) | uint32(s.data[s.dataOffset+1])<<8 | uint32(s.data[s.dataOffset+2])<<16 | uint32(s.data[s.dataOffset+3])<<24
+	v := binary.LittleEndian.Uint32(s.data[s.dataOffset : s.dataOffset+4])
 	s.dataOffset += 4
-	return r, nil
+	return v, nil
 }
 
 func (s *unpickleState) readUint16() (uint16, error) {
 	if len(s.data)-s.dataOffset < 2 {
 		return 0, io.EOF
 	}
-	r := uint16(s.data[s.dataOffset]) | uint16(s.data[s.dataOffset+1])<<8
+	v := binary.LittleEndian.Uint16(s.data[s.dataOffset : s.dataOffset+2])
 	s.dataOffset += 2
-	return r, nil
+	return v, nil
 }
 
 func (s *unpickleState) getMemo(m int) interface{} {
@@ -188,12 +214,24 @@ func pythonString(src string) (string, error) {
 	return strconv.Unquote(string(dst))
 }
 
-func isHashable(i interface{}) bool {
-	switch i.(type) {
+func mapKey(i interface{}) (interface{}, error) {
+	switch i := i.(type) {
 	case string, uint8, uint16, uint32, uint64, int8, int16, int32, int64, float32, float64:
-		return true
+		return i, nil
+	case []interface{}:
+		pt := PickleTuple{Len: len(i)}
+		at := []*interface{}{&pt.A, &pt.B, &pt.C, &pt.D}
+		for j, v := range i {
+			switch v.(type) {
+			case string, uint8, uint16, uint32, uint64, int8, int16, int32, int64, float32, float64:
+				*at[j] = v
+			default:
+				return nil, errors.New("Unhashable tuple entry")
+			}
+		}
+		return pt, nil
 	default:
-		return false
+		return nil, errors.New("Invalid map key type")
 	}
 }
 
@@ -270,7 +308,7 @@ func PickleLoads(data []byte) (interface{}, error) {
 			if err1 != nil || err2 != nil {
 				return nil, errors.New("Incomplete pickle (SETITEM): stack empty")
 			}
-			if !isHashable(key) {
+			if key, err = mapKey(key); err != nil {
 				return nil, errors.New("Invalid pickle (SETITEM): invalid key type")
 			}
 			top, err := state.peek()
@@ -299,10 +337,11 @@ func PickleLoads(data []byte) (interface{}, error) {
 				return nil, errors.New("Incomplete pickle (SETITEMS): stack top isn't a map")
 			}
 			for j := 0; j < len(vals); j += 2 {
-				if !isHashable(vals[j]) {
+				if key, err := mapKey(vals[j]); err != nil {
 					return nil, errors.New("Invalid pickle (SETITEMS): invalid key type")
+				} else {
+					dict[key] = vals[j+1]
 				}
-				dict[vals[j]] = vals[j+1]
 			}
 
 		case '}': // EMPTY_DICT
@@ -317,10 +356,11 @@ func PickleLoads(data []byte) (interface{}, error) {
 			}
 			dict := make(map[interface{}]interface{}, len(vals)/2)
 			for j := 0; j < len(vals); j += 2 {
-				if !isHashable(vals[j]) {
+				if key, err := mapKey(vals[j]); err != nil {
 					return nil, errors.New("Invalid pickle (DICT): invalid key type")
+				} else {
+					dict[key] = vals[j+1]
 				}
-				dict[vals[j]] = vals[j+1]
 			}
 			state.push(dict)
 		case ']', ')': // EMPTY_LIST, EMPTY_TUPLE
@@ -438,11 +478,11 @@ func PickleLoads(data []byte) (interface{}, error) {
 			}
 			state.push(val)
 		case 'G': // BINFLOAT
-			val, err := state.readUint64()
+			val, err := state.readFloat64()
 			if err != nil {
 				return nil, errors.New("Incomplete pickle (BINFLOAT): " + err.Error())
 			}
-			state.push(math.Float64frombits(val))
+			state.push(val)
 
 		case 'p': // PUT
 			line, err := state.readString('\n')
@@ -500,6 +540,42 @@ func PickleLoads(data []byte) (interface{}, error) {
 				return nil, errors.New("Invalid pickle (PUT): " + err.Error())
 			}
 			state.setMemo(int(id), top)
+		case 'c': // GLOBAL
+			module, err := state.readString('\n')
+			if err != nil {
+				return nil, errors.New("Incomplete pickle (GLOBAL): " + err.Error())
+			}
+			klass, err := state.readString('\n')
+			if err != nil {
+				return nil, errors.New("Incomplete pickle (GLOBAL): " + err.Error())
+			}
+			state.push(pickleGlobal{module + "." + klass})
+		case 'R': // REDUCE
+			arg, err1 := state.pop()
+			c, err2 := state.pop()
+			if err1 != nil || err2 != nil {
+				return nil, errors.New("Incomplete pickle (REDUCE): stack empty")
+			}
+			callable, valid := c.(pickleGlobal)
+			if !valid {
+				return nil, errors.New("Invalid pickle (REDUCE): non-callable on stack")
+			}
+			// we'll just have to re-implement/fake python callables as the need arises.
+			switch callable.name {
+			case "array.array":
+				as, valid := arg.([]interface{})
+				if !valid || len(as) != 2 {
+					return nil, errors.New("Invalid pickle (REDUCE): invalid array.array args")
+				}
+				tc, ok1 := as[0].(string)
+				val, ok2 := as[1].([]interface{})
+				if !ok1 || !ok2 {
+					return nil, errors.New("Invalid pickle (REDUCE): invalid array.array args")
+				}
+				state.push(PickleArray{Type: tc, Data: val})
+			default:
+				return nil, errors.New("Invalid pickle (REDUCE): unknown callable on stack")
+			}
 		default:
 			return nil, errors.New(fmt.Sprintf("Unknown pickle opcode: %c (%x)\n", op, op))
 		}
