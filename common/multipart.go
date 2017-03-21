@@ -20,7 +20,7 @@
 // TODO: Some of this code was pulled from the go stdlib and modified. figure out how to attribute this.
 // https://wiki.openstack.org/wiki/LegalIssuesFAQ#Incorporating_BSD.2FMIT_Licensed_Code
 
-package hummingbird
+package common
 
 import (
 	"bytes"

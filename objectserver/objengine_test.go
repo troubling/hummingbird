@@ -21,12 +21,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common/conf"
 )
 
 func TestObjectEngineRegistry(t *testing.T) {
 	testErr := errors.New("Not implemented")
-	constructor := func(hummingbird.Config, *hummingbird.Policy, *flag.FlagSet) (ObjectEngine, error) {
+	constructor := func(conf.Config, *conf.Policy, *flag.FlagSet) (ObjectEngine, error) {
 		return nil, testErr
 	}
 
@@ -34,7 +34,7 @@ func TestObjectEngineRegistry(t *testing.T) {
 
 	fconstructor, err := FindEngine("test")
 	require.Nil(t, err)
-	eng, err := fconstructor(hummingbird.Config{}, nil, nil)
+	eng, err := fconstructor(conf.Config{}, nil, nil)
 	require.Nil(t, eng)
 	require.Equal(t, err, testErr)
 

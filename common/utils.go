@@ -13,16 +13,14 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-package hummingbird
+package common
 
 import (
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log/syslog"
 	"math/rand"
 	"net/http"
 	"os"
@@ -206,53 +204,6 @@ func CanonicalTimestamp(t float64) string {
 func LooksTrue(check string) bool {
 	check = strings.TrimSpace(strings.ToLower(check))
 	return check == "true" || check == "yes" || check == "1" || check == "on" || check == "t" || check == "y"
-}
-
-var syslogFacilityMapping = map[string]syslog.Priority{"LOG_USER": syslog.LOG_USER,
-	"LOG_MAIL": syslog.LOG_MAIL, "LOG_DAEMON": syslog.LOG_DAEMON,
-	"LOG_AUTH": syslog.LOG_AUTH, "LOG_SYSLOG": syslog.LOG_SYSLOG,
-	"LOG_LPR": syslog.LOG_LPR, "LOG_NEWS": syslog.LOG_NEWS,
-	"LOG_UUCP": syslog.LOG_UUCP, "LOG_CRON": syslog.LOG_CRON,
-	"LOG_AUTHPRIV": syslog.LOG_AUTHPRIV, "LOG_FTP": syslog.LOG_FTP,
-	"LOG_LOCAL0": syslog.LOG_LOCAL0, "LOG_LOCAL1": syslog.LOG_LOCAL1,
-	"LOG_LOCAL2": syslog.LOG_LOCAL2, "LOG_LOCAL3": syslog.LOG_LOCAL3,
-	"LOG_LOCAL4": syslog.LOG_LOCAL4, "LOG_LOCAL5": syslog.LOG_LOCAL5,
-	"LOG_LOCAL6": syslog.LOG_LOCAL6, "LOG_LOCAL7": syslog.LOG_LOCAL7}
-
-type consoleLogger struct{}
-
-func (c *consoleLogger) Err(m string) error {
-	fmt.Println("ERROR:", m)
-	return nil
-}
-
-func (c *consoleLogger) Info(m string) error {
-	fmt.Println("INFO:", m)
-	return nil
-}
-
-func (c *consoleLogger) Debug(m string) error {
-	fmt.Println("DEBUG:", m)
-	return nil
-}
-
-// SetupLogger pulls configuration information from the config and flags to create a UDP syslog logger.
-// If -d was not specified, it also logs to the console.
-func SetupLogger(conf Config, flags *flag.FlagSet, section, prefix string) (LowLevelLogger, error) {
-	vFlag := flags.Lookup("v")
-	dFlag := flags.Lookup("d")
-	if vFlag != nil && dFlag != nil && vFlag.Value.(flag.Getter).Get().(bool) && !dFlag.Value.(flag.Getter).Get().(bool) {
-		return &consoleLogger{}, nil
-	}
-	facility := conf.GetDefault(section, "log_facility", "LOG_LOCAL0")
-	host := conf.GetDefault(section, "log_udp_host", "127.0.0.1")
-	port := conf.GetInt(section, "log_udp_port", 514)
-	dialHost := fmt.Sprintf("%s:%d", host, port)
-	logger, err := syslog.Dial("udp", dialHost, syslogFacilityMapping[facility], prefix)
-	if err != nil {
-		return nil, fmt.Errorf("Unable to dial logger: %v", err)
-	}
-	return logger, nil
 }
 
 func UUID() string {
@@ -502,30 +453,6 @@ func NewKeyedLimit(limitPerKey int64, totalLimit int64) *KeyedLimit {
 	return &KeyedLimit{limitPerKey: limitPerKey, totalLimit: totalLimit, locked: make(map[string]bool), inUse: make(map[string]int64)}
 }
 
-var configLocations = []string{"/etc/hummingbird/hummingbird.conf", "/etc/swift/swift.conf"}
-
-// GetHashPrefixAndSuffix retrieves the hash path prefix and suffix from
-// the correct configs based on the environments setup. The suffix cannot
-// be nil
-type getHashPrefixAndSuffixFunc func() (pfx string, sfx string, err error)
-
-var GetHashPrefixAndSuffix getHashPrefixAndSuffixFunc = normalGetHashPrefixAndSuffix
-
-func normalGetHashPrefixAndSuffix() (prefix string, suffix string, err error) {
-	for _, loc := range configLocations {
-		if conf, e := LoadConfig(loc); e == nil {
-			var ok bool
-			prefix, _ = conf.Get("swift-hash", "swift_hash_path_prefix")
-			if suffix, ok = conf.Get("swift-hash", "swift_hash_path_suffix"); !ok {
-				err = errors.New("Hash path suffix not defined")
-				return
-			}
-			break
-		}
-	}
-	return
-}
-
 func Exists(file string) bool {
 	if _, err := os.Stat(file); os.IsNotExist(err) {
 		return false
@@ -583,18 +510,4 @@ func CollectRuntimeMetrics(statsdHost string, statsdPort, statsdPause int64, pre
 		time.Sleep(time.Duration(statsdPause) * time.Second)
 	}
 
-}
-
-func DumpGoroutinesStackTrace(pid int) {
-	filename := filepath.Join("/tmp", strconv.Itoa(pid)+".dump")
-	buf := make([]byte, 1<<20)
-	for {
-		n := runtime.Stack(buf, true)
-		if n < len(buf) {
-			buf = buf[:n]
-			break
-		}
-		buf = make([]byte, 2*len(buf))
-	}
-	ioutil.WriteFile(filename, buf, 0644)
 }

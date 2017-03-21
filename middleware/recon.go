@@ -13,7 +13,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-package hummingbird
+package middleware
 
 import (
 	"bufio"
@@ -35,12 +35,14 @@ import (
 	"github.com/shirou/gopsutil/load"
 	"github.com/shirou/gopsutil/mem"
 	"github.com/shirou/gopsutil/process"
+	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/srv"
 )
 
 func DumpReconCache(reconCachePath string, source string, cacheData map[string]interface{}) error {
 	reconFile := filepath.Join(reconCachePath, source+".recon")
 
-	if lock, err := LockPath(filepath.Dir(reconFile), 5*time.Second); err != nil {
+	if lock, err := common.LockPath(filepath.Dir(reconFile), 5*time.Second); err != nil {
 		return err
 	} else {
 		defer lock.Close()
@@ -82,7 +84,7 @@ func DumpReconCache(reconCachePath string, source string, cacheData map[string]i
 		}
 	}
 	newdata, _ := json.Marshal(reconData)
-	return WriteFileAtomic(reconFile, newdata, 0600)
+	return common.WriteFileAtomic(reconFile, newdata, 0600)
 }
 
 // getMem dumps the contents of /proc/meminfo if it's available, otherwise it pulls what it can from gopsutil/mem
@@ -310,7 +312,7 @@ func diskUsage(driveRoot string) ([]map[string]interface{}, error) {
 func ReconHandler(driveRoot string, writer http.ResponseWriter, request *http.Request) {
 	var content interface{} = nil
 
-	vars := GetVars(request)
+	vars := srv.GetVars(request)
 
 	switch vars["method"] {
 	case "mem":

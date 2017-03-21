@@ -13,7 +13,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-package hummingbird
+package middleware
 
 import (
 	"bytes"
@@ -26,6 +26,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/troubling/hummingbird/common/srv"
 )
 
 func TestDumpReconCache(t *testing.T) {
@@ -152,7 +153,7 @@ func (w *testWriter) WriteHeader(s int) {
 func TestGetMem(t *testing.T) {
 	r, _ := http.NewRequest("GET", "/I/dont/think/this/matters", nil)
 	vars := map[string]string{"method": "mem"}
-	r = SetVars(r, vars)
+	r = srv.SetVars(r, vars)
 	w := &testWriter{make(http.Header), bytes.NewBuffer(nil), 0}
 	ReconHandler("", w, r)
 	output := w.f.Bytes()
@@ -166,7 +167,7 @@ func TestGetMem(t *testing.T) {
 func TestGetLoad(t *testing.T) {
 	r, _ := http.NewRequest("GET", "/I/dont/think/this/matters", nil)
 	vars := map[string]string{"method": "load"}
-	r = SetVars(r, vars)
+	r = srv.SetVars(r, vars)
 	w := &testWriter{make(http.Header), bytes.NewBuffer(nil), 0}
 	ReconHandler("", w, r)
 	output := w.f.Bytes()

@@ -21,9 +21,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/troubling/hummingbird/hummingbird"
-
 	"github.com/stretchr/testify/require"
+	"github.com/troubling/hummingbird/common"
 )
 
 func TestTempFile(t *testing.T) {
@@ -34,7 +33,7 @@ func TestTempFile(t *testing.T) {
 	require.Nil(t, err)
 	f.Write([]byte("some crap"))
 	require.Nil(t, f.Save(filepath.Join(dir, "somefile")))
-	require.True(t, hummingbird.Exists(filepath.Join(dir, "somefile")))
+	require.True(t, common.Exists(filepath.Join(dir, "somefile")))
 }
 
 func TestTempFileDirRemoved(t *testing.T) {
@@ -49,7 +48,7 @@ func TestTempFileDirRemoved(t *testing.T) {
 	f.Write([]byte("some crap"))
 	os.RemoveAll(dir)
 	require.Nil(t, f.Save(filepath.Join(dir, "somefile")))
-	require.True(t, hummingbird.Exists(filepath.Join(dir, "somefile")))
+	require.True(t, common.Exists(filepath.Join(dir, "somefile")))
 }
 
 func TestTempFileReplace(t *testing.T) {
@@ -61,7 +60,7 @@ func TestTempFileReplace(t *testing.T) {
 	require.Nil(t, err)
 	f.Write([]byte("some crap"))
 	require.Nil(t, f.Save(filepath.Join(dir, "somefile")))
-	require.True(t, hummingbird.Exists(filepath.Join(dir, "somefile")))
+	require.True(t, common.Exists(filepath.Join(dir, "somefile")))
 	data, err := ioutil.ReadFile(filepath.Join(dir, "somefile"))
 	require.Nil(t, err)
 	require.Equal(t, []byte("some crap"), data)

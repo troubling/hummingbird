@@ -30,7 +30,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/pickle"
+	"github.com/troubling/hummingbird/common/ring"
+	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/middleware"
 )
 
 var StatsReportInterval = 300 * time.Second
@@ -38,17 +43,17 @@ var TmpEmptyTime = 24 * time.Hour
 var ReplicateDeviceTimeout = 4 * time.Hour
 
 type PriorityRepJob struct {
-	Partition  uint64                `json:"partition"`
-	FromDevice *hummingbird.Device   `json:"from_device"`
-	ToDevices  []*hummingbird.Device `json:"to_devices"`
-	Policy     int                   `json:"policy"`
+	Partition  uint64         `json:"partition"`
+	FromDevice *ring.Device   `json:"from_device"`
+	ToDevices  []*ring.Device `json:"to_devices"`
+	Policy     int            `json:"policy"`
 }
 
 // minimal ring interface for replication
 type replicationRing interface {
-	GetJobNodes(partition uint64, localDevice int) (response []*hummingbird.Device, handoff bool)
-	GetMoreNodes(partition uint64) hummingbird.MoreNodes
-	LocalDevices(localPort int) (devs []*hummingbird.Device, err error)
+	GetJobNodes(partition uint64, localDevice int) (response []*ring.Device, handoff bool)
+	GetMoreNodes(partition uint64) ring.MoreNodes
+	LocalDevices(localPort int) (devs []*ring.Device, err error)
 }
 
 type quarantineFileError struct {
@@ -59,7 +64,7 @@ func (q quarantineFileError) Error() string {
 	return q.msg
 }
 
-func deviceKey(dev *hummingbird.Device, policy int) string {
+func deviceKey(dev *ring.Device, policy int) string {
 	if policy == 0 {
 		return dev.Device
 	}
@@ -86,7 +91,7 @@ func getFile(filePath string) (fp *os.File, xattrs []byte, size int64, err error
 	}
 
 	// Perform a mini-audit, since it's cheap and we can potentially avoid spreading bad data around.
-	v, err := hummingbird.PickleLoads(rawxattr)
+	v, err := pickle.PickleLoads(rawxattr)
 	if err != nil {
 		return nil, nil, 0, quarantineFileError{"error unpickling xattrs"}
 	}
@@ -143,17 +148,17 @@ type ReplicationDevice interface {
 type replicationDevice struct {
 	// If you have a better way to make struct methods that are overridable for tests, please call my house.
 	i interface {
-		beginReplication(dev *hummingbird.Device, partition string, hashes bool, rChan chan beginReplicationResponse)
+		beginReplication(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse)
 		listObjFiles(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool)
 		syncFile(objFile string, dst []*syncFileArg) (syncs int, insync int, err error)
-		replicateLocal(partition string, nodes []*hummingbird.Device, moreNodes hummingbird.MoreNodes)
-		replicateHandoff(partition string, nodes []*hummingbird.Device)
+		replicateLocal(partition string, nodes []*ring.Device, moreNodes ring.MoreNodes)
+		replicateHandoff(partition string, nodes []*ring.Device)
 		cleanTemp()
 		listPartitions() ([]string, error)
 		replicatePartition(partition string)
 	}
 	r      *Replicator
-	dev    *hummingbird.Device
+	dev    *ring.Device
 	policy int
 	cancel chan struct{}
 	priRep chan PriorityRepJob
@@ -175,7 +180,7 @@ func (rd *replicationDevice) updateStat(stat string, amount int64) {
 }
 
 type beginReplicationResponse struct {
-	dev    *hummingbird.Device
+	dev    *ring.Device
 	conn   RepConn
 	hashes map[string]string
 	err    error
@@ -235,7 +240,7 @@ func (rd *replicationDevice) listObjFiles(objChan chan string, cancel chan struc
 
 type syncFileArg struct {
 	conn RepConn
-	dev  *hummingbird.Device
+	dev  *ring.Device
 }
 
 func (rd *replicationDevice) syncFile(objFile string, dst []*syncFileArg) (syncs int, insync int, err error) {
@@ -314,7 +319,7 @@ func (rd *replicationDevice) syncFile(objFile string, dst []*syncFileArg) (syncs
 	return syncs, insync, nil
 }
 
-func (rd *replicationDevice) beginReplication(dev *hummingbird.Device, partition string, hashes bool, rChan chan beginReplicationResponse) {
+func (rd *replicationDevice) beginReplication(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse) {
 	var brr BeginReplicationResponse
 	if rc, err := NewRepConn(dev, partition, rd.policy); err != nil {
 		rChan <- beginReplicationResponse{dev: dev, err: err}
@@ -327,7 +332,7 @@ func (rd *replicationDevice) beginReplication(dev *hummingbird.Device, partition
 	}
 }
 
-func (rd *replicationDevice) replicateLocal(partition string, nodes []*hummingbird.Device, moreNodes hummingbird.MoreNodes) {
+func (rd *replicationDevice) replicateLocal(partition string, nodes []*ring.Device, moreNodes ring.MoreNodes) {
 	path := filepath.Join(rd.r.deviceRoot, rd.dev.Device, PolicyDir(rd.policy), partition)
 	syncCount := 0
 	startGetHashesRemote := time.Now()
@@ -421,7 +426,7 @@ func (rd *replicationDevice) replicateLocal(partition string, nodes []*hummingbi
 	}
 }
 
-func (rd *replicationDevice) replicateHandoff(partition string, nodes []*hummingbird.Device) {
+func (rd *replicationDevice) replicateHandoff(partition string, nodes []*ring.Device) {
 	path := filepath.Join(rd.r.deviceRoot, rd.dev.Device, PolicyDir(rd.policy), partition)
 	syncCount := 0
 	remoteConnections := make(map[int]RepConn)
@@ -535,11 +540,11 @@ func (rd *replicationDevice) listPartitions() ([]string, error) {
 func (rd *replicationDevice) Replicate() {
 	defer rd.r.LogPanics(fmt.Sprintf("PANIC REPLICATING DEVICE: %s", rd.dev.Device))
 	rd.updateStat("startRun", 1)
-	if mounted, err := hummingbird.IsMount(filepath.Join(rd.r.deviceRoot, rd.dev.Device)); rd.r.checkMounts && (err != nil || mounted != true) {
+	if mounted, err := common.IsMount(filepath.Join(rd.r.deviceRoot, rd.dev.Device)); rd.r.checkMounts && (err != nil || mounted != true) {
 		rd.r.LogError("[replicateDevice] Drive not mounted: %s", rd.dev.Device)
 		return
 	}
-	if hummingbird.Exists(filepath.Join(rd.r.deviceRoot, rd.dev.Device, "lock_device")) {
+	if common.Exists(filepath.Join(rd.r.deviceRoot, rd.dev.Device, "lock_device")) {
 		return
 	}
 
@@ -589,7 +594,7 @@ func (rd *replicationDevice) ReplicateLoop() {
 
 type NoMoreNodes struct{}
 
-func (n *NoMoreNodes) Next() *hummingbird.Device {
+func (n *NoMoreNodes) Next() *ring.Device {
 	return nil
 }
 
@@ -639,7 +644,7 @@ func (rd *replicationDevice) processPriorityJobs() {
 	}
 }
 
-var newReplicationDevice = func(dev *hummingbird.Device, policy int, r *Replicator) *replicationDevice {
+var newReplicationDevice = func(dev *ring.Device, policy int, r *Replicator) *replicationDevice {
 	rd := &replicationDevice{
 		r:      r,
 		dev:    dev,
@@ -667,7 +672,7 @@ type Replicator struct {
 	checkMounts        bool
 	deviceRoot         string
 	reconCachePath     string
-	logger             hummingbird.LowLevelLogger
+	logger             srv.LowLevelLogger
 	logLevel           string
 	port               int
 	bindIp             string
@@ -774,7 +779,7 @@ func (r *Replicator) reportStats() {
 	}
 
 	if allHaveCompleted {
-		hummingbird.DumpReconCache(r.reconCachePath, "object",
+		middleware.DumpReconCache(r.reconCachePath, "object",
 			map[string]interface{}{
 				"object_replication_time": float64(totalDuration) / float64(len(r.runningDevices)) / float64(time.Second),
 				"object_replication_last": float64(maxLastPass.UnixNano()) / float64(time.Second),
@@ -855,8 +860,8 @@ func (r *Replicator) RunForever() {
 
 // Run a single replication pass. (NOTE: we will prob get rid of this because of priorityRepl)
 func (r *Replicator) Run() {
-	for policy, ring := range r.Rings {
-		devices, err := ring.LocalDevices(r.port)
+	for policy, theRing := range r.Rings {
+		devices, err := theRing.LocalDevices(r.port)
 		if err != nil {
 			r.LogError("Error getting local devices from ring: %v", err)
 			return
@@ -866,7 +871,7 @@ func (r *Replicator) Run() {
 			key := rd.Key()
 			r.runningDevices[key] = rd
 			r.onceWaiting++
-			go func(dev *hummingbird.Device, key string) {
+			go func(dev *ring.Device, key string) {
 				r.runningDevices[key].Replicate()
 				r.onceDone <- struct{}{}
 			}(dev, key)
@@ -896,7 +901,7 @@ func (r *Replicator) LogPanics(m string) {
 	}
 }
 
-func NewReplicator(serverconf hummingbird.Config, flags *flag.FlagSet) (hummingbird.Daemon, error) {
+func NewReplicator(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, error) {
 	if !serverconf.HasSection("object-replicator") {
 		return nil, fmt.Errorf("Unable to find object-replicator config section")
 	}
@@ -914,7 +919,7 @@ func NewReplicator(serverconf hummingbird.Config, flags *flag.FlagSet) (hummingb
 		port:             int(serverconf.GetInt("object-replicator", "bind_port", 6500)),
 		bindIp:           serverconf.GetDefault("object-replicator", "bind_ip", "0.0.0.0"),
 		quorumDelete:     serverconf.GetBool("object-replicator", "quorum_delete", false),
-		reclaimAge:       int64(serverconf.GetInt("object-replicator", "reclaim_age", int64(hummingbird.ONE_WEEK))),
+		reclaimAge:       int64(serverconf.GetInt("object-replicator", "reclaim_age", int64(common.ONE_WEEK))),
 		logLevel:         serverconf.GetDefault("object-replicator", "log_level", "INFO"),
 		Rings:            make(map[int]replicationRing),
 		concurrency:      concurrency,
@@ -927,19 +932,19 @@ func NewReplicator(serverconf hummingbird.Config, flags *flag.FlagSet) (hummingb
 		partSleepTime:    time.Duration(serverconf.GetInt("object-replicator", "ms_per_part", 100)) * time.Millisecond,
 	}
 
-	hashPathPrefix, hashPathSuffix, err := hummingbird.GetHashPrefixAndSuffix()
+	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
 	if err != nil {
 		return nil, fmt.Errorf("Unable to get hash prefix and suffix")
 	}
-	for _, policy := range hummingbird.LoadPolicies() {
+	for _, policy := range conf.LoadPolicies() {
 		if policy.Type != "replication" {
 			continue
 		}
-		if replicator.Rings[policy.Index], err = hummingbird.GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index); err != nil {
+		if replicator.Rings[policy.Index], err = ring.GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index); err != nil {
 			return nil, fmt.Errorf("Unable to load ring for Policy %d.", policy.Index)
 		}
 	}
-	if replicator.logger, err = hummingbird.SetupLogger(serverconf, flags, "app:object-replicator", "object-replicator"); err != nil {
+	if replicator.logger, err = srv.SetupLogger(serverconf, flags, "app:object-replicator", "object-replicator"); err != nil {
 		return nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 	devices_flag := flags.Lookup("devices")
@@ -974,7 +979,7 @@ func NewReplicator(serverconf hummingbird.Config, flags *flag.FlagSet) (hummingb
 		statsdPause := serverconf.GetInt("object-replicator", "statsd_collection_pause", 10)
 		basePrefix := serverconf.GetDefault("object-replicator", "log_statsd_metric_prefix", "")
 		prefix := basePrefix + ".go.objectreplicator"
-		go hummingbird.CollectRuntimeMetrics(statsdHost, statsdPort, statsdPause, prefix)
+		go common.CollectRuntimeMetrics(statsdHost, statsdPort, statsdPause, prefix)
 	}
 	return replicator, nil
 }

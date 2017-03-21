@@ -22,7 +22,10 @@ import (
 	"net/http/httptest"
 	"strings"
 
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/ring"
+	"github.com/troubling/hummingbird/common/srv"
 )
 
 type testUser struct {
@@ -34,12 +37,12 @@ type testUser struct {
 }
 
 type TempAuth struct {
-	mc        hummingbird.MemcacheRing
+	mc        ring.MemcacheRing
 	testUsers []testUser
 	next      http.Handler
 }
 
-func NewTempAuth(mc hummingbird.MemcacheRing, config hummingbird.Config) func(http.Handler) http.Handler {
+func NewTempAuth(mc ring.MemcacheRing, config conf.Config) func(http.Handler) http.Handler {
 	var users []testUser
 	// Hardcoding "tempauth" is incorrect. The actual name of the section
 	// is determined by the entry in the pipeline= in [pipeline:main]. XXX
@@ -100,7 +103,7 @@ func (ta *TempAuth) getMiddleware(next http.Handler) http.Handler {
 func (ta *TempAuth) login(account, user, key string) (string, string, error) {
 	for _, tu := range ta.testUsers {
 		if tu.Account == account && tu.Username == user && tu.Password == key {
-			token := hummingbird.UUID()
+			token := common.UUID()
 			ta.mc.Set(token, true, 3600)
 			return token, tu.Url, nil
 		}
@@ -123,7 +126,7 @@ func (ta *TempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 		user := request.Header.Get("X-Auth-User")
 		parts := strings.Split(user, ":")
 		if len(parts) != 2 {
-			hummingbird.StandardResponse(writer, 400)
+			srv.StandardResponse(writer, 400)
 			return
 		}
 		account := parts[0]
@@ -131,7 +134,7 @@ func (ta *TempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 		password := request.Header.Get("X-Auth-Key")
 		token, url, err := ta.login(account, user, password)
 		if err != nil {
-			hummingbird.StandardResponse(writer, 401)
+			srv.StandardResponse(writer, 401)
 			return
 		}
 		writer.Header().Set("X-Storage-Token", token)
@@ -141,12 +144,12 @@ func (ta *TempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 		} else {
 			writer.Header().Set("X-Storage-URL", fmt.Sprintf("http://%s/v1/AUTH_%s", request.Host, account))
 		}
-		hummingbird.StandardResponse(writer, 200)
+		srv.StandardResponse(writer, 200)
 	} else if strings.HasPrefix(request.URL.Path, "/v1") || strings.HasPrefix(request.URL.Path, "/V1") {
 		token := request.Header.Get("X-Auth-Token")
 		valid, err := ta.mc.Get(token)
 		if err != nil {
-			hummingbird.StandardResponse(writer, 401)
+			srv.StandardResponse(writer, 401)
 			return
 		}
 		v, ok := valid.(bool)

@@ -18,18 +18,19 @@ package proxyserver
 import (
 	"net/http"
 
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/srv"
 )
 
 func (server *ProxyServer) AccountGetHandler(writer http.ResponseWriter, request *http.Request) {
-	vars := hummingbird.GetVars(request)
+	vars := srv.GetVars(request)
 	ctx := GetProxyContext(request)
 	if ctx == nil {
-		hummingbird.StandardResponse(writer, 500)
+		srv.StandardResponse(writer, 500)
 		return
 	}
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
-		hummingbird.StandardResponse(writer, 401)
+		srv.StandardResponse(writer, 401)
 		return
 	}
 	options := map[string]string{
@@ -47,19 +48,19 @@ func (server *ProxyServer) AccountGetHandler(writer http.ResponseWriter, request
 	writer.WriteHeader(code)
 	if r != nil {
 		defer r.Close()
-		hummingbird.Copy(r, writer)
+		common.Copy(r, writer)
 	}
 }
 
 func (server *ProxyServer) AccountHeadHandler(writer http.ResponseWriter, request *http.Request) {
-	vars := hummingbird.GetVars(request)
+	vars := srv.GetVars(request)
 	ctx := GetProxyContext(request)
 	if ctx == nil {
-		hummingbird.StandardResponse(writer, 500)
+		srv.StandardResponse(writer, 500)
 		return
 	}
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
-		hummingbird.StandardResponse(writer, 401)
+		srv.StandardResponse(writer, 401)
 		return
 	}
 	headers, code := server.C.HeadAccount(vars["account"], request.Header)
@@ -70,31 +71,31 @@ func (server *ProxyServer) AccountHeadHandler(writer http.ResponseWriter, reques
 }
 
 func (server *ProxyServer) AccountPutHandler(writer http.ResponseWriter, request *http.Request) {
-	vars := hummingbird.GetVars(request)
+	vars := srv.GetVars(request)
 	ctx := GetProxyContext(request)
 	if ctx == nil {
-		hummingbird.StandardResponse(writer, 500)
+		srv.StandardResponse(writer, 500)
 		return
 	}
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
-		hummingbird.StandardResponse(writer, 401)
+		srv.StandardResponse(writer, 401)
 		return
 	}
-	request.Header.Set("X-Timestamp", hummingbird.GetTimestamp())
-	hummingbird.StandardResponse(writer, server.C.PutAccount(vars["account"], request.Header))
+	request.Header.Set("X-Timestamp", common.GetTimestamp())
+	srv.StandardResponse(writer, server.C.PutAccount(vars["account"], request.Header))
 }
 
 func (server *ProxyServer) AccountDeleteHandler(writer http.ResponseWriter, request *http.Request) {
-	vars := hummingbird.GetVars(request)
+	vars := srv.GetVars(request)
 	ctx := GetProxyContext(request)
 	if ctx == nil {
-		hummingbird.StandardResponse(writer, 500)
+		srv.StandardResponse(writer, 500)
 		return
 	}
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
-		hummingbird.StandardResponse(writer, 401)
+		srv.StandardResponse(writer, 401)
 		return
 	}
-	request.Header.Set("X-Timestamp", hummingbird.GetTimestamp())
-	hummingbird.StandardResponse(writer, server.C.DeleteAccount(vars["account"], request.Header))
+	request.Header.Set("X-Timestamp", common.GetTimestamp())
+	srv.StandardResponse(writer, server.C.DeleteAccount(vars["account"], request.Header))
 }

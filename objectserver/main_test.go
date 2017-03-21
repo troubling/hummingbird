@@ -32,7 +32,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/pickle"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -69,7 +71,7 @@ func makeObjectServer(settings ...string) (*TestServer, error) {
 	for i := 0; i < len(settings); i += 2 {
 		configString += fmt.Sprintf("%s=%s\n", settings[i], settings[i+1])
 	}
-	conf, err := hummingbird.StringConfig(configString)
+	conf, err := conf.StringConfig(configString)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +109,7 @@ func TestReplicateRecalculate(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	data, _ := ioutil.ReadAll(resp.Body)
-	hashes, err := hummingbird.PickleLoads(data)
+	hashes, err := pickle.PickleLoads(data)
 	assert.Nil(t, err)
 	assert.Equal(t, hashes.(map[interface{}]interface{})["fff"], "b80a90865c11519b608af8471f5ab9ca")
 
@@ -117,7 +119,7 @@ func TestReplicateRecalculate(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	data, _ = ioutil.ReadAll(resp.Body)
-	hashes, err = hummingbird.PickleLoads(data)
+	hashes, err = pickle.PickleLoads(data)
 	assert.Nil(t, err)
 	assert.Equal(t, hashes.(map[interface{}]interface{})["fff"], "b80a90865c11519b608af8471f5ab9ca")
 
@@ -125,7 +127,7 @@ func TestReplicateRecalculate(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	data, _ = ioutil.ReadAll(resp.Body)
-	hashes, err = hummingbird.PickleLoads(data)
+	hashes, err = pickle.PickleLoads(data)
 	assert.Nil(t, err)
 	assert.Equal(t, hashes.(map[interface{}]interface{})["fff"], "f78ade0081b2648499a4395d406e625c")
 }
@@ -135,7 +137,7 @@ func TestBasicPutGet(t *testing.T) {
 	assert.Nil(t, err)
 	defer ts.Close()
 
-	timestamp := hummingbird.GetTimestamp()
+	timestamp := common.GetTimestamp()
 	req, err := http.NewRequest("PUT", fmt.Sprintf("http://%s:%d/sda/0/a/c/o", ts.host, ts.port), bytes.NewBuffer([]byte("SOME DATA")))
 	assert.Nil(t, err)
 	req.Header.Set("Content-Type", "application/octet-stream")
@@ -157,7 +159,7 @@ func TestBasicPutDelete(t *testing.T) {
 	assert.Nil(t, err)
 	defer ts.Close()
 
-	timestamp := hummingbird.GetTimestamp()
+	timestamp := common.GetTimestamp()
 	req, err := http.NewRequest("PUT", fmt.Sprintf("http://%s:%d/sda/0/a/c/o", ts.host, ts.port), bytes.NewBuffer([]byte("SOME DATA")))
 	assert.Nil(t, err)
 	req.Header.Set("Content-Type", "application/octet-stream")
@@ -167,7 +169,7 @@ func TestBasicPutDelete(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, 201, resp.StatusCode)
 
-	timestamp = hummingbird.GetTimestamp()
+	timestamp = common.GetTimestamp()
 	req, err = http.NewRequest("DELETE", fmt.Sprintf("http://%s:%d/sda/0/a/c/o", ts.host, ts.port), nil)
 	assert.Nil(t, err)
 	req.Header.Set("X-Timestamp", timestamp)
@@ -190,7 +192,7 @@ func TestGetRanges(t *testing.T) {
 	assert.Nil(t, err)
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("Content-Length", "26")
-	req.Header.Set("X-Timestamp", hummingbird.GetTimestamp())
+	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	resp, err := http.DefaultClient.Do(req)
 	assert.Nil(t, err)
 	assert.Equal(t, 201, resp.StatusCode)
@@ -239,7 +241,7 @@ func TestBadEtag(t *testing.T) {
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("Content-Length", "26")
 	req.Header.Set("ETag", "11111111111111111111111111111111")
-	req.Header.Set("X-Timestamp", hummingbird.GetTimestamp())
+	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	resp, err := http.DefaultClient.Do(req)
 	assert.Nil(t, err)
 	assert.Equal(t, 422, resp.StatusCode)
@@ -256,7 +258,7 @@ func TestCorrectEtag(t *testing.T) {
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("Content-Length", "26")
 	req.Header.Set("ETag", "437bba8e0bf58337674f4539e75186ac")
-	req.Header.Set("X-Timestamp", hummingbird.GetTimestamp())
+	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	resp, err := http.DefaultClient.Do(req)
 	assert.Nil(t, err)
 	assert.Equal(t, 201, resp.StatusCode)
@@ -273,7 +275,7 @@ func TestUppercaseEtag(t *testing.T) {
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("Content-Length", "26")
 	req.Header.Set("ETag", "437BBA8E0BF58337674F4539E75186AC")
-	req.Header.Set("X-Timestamp", hummingbird.GetTimestamp())
+	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	resp, err := http.DefaultClient.Do(req)
 	assert.Nil(t, err)
 	assert.Equal(t, 201, resp.StatusCode)
@@ -306,7 +308,7 @@ func TestDisconnectOnPut(t *testing.T) {
 	assert.Nil(t, err)
 	defer ts.Close()
 
-	timestamp := hummingbird.GetTimestamp()
+	timestamp := common.GetTimestamp()
 	req, err := http.NewRequest("PUT", fmt.Sprintf("http://%s:%d/sda/0/a/c/o", ts.host, ts.port), &shortReader{})
 	assert.Nil(t, err)
 	req.Header.Set("Content-Type", "application/octet-stream")
@@ -389,7 +391,7 @@ func TestBasicPutDeleteAt(t *testing.T) {
 	assert.Nil(t, err)
 	defer ts.Close()
 
-	timestamp := hummingbird.GetTimestamp()
+	timestamp := common.GetTimestamp()
 	time_unix := int(time.Now().Unix())
 	time_unix += 30
 	time_delete := strconv.Itoa(time_unix)
@@ -406,7 +408,7 @@ func TestBasicPutDeleteAt(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, 201, resp.StatusCode)
 
-	timestamp = hummingbird.GetTimestamp()
+	timestamp = common.GetTimestamp()
 	req, err = http.NewRequest("DELETE", fmt.Sprintf("http://%s:%d/sda/0/a/c/o", ts.host, ts.port), nil)
 	assert.Nil(t, err)
 	req.Header.Set("X-Timestamp", timestamp)
@@ -420,7 +422,7 @@ func TestBasicPutDeleteAt(t *testing.T) {
 	assert.Equal(t, 404, resp.StatusCode)
 
 	//put file without x-delete header
-	timestamp = hummingbird.GetTimestamp()
+	timestamp = common.GetTimestamp()
 	req, err = http.NewRequest("PUT", fmt.Sprintf("http://%s:%d/sda/0/a/c/o", ts.host, ts.port), bytes.NewBuffer([]byte("SOME DATA")))
 	assert.Nil(t, err)
 	req.Header.Set("Content-Type", "application/octet-stream")
@@ -430,7 +432,7 @@ func TestBasicPutDeleteAt(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, 201, resp.StatusCode)
 
-	timestamp = hummingbird.GetTimestamp()
+	timestamp = common.GetTimestamp()
 	req, err = http.NewRequest("DELETE", fmt.Sprintf("http://%s:%d/sda/0/a/c/o", ts.host, ts.port), nil)
 	assert.Nil(t, err)
 	req.Header.Set("X-Timestamp", timestamp)
@@ -475,14 +477,14 @@ func TestAcquireDevice(t *testing.T) {
 	assert.Nil(t, err)
 	req1.Header.Set("Content-Type", "text")
 	req1.Header.Set("Content-Length", "1")
-	req1.Header.Set("X-Timestamp", hummingbird.GetTimestamp())
+	req1.Header.Set("X-Timestamp", common.GetTimestamp())
 
 	sr2 := slowReader{id: 2, readChan: make(chan int)}
 	req2, err := http.NewRequest("PUT", fmt.Sprintf("http://%s:%d/sda/0/a/c/o2", ts.host, ts.port), sr2)
 	assert.Nil(t, err)
 	req2.Header.Set("Content-Type", "text")
 	req2.Header.Set("Content-Length", "1")
-	req2.Header.Set("X-Timestamp", hummingbird.GetTimestamp())
+	req2.Header.Set("X-Timestamp", common.GetTimestamp())
 
 	done1 := make(chan bool)
 
@@ -529,14 +531,14 @@ func TestAccountAcquireDevice(t *testing.T) {
 	assert.Nil(t, err)
 	req1.Header.Set("Content-Type", "text")
 	req1.Header.Set("Content-Length", "1")
-	req1.Header.Set("X-Timestamp", hummingbird.GetTimestamp())
+	req1.Header.Set("X-Timestamp", common.GetTimestamp())
 
 	sr2 := slowReader{id: 2, readChan: make(chan int)}
 	req2, err := http.NewRequest("PUT", fmt.Sprintf("http://%s:%d/sda/0/α/c/o2", ts.host, ts.port), sr2)
 	assert.Nil(t, err)
 	req2.Header.Set("Content-Type", "text")
 	req2.Header.Set("Content-Length", "1")
-	req2.Header.Set("X-Timestamp", hummingbird.GetTimestamp())
+	req2.Header.Set("X-Timestamp", common.GetTimestamp())
 
 	done1 := make(chan bool)
 

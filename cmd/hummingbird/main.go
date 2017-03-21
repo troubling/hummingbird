@@ -27,7 +27,9 @@ import (
 	"time"
 
 	"github.com/troubling/hummingbird/bench"
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/objectserver"
 	"github.com/troubling/hummingbird/proxyserver"
 )
@@ -80,7 +82,7 @@ func findConfig(name string) string {
 		fmt.Sprintf("/etc/swift/%s-server", configName),
 	}
 	for _, config := range configSearch {
-		if hummingbird.Exists(config) {
+		if common.Exists(config) {
 			return config
 		}
 	}
@@ -106,7 +108,7 @@ func StartServer(name string, args ...string) {
 		return
 	}
 
-	uid, gid, err := hummingbird.UidFromConf(serverConf)
+	uid, gid, err := conf.UidFromConf(serverConf)
 	if err != nil {
 		fmt.Println("Unable to find uid to execute process:", err)
 		return
@@ -185,7 +187,7 @@ func GracefulShutdownServer(name string, args ...string) {
 }
 
 func ProcessControlCommand(serverCommand func(name string, args ...string)) {
-	if !hummingbird.Exists("/var/run/hummingbird") {
+	if !common.Exists("/var/run/hummingbird") {
 		err := os.MkdirAll("/var/run/hummingbird", 0600)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Unable to create /var/run/hummingbird\n")
@@ -212,8 +214,8 @@ func ProcessControlCommand(serverCommand func(name string, args ...string)) {
 }
 
 func main() {
-	hummingbird.UseMaxProcs()
-	hummingbird.SetRlimits()
+	common.UseMaxProcs()
+	common.SetRlimits()
 	rand.Seed(time.Now().Unix())
 
 	/* sub-command flag parsers */
@@ -324,16 +326,16 @@ func main() {
 		ProcessControlCommand(GracefulShutdownServer)
 	case "proxy":
 		proxyFlags.Parse(flag.Args()[1:])
-		hummingbird.RunServers(proxyserver.GetServer, proxyFlags)
+		srv.RunServers(proxyserver.GetServer, proxyFlags)
 	case "object":
 		objectFlags.Parse(flag.Args()[1:])
-		hummingbird.RunServers(objectserver.GetServer, objectFlags)
+		srv.RunServers(objectserver.GetServer, objectFlags)
 	case "object-replicator":
 		objectReplicatorFlags.Parse(flag.Args()[1:])
-		hummingbird.RunDaemon(objectserver.NewReplicator, objectReplicatorFlags)
+		srv.RunDaemon(objectserver.NewReplicator, objectReplicatorFlags)
 	case "object-auditor":
 		objectAuditorFlags.Parse(flag.Args()[1:])
-		hummingbird.RunDaemon(objectserver.NewAuditor, objectAuditorFlags)
+		srv.RunDaemon(objectserver.NewAuditor, objectAuditorFlags)
 	case "bench":
 		bench.RunBench(flag.Args()[1:])
 	case "dbench":

@@ -4,8 +4,9 @@ package objectserver
 
 import (
 	"os"
+	"testing"
 
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common/conf"
 )
 
 func testGetHashPrefixAndSuffix() (pfx string, sfx string, err error) {
@@ -13,6 +14,6 @@ func testGetHashPrefixAndSuffix() (pfx string, sfx string, err error) {
 }
 
 func TestMain(m *testing.M) {
-	hummingbird.GetHashPrefixAndSuffix = testGetHashPrefixAndSuffix
+	conf.GetHashPrefixAndSuffix = testGetHashPrefixAndSuffix
 	os.Exit(m.Run())
 }

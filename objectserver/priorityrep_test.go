@@ -26,7 +26,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common/ring"
 
 	"github.com/stretchr/testify/require"
 )
@@ -35,41 +35,41 @@ type priFakeRing struct {
 	mapping map[uint64][]int
 }
 
-func (p *priFakeRing) GetJobNodes(partition uint64, localDevice int) (response []*hummingbird.Device, handoff bool) {
+func (p *priFakeRing) GetJobNodes(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
 	isaHandoff := false
 	if localDevice == 0 {
-		response = append(response, &hummingbird.Device{Id: 1, Device: "drive1", Ip: "127.0.0.1", Port: 1})
-		response = append(response, &hummingbird.Device{Id: 2, Device: "drive2", Ip: "127.0.0.1", Port: 1})
+		response = append(response, &ring.Device{Id: 1, Device: "drive1", Ip: "127.0.0.1", Port: 1})
+		response = append(response, &ring.Device{Id: 2, Device: "drive2", Ip: "127.0.0.1", Port: 1})
 		isaHandoff = true
 	} else {
-		response = append(response, &hummingbird.Device{Id: localDevice%2 + 1, Device: fmt.Sprintf("drive%d", localDevice%2+1), Ip: "127.0.0.1", Port: 1})
+		response = append(response, &ring.Device{Id: localDevice%2 + 1, Device: fmt.Sprintf("drive%d", localDevice%2+1), Ip: "127.0.0.1", Port: 1})
 	}
 	return response, isaHandoff
 }
 
 func (p *priFakeRing) GetPartition(account string, container string, object string) uint64 { return 0 }
 
-func (p *priFakeRing) LocalDevices(localPort int) (devs []*hummingbird.Device, err error) {
+func (p *priFakeRing) LocalDevices(localPort int) (devs []*ring.Device, err error) {
 	return nil, nil
 }
 
-func (p *priFakeRing) AllDevices() (devs []hummingbird.Device) {
-	devs = append(devs, hummingbird.Device{Id: 0, Device: "drive0", Ip: "127.0.0.0", Port: 1})
-	devs = append(devs, hummingbird.Device{Id: 1, Device: "drive1", Ip: "127.0.0.1", Port: 1})
-	devs = append(devs, hummingbird.Device{Id: 2, Device: "drive2", Ip: "127.0.0.1", Port: 1})
+func (p *priFakeRing) AllDevices() (devs []ring.Device) {
+	devs = append(devs, ring.Device{Id: 0, Device: "drive0", Ip: "127.0.0.0", Port: 1})
+	devs = append(devs, ring.Device{Id: 1, Device: "drive1", Ip: "127.0.0.1", Port: 1})
+	devs = append(devs, ring.Device{Id: 2, Device: "drive2", Ip: "127.0.0.1", Port: 1})
 	return devs
 }
 
-func (p *priFakeRing) GetMoreNodes(partition uint64) hummingbird.MoreNodes { return nil }
+func (p *priFakeRing) GetMoreNodes(partition uint64) ring.MoreNodes { return nil }
 
-func (p *priFakeRing) GetNodes(partition uint64) (response []*hummingbird.Device) {
+func (p *priFakeRing) GetNodes(partition uint64) (response []*ring.Device) {
 	for _, p := range p.mapping[partition] {
-		response = append(response, &hummingbird.Device{Id: p, Device: fmt.Sprintf("drive%d", p), Ip: "127.0.0.1", Port: p})
+		response = append(response, &ring.Device{Id: p, Device: fmt.Sprintf("drive%d", p), Ip: "127.0.0.1", Port: p})
 	}
 	return
 }
 
-func (p *priFakeRing) GetNodesInOrder(partition uint64) (response []*hummingbird.Device) {
+func (p *priFakeRing) GetNodesInOrder(partition uint64) (response []*ring.Device) {
 	return p.GetNodes(partition)
 }
 
@@ -152,8 +152,8 @@ func TestPriRepJobs(t *testing.T) {
 	jobs := []*PriorityRepJob{
 		{
 			Partition:  0,
-			FromDevice: &hummingbird.Device{Device: "sda", Ip: host, Port: port - 500, ReplicationIp: host, ReplicationPort: port - 500},
-			ToDevices: []*hummingbird.Device{
+			FromDevice: &ring.Device{Device: "sda", Ip: host, Port: port - 500, ReplicationIp: host, ReplicationPort: port - 500},
+			ToDevices: []*ring.Device{
 				{Device: "sdb"},
 			},
 		},
@@ -165,16 +165,16 @@ func TestPriRepJobs(t *testing.T) {
 func TestDevLimiter(t *testing.T) {
 	t.Parallel()
 	job1 := &PriorityRepJob{
-		FromDevice: &hummingbird.Device{Id: 0},
-		ToDevices:  []*hummingbird.Device{{Id: 1, Device: "sdb"}},
+		FromDevice: &ring.Device{Id: 0},
+		ToDevices:  []*ring.Device{{Id: 1, Device: "sdb"}},
 	}
 	job2 := &PriorityRepJob{
-		FromDevice: &hummingbird.Device{Id: 1},
-		ToDevices:  []*hummingbird.Device{{Id: 2, Device: "sdb"}},
+		FromDevice: &ring.Device{Id: 1},
+		ToDevices:  []*ring.Device{{Id: 2, Device: "sdb"}},
 	}
 	job3 := &PriorityRepJob{
-		FromDevice: &hummingbird.Device{Id: 1},
-		ToDevices:  []*hummingbird.Device{{Id: 0, Device: "sdb"}},
+		FromDevice: &ring.Device{Id: 1},
+		ToDevices:  []*ring.Device{{Id: 0, Device: "sdb"}},
 	}
 	limiter := &devLimiter{inUse: make(map[int]int), max: 2, somethingFinished: make(chan struct{}, 1)}
 	require.True(t, limiter.start(job1))

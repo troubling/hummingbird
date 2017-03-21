@@ -21,20 +21,20 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common"
 )
 
 func TestPolicySeparate(t *testing.T) {
 	e := NewEnvironment()
 	defer e.Close()
 
-	timestamp := hummingbird.GetTimestamp()
+	timestamp := common.GetTimestamp()
 	require.True(t, e.PutObject(0, timestamp, "X", 0))
 
 	require.True(t, e.ObjExists(0, timestamp, 0))
 	require.False(t, e.ObjExists(0, timestamp, 1))
 
-	timestamp = hummingbird.GetTimestamp()
+	timestamp = common.GetTimestamp()
 	require.True(t, e.DeleteObject(0, timestamp, 0))
 	require.True(t, e.PutObject(0, timestamp, "X", 1))
 
@@ -46,7 +46,7 @@ func TestBasicPolicyReplication(t *testing.T) {
 	e := NewEnvironment()
 	defer e.Close()
 
-	timestamp := hummingbird.GetTimestamp()
+	timestamp := common.GetTimestamp()
 	require.True(t, e.PutObject(0, timestamp, "X", 1))
 
 	e.replicatorServers[0].replicator.Run()
@@ -61,7 +61,7 @@ func TestOtherPolicyAuditReplicate(t *testing.T) {
 	e := NewEnvironment()
 	defer e.Close()
 
-	timestamp := hummingbird.GetTimestamp()
+	timestamp := common.GetTimestamp()
 	e.PutObject(0, timestamp, "X", 1)
 	e.PutObject(1, timestamp, "X", 1)
 

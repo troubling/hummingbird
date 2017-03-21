@@ -36,7 +36,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/ring"
 )
 
 func newTestReplicator(settings ...string) (*Replicator, error) {
@@ -48,7 +50,7 @@ func newTestReplicatorWithFlags(settings []string, flags *flag.FlagSet) (*Replic
 	for i := 0; i < len(settings); i += 2 {
 		configString += fmt.Sprintf("%s=%s\n", settings[i], settings[i+1])
 	}
-	conf, _ := hummingbird.StringConfig(configString)
+	conf, _ := conf.StringConfig(configString)
 	replicator, err := NewReplicator(conf, flags)
 	if err != nil {
 		return nil, err
@@ -63,18 +65,18 @@ func newTestReplicatorWithFlags(settings []string, flags *flag.FlagSet) (*Replic
 
 // TODO: is all this stuff something a mocking library could do for me?
 type mockReplicationRing struct {
-	_GetJobNodes  func(partition uint64, localDevice int) (response []*hummingbird.Device, handoff bool)
-	_GetMoreNodes func(partition uint64) hummingbird.MoreNodes
-	_LocalDevices func(localPort int) (devs []*hummingbird.Device, err error)
+	_GetJobNodes  func(partition uint64, localDevice int) (response []*ring.Device, handoff bool)
+	_GetMoreNodes func(partition uint64) ring.MoreNodes
+	_LocalDevices func(localPort int) (devs []*ring.Device, err error)
 }
 
-func (r *mockReplicationRing) GetJobNodes(partition uint64, localDevice int) (response []*hummingbird.Device, handoff bool) {
+func (r *mockReplicationRing) GetJobNodes(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
 	return r._GetJobNodes(partition, localDevice)
 }
-func (r *mockReplicationRing) GetMoreNodes(partition uint64) hummingbird.MoreNodes {
+func (r *mockReplicationRing) GetMoreNodes(partition uint64) ring.MoreNodes {
 	return r._GetMoreNodes(partition)
 }
-func (r *mockReplicationRing) LocalDevices(localPort int) (devs []*hummingbird.Device, err error) {
+func (r *mockReplicationRing) LocalDevices(localPort int) (devs []*ring.Device, err error) {
 	return r._LocalDevices(localPort)
 }
 
@@ -176,11 +178,11 @@ func (d *mockReplicationDevice) Stats() *ReplicationDeviceStats {
 
 type patchableReplicationDevice struct {
 	*replicationDevice
-	_beginReplication   func(dev *hummingbird.Device, partition string, hashes bool, rChan chan beginReplicationResponse)
+	_beginReplication   func(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse)
 	_listObjFiles       func(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool)
 	_syncFile           func(objFile string, dst []*syncFileArg) (syncs int, insync int, err error)
-	_replicateLocal     func(partition string, nodes []*hummingbird.Device, moreNodes hummingbird.MoreNodes)
-	_replicateHandoff   func(partition string, nodes []*hummingbird.Device)
+	_replicateLocal     func(partition string, nodes []*ring.Device, moreNodes ring.MoreNodes)
+	_replicateHandoff   func(partition string, nodes []*ring.Device)
 	_cleanTemp          func()
 	_listPartitions     func() ([]string, error)
 	_replicatePartition func(partition string)
@@ -200,7 +202,7 @@ func (d *patchableReplicationDevice) listPartitions() ([]string, error) {
 	}
 	return d.replicationDevice.listPartitions()
 }
-func (d *patchableReplicationDevice) beginReplication(dev *hummingbird.Device, partition string, hashes bool, rChan chan beginReplicationResponse) {
+func (d *patchableReplicationDevice) beginReplication(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse) {
 	if d._beginReplication != nil {
 		d._beginReplication(dev, partition, hashes, rChan)
 		return
@@ -220,14 +222,14 @@ func (d *patchableReplicationDevice) syncFile(objFile string, dst []*syncFileArg
 	}
 	return d.replicationDevice.syncFile(objFile, dst)
 }
-func (d *patchableReplicationDevice) replicateLocal(partition string, nodes []*hummingbird.Device, moreNodes hummingbird.MoreNodes) {
+func (d *patchableReplicationDevice) replicateLocal(partition string, nodes []*ring.Device, moreNodes ring.MoreNodes) {
 	if d._replicateLocal != nil {
 		d._replicateLocal(partition, nodes, moreNodes)
 		return
 	}
 	d.replicationDevice.replicateLocal(partition, nodes, moreNodes)
 }
-func (d *patchableReplicationDevice) replicateHandoff(partition string, nodes []*hummingbird.Device) {
+func (d *patchableReplicationDevice) replicateHandoff(partition string, nodes []*ring.Device) {
 	if d._replicateHandoff != nil {
 		d._replicateHandoff(partition, nodes)
 		return
@@ -243,7 +245,7 @@ func (d *patchableReplicationDevice) cleanTemp() {
 }
 
 func newPatchableReplicationDevice(r *Replicator) *patchableReplicationDevice {
-	rd := newReplicationDevice(&hummingbird.Device{}, 0, r)
+	rd := newReplicationDevice(&ring.Device{}, 0, r)
 	prd := &patchableReplicationDevice{replicationDevice: rd}
 	rd.i = prd
 	return prd
@@ -389,7 +391,7 @@ func TestGetFileBadMetadata(t *testing.T) {
 func TestListObjFiles(t *testing.T) {
 	repl, err := newTestReplicator()
 	require.Nil(t, err)
-	rd := newReplicationDevice(&hummingbird.Device{}, 0, repl)
+	rd := newReplicationDevice(&ring.Device{}, 0, repl)
 	dir, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(dir)
@@ -414,8 +416,8 @@ func TestListObjFiles(t *testing.T) {
 	for obj := range objChan {
 		files = append(files, obj)
 	}
-	require.False(t, hummingbird.Exists(filepath.Join(dir, "objects", "1", "abc", "d41d8cd98f00b204e9800998ecf8427e")))
-	require.True(t, hummingbird.Exists(filepath.Join(dir, "objects", "1", "abc")))
+	require.False(t, common.Exists(filepath.Join(dir, "objects", "1", "abc", "d41d8cd98f00b204e9800998ecf8427e")))
+	require.True(t, common.Exists(filepath.Join(dir, "objects", "1", "abc")))
 
 	objChan = make(chan string)
 	files = nil
@@ -423,8 +425,8 @@ func TestListObjFiles(t *testing.T) {
 	for obj := range objChan {
 		files = append(files, obj)
 	}
-	require.False(t, hummingbird.Exists(filepath.Join(dir, "objects", "1", "abc")))
-	require.True(t, hummingbird.Exists(filepath.Join(dir, "objects", "1")))
+	require.False(t, common.Exists(filepath.Join(dir, "objects", "1", "abc")))
+	require.True(t, common.Exists(filepath.Join(dir, "objects", "1")))
 
 	objChan = make(chan string)
 	files = nil
@@ -432,14 +434,14 @@ func TestListObjFiles(t *testing.T) {
 	for obj := range objChan {
 		files = append(files, obj)
 	}
-	require.False(t, hummingbird.Exists(filepath.Join(dir, "objects", "1")))
-	require.True(t, hummingbird.Exists(filepath.Join(dir, "objects")))
+	require.False(t, common.Exists(filepath.Join(dir, "objects", "1")))
+	require.True(t, common.Exists(filepath.Join(dir, "objects")))
 }
 
 func TestCancelListObjFiles(t *testing.T) {
 	repl, err := newTestReplicator()
 	require.Nil(t, err)
-	rd := newReplicationDevice(&hummingbird.Device{}, 0, repl)
+	rd := newReplicationDevice(&ring.Device{}, 0, repl)
 	dir, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(dir)
@@ -469,8 +471,8 @@ func TestPriorityRepHandler404(t *testing.T) {
 	w := httptest.NewRecorder()
 	job := &PriorityRepJob{
 		Partition:  0,
-		FromDevice: &hummingbird.Device{Id: 1, Device: "sda", Ip: "127.0.0.1", Port: 5000, ReplicationIp: "127.0.0.1", ReplicationPort: 5000},
-		ToDevices: []*hummingbird.Device{
+		FromDevice: &ring.Device{Id: 1, Device: "sda", Ip: "127.0.0.1", Port: 5000, ReplicationIp: "127.0.0.1", ReplicationPort: 5000},
+		ToDevices: []*ring.Device{
 			{Id: 2, Device: "sdb"},
 		},
 	}
@@ -514,7 +516,7 @@ func TestSyncFile(t *testing.T) {
 		},
 	}
 	dsts := []*syncFileArg{
-		{conn: rc, dev: &hummingbird.Device{}},
+		{conn: rc, dev: &ring.Device{}},
 	}
 	syncs, insync, err := rd.syncFile(file.Name(), dsts)
 	require.Nil(t, err)
@@ -555,7 +557,7 @@ func TestSyncFileExists(t *testing.T) {
 		},
 	}
 	dsts := []*syncFileArg{
-		{conn: rc, dev: &hummingbird.Device{}},
+		{conn: rc, dev: &ring.Device{}},
 	}
 	syncs, insync, err := rd.syncFile(file.Name(), dsts)
 	require.Nil(t, err)
@@ -592,11 +594,11 @@ func TestSyncFileNewerExists(t *testing.T) {
 		},
 	}
 	dsts := []*syncFileArg{
-		{conn: rc, dev: &hummingbird.Device{}},
+		{conn: rc, dev: &ring.Device{}},
 	}
 	syncs, insync, err := rd.syncFile(file.Name(), dsts)
 	require.Nil(t, err)
-	require.False(t, hummingbird.Exists(filename))
+	require.False(t, common.Exists(filename))
 	require.Equal(t, 0, syncs)
 	require.Equal(t, 1, insync)
 }
@@ -609,11 +611,11 @@ func TestReplicateLocal(t *testing.T) {
 	require.Nil(t, err)
 	objPath := filepath.Join(deviceRoot, "objects")
 	partition := "1"
-	remoteDev := &hummingbird.Device{Device: "sda"}
+	remoteDev := &ring.Device{Device: "sda"}
 	filename := filepath.Join(objPath, partition, "aaa", "00000000000000000000000000000000", "1472940619.68559")
 	syncFileCalled := false
 	rd := newPatchableReplicationDevice(replicator)
-	rd._beginReplication = func(dev *hummingbird.Device, partition string, hashes bool, rChan chan beginReplicationResponse) {
+	rd._beginReplication = func(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse) {
 		rChan <- beginReplicationResponse{dev: remoteDev, hashes: make(map[string]string), conn: &mockRepConn{}}
 	}
 	rd._listObjFiles = func(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool) {
@@ -625,7 +627,7 @@ func TestReplicateLocal(t *testing.T) {
 		require.Equal(t, filename, objFile)
 		return 0, 0, nil
 	}
-	nodes := []*hummingbird.Device{remoteDev}
+	nodes := []*ring.Device{remoteDev}
 	rd.replicateLocal(partition, nodes, &NoMoreNodes{})
 	require.True(t, syncFileCalled)
 }
@@ -638,7 +640,7 @@ func TestReplicateHandoff(t *testing.T) {
 	require.Nil(t, err)
 	partition := "1"
 	objPath := filepath.Join(deviceRoot, "objects")
-	remoteDev := &hummingbird.Device{Device: "sda"}
+	remoteDev := &ring.Device{Device: "sda"}
 	filename := filepath.Join(objPath, partition, "aaa", "00000000000000000000000000000000", "1472940619.68559")
 	require.Nil(t, os.MkdirAll(filepath.Dir(filename), 0777))
 	file, err := os.Create(filename)
@@ -646,7 +648,7 @@ func TestReplicateHandoff(t *testing.T) {
 	defer file.Close()
 	syncFileCalled := false
 	rd := newPatchableReplicationDevice(replicator)
-	rd._beginReplication = func(dev *hummingbird.Device, partition string, hashes bool, rChan chan beginReplicationResponse) {
+	rd._beginReplication = func(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse) {
 		rChan <- beginReplicationResponse{dev: remoteDev, hashes: make(map[string]string), conn: &mockRepConn{}}
 	}
 	rd._listObjFiles = func(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool) {
@@ -658,10 +660,10 @@ func TestReplicateHandoff(t *testing.T) {
 		require.Equal(t, filename, objFile)
 		return 1, 1, nil
 	}
-	nodes := []*hummingbird.Device{remoteDev}
+	nodes := []*ring.Device{remoteDev}
 	rd.replicateHandoff(partition, nodes)
 	require.True(t, syncFileCalled)
-	require.False(t, hummingbird.Exists(filename))
+	require.False(t, common.Exists(filename))
 }
 
 func TestCleanTemp(t *testing.T) {
@@ -683,8 +685,8 @@ func TestCleanTemp(t *testing.T) {
 	oldTime := time.Now().Add(-(time.Hour * 24 * 14))
 	require.Nil(t, os.Chtimes(filepath.Join(tmpDir, "testfile2"), oldTime, oldTime))
 	rd.cleanTemp()
-	require.False(t, hummingbird.Exists(filepath.Join(tmpDir, "testfile2")))
-	require.True(t, hummingbird.Exists(filepath.Join(tmpDir, "testfile1")))
+	require.False(t, common.Exists(filepath.Join(tmpDir, "testfile2")))
+	require.True(t, common.Exists(filepath.Join(tmpDir, "testfile1")))
 }
 
 func TestReplicate(t *testing.T) {
@@ -733,7 +735,7 @@ func TestListPartitions(t *testing.T) {
 	require.Nil(t, os.MkdirAll(filepath.Join(objPath, "Y"), 0777))
 	require.Nil(t, os.MkdirAll(filepath.Join(objPath, "Z"), 0777))
 	rd := newPatchableReplicationDevice(replicator)
-	rd.dev = &hummingbird.Device{Device: "sda"}
+	rd.dev = &ring.Device{Device: "sda"}
 	partitions, err := rd.listPartitions()
 	require.Nil(t, err)
 	require.Equal(t, 3, len(partitions))
@@ -751,20 +753,20 @@ func TestReplicatePartition(t *testing.T) {
 	defer os.RemoveAll(deviceRoot)
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no", "devices", deviceRoot)
 	replicator.Rings[0] = &mockReplicationRing{
-		_GetJobNodes: func(partition uint64, localDevice int) (response []*hummingbird.Device, handoff bool) {
-			return []*hummingbird.Device{{}}, false
+		_GetJobNodes: func(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
+			return []*ring.Device{{}}, false
 		},
-		_GetMoreNodes: func(partition uint64) hummingbird.MoreNodes { return &NoMoreNodes{} },
+		_GetMoreNodes: func(partition uint64) ring.MoreNodes { return &NoMoreNodes{} },
 	}
 	require.Nil(t, err)
 	rd := newPatchableReplicationDevice(replicator)
 	replicateLocalCalled := false
 	replicateHandoffCalled := false
-	rd._replicateLocal = func(partition string, nodes []*hummingbird.Device, moreNodes hummingbird.MoreNodes) {
+	rd._replicateLocal = func(partition string, nodes []*ring.Device, moreNodes ring.MoreNodes) {
 		require.Equal(t, "1", partition)
 		replicateLocalCalled = true
 	}
-	rd._replicateHandoff = func(partition string, nodes []*hummingbird.Device) {
+	rd._replicateHandoff = func(partition string, nodes []*ring.Device) {
 		replicateHandoffCalled = true
 	}
 	rd.replicatePartition("1")
@@ -772,10 +774,10 @@ func TestReplicatePartition(t *testing.T) {
 	require.False(t, replicateHandoffCalled)
 
 	replicator.Rings[0] = &mockReplicationRing{
-		_GetJobNodes: func(partition uint64, localDevice int) (response []*hummingbird.Device, handoff bool) {
-			return []*hummingbird.Device{{}}, true
+		_GetJobNodes: func(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
+			return []*ring.Device{{}}, true
 		},
-		_GetMoreNodes: func(partition uint64) hummingbird.MoreNodes { return &NoMoreNodes{} },
+		_GetMoreNodes: func(partition uint64) ring.MoreNodes { return &NoMoreNodes{} },
 	}
 	replicateLocalCalled = false
 	replicateHandoffCalled = false
@@ -790,8 +792,8 @@ func TestProcessPriorityJobs(t *testing.T) {
 	defer os.RemoveAll(deviceRoot)
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no", "devices", deviceRoot)
 	replicator.Rings[0] = &mockReplicationRing{
-		_GetJobNodes: func(partition uint64, localDevice int) (response []*hummingbird.Device, handoff bool) {
-			return []*hummingbird.Device{{}}, false
+		_GetJobNodes: func(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
+			return []*ring.Device{{}}, false
 		},
 	}
 	require.Nil(t, err)
@@ -799,17 +801,17 @@ func TestProcessPriorityJobs(t *testing.T) {
 	rd.priRep = make(chan PriorityRepJob, 1)
 	rd.priRep <- PriorityRepJob{
 		Partition:  1,
-		FromDevice: &hummingbird.Device{},
-		ToDevices:  []*hummingbird.Device{{}},
+		FromDevice: &ring.Device{},
+		ToDevices:  []*ring.Device{{}},
 		Policy:     0,
 	}
 	replicateLocalCalled := false
 	replicateHandoffCalled := false
-	rd._replicateLocal = func(partition string, nodes []*hummingbird.Device, moreNodes hummingbird.MoreNodes) {
+	rd._replicateLocal = func(partition string, nodes []*ring.Device, moreNodes ring.MoreNodes) {
 		require.Equal(t, "1", partition)
 		replicateLocalCalled = true
 	}
-	rd._replicateHandoff = func(partition string, nodes []*hummingbird.Device) {
+	rd._replicateHandoff = func(partition string, nodes []*ring.Device) {
 		require.Equal(t, "1", partition)
 		replicateHandoffCalled = true
 	}
@@ -818,13 +820,13 @@ func TestProcessPriorityJobs(t *testing.T) {
 
 	rd.priRep <- PriorityRepJob{
 		Partition:  1,
-		FromDevice: &hummingbird.Device{},
-		ToDevices:  []*hummingbird.Device{{}},
+		FromDevice: &ring.Device{},
+		ToDevices:  []*ring.Device{{}},
 		Policy:     0,
 	}
 	replicator.Rings[0] = &mockReplicationRing{
-		_GetJobNodes: func(partition uint64, localDevice int) (response []*hummingbird.Device, handoff bool) {
-			return []*hummingbird.Device{{}}, true
+		_GetJobNodes: func(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
+			return []*ring.Device{{}}, true
 		},
 	}
 	replicateLocalCalled = false
@@ -883,7 +885,7 @@ func TestVerifyDevices(t *testing.T) {
 		newReplicationDevice = oldNewReplicationDevice
 	}()
 	newrdcalled := false
-	newReplicationDevice = func(dev *hummingbird.Device, policy int, r *Replicator) *replicationDevice {
+	newReplicationDevice = func(dev *ring.Device, policy int, r *Replicator) *replicationDevice {
 		newrdcalled = true
 		require.Equal(t, "sda", dev.Device)
 		return oldNewReplicationDevice(dev, policy, r)
@@ -899,8 +901,8 @@ func TestVerifyDevices(t *testing.T) {
 		},
 	}
 	replicator.Rings[0] = &mockReplicationRing{
-		_LocalDevices: func(localPort int) (devs []*hummingbird.Device, err error) {
-			return []*hummingbird.Device{{Device: "sda"}}, nil
+		_LocalDevices: func(localPort int) (devs []*ring.Device, err error) {
+			return []*ring.Device{{Device: "sda"}}, nil
 		},
 	}
 	replicator.verifyRunningDevices()
@@ -976,8 +978,8 @@ func TestPriorityReplicate(t *testing.T) {
 	}
 	replicator.priorityReplicate(PriorityRepJob{
 		Partition:  1,
-		FromDevice: &hummingbird.Device{Device: "sda"},
-		ToDevices:  []*hummingbird.Device{},
+		FromDevice: &ring.Device{Device: "sda"},
+		ToDevices:  []*ring.Device{},
 		Policy:     0,
 	}, time.Minute)
 	require.True(t, priorityReplicateCalled)
@@ -1078,7 +1080,7 @@ func TestReplicationLocal(t *testing.T) {
 	assert.Nil(t, err)
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("Content-Length", "26")
-	req.Header.Set("X-Timestamp", hummingbird.GetTimestamp())
+	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	resp, err := http.DefaultClient.Do(req)
 	require.Nil(t, err)
 	require.Equal(t, 201, resp.StatusCode)
@@ -1092,17 +1094,17 @@ func TestReplicationLocal(t *testing.T) {
 	require.Nil(t, err)
 	defer trs2.Close()
 	trs2.replicator.deviceRoot = ts2.objServer.driveRoot
-	ldev := &hummingbird.Device{ReplicationIp: trs1.host, ReplicationPort: trs1.port, Device: "sda"}
-	rdev := &hummingbird.Device{ReplicationIp: trs2.host, ReplicationPort: trs2.port, Device: "sda"}
+	ldev := &ring.Device{ReplicationIp: trs1.host, ReplicationPort: trs1.port, Device: "sda"}
+	rdev := &ring.Device{ReplicationIp: trs2.host, ReplicationPort: trs2.port, Device: "sda"}
 
 	trs1.replicator.Rings[0] = &mockReplicationRing{
-		_LocalDevices: func(localPort int) (devs []*hummingbird.Device, err error) {
-			return []*hummingbird.Device{ldev}, nil
+		_LocalDevices: func(localPort int) (devs []*ring.Device, err error) {
+			return []*ring.Device{ldev}, nil
 		},
-		_GetJobNodes: func(partition uint64, localDevice int) (response []*hummingbird.Device, handoff bool) {
-			return []*hummingbird.Device{rdev}, false
+		_GetJobNodes: func(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
+			return []*ring.Device{rdev}, false
 		},
-		_GetMoreNodes: func(partition uint64) hummingbird.MoreNodes {
+		_GetMoreNodes: func(partition uint64) ring.MoreNodes {
 			return &NoMoreNodes{}
 		},
 	}
@@ -1129,7 +1131,7 @@ func TestReplicationHandoff(t *testing.T) {
 	assert.Nil(t, err)
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("Content-Length", "26")
-	req.Header.Set("X-Timestamp", hummingbird.GetTimestamp())
+	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	resp, err := http.DefaultClient.Do(req)
 	require.Nil(t, err)
 	require.Equal(t, 201, resp.StatusCode)
@@ -1149,15 +1151,15 @@ func TestReplicationHandoff(t *testing.T) {
 	defer trs2.Close()
 	trs2.replicator.deviceRoot = ts2.objServer.driveRoot
 
-	ldev := &hummingbird.Device{ReplicationIp: trs1.host, ReplicationPort: trs1.port, Device: "sda"}
-	rdev := &hummingbird.Device{ReplicationIp: trs2.host, ReplicationPort: trs2.port, Device: "sda"}
+	ldev := &ring.Device{ReplicationIp: trs1.host, ReplicationPort: trs1.port, Device: "sda"}
+	rdev := &ring.Device{ReplicationIp: trs2.host, ReplicationPort: trs2.port, Device: "sda"}
 
 	trs1.replicator.Rings[0] = &mockReplicationRing{
-		_LocalDevices: func(localPort int) (devs []*hummingbird.Device, err error) {
-			return []*hummingbird.Device{ldev}, nil
+		_LocalDevices: func(localPort int) (devs []*ring.Device, err error) {
+			return []*ring.Device{ldev}, nil
 		},
-		_GetJobNodes: func(partition uint64, localDevice int) (response []*hummingbird.Device, handoff bool) {
-			return []*hummingbird.Device{rdev}, true
+		_GetJobNodes: func(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
+			return []*ring.Device{rdev}, true
 		},
 	}
 	trs1.replicator.Run()
@@ -1189,7 +1191,7 @@ func TestReplicationHandoffQuorumDelete(t *testing.T) {
 	assert.Nil(t, err)
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("Content-Length", "26")
-	req.Header.Set("X-Timestamp", hummingbird.GetTimestamp())
+	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	resp, err := http.DefaultClient.Do(req)
 	require.Nil(t, err)
 	require.Equal(t, 201, resp.StatusCode)
@@ -1214,15 +1216,15 @@ func TestReplicationHandoffQuorumDelete(t *testing.T) {
 	defer trs2.Close()
 	trs2.replicator.deviceRoot = ts2.objServer.driveRoot
 
-	ldev := &hummingbird.Device{ReplicationIp: trs1.host, ReplicationPort: trs1.port, Device: "sda"}
-	rdev := &hummingbird.Device{ReplicationIp: trs2.host, ReplicationPort: trs2.port, Device: "sda"}
+	ldev := &ring.Device{ReplicationIp: trs1.host, ReplicationPort: trs1.port, Device: "sda"}
+	rdev := &ring.Device{ReplicationIp: trs2.host, ReplicationPort: trs2.port, Device: "sda"}
 
 	trs1.replicator.Rings[0] = &mockReplicationRing{
-		_LocalDevices: func(localPort int) (devs []*hummingbird.Device, err error) {
-			return []*hummingbird.Device{ldev}, nil
+		_LocalDevices: func(localPort int) (devs []*ring.Device, err error) {
+			return []*ring.Device{ldev}, nil
 		},
-		_GetJobNodes: func(partition uint64, localDevice int) (response []*hummingbird.Device, handoff bool) {
-			return []*hummingbird.Device{rdev}, true
+		_GetJobNodes: func(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
+			return []*ring.Device{rdev}, true
 		},
 	}
 	trs1.replicator.Run()

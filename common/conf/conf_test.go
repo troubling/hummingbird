@@ -13,7 +13,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-package hummingbird
+package conf
 
 import (
 	"fmt"
@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -124,4 +125,30 @@ func TestHasSection(t *testing.T) {
 	require.Nil(t, err)
 	require.True(t, iniFile.HasSection("stuff"))
 	require.False(t, iniFile.HasSection("otherstuff"))
+}
+
+func fakeHashPrefixAndSuffix() (filename string, err error) {
+	var config_source []byte = []byte(
+		"[swift-hash]\n" +
+			"swift_hash_path_suffix = 983abc1de3ff4258\n")
+	tempFile, err := ioutil.TempFile("", "swift.conf-")
+	if err != nil {
+		return "", err
+	}
+	ioutil.WriteFile(tempFile.Name(), config_source, 0600)
+	configLocations = []string{tempFile.Name()}
+	return tempFile.Name(), nil
+}
+
+func TestGetHashPrefixAndSuffix(t *testing.T) {
+	swift_conf_name, err := fakeHashPrefixAndSuffix()
+	assert.Nil(t, err)
+	defer os.Remove(swift_conf_name)
+
+	_, suffix, err := GetHashPrefixAndSuffix()
+	assert.Nil(t, err, "Error getting hash path prefix or suffix")
+
+	if suffix == "" {
+		t.Error("Error prefix and suffix not being set")
+	}
 }

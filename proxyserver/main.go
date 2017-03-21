@@ -22,7 +22,10 @@ import (
 	"time"
 
 	"github.com/troubling/hummingbird/client"
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/ring"
+	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/middleware"
 
 	"github.com/justinas/alice"
@@ -30,8 +33,8 @@ import (
 
 type ProxyServer struct {
 	C      client.ProxyClient
-	logger hummingbird.LowLevelLogger
-	mc     hummingbird.MemcacheRing
+	logger srv.LowLevelLogger
+	mc     ring.MemcacheRing
 }
 
 func (server *ProxyServer) HealthcheckHandler(writer http.ResponseWriter, request *http.Request) {
@@ -43,35 +46,35 @@ func (server *ProxyServer) HealthcheckHandler(writer http.ResponseWriter, reques
 
 func (server *ProxyServer) LogRequest(next http.Handler) http.Handler {
 	fn := func(writer http.ResponseWriter, request *http.Request) {
-		transId := hummingbird.GetTransactionId()
+		transId := common.GetTransactionId()
 
-		newWriter := &hummingbird.WebWriter{ResponseWriter: writer, Status: 500, ResponseStarted: false}
-		requestLogger := &hummingbird.RequestLogger{Request: request, Logger: server.logger, W: newWriter}
+		newWriter := &srv.WebWriter{ResponseWriter: writer, Status: 500, ResponseStarted: false}
+		requestLogger := &srv.RequestLogger{Request: request, Logger: server.logger, W: newWriter}
 		defer requestLogger.LogPanics("LOGGING REQUEST")
 		start := time.Now()
-		request = hummingbird.SetLogger(request, requestLogger)
+		request = srv.SetLogger(request, requestLogger)
 		request.Header.Set("X-Trans-Id", transId)
 		newWriter.Header().Set("X-Trans-Id", transId)
-		request.Header.Set("X-Timestamp", hummingbird.GetTimestamp())
+		request.Header.Set("X-Timestamp", common.GetTimestamp())
 		next.ServeHTTP(newWriter, request)
 		server.logger.Info(fmt.Sprintf("%s - - [%s] \"%s %s\" %d %s \"%s\" \"%s\" \"%s\" %.4f \"%s\"",
 			request.RemoteAddr,
 			time.Now().Format("02/Jan/2006:15:04:05 -0700"),
 			request.Method,
-			hummingbird.Urlencode(request.URL.Path),
+			common.Urlencode(request.URL.Path),
 			newWriter.Status,
-			hummingbird.GetDefault(newWriter.Header(), "Content-Length", "-"),
-			hummingbird.GetDefault(request.Header, "Referer", "-"),
-			hummingbird.GetDefault(request.Header, "X-Trans-Id", "-"),
-			hummingbird.GetDefault(request.Header, "User-Agent", "-"),
+			common.GetDefault(newWriter.Header(), "Content-Length", "-"),
+			common.GetDefault(request.Header, "Referer", "-"),
+			common.GetDefault(request.Header, "X-Trans-Id", "-"),
+			common.GetDefault(request.Header, "User-Agent", "-"),
 			time.Since(start).Seconds(),
 			"-")) // TODO: "additional info"?
 	}
 	return http.HandlerFunc(fn)
 }
 
-func (server *ProxyServer) GetHandler(config hummingbird.Config) http.Handler {
-	router := hummingbird.NewRouter()
+func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
+	router := srv.NewRouter()
 	router.Get("/healthcheck", http.HandlerFunc(server.HealthcheckHandler))
 
 	router.Get("/v1/:account/:container/*obj", http.HandlerFunc(server.ObjectGetHandler))
@@ -109,21 +112,21 @@ func (server *ProxyServer) GetHandler(config hummingbird.Config) http.Handler {
 	).Then(router)
 }
 
-func GetServer(serverconf hummingbird.Config, flags *flag.FlagSet) (string, int, hummingbird.Server, hummingbird.LowLevelLogger, error) {
+func GetServer(serverconf conf.Config, flags *flag.FlagSet) (string, int, srv.Server, srv.LowLevelLogger, error) {
 	var err error
 	server := &ProxyServer{}
 	server.C, err = client.NewProxyDirectClient()
 	if err != nil {
 		return "", 0, nil, nil, err
 	}
-	server.mc, err = hummingbird.NewMemcacheRingFromConfig(serverconf)
+	server.mc, err = ring.NewMemcacheRingFromConfig(serverconf)
 	if err != nil {
 		return "", 0, nil, nil, err
 	}
 
 	bindIP := serverconf.GetDefault("DEFAULT", "bind_ip", "0.0.0.0")
 	bindPort := serverconf.GetInt("DEFAULT", "bind_port", 8080)
-	if server.logger, err = hummingbird.SetupLogger(serverconf, flags, "app:proxy-server", "proxy-server"); err != nil {
+	if server.logger, err = srv.SetupLogger(serverconf, flags, "app:proxy-server", "proxy-server"); err != nil {
 		return "", 0, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 

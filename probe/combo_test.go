@@ -21,8 +21,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common"
 )
 
 func TestAuditReplicate(t *testing.T) {
@@ -30,7 +29,7 @@ func TestAuditReplicate(t *testing.T) {
 	defer e.Close()
 
 	// put a file
-	timestamp := hummingbird.GetTimestamp()
+	timestamp := common.GetTimestamp()
 	for i := 0; i < 3; i++ {
 		e.PutObject(i, timestamp, "X", 0)
 	}
