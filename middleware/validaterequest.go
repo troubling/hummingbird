@@ -18,13 +18,13 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common/srv"
 )
 
 func ValidateRequest(next http.Handler) http.Handler {
 	fn := func(writer http.ResponseWriter, request *http.Request) {
-		if !hummingbird.ValidateRequest(request) {
-			hummingbird.StandardResponse(writer, 400)
+		if !srv.ValidateRequest(request) {
+			srv.StandardResponse(writer, 400)
 			return
 		}
 		next.ServeHTTP(writer, request)

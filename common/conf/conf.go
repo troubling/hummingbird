@@ -13,7 +13,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-package hummingbird
+package conf
 
 import (
 	"bytes"
@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/troubling/hummingbird/common"
 	"github.com/vaughan0/go-ini"
 )
 
@@ -57,7 +58,7 @@ func (f Config) GetDefault(section string, key string, dfl string) string {
 // GetBool loads a true/false value from the config, with support for things like "yes", "true", "1", "t", etc.
 func (f Config) GetBool(section string, key string, dfl bool) bool {
 	if value, ok := f.Get(section, key); ok {
-		return LooksTrue(value)
+		return common.LooksTrue(value)
 	}
 	return dfl
 }
@@ -176,4 +177,28 @@ func UidFromConf(path string) (uint32, uint32, error) {
 		return uint32(uid), uint32(gid), nil
 	}
 	return 0, 0, fmt.Errorf("Unable to find config")
+}
+
+var configLocations = []string{"/etc/hummingbird/hummingbird.conf", "/etc/swift/swift.conf"}
+
+// GetHashPrefixAndSuffix retrieves the hash path prefix and suffix from
+// the correct configs based on the environments setup. The suffix cannot
+// be nil
+type getHashPrefixAndSuffixFunc func() (pfx string, sfx string, err error)
+
+var GetHashPrefixAndSuffix getHashPrefixAndSuffixFunc = normalGetHashPrefixAndSuffix
+
+func normalGetHashPrefixAndSuffix() (prefix string, suffix string, err error) {
+	for _, loc := range configLocations {
+		if conf, e := LoadConfig(loc); e == nil {
+			var ok bool
+			prefix, _ = conf.Get("swift-hash", "swift_hash_path_prefix")
+			if suffix, ok = conf.Get("swift-hash", "swift_hash_path_suffix"); !ok {
+				err = errors.New("Hash path suffix not defined")
+				return
+			}
+			break
+		}
+	}
+	return
 }

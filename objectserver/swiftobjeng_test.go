@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common"
 )
 
 func TestSwiftObjectRoundtrip(t *testing.T) {
@@ -91,7 +91,7 @@ func TestSwiftObjectQuarantine(t *testing.T) {
 	w.Write([]byte("!"))
 	swo.Commit(map[string]string{"Content-Length": "1", "Content-Type": "text/plain", "X-Timestamp": "1234567890.123456"})
 	swo.Quarantine()
-	require.True(t, hummingbird.Exists(filepath.Join(driveRoot, "sda", "quarantined")))
+	require.True(t, common.Exists(filepath.Join(driveRoot, "sda", "quarantined")))
 }
 
 func TestSwiftObjectMultiCopy(t *testing.T) {

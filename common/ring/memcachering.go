@@ -13,7 +13,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-package hummingbird
+package ring
 
 import (
 	"bufio"
@@ -29,6 +29,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/troubling/hummingbird/common/conf"
 )
 
 const (
@@ -62,15 +64,15 @@ type memcacheRing struct {
 	nodeWeight                  int64
 }
 
-func NewMemcacheRing(conf string) (*memcacheRing, error) {
-	config, err := LoadConfig(conf)
+func NewMemcacheRing(confPath string) (*memcacheRing, error) {
+	config, err := conf.LoadConfig(confPath)
 	if err != nil {
-		return nil, fmt.Errorf("Unable to load conf file: %s", conf)
+		return nil, fmt.Errorf("Unable to load conf file: %s", confPath)
 	}
 	return NewMemcacheRingFromConfig(config)
 }
 
-func NewMemcacheRingFromConfig(config Config) (*memcacheRing, error) {
+func NewMemcacheRingFromConfig(config conf.Config) (*memcacheRing, error) {
 	ring := &memcacheRing{}
 	ring.ring = make(map[string]string)
 	ring.serverKeys = make([]string, 0)

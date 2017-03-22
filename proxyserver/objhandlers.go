@@ -20,22 +20,23 @@ import (
 	"net/http"
 	"path/filepath"
 
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/srv"
 )
 
 func (server *ProxyServer) ObjectGetHandler(writer http.ResponseWriter, request *http.Request) {
-	vars := hummingbird.GetVars(request)
+	vars := srv.GetVars(request)
 	ctx := GetProxyContext(request)
 	if ctx == nil {
-		hummingbird.StandardResponse(writer, 500)
+		srv.StandardResponse(writer, 500)
 		return
 	}
 	if ctx.GetContainerInfo(vars["account"], vars["container"]) == nil {
-		hummingbird.StandardResponse(writer, 404)
+		srv.StandardResponse(writer, 404)
 		return
 	}
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
-		hummingbird.StandardResponse(writer, 401)
+		srv.StandardResponse(writer, 401)
 		return
 	}
 	r, headers, code := server.C.GetObject(vars["account"], vars["container"], vars["obj"], request.Header)
@@ -45,23 +46,23 @@ func (server *ProxyServer) ObjectGetHandler(writer http.ResponseWriter, request 
 	writer.WriteHeader(code)
 	if r != nil {
 		defer r.Close()
-		hummingbird.Copy(r, writer)
+		common.Copy(r, writer)
 	}
 }
 
 func (server *ProxyServer) ObjectHeadHandler(writer http.ResponseWriter, request *http.Request) {
-	vars := hummingbird.GetVars(request)
+	vars := srv.GetVars(request)
 	ctx := GetProxyContext(request)
 	if ctx == nil {
-		hummingbird.StandardResponse(writer, 500)
+		srv.StandardResponse(writer, 500)
 		return
 	}
 	if ctx.GetContainerInfo(vars["account"], vars["container"]) == nil {
-		hummingbird.StandardResponse(writer, 404)
+		srv.StandardResponse(writer, 404)
 		return
 	}
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
-		hummingbird.StandardResponse(writer, 401)
+		srv.StandardResponse(writer, 401)
 		return
 	}
 	headers, code := server.C.HeadObject(vars["account"], vars["container"], vars["obj"], request.Header)
@@ -72,37 +73,37 @@ func (server *ProxyServer) ObjectHeadHandler(writer http.ResponseWriter, request
 }
 
 func (server *ProxyServer) ObjectDeleteHandler(writer http.ResponseWriter, request *http.Request) {
-	vars := hummingbird.GetVars(request)
+	vars := srv.GetVars(request)
 	ctx := GetProxyContext(request)
 	if ctx == nil {
-		hummingbird.StandardResponse(writer, 500)
+		srv.StandardResponse(writer, 500)
 		return
 	}
 	if ctx.GetContainerInfo(vars["account"], vars["container"]) == nil {
-		hummingbird.StandardResponse(writer, 404)
+		srv.StandardResponse(writer, 404)
 		return
 	}
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
-		hummingbird.StandardResponse(writer, 401)
+		srv.StandardResponse(writer, 401)
 		return
 	}
-	request.Header.Set("X-Timestamp", hummingbird.GetTimestamp())
-	hummingbird.StandardResponse(writer, server.C.DeleteObject(vars["account"], vars["container"], vars["obj"], request.Header))
+	request.Header.Set("X-Timestamp", common.GetTimestamp())
+	srv.StandardResponse(writer, server.C.DeleteObject(vars["account"], vars["container"], vars["obj"], request.Header))
 }
 
 func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request *http.Request) {
-	vars := hummingbird.GetVars(request)
+	vars := srv.GetVars(request)
 	ctx := GetProxyContext(request)
 	if ctx == nil {
-		hummingbird.StandardResponse(writer, 500)
+		srv.StandardResponse(writer, 500)
 		return
 	}
 	if ctx.GetContainerInfo(vars["account"], vars["container"]) == nil {
-		hummingbird.StandardResponse(writer, 404)
+		srv.StandardResponse(writer, 404)
 		return
 	}
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
-		hummingbird.StandardResponse(writer, 401)
+		srv.StandardResponse(writer, 401)
 		return
 	}
 	if request.Header.Get("Content-Type") == "" {
@@ -118,6 +119,6 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 		writer.Write([]byte(str))
 		return
 	}
-	request.Header.Set("X-Timestamp", hummingbird.GetTimestamp())
-	hummingbird.StandardResponse(writer, server.C.PutObject(vars["account"], vars["container"], vars["obj"], request.Header, request.Body))
+	request.Header.Set("X-Timestamp", common.GetTimestamp())
+	srv.StandardResponse(writer, server.C.PutObject(vars["account"], vars["container"], vars["obj"], request.Header, request.Body))
 }

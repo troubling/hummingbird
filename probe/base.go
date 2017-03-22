@@ -29,31 +29,32 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/objectserver"
 )
 
 // FakeRing simulates a ring with 4 nodes and one partition.  That partition always lives on nodes 0, 1, and 2, with node 3 being the handoff.
 type FakeRing struct {
-	devices []*hummingbird.Device
+	devices []*ring.Device
 }
 
-func (r *FakeRing) GetNodes(partition uint64) (response []*hummingbird.Device) {
+func (r *FakeRing) GetNodes(partition uint64) (response []*ring.Device) {
 	return r.devices[0:3]
 }
 
-func (r *FakeRing) GetNodesInOrder(partition uint64) (response []*hummingbird.Device) {
+func (r *FakeRing) GetNodesInOrder(partition uint64) (response []*ring.Device) {
 	return r.GetNodes(partition)
 }
 
-func (r *FakeRing) GetJobNodes(partition uint64, localDevice int) (devs []*hummingbird.Device, handoff bool) {
+func (r *FakeRing) GetJobNodes(partition uint64, localDevice int) (devs []*ring.Device, handoff bool) {
 	switch localDevice {
 	case 0:
-		return []*hummingbird.Device{r.devices[1], r.devices[2]}, false
+		return []*ring.Device{r.devices[1], r.devices[2]}, false
 	case 1:
-		return []*hummingbird.Device{r.devices[0], r.devices[2]}, false
+		return []*ring.Device{r.devices[0], r.devices[2]}, false
 	case 2:
-		return []*hummingbird.Device{r.devices[0], r.devices[1]}, false
+		return []*ring.Device{r.devices[0], r.devices[1]}, false
 	default:
 		return r.devices[0:3], true
 	}
@@ -63,28 +64,28 @@ func (r *FakeRing) GetPartition(account string, container string, object string)
 	return 0
 }
 
-func (r *FakeRing) LocalDevices(localPort int) (devs []*hummingbird.Device, err error) {
+func (r *FakeRing) LocalDevices(localPort int) (devs []*ring.Device, err error) {
 	for _, d := range r.devices {
 		if d.ReplicationPort == localPort {
-			return []*hummingbird.Device{d}, nil
+			return []*ring.Device{d}, nil
 		}
 	}
 	return nil, nil
 }
 
-func (r *FakeRing) AllDevices() (devs []hummingbird.Device) {
+func (r *FakeRing) AllDevices() (devs []ring.Device) {
 	return nil
 }
 
 type fakeMoreNodes struct {
-	dev *hummingbird.Device
+	dev *ring.Device
 }
 
-func (m *fakeMoreNodes) Next() *hummingbird.Device {
+func (m *fakeMoreNodes) Next() *ring.Device {
 	return m.dev
 }
 
-func (r *FakeRing) GetMoreNodes(partition uint64) hummingbird.MoreNodes {
+func (r *FakeRing) GetMoreNodes(partition uint64) ring.MoreNodes {
 	return &fakeMoreNodes{r.devices[3]}
 }
 
@@ -118,7 +119,7 @@ type Environment struct {
 	hosts                  []string
 	replicatorServers      []*TestReplicatorWebServer
 	auditors               []*objectserver.AuditorDaemon
-	ring                   hummingbird.Ring
+	ring                   ring.Ring
 	hashPrefix, hashSuffix string
 }
 
@@ -190,9 +191,9 @@ func (e *Environment) ObjExists(server int, timestamp string, policy int) bool {
 // NewEnvironment creates a new environment.  Arguments should be a series of key, value pairs that are added to the object server configuration file.
 func NewEnvironment(settings ...string) *Environment {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	oldLoadPolicies := hummingbird.LoadPolicies
-	hummingbird.LoadPolicies = func() hummingbird.PolicyList {
-		return hummingbird.PolicyList(map[int]*hummingbird.Policy{
+	oldLoadPolicies := conf.LoadPolicies
+	conf.LoadPolicies = func() conf.PolicyList {
+		return conf.PolicyList(map[int]*conf.Policy{
 			0: {
 				Index:      0,
 				Type:       "replication",
@@ -212,10 +213,10 @@ func NewEnvironment(settings ...string) *Environment {
 		})
 	}
 	defer func() {
-		hummingbird.LoadPolicies = oldLoadPolicies
+		conf.LoadPolicies = oldLoadPolicies
 	}()
 	env := &Environment{ring: &FakeRing{devices: nil}}
-	env.hashPrefix, env.hashSuffix, _ = hummingbird.GetHashPrefixAndSuffix()
+	env.hashPrefix, env.hashSuffix, _ = conf.GetHashPrefixAndSuffix()
 	for i := 0; i < 4; i++ {
 		driveRoot, _ := ioutil.TempDir("", "")
 		os.MkdirAll(filepath.Join(driveRoot, "sda", "objects"), 0755)
@@ -240,7 +241,7 @@ func NewEnvironment(settings ...string) *Environment {
 		configString += fmt.Sprintf("bind_port=%d\n", trsPort)
 		configString += fmt.Sprintf("bind_ip=%s\n", trsHost)
 		configString += "[object-auditor]\n"
-		conf, _ := hummingbird.StringConfig(configString)
+		conf, _ := conf.StringConfig(configString)
 		_, _, server, _, _ := objectserver.GetServer(conf, &flag.FlagSet{})
 		ts.Config.Handler = server.GetHandler(conf)
 
@@ -258,7 +259,7 @@ func NewEnvironment(settings ...string) *Environment {
 			log.Fatal(err)
 		}
 
-		env.ring.(*FakeRing).devices = append(env.ring.(*FakeRing).devices, &hummingbird.Device{
+		env.ring.(*FakeRing).devices = append(env.ring.(*FakeRing).devices, &ring.Device{
 			Id: i, Device: "sda", Ip: host, Port: port, Region: 0, ReplicationIp: trsHost, ReplicationPort: trsPort, Weight: 1, Zone: i,
 		})
 

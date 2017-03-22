@@ -30,7 +30,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/pickle"
+	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/xattr"
 )
 
@@ -105,7 +107,7 @@ func ReadMetadata(fileNameOrFd interface{}) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	v, err := hummingbird.PickleLoads(pickledMetadata)
+	v, err := pickle.PickleLoads(pickledMetadata)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +148,7 @@ func RawWriteMetadata(fd uintptr, buf []byte) error {
 }
 
 func WriteMetadata(fd uintptr, v map[string]string) error {
-	return RawWriteMetadata(fd, hummingbird.PickleDumps(v))
+	return RawWriteMetadata(fd, pickle.PickleDumps(v))
 }
 
 func QuarantineHash(hashDir string) error {
@@ -160,7 +162,7 @@ func QuarantineHash(hashDir string) error {
 		return err
 	}
 	hash := filepath.Base(hashDir)
-	destDir := filepath.Join(quarantineDir, hash+"-"+hummingbird.UUID())
+	destDir := filepath.Join(quarantineDir, hash+"-"+common.UUID())
 	if err := os.Rename(hashDir, destDir); err != nil {
 		return err
 	}
@@ -172,7 +174,7 @@ func InvalidateHash(hashDir string) error {
 	suffDir := filepath.Dir(hashDir)
 	partitionDir := filepath.Dir(suffDir)
 
-	if partitionLock, err := hummingbird.LockPath(partitionDir, 10*time.Second); err != nil {
+	if partitionLock, err := common.LockPath(partitionDir, 10*time.Second); err != nil {
 		return err
 	} else {
 		defer partitionLock.Close()
@@ -187,13 +189,13 @@ func InvalidateHash(hashDir string) error {
 }
 
 func HashCleanupListDir(hashDir string, reclaimAge int64) ([]string, error) {
-	fileList, err := hummingbird.ReadDirNames(hashDir)
+	fileList, err := common.ReadDirNames(hashDir)
 	returnList := []string{}
 	if err != nil {
 		if os.IsNotExist(err) {
 			return returnList, nil
 		}
-		if hummingbird.IsNotDir(err) {
+		if common.IsNotDir(err) {
 			return returnList, PathNotDirError
 		}
 		return returnList, err
@@ -242,9 +244,9 @@ func RecalculateSuffixHash(suffixDir string, reclaimAge int64) (string, error) {
 	// the is hash_suffix in swift
 	h := md5.New()
 
-	hashList, err := hummingbird.ReadDirNames(suffixDir)
+	hashList, err := common.ReadDirNames(suffixDir)
 	if err != nil {
-		if hummingbird.IsNotDir(err) {
+		if common.IsNotDir(err) {
 			return "", PathNotDirError
 		}
 		return "", err
@@ -272,7 +274,7 @@ func RecalculateSuffixHash(suffixDir string, reclaimAge int64) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func GetHashes(driveRoot string, device string, partition string, recalculate []string, reclaimAge int64, policy int, logger hummingbird.LoggingContext) (map[string]string, error) {
+func GetHashes(driveRoot string, device string, partition string, recalculate []string, reclaimAge int64, policy int, logger srv.LoggingContext) (map[string]string, error) {
 	partitionDir := filepath.Join(driveRoot, device, PolicyDir(policy), partition)
 	pklFile := filepath.Join(partitionDir, "hashes.pkl")
 	invalidFile := filepath.Join(partitionDir, "hashes.invalid")
@@ -281,7 +283,7 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 	hashes := make(map[string]string, 4096)
 	lsForSuffixes := true
 	if data, err := ioutil.ReadFile(pklFile); err == nil {
-		if v, err := hummingbird.PickleLoads(data); err == nil {
+		if v, err := pickle.PickleLoads(data); err == nil {
 			if pickledHashes, ok := v.(map[interface{}]interface{}); ok {
 				lsForSuffixes = false
 				for suff, hash := range pickledHashes {
@@ -298,7 +300,7 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 	}
 	if lsForSuffixes {
 		// couldn't load hashes pickle, start building new one
-		suffs, _ := hummingbird.ReadDirNames(partitionDir)
+		suffs, _ := common.ReadDirNames(partitionDir)
 
 		for _, suffName := range suffs {
 			if len(suffName) == 3 && hashes[suffName] == "" {
@@ -341,7 +343,7 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 		}
 	}
 	if modified {
-		partitionLock, err := hummingbird.LockPath(partitionDir, 10*time.Second)
+		partitionLock, err := common.LockPath(partitionDir, 10*time.Second)
 		defer partitionLock.Close()
 		if err != nil {
 			return nil, LockPathError
@@ -351,7 +353,7 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 				tempDir := TempDirPath(driveRoot, device)
 				if tempFile, err := NewAtomicFileWriter(tempDir, partitionDir); err == nil {
 					defer tempFile.Abandon()
-					tempFile.Write(hummingbird.PickleDumps(hashes))
+					tempFile.Write(pickle.PickleDumps(hashes))
 					tempFile.Save(pklFile)
 				}
 				os.Truncate(invalidFile, 0)
@@ -374,7 +376,7 @@ func ObjHashDir(vars map[string]string, driveRoot string, hashPathPrefix string,
 }
 
 func ObjectFiles(directory string) (string, string) {
-	fileList, err := hummingbird.ReadDirNames(directory)
+	fileList, err := common.ReadDirNames(directory)
 	metaFile := ""
 	if err != nil {
 		return "", ""

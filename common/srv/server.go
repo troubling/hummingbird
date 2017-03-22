@@ -13,7 +13,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-package hummingbird
+package srv
 
 import (
 	"bufio"
@@ -21,15 +21,21 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/ioutil"
+	"log/syslog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strconv"
 	"syscall"
 	"time"
 	"unicode/utf8"
+
+	"github.com/troubling/hummingbird/common/conf"
 )
 
 var responseTemplate = "<html><h1>%s</h1><p>%s</p></html>"
@@ -174,6 +180,53 @@ type LowLevelLogger interface {
 	Debug(string) error
 }
 
+type consoleLogger struct{}
+
+func (c *consoleLogger) Err(m string) error {
+	fmt.Println("ERROR:", m)
+	return nil
+}
+
+func (c *consoleLogger) Info(m string) error {
+	fmt.Println("INFO:", m)
+	return nil
+}
+
+func (c *consoleLogger) Debug(m string) error {
+	fmt.Println("DEBUG:", m)
+	return nil
+}
+
+var syslogFacilityMapping = map[string]syslog.Priority{"LOG_USER": syslog.LOG_USER,
+	"LOG_MAIL": syslog.LOG_MAIL, "LOG_DAEMON": syslog.LOG_DAEMON,
+	"LOG_AUTH": syslog.LOG_AUTH, "LOG_SYSLOG": syslog.LOG_SYSLOG,
+	"LOG_LPR": syslog.LOG_LPR, "LOG_NEWS": syslog.LOG_NEWS,
+	"LOG_UUCP": syslog.LOG_UUCP, "LOG_CRON": syslog.LOG_CRON,
+	"LOG_AUTHPRIV": syslog.LOG_AUTHPRIV, "LOG_FTP": syslog.LOG_FTP,
+	"LOG_LOCAL0": syslog.LOG_LOCAL0, "LOG_LOCAL1": syslog.LOG_LOCAL1,
+	"LOG_LOCAL2": syslog.LOG_LOCAL2, "LOG_LOCAL3": syslog.LOG_LOCAL3,
+	"LOG_LOCAL4": syslog.LOG_LOCAL4, "LOG_LOCAL5": syslog.LOG_LOCAL5,
+	"LOG_LOCAL6": syslog.LOG_LOCAL6, "LOG_LOCAL7": syslog.LOG_LOCAL7}
+
+// SetupLogger pulls configuration information from the config and flags to create a UDP syslog logger.
+// If -d was not specified, it also logs to the console.
+func SetupLogger(conf conf.Config, flags *flag.FlagSet, section, prefix string) (LowLevelLogger, error) {
+	vFlag := flags.Lookup("v")
+	dFlag := flags.Lookup("d")
+	if vFlag != nil && dFlag != nil && vFlag.Value.(flag.Getter).Get().(bool) && !dFlag.Value.(flag.Getter).Get().(bool) {
+		return &consoleLogger{}, nil
+	}
+	facility := conf.GetDefault(section, "log_facility", "LOG_LOCAL0")
+	host := conf.GetDefault(section, "log_udp_host", "127.0.0.1")
+	port := conf.GetInt(section, "log_udp_port", 514)
+	dialHost := fmt.Sprintf("%s:%d", host, port)
+	logger, err := syslog.Dial("udp", dialHost, syslogFacilityMapping[facility], prefix)
+	if err != nil {
+		return nil, fmt.Errorf("Unable to dial logger: %v", err)
+	}
+	return logger, nil
+}
+
 /* http.Server that knows how to shut down gracefully */
 
 type HummingbirdServer struct {
@@ -206,8 +259,22 @@ func RetryListen(ip string, port int) (net.Listener, error) {
 	}
 }
 
+func DumpGoroutinesStackTrace(pid int) {
+	filename := filepath.Join("/tmp", strconv.Itoa(pid)+".dump")
+	buf := make([]byte, 1<<20)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			buf = buf[:n]
+			break
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+	ioutil.WriteFile(filename, buf, 0644)
+}
+
 type Server interface {
-	GetHandler(Config) http.Handler
+	GetHandler(conf.Config) http.Handler
 }
 
 /*
@@ -217,7 +284,7 @@ type Server interface {
 
 	Graceful shutdown/restart gives any open connections 5 minutes to complete, then exits.
 */
-func RunServers(GetServer func(Config, *flag.FlagSet) (string, int, Server, LowLevelLogger, error), flags *flag.FlagSet) {
+func RunServers(GetServer func(conf.Config, *flag.FlagSet) (string, int, Server, LowLevelLogger, error), flags *flag.FlagSet) {
 	var servers []*HummingbirdServer
 
 	if flags.NArg() != 0 {
@@ -225,7 +292,7 @@ func RunServers(GetServer func(Config, *flag.FlagSet) (string, int, Server, LowL
 		return
 	}
 	configFile := flags.Lookup("c").Value.(flag.Getter).Get().(string)
-	configs, err := LoadConfigs(configFile)
+	configs, err := conf.LoadConfigs(configFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error finding configs: %v\n", err)
 		return
@@ -293,7 +360,7 @@ type Daemon interface {
 	LogError(format string, args ...interface{})
 }
 
-func RunDaemon(GetDaemon func(Config, *flag.FlagSet) (Daemon, error), flags *flag.FlagSet) {
+func RunDaemon(GetDaemon func(conf.Config, *flag.FlagSet) (Daemon, error), flags *flag.FlagSet) {
 	var daemons []Daemon
 
 	if flags.NArg() != 0 {
@@ -302,7 +369,7 @@ func RunDaemon(GetDaemon func(Config, *flag.FlagSet) (Daemon, error), flags *fla
 	}
 
 	configFile := flags.Lookup("c").Value.(flag.Getter).Get().(string)
-	configs, err := LoadConfigs(configFile)
+	configs, err := conf.LoadConfigs(configFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error finding configs: %v\n", err)
 		return

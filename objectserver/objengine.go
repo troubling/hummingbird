@@ -20,7 +20,7 @@ import (
 	"flag"
 	"io"
 
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common/conf"
 )
 
 // DriveFullError can be returned by Object.SetData and Object.Delete if the disk is too full for the operation.
@@ -58,7 +58,7 @@ type ObjectEngine interface {
 }
 
 // ObjectEngineConstructor> is a function that, given configs and flags, returns an ObjectEngine
-type ObjectEngineConstructor func(hummingbird.Config, *hummingbird.Policy, *flag.FlagSet) (ObjectEngine, error)
+type ObjectEngineConstructor func(conf.Config, *conf.Policy, *flag.FlagSet) (ObjectEngine, error)
 
 type engineFactoryEntry struct {
 	name        string

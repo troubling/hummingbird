@@ -25,8 +25,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/pickle"
+	"github.com/troubling/hummingbird/common/srv"
 )
 
 type DummyLogger struct{}
@@ -90,7 +91,7 @@ func TestUpdateDeleteAt(t *testing.T) {
 	dl := DummyLogger{}
 
 	vars := map[string]string{"account": "a", "container": "c", "obj": "o", "device": "sda"}
-	req = hummingbird.SetVars(req, vars)
+	req = srv.SetVars(req, vars)
 	deleteAtStr := "1434707411"
 	server.updateDeleteAt(req, deleteAtStr, vars, &dl)
 	require.True(t, requestSent)
@@ -98,10 +99,10 @@ func TestUpdateDeleteAt(t *testing.T) {
 	cs.Close()
 	server.updateDeleteAt(req, deleteAtStr, vars, &dl)
 	expectedFile := filepath.Join(ts.root, "sda", "async_pending", "8fc", "02cc012fe572f27e455edbea32da78fc-12345.6789")
-	require.True(t, hummingbird.Exists(expectedFile))
+	require.True(t, common.Exists(expectedFile))
 	data, err := ioutil.ReadFile(expectedFile)
 	require.Nil(t, err)
-	a, err := hummingbird.PickleLoads(data)
+	a, err := pickle.PickleLoads(data)
 	require.Nil(t, err)
 	asyncData := a.(map[interface{}]interface{})
 	require.Equal(t, asyncData["op"], "PUT")
@@ -122,14 +123,14 @@ func TestUpdateDeleteAtNoHeaders(t *testing.T) {
 	req.Header.Add("X-Timestamp", "12345.6789")
 
 	vars := map[string]string{"account": "a", "container": "c", "obj": "o", "device": "sda"}
-	req = hummingbird.SetVars(req, vars)
+	req = srv.SetVars(req, vars)
 	deleteAtStr := "1434707411"
 	server.updateDeleteAt(req, deleteAtStr, vars, &DummyLogger{})
 	expectedFile := filepath.Join(ts.root, "sda", "async_pending", "8fc", "02cc012fe572f27e455edbea32da78fc-12345.6789")
-	require.True(t, hummingbird.Exists(expectedFile))
+	require.True(t, common.Exists(expectedFile))
 	data, err := ioutil.ReadFile(expectedFile)
 	require.Nil(t, err)
-	a, err := hummingbird.PickleLoads(data)
+	a, err := pickle.PickleLoads(data)
 	require.Nil(t, err)
 	asyncData := a.(map[interface{}]interface{})
 	require.Equal(t, asyncData["op"], "PUT")
@@ -167,7 +168,7 @@ func TestUpdateContainer(t *testing.T) {
 	dl := DummyLogger{}
 
 	vars := map[string]string{"account": "a", "container": "c", "obj": "o", "device": "sda"}
-	req = hummingbird.SetVars(req, vars)
+	req = srv.SetVars(req, vars)
 	metadata := map[string]string{
 		"X-Timestamp":    "12345.789",
 		"Content-Type":   "text/plain",
@@ -180,10 +181,10 @@ func TestUpdateContainer(t *testing.T) {
 	cs.Close()
 	server.updateContainer(metadata, req, vars, &dl)
 	expectedFile := filepath.Join(ts.root, "sda", "async_pending", "099", "2f714cd91b0e5d803cde2012b01d7099-12345.6789")
-	require.True(t, hummingbird.Exists(expectedFile))
+	require.True(t, common.Exists(expectedFile))
 	data, err := ioutil.ReadFile(expectedFile)
 	require.Nil(t, err)
-	a, err := hummingbird.PickleLoads(data)
+	a, err := pickle.PickleLoads(data)
 	require.Nil(t, err)
 	asyncData := a.(map[interface{}]interface{})
 	require.Equal(t, asyncData["op"], "PUT")
@@ -210,7 +211,7 @@ func TestUpdateContainerNoHeaders(t *testing.T) {
 	req.Header.Add("X-Timestamp", "12345.6789")
 
 	vars := map[string]string{"account": "a", "container": "c", "obj": "o", "device": "sda"}
-	req = hummingbird.SetVars(req, vars)
+	req = srv.SetVars(req, vars)
 	metadata := map[string]string{
 		"X-Timestamp":    "12345.789",
 		"Content-Type":   "text/plain",
@@ -224,5 +225,5 @@ func TestUpdateContainerNoHeaders(t *testing.T) {
 	cs.Close()
 	server.updateContainer(metadata, req, vars, &dl)
 	expectedFile := filepath.Join(ts.root, "sda", "async_pending", "099", "2f714cd91b0e5d803cde2012b01d7099-12345.6789")
-	require.False(t, hummingbird.Exists(expectedFile))
+	require.False(t, common.Exists(expectedFile))
 }

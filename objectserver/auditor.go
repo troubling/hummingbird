@@ -27,7 +27,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/middleware"
 )
 
 // AuditForeverInterval represents how often a auditor check should be performed.
@@ -37,8 +40,8 @@ var AuditForeverInterval = 30 * time.Second
 type AuditorDaemon struct {
 	checkMounts       bool
 	driveRoot         string
-	policies          hummingbird.PolicyList
-	logger            hummingbird.LowLevelLogger
+	policies          conf.PolicyList
+	logger            srv.LowLevelLogger
 	bytesPerSecond    int64
 	logTime           int64
 	regFilesPerSecond int64
@@ -77,7 +80,7 @@ func rateLimitSleep(startTime time.Time, done int64, rate int64) {
 
 // auditHash of object hash dir.
 func auditHash(hashPath string, skipMd5 bool) (bytesProcessed int64, err error) {
-	objFiles, err := hummingbird.ReadDirNames(hashPath)
+	objFiles, err := common.ReadDirNames(hashPath)
 	if err != nil {
 		return 0, fmt.Errorf("Error reading hash dir")
 	}
@@ -118,7 +121,7 @@ func auditHash(hashPath string, skipMd5 bool) (bytesProcessed int64, err error) 
 					return bytesProcessed, fmt.Errorf("Error opening file")
 				}
 				h := md5.New()
-				bytes, err := hummingbird.Copy(file, h)
+				bytes, err := common.Copy(file, h)
 				if err != nil {
 					return bytesProcessed, fmt.Errorf("Error reading file")
 				}
@@ -140,7 +143,7 @@ func auditHash(hashPath string, skipMd5 bool) (bytesProcessed int64, err error) 
 
 // auditSuffix directory.  Lists hash dirs, calls auditHash() for each, and quarantines any with errors.
 func (a *Auditor) auditSuffix(suffixDir string) {
-	hashes, err := hummingbird.ReadDirNames(suffixDir)
+	hashes, err := common.ReadDirNames(suffixDir)
 	if err != nil {
 		a.errors++
 		a.totalErrors++
@@ -173,7 +176,7 @@ func (a *Auditor) auditSuffix(suffixDir string) {
 
 // auditPartition directory.  Lists suffixes in the partition and calls auditSuffix() for each.
 func (a *Auditor) auditPartition(partitionDir string) {
-	suffixes, err := hummingbird.ReadDirNames(partitionDir)
+	suffixes, err := common.ReadDirNames(partitionDir)
 	if err != nil {
 		a.errors++
 		a.totalErrors++
@@ -201,7 +204,7 @@ func (a *Auditor) auditPartition(partitionDir string) {
 func (a *Auditor) auditDevice(devPath string) {
 	defer a.LogPanics("PANIC WHILE AUDITING DEVICE")
 
-	if mounted, err := hummingbird.IsMount(devPath); a.checkMounts && (err != nil || mounted != true) {
+	if mounted, err := common.IsMount(devPath); a.checkMounts && (err != nil || mounted != true) {
 		a.LogError("Skipping unmounted device: %s", devPath)
 		return
 	}
@@ -211,7 +214,7 @@ func (a *Auditor) auditDevice(devPath string) {
 			continue
 		}
 		objPath := filepath.Join(devPath, PolicyDir(policy.Index))
-		partitions, err := hummingbird.ReadDirNames(objPath)
+		partitions, err := common.ReadDirNames(objPath)
 		if err != nil {
 			a.errors++
 			a.totalErrors++
@@ -242,7 +245,7 @@ func (a *Auditor) statsReport() {
 	a.LogInfo("Object audit (%s). Since %s: Locally: %d passed, %d quarantined, %d errors, files/sec: %.2f ,"+
 		" bytes/sec: %.2f, Total time: %.2f, Auditing time: %.2f, Rate: %.2f",
 		a.auditorType, a.lastLog.Format(time.ANSIC), a.passes, a.quarantines, a.errors, frate, brate, total, audit, audit_rate)
-	hummingbird.DumpReconCache(a.reconCachePath, "object",
+	middleware.DumpReconCache(a.reconCachePath, "object",
 		map[string]interface{}{"object_auditor_stats_" + a.auditorType: map[string]interface{}{
 			"errors":          a.errors,
 			"passes":          a.passes,
@@ -273,7 +276,7 @@ func (a *Auditor) finalLog() {
 // run audit passes of the whole server until c is closed.
 func (a *Auditor) run(c <-chan time.Time) {
 	for a.passStart = range c {
-		hummingbird.DumpReconCache(a.reconCachePath, "object",
+		middleware.DumpReconCache(a.reconCachePath, "object",
 			map[string]interface{}{"object_auditor_stats_" + a.auditorType: nil})
 		a.passes = 0
 		a.bytesProcessed = 0
@@ -284,7 +287,7 @@ func (a *Auditor) run(c <-chan time.Time) {
 		a.totalQuarantines = 0
 		a.totalErrors = 0
 		a.LogInfo("Begin object audit \"%s\" mode (%s%s)", a.mode, a.auditorType, a.driveRoot)
-		devices, err := hummingbird.ReadDirNames(a.driveRoot)
+		devices, err := common.ReadDirNames(a.driveRoot)
 		if err != nil {
 			a.LogError("Unable to list devices: %s", a.driveRoot)
 			continue
@@ -340,16 +343,16 @@ func (d *AuditorDaemon) RunForever() {
 }
 
 // NewAuditor returns a new AuditorDaemon with the given conf.
-func NewAuditor(serverconf hummingbird.Config, flags *flag.FlagSet) (hummingbird.Daemon, error) {
+func NewAuditor(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, error) {
 	var err error
 	if !serverconf.HasSection("object-auditor") {
 		return nil, fmt.Errorf("Unable to find object-auditor config section")
 	}
 	d := &AuditorDaemon{}
-	d.policies = hummingbird.LoadPolicies()
+	d.policies = conf.LoadPolicies()
 	d.driveRoot = serverconf.GetDefault("object-auditor", "devices", "/srv/node")
 	d.checkMounts = serverconf.GetBool("object-auditor", "mount_check", true)
-	if d.logger, err = hummingbird.SetupLogger(serverconf, flags, "app:object-auditor", "object-auditor"); err != nil {
+	if d.logger, err = srv.SetupLogger(serverconf, flags, "app:object-auditor", "object-auditor"); err != nil {
 		return nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 	d.bytesPerSecond = serverconf.GetInt("object-auditor", "bytes_per_second", 10000000)

@@ -27,7 +27,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/pickle"
+	"github.com/troubling/hummingbird/common/srv"
 )
 
 /*This hash is used to represent a zero byte async file that is
@@ -73,7 +75,7 @@ func (server *ObjectServer) expirerContainer(deleteAt time.Time, account, contai
 
 func (server *ObjectServer) sendContainerUpdate(host, device, method, partition, account, container, obj string, headers http.Header) bool {
 	obj_url := fmt.Sprintf("http://%s/%s/%s/%s/%s/%s", host, device, partition,
-		hummingbird.Urlencode(account), hummingbird.Urlencode(container), hummingbird.Urlencode(obj))
+		common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj))
 	if req, err := http.NewRequest(method, obj_url, nil); err == nil {
 		req.Header = headers
 		if resp, err := server.updateClient.Do(req); err == nil {
@@ -101,13 +103,13 @@ func (server *ObjectServer) saveAsync(method, account, container, obj, localDevi
 		writer, err := NewAtomicFileWriter(tempDir, filepath.Dir(asyncFile))
 		if err == nil {
 			defer writer.Abandon()
-			writer.Write(hummingbird.PickleDumps(data))
+			writer.Write(pickle.PickleDumps(data))
 			writer.Save(asyncFile)
 		}
 	}
 }
 
-func (server *ObjectServer) updateContainer(metadata map[string]string, request *http.Request, vars map[string]string, logger hummingbird.LoggingContext) {
+func (server *ObjectServer) updateContainer(metadata map[string]string, request *http.Request, vars map[string]string, logger srv.LoggingContext) {
 	partition := request.Header.Get("X-Container-Partition")
 	hosts := splitHeader(request.Header.Get("X-Container-Host"))
 	devices := splitHeader(request.Header.Get("X-Container-Device"))
@@ -115,10 +117,10 @@ func (server *ObjectServer) updateContainer(metadata map[string]string, request 
 		return
 	}
 	requestHeaders := http.Header{
-		"X-Backend-Storage-Policy-Index": {hummingbird.GetDefault(request.Header, "X-Backend-Storage-Policy-Index", "0")},
-		"Referer":                        {hummingbird.GetDefault(request.Header, "Referer", "-")},
-		"User-Agent":                     {hummingbird.GetDefault(request.Header, "User-Agent", "-")},
-		"X-Trans-Id":                     {hummingbird.GetDefault(request.Header, "X-Trans-Id", "-")},
+		"X-Backend-Storage-Policy-Index": {common.GetDefault(request.Header, "X-Backend-Storage-Policy-Index", "0")},
+		"Referer":                        {common.GetDefault(request.Header, "Referer", "-")},
+		"User-Agent":                     {common.GetDefault(request.Header, "User-Agent", "-")},
+		"X-Trans-Id":                     {common.GetDefault(request.Header, "X-Trans-Id", "-")},
 		"X-Timestamp":                    {request.Header.Get("X-Timestamp")},
 	}
 	if request.Method != "DELETE" {
@@ -138,24 +140,24 @@ func (server *ObjectServer) updateContainer(metadata map[string]string, request 
 	}
 }
 
-func (server *ObjectServer) updateDeleteAt(request *http.Request, deleteAtStr string, vars map[string]string, logger hummingbird.LoggingContext) {
-	deleteAt, err := hummingbird.ParseDate(deleteAtStr)
+func (server *ObjectServer) updateDeleteAt(request *http.Request, deleteAtStr string, vars map[string]string, logger srv.LoggingContext) {
+	deleteAt, err := common.ParseDate(deleteAtStr)
 	if err != nil {
 		return
 	}
-	container := hummingbird.GetDefault(request.Header, "X-Delete-At-Container", "")
+	container := common.GetDefault(request.Header, "X-Delete-At-Container", "")
 	if container == "" {
 		container = server.expirerContainer(deleteAt, vars["account"], vars["container"], vars["obj"])
 	}
 	obj := fmt.Sprintf("%010d-%s/%s/%s", deleteAt.Unix(), vars["account"], vars["container"], vars["obj"])
-	partition := hummingbird.GetDefault(request.Header, "X-Delete-At-Partition", "")
+	partition := common.GetDefault(request.Header, "X-Delete-At-Partition", "")
 	hosts := splitHeader(request.Header.Get("X-Delete-At-Host"))
 	devices := splitHeader(request.Header.Get("X-Delete-At-Device"))
 	requestHeaders := http.Header{
-		"X-Backend-Storage-Policy-Index": {hummingbird.GetDefault(request.Header, "X-Backend-Storage-Policy-Index", "0")},
-		"Referer":                        {hummingbird.GetDefault(request.Header, "Referer", "-")},
-		"User-Agent":                     {hummingbird.GetDefault(request.Header, "User-Agent", "-")},
-		"X-Trans-Id":                     {hummingbird.GetDefault(request.Header, "X-Trans-Id", "-")},
+		"X-Backend-Storage-Policy-Index": {common.GetDefault(request.Header, "X-Backend-Storage-Policy-Index", "0")},
+		"Referer":                        {common.GetDefault(request.Header, "Referer", "-")},
+		"User-Agent":                     {common.GetDefault(request.Header, "User-Agent", "-")},
+		"X-Trans-Id":                     {common.GetDefault(request.Header, "X-Trans-Id", "-")},
 		"X-Timestamp":                    {request.Header.Get("X-Timestamp")},
 	}
 	if request.Method != "DELETE" {
@@ -175,7 +177,7 @@ func (server *ObjectServer) updateDeleteAt(request *http.Request, deleteAtStr st
 	}
 }
 
-func (server *ObjectServer) containerUpdates(request *http.Request, metadata map[string]string, deleteAt string, vars map[string]string, logger hummingbird.LoggingContext) {
+func (server *ObjectServer) containerUpdates(request *http.Request, metadata map[string]string, deleteAt string, vars map[string]string, logger srv.LoggingContext) {
 	defer logger.LogPanics("PANIC WHILE UPDATING CONTAINER LISTINGS")
 	if deleteAt != "" {
 		go server.updateDeleteAt(request, deleteAt, vars, logger)

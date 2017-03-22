@@ -25,7 +25,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/pickle"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -54,7 +55,7 @@ func TestAuditNonStringKey(t *testing.T) {
 	f, _ := os.Create(filepath.Join(dir, "fffffffffffffffffffffffffffffabc", "12345.data"))
 	defer f.Close()
 	metadata := map[interface{}]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "Content-Type": "", "X-Timestamp": "", "name": "", 3: "hi"}
-	RawWriteMetadata(f.Fd(), hummingbird.PickleDumps(metadata))
+	RawWriteMetadata(f.Fd(), pickle.PickleDumps(metadata))
 	f.Write([]byte("testcontents"))
 	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
 	assert.NotNil(t, err)
@@ -68,7 +69,7 @@ func TestAuditNonStringValue(t *testing.T) {
 	f, _ := os.Create(filepath.Join(dir, "fffffffffffffffffffffffffffffabc", "12345.data"))
 	defer f.Close()
 	metadata := map[string]interface{}{"Content-Length": 12, "ETag": "d3ac5112fe464b81184352ccba743001", "Content-Type": "", "X-Timestamp": "", "name": ""}
-	RawWriteMetadata(f.Fd(), hummingbird.PickleDumps(metadata))
+	RawWriteMetadata(f.Fd(), pickle.PickleDumps(metadata))
 	f.Write([]byte("testcontents"))
 	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
 	assert.NotNil(t, err)
@@ -197,14 +198,14 @@ func makeAuditor(settings ...string) *Auditor {
 	for i := 0; i < len(settings); i += 2 {
 		configString += fmt.Sprintf("%s=%s\n", settings[i], settings[i+1])
 	}
-	conf, _ := hummingbird.StringConfig(configString)
+	conf, _ := conf.StringConfig(configString)
 	auditorDaemon, _ := NewAuditor(conf, &flag.FlagSet{})
 	auditorDaemon.(*AuditorDaemon).logger = &auditLogSaver{}
 	return &Auditor{AuditorDaemon: auditorDaemon.(*AuditorDaemon), filesPerSecond: 1}
 }
 
 func TestFailsWithoutSection(t *testing.T) {
-	conf, err := hummingbird.StringConfig("")
+	conf, err := conf.StringConfig("")
 	require.Nil(t, err)
 	auditorDaemon, err := NewAuditor(conf, &flag.FlagSet{})
 	require.NotNil(t, err)

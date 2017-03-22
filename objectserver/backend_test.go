@@ -23,7 +23,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -63,7 +63,7 @@ func TestGetHashes(t *testing.T) {
 	f, _ = os.Create(filepath.Join(driveRoot, "sda", "objects", "1", "abc", "00000000000000000000000000000abc", "67890.data"))
 	f.Close()
 
-	hashes, err := GetHashes(driveRoot, "sda", "1", nil, int64(hummingbird.ONE_WEEK), 0, nil)
+	hashes, err := GetHashes(driveRoot, "sda", "1", nil, int64(common.ONE_WEEK), 0, nil)
 	assert.Nil(t, err)
 	assert.Equal(t, "b1589029b7db9d01347caece2159d588", hashes["abc"])
 
@@ -72,12 +72,12 @@ func TestGetHashes(t *testing.T) {
 	f.Close()
 
 	// make sure hash for "abc" isn't recalculated yet.
-	hashes, err = GetHashes(driveRoot, "sda", "1", nil, int64(hummingbird.ONE_WEEK), 0, nil)
+	hashes, err = GetHashes(driveRoot, "sda", "1", nil, int64(common.ONE_WEEK), 0, nil)
 	assert.Nil(t, err)
 	assert.Equal(t, "b1589029b7db9d01347caece2159d588", hashes["abc"])
 
 	// force recalculate of "abc"
-	hashes, err = GetHashes(driveRoot, "sda", "1", []string{"abc"}, int64(hummingbird.ONE_WEEK), 0, nil)
+	hashes, err = GetHashes(driveRoot, "sda", "1", []string{"abc"}, int64(common.ONE_WEEK), 0, nil)
 	assert.Nil(t, err)
 	assert.Equal(t, "8834e84467693c2e8f670f4afbea5334", hashes["abc"])
 }
@@ -92,7 +92,7 @@ func TestInvalidateHash(t *testing.T) {
 	f, _ = os.Create(filepath.Join(driveRoot, "sda", "objects", "1", "abc", "00000000000000000000000000000abc", "67890.data"))
 	f.Close()
 
-	hashes, err := GetHashes(driveRoot, "sda", "1", nil, int64(hummingbird.ONE_WEEK), 0, nil)
+	hashes, err := GetHashes(driveRoot, "sda", "1", nil, int64(common.ONE_WEEK), 0, nil)
 	assert.Nil(t, err)
 	assert.Equal(t, "b1589029b7db9d01347caece2159d588", hashes["abc"])
 
@@ -101,13 +101,13 @@ func TestInvalidateHash(t *testing.T) {
 	f.Close()
 
 	// make sure hash for "abc" isn't recalculated yet.
-	hashes, err = GetHashes(driveRoot, "sda", "1", nil, int64(hummingbird.ONE_WEEK), 0, nil)
+	hashes, err = GetHashes(driveRoot, "sda", "1", nil, int64(common.ONE_WEEK), 0, nil)
 	assert.Nil(t, err)
 	assert.Equal(t, "b1589029b7db9d01347caece2159d588", hashes["abc"])
 
 	// invalidate hash of suffix "abc"
 	InvalidateHash(filepath.Join(driveRoot, "", "sda", "objects", "1", "abc", "00000000000000000000000000000abc"))
-	hashes, err = GetHashes(driveRoot, "sda", "1", nil, int64(hummingbird.ONE_WEEK), 0, nil)
+	hashes, err = GetHashes(driveRoot, "sda", "1", nil, int64(common.ONE_WEEK), 0, nil)
 	assert.Nil(t, err)
 	assert.Equal(t, "8834e84467693c2e8f670f4afbea5334", hashes["abc"])
 }
@@ -133,12 +133,12 @@ func TestQuarantineHash(t *testing.T) {
 	hashDir := filepath.Join(driveRoot, "sda", "objects", "1", "abc", "fffffffffffffffffffffffffffffabc")
 	os.MkdirAll(hashDir, 0777)
 	QuarantineHash(hashDir)
-	require.True(t, hummingbird.Exists(filepath.Join(driveRoot, "sda", "quarantined", "objects")))
-	require.False(t, hummingbird.Exists(hashDir))
+	require.True(t, common.Exists(filepath.Join(driveRoot, "sda", "quarantined", "objects")))
+	require.False(t, common.Exists(hashDir))
 
 	hashDir = filepath.Join(driveRoot, "sdb", "objects-1", "1", "abc", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	os.MkdirAll(hashDir, 0777)
 	QuarantineHash(hashDir)
-	require.True(t, hummingbird.Exists(filepath.Join(driveRoot, "sdb", "quarantined", "objects-1")))
-	require.False(t, hummingbird.Exists(hashDir))
+	require.True(t, common.Exists(filepath.Join(driveRoot, "sdb", "quarantined", "objects-1")))
+	require.False(t, common.Exists(hashDir))
 }

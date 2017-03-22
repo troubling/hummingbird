@@ -20,8 +20,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common"
 )
 
 func TestReplicationHandoff(t *testing.T) {
@@ -29,7 +28,7 @@ func TestReplicationHandoff(t *testing.T) {
 	defer e.Close()
 
 	// put a file
-	timestamp := hummingbird.GetTimestamp()
+	timestamp := common.GetTimestamp()
 	assert.True(t, e.PutObject(0, timestamp, "X", 0))
 
 	// make a drive look unmounted with a handler that always 507s
@@ -71,11 +70,11 @@ func TestReplicationUnlinkOld(t *testing.T) {
 	defer e.Close()
 
 	// put a file to a primary node
-	timestamp := hummingbird.GetTimestamp()
+	timestamp := common.GetTimestamp()
 	assert.True(t, e.PutObject(0, timestamp, "X", 0))
 
 	// put a newer file to another primary node
-	timestamp2 := hummingbird.GetTimestamp()
+	timestamp2 := common.GetTimestamp()
 	assert.True(t, e.PutObject(1, timestamp2, "X", 0))
 
 	assert.True(t, e.ObjExists(0, timestamp, 0))

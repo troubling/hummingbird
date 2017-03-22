@@ -25,7 +25,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/conf"
 )
 
 // SwiftObject implements an Object that is compatible with Swift's object server.
@@ -75,7 +76,7 @@ func (o *SwiftObject) Copy(dsts ...io.Writer) (written int64, err error) {
 	if len(dsts) == 1 {
 		return io.Copy(dsts[0], o.file)
 	} else {
-		return hummingbird.Copy(o.file, dsts...)
+		return common.Copy(o.file, dsts...)
 	}
 }
 
@@ -84,7 +85,7 @@ func (o *SwiftObject) CopyRange(w io.Writer, start int64, end int64) (int64, err
 	if _, err := o.file.Seek(start, os.SEEK_SET); err != nil {
 		return 0, err
 	}
-	return hummingbird.CopyN(o.file, end-start, w)
+	return common.CopyN(o.file, end-start, w)
 }
 
 // Repr returns a string that identifies the object in some useful way, used for logging.
@@ -216,14 +217,14 @@ func (f *SwiftObjectFactory) New(vars map[string]string, needData bool) (Object,
 var replicationDone = fmt.Errorf("Replication done")
 
 // SwiftEngineConstructor creates a SwiftObjectFactory given the object server configs.
-func SwiftEngineConstructor(config hummingbird.Config, policy *hummingbird.Policy, flags *flag.FlagSet) (ObjectEngine, error) {
+func SwiftEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.FlagSet) (ObjectEngine, error) {
 	driveRoot := config.GetDefault("app:object-server", "devices", "/srv/node")
 	reserve := config.GetInt("app:object-server", "fallocate_reserve", 0)
-	hashPathPrefix, hashPathSuffix, err := hummingbird.GetHashPrefixAndSuffix()
+	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
 	if err != nil {
 		return nil, errors.New("Unable to load hashpath prefix and suffix")
 	}
-	reclaimAge := int64(config.GetInt("app:object-server", "reclaim_age", int64(hummingbird.ONE_WEEK)))
+	reclaimAge := int64(config.GetInt("app:object-server", "reclaim_age", int64(common.ONE_WEEK)))
 	return &SwiftObjectFactory{
 		driveRoot:      driveRoot,
 		hashPathPrefix: hashPathPrefix,

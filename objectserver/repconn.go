@@ -27,7 +27,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/ring"
 )
 
 var RepUnmountedError = fmt.Errorf("Device unmounted")
@@ -155,14 +156,14 @@ func (r *repConn) Close() {
 	r.c.Close()
 }
 
-func NewRepConn(dev *hummingbird.Device, partition string, policy int) (RepConn, error) {
+func NewRepConn(dev *ring.Device, partition string, policy int) (RepConn, error) {
 	url := fmt.Sprintf("http://%s:%d/%s/%s", dev.ReplicationIp, dev.ReplicationPort, dev.Device, partition)
 	req, err := http.NewRequest("REPCONN", url, nil)
 	req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(policy))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Add("X-Trans-Id", fmt.Sprintf("%s-%d", hummingbird.UUID(), dev.Id))
+	req.Header.Add("X-Trans-Id", fmt.Sprintf("%s-%d", common.UUID(), dev.Id))
 	conn, err := repDialer("tcp", req.URL.Host)
 	if err != nil {
 		return nil, err

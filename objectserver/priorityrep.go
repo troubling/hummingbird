@@ -27,7 +27,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/ring"
 )
 
 type devLimiter struct {
@@ -121,7 +122,7 @@ func doPriRepJobs(jobs []*PriorityRepJob, deviceMax int, client *http.Client) {
 }
 
 // getPartMoveJobs takes two rings and creates a list of jobs for any partition moves between them.
-func getPartMoveJobs(oldRing, newRing hummingbird.Ring) []*PriorityRepJob {
+func getPartMoveJobs(oldRing, newRing ring.Ring) []*PriorityRepJob {
 	jobs := make([]*PriorityRepJob, 0)
 	for partition := uint64(0); true; partition++ {
 		olddevs := oldRing.GetNodesInOrder(partition)
@@ -135,7 +136,7 @@ func getPartMoveJobs(oldRing, newRing hummingbird.Ring) []*PriorityRepJob {
 				jobs = append(jobs, &PriorityRepJob{
 					Partition:  partition,
 					FromDevice: olddevs[i],
-					ToDevices:  []*hummingbird.Device{newdevs[i]},
+					ToDevices:  []*ring.Device{newdevs[i]},
 				})
 			}
 		}
@@ -157,17 +158,17 @@ func MoveParts(args []string) {
 		return
 	}
 
-	hashPathPrefix, hashPathSuffix, err := hummingbird.GetHashPrefixAndSuffix()
+	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
 	if err != nil {
 		fmt.Println("Unable to load hash path prefix and suffix:", err)
 		return
 	}
-	oldRing, err := hummingbird.LoadRing(flags.Arg(0), hashPathPrefix, hashPathSuffix)
+	oldRing, err := ring.LoadRing(flags.Arg(0), hashPathPrefix, hashPathSuffix)
 	if err != nil {
 		fmt.Println("Unable to load old ring:", err)
 		return
 	}
-	curRing, err := hummingbird.GetRing("object", hashPathPrefix, hashPathSuffix, *policy)
+	curRing, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, *policy)
 	if err != nil {
 		fmt.Println("Unable to load current ring:", err)
 		return
@@ -180,10 +181,10 @@ func MoveParts(args []string) {
 }
 
 // getRestoreDeviceJobs takes an ip address and device name, and creates a list of jobs to restore that device's data from peers.
-func getRestoreDeviceJobs(ring hummingbird.Ring, ip string, devName string) []*PriorityRepJob {
+func getRestoreDeviceJobs(theRing ring.Ring, ip string, devName string) []*PriorityRepJob {
 	jobs := make([]*PriorityRepJob, 0)
 	for partition := uint64(0); true; partition++ {
-		devs := ring.GetNodesInOrder(partition)
+		devs := theRing.GetNodesInOrder(partition)
 		if devs == nil {
 			break
 		}
@@ -193,7 +194,7 @@ func getRestoreDeviceJobs(ring hummingbird.Ring, ip string, devName string) []*P
 				jobs = append(jobs, &PriorityRepJob{
 					Partition:  partition,
 					FromDevice: src,
-					ToDevices:  []*hummingbird.Device{dev},
+					ToDevices:  []*ring.Device{dev},
 				})
 			}
 		}
@@ -215,12 +216,12 @@ func RestoreDevice(args []string) {
 		return
 	}
 
-	hashPathPrefix, hashPathSuffix, err := hummingbird.GetHashPrefixAndSuffix()
+	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
 	if err != nil {
 		fmt.Println("Unable to load hash path prefix and suffix:", err)
 		return
 	}
-	objRing, err := hummingbird.GetRing("object", hashPathPrefix, hashPathSuffix, *policy)
+	objRing, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, *policy)
 	if err != nil {
 		fmt.Println("Unable to load ring:", err)
 		return
@@ -232,7 +233,7 @@ func RestoreDevice(args []string) {
 	fmt.Println("Done sending jobs.")
 }
 
-func getRescuePartsJobs(objRing hummingbird.Ring, partitions []uint64) []*PriorityRepJob {
+func getRescuePartsJobs(objRing ring.Ring, partitions []uint64) []*PriorityRepJob {
 	jobs := make([]*PriorityRepJob, 0)
 	allDevices := objRing.AllDevices()
 	for d := range allDevices {
@@ -261,12 +262,12 @@ func RescueParts(args []string) {
 		return
 	}
 
-	hashPathPrefix, hashPathSuffix, err := hummingbird.GetHashPrefixAndSuffix()
+	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
 	if err != nil {
 		fmt.Println("Unable to load hash path prefix and suffix:", err)
 		return
 	}
-	objRing, err := hummingbird.GetRing("object", hashPathPrefix, hashPathSuffix, *policy)
+	objRing, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, *policy)
 	if err != nil {
 		fmt.Println("Unable to load ring:", err)
 		return

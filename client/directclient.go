@@ -12,7 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/ring"
 )
 
 func map2Headers(m map[string]string) http.Header {
@@ -52,9 +54,9 @@ func mkquery(options map[string]string) string {
 
 type ProxyDirectClient struct {
 	client        *http.Client
-	AccountRing   hummingbird.Ring
-	ContainerRing hummingbird.Ring
-	ObjectRing    hummingbird.Ring
+	AccountRing   ring.Ring
+	ContainerRing ring.Ring
+	ObjectRing    ring.Ring
 }
 
 func (c *ProxyDirectClient) quorumResponse(reqs ...*http.Request) int {
@@ -126,7 +128,7 @@ func (c *ProxyDirectClient) PutAccount(account string, headers http.Header) int 
 	partition := c.AccountRing.GetPartition(account, "", "")
 	reqs := make([]*http.Request, 0)
 	for _, device := range c.AccountRing.GetNodes(partition) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", device.Ip, device.Port, device.Device, partition, hummingbird.Urlencode(account))
+		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", device.Ip, device.Port, device.Device, partition, common.Urlencode(account))
 		req, _ := http.NewRequest("PUT", url, nil)
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
@@ -140,7 +142,7 @@ func (c *ProxyDirectClient) PostAccount(account string, headers http.Header) int
 	partition := c.AccountRing.GetPartition(account, "", "")
 	reqs := make([]*http.Request, 0)
 	for _, device := range c.AccountRing.GetNodes(partition) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", device.Ip, device.Port, device.Device, partition, hummingbird.Urlencode(account))
+		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", device.Ip, device.Port, device.Device, partition, common.Urlencode(account))
 		req, _ := http.NewRequest("POST", url, nil)
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
@@ -156,7 +158,7 @@ func (c *ProxyDirectClient) GetAccount(account string, options map[string]string
 	query := mkquery(options)
 	for _, device := range c.AccountRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s%s", device.Ip, device.Port, device.Device, partition,
-			hummingbird.Urlencode(account), query)
+			common.Urlencode(account), query)
 		req, _ := http.NewRequest("GET", url, nil)
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
@@ -175,7 +177,7 @@ func (c *ProxyDirectClient) HeadAccount(account string, headers http.Header) (ht
 	reqs := make([]*http.Request, 0)
 	for _, device := range c.AccountRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", device.Ip, device.Port, device.Device, partition,
-			hummingbird.Urlencode(account))
+			common.Urlencode(account))
 		req, err := http.NewRequest("HEAD", url, nil)
 		if err != nil {
 			continue
@@ -197,7 +199,7 @@ func (c *ProxyDirectClient) DeleteAccount(account string, headers http.Header) i
 	partition := c.AccountRing.GetPartition(account, "", "")
 	reqs := make([]*http.Request, 0)
 	for _, device := range c.AccountRing.GetNodes(partition) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", device.Ip, device.Port, device.Device, partition, hummingbird.Urlencode(account))
+		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", device.Ip, device.Port, device.Device, partition, common.Urlencode(account))
 		req, _ := http.NewRequest("DELETE", url, nil)
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
@@ -214,7 +216,7 @@ func (c *ProxyDirectClient) PutContainer(account string, container string, heade
 	reqs := make([]*http.Request, 0)
 	for i, device := range c.ContainerRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", device.Ip, device.Port, device.Device, partition,
-			hummingbird.Urlencode(account), hummingbird.Urlencode(container))
+			common.Urlencode(account), common.Urlencode(container))
 		req, _ := http.NewRequest("PUT", url, nil)
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
@@ -232,7 +234,7 @@ func (c *ProxyDirectClient) PostContainer(account string, container string, head
 	reqs := make([]*http.Request, 0)
 	for _, device := range c.ContainerRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", device.Ip, device.Port, device.Device, partition,
-			hummingbird.Urlencode(account), hummingbird.Urlencode(container))
+			common.Urlencode(account), common.Urlencode(container))
 		req, _ := http.NewRequest("POST", url, nil)
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
@@ -248,7 +250,7 @@ func (c *ProxyDirectClient) GetContainer(account string, container string, optio
 	query := mkquery(options)
 	for _, device := range c.ContainerRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s%s", device.Ip, device.Port, device.Device, partition,
-			hummingbird.Urlencode(account), hummingbird.Urlencode(container), query)
+			common.Urlencode(account), common.Urlencode(container), query)
 		req, _ := http.NewRequest("GET", url, nil)
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
@@ -267,7 +269,7 @@ func (c *ProxyDirectClient) HeadContainer(account string, container string, head
 	reqs := make([]*http.Request, 0)
 	for _, device := range c.ContainerRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", device.Ip, device.Port, device.Device, partition,
-			hummingbird.Urlencode(account), hummingbird.Urlencode(container))
+			common.Urlencode(account), common.Urlencode(container))
 		req, err := http.NewRequest("HEAD", url, nil)
 		if err != nil {
 			continue
@@ -292,7 +294,7 @@ func (c *ProxyDirectClient) DeleteContainer(account string, container string, he
 	reqs := make([]*http.Request, 0)
 	for i, device := range c.ContainerRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", device.Ip, device.Port, device.Device, partition,
-			hummingbird.Urlencode(account), hummingbird.Urlencode(container))
+			common.Urlencode(account), common.Urlencode(container))
 		req, _ := http.NewRequest("DELETE", url, nil)
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
@@ -313,7 +315,7 @@ func (c *ProxyDirectClient) PutObject(account string, container string, obj stri
 	reqs := make([]*http.Request, 0)
 	for i, device := range c.ObjectRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", device.Ip, device.Port, device.Device, partition,
-			hummingbird.Urlencode(account), hummingbird.Urlencode(container), hummingbird.Urlencode(obj))
+			common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj))
 		rp, wp := io.Pipe()
 		defer wp.Close()
 		defer rp.Close()
@@ -350,7 +352,7 @@ func (c *ProxyDirectClient) PostObject(account string, container string, obj str
 	reqs := make([]*http.Request, 0)
 	for i, device := range c.ObjectRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", device.Ip, device.Port, device.Device, partition,
-			hummingbird.Urlencode(account), hummingbird.Urlencode(container), hummingbird.Urlencode(obj))
+			common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj))
 		req, _ := http.NewRequest("POST", url, nil)
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
@@ -370,7 +372,7 @@ func (c *ProxyDirectClient) GetObject(account string, container string, obj stri
 	reqs := make([]*http.Request, 0, len(nodes))
 	for _, device := range nodes {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", device.Ip, device.Port, device.Device, partition,
-			hummingbird.Urlencode(account), hummingbird.Urlencode(container), hummingbird.Urlencode(obj))
+			common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj))
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			continue
@@ -393,7 +395,7 @@ func (c *ProxyDirectClient) GrepObject(account string, container string, obj str
 	reqs := make([]*http.Request, 0, len(nodes))
 	for _, device := range nodes {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s?e=%s", device.Ip, device.Port, device.Device, partition,
-			hummingbird.Urlencode(account), hummingbird.Urlencode(container), hummingbird.Urlencode(obj), hummingbird.Urlencode(search))
+			common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj), common.Urlencode(search))
 		req, err := http.NewRequest("GREP", url, nil)
 		if err != nil {
 			continue
@@ -413,7 +415,7 @@ func (c *ProxyDirectClient) HeadObject(account string, container string, obj str
 	reqs := make([]*http.Request, 0, len(nodes))
 	for _, device := range nodes {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", device.Ip, device.Port, device.Device, partition,
-			hummingbird.Urlencode(account), hummingbird.Urlencode(container), hummingbird.Urlencode(obj))
+			common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj))
 		req, err := http.NewRequest("HEAD", url, nil)
 		if err != nil {
 			continue
@@ -438,7 +440,7 @@ func (c *ProxyDirectClient) DeleteObject(account string, container string, obj s
 	reqs := make([]*http.Request, 0)
 	for i, device := range c.ObjectRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", device.Ip, device.Port, device.Device, partition,
-			hummingbird.Urlencode(account), hummingbird.Urlencode(container), hummingbird.Urlencode(obj))
+			common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj))
 		req, _ := http.NewRequest("DELETE", url, nil)
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
@@ -454,19 +456,19 @@ func (c *ProxyDirectClient) DeleteObject(account string, container string, obj s
 
 func NewProxyDirectClient() (ProxyClient, error) {
 	c := &ProxyDirectClient{}
-	hashPathPrefix, hashPathSuffix, err := hummingbird.GetHashPrefixAndSuffix()
+	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
 	if err != nil {
 		return nil, err
 	}
-	c.ObjectRing, err = hummingbird.GetRing("object", hashPathPrefix, hashPathSuffix, 0)
+	c.ObjectRing, err = ring.GetRing("object", hashPathPrefix, hashPathSuffix, 0)
 	if err != nil {
 		return nil, err
 	}
-	c.ContainerRing, err = hummingbird.GetRing("container", hashPathPrefix, hashPathSuffix, 0)
+	c.ContainerRing, err = ring.GetRing("container", hashPathPrefix, hashPathSuffix, 0)
 	if err != nil {
 		return nil, err
 	}
-	c.AccountRing, err = hummingbird.GetRing("account", hashPathPrefix, hashPathSuffix, 0)
+	c.AccountRing, err = ring.GetRing("account", hashPathPrefix, hashPathSuffix, 0)
 	if err != nil {
 		return nil, err
 	}

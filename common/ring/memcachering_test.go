@@ -1,4 +1,19 @@
-package hummingbird
+//  Copyright (c) 2017 Rackspace
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+//  implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+
+package ring
 
 import (
 	"bytes"
@@ -12,13 +27,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/troubling/hummingbird/common/conf"
 	ini "github.com/vaughan0/go-ini"
 )
 
 func TestLocalHost(t *testing.T) {
 	// construct ini and check for running memcache servers
 	var buffer bytes.Buffer
-	iniFile := Config{File: make(ini.File)}
+	iniFile := conf.Config{File: make(ini.File)}
 	for i := 0; i < 4; i++ {
 		server := fmt.Sprintf("localhost:%d", 10000+i)
 		if i > 0 {
@@ -49,7 +65,7 @@ func TestLocalHost(t *testing.T) {
 func TestUnixSocket(t *testing.T) {
 	// construct ini and start memcache servers
 	var buffer bytes.Buffer
-	iniFile := Config{File: make(ini.File)}
+	iniFile := conf.Config{File: make(ini.File)}
 	for i := 0; i < 4; i++ {
 		sock := fmt.Sprintf("/tmp/test-memecachering-%d", i)
 		if err := os.Remove(sock); err != nil {

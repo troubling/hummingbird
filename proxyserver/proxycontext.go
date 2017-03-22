@@ -24,7 +24,8 @@ import (
 	"sync"
 
 	"github.com/troubling/hummingbird/client"
-	"github.com/troubling/hummingbird/hummingbird"
+	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/ring"
 )
 
 type AccountInfo struct {
@@ -46,7 +47,7 @@ type AuthorizeFunc func(r *http.Request) bool
 
 type ProxyContextMiddleware struct {
 	next http.Handler
-	mc   hummingbird.MemcacheRing
+	mc   ring.MemcacheRing
 	c    client.ProxyClient
 }
 
@@ -147,7 +148,7 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 		go func() {
 			if ctx.GetAccountInfo(account) == nil {
 				hdr := http.Header{
-					"X-Timestamp": []string{hummingbird.GetTimestamp()},
+					"X-Timestamp": []string{common.GetTimestamp()},
 				}
 				m.c.PutAccount(account, hdr) // Auto-create the account if we can't get its info
 			}
@@ -171,7 +172,7 @@ func (m *ProxyContextMiddleware) getMiddleware(next http.Handler) http.Handler {
 	return m
 }
 
-func NewProxyContextMiddleware(mc hummingbird.MemcacheRing, c client.ProxyClient) func(http.Handler) http.Handler {
+func NewProxyContextMiddleware(mc ring.MemcacheRing, c client.ProxyClient) func(http.Handler) http.Handler {
 	m := &ProxyContextMiddleware{
 		mc: mc,
 		c:  c,
