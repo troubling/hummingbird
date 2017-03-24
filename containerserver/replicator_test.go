@@ -33,8 +33,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
 )
 
@@ -399,7 +399,7 @@ func TestReplicateDatabaseDeletesHandoff(t *testing.T) {
 	}
 	rd.replicateDatabase(dbFile)
 	require.Equal(t, 2, called)
-	require.False(t, common.Exists(dbFile))
+	require.False(t, fs.Exists(dbFile))
 }
 
 func TestReplicateDatabaseDeletesHandoffOnSuccess(t *testing.T) {
@@ -420,7 +420,7 @@ func TestReplicateDatabaseDeletesHandoffOnSuccess(t *testing.T) {
 	}
 	rd.replicateDatabase(dbFile)
 	require.Equal(t, 2, called)
-	require.True(t, common.Exists(dbFile))
+	require.True(t, fs.Exists(dbFile))
 }
 
 func TestReplicate(t *testing.T) {

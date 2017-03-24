@@ -38,6 +38,7 @@ import (
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
 )
 
@@ -416,8 +417,8 @@ func TestListObjFiles(t *testing.T) {
 	for obj := range objChan {
 		files = append(files, obj)
 	}
-	require.False(t, common.Exists(filepath.Join(dir, "objects", "1", "abc", "d41d8cd98f00b204e9800998ecf8427e")))
-	require.True(t, common.Exists(filepath.Join(dir, "objects", "1", "abc")))
+	require.False(t, fs.Exists(filepath.Join(dir, "objects", "1", "abc", "d41d8cd98f00b204e9800998ecf8427e")))
+	require.True(t, fs.Exists(filepath.Join(dir, "objects", "1", "abc")))
 
 	objChan = make(chan string)
 	files = nil
@@ -425,8 +426,8 @@ func TestListObjFiles(t *testing.T) {
 	for obj := range objChan {
 		files = append(files, obj)
 	}
-	require.False(t, common.Exists(filepath.Join(dir, "objects", "1", "abc")))
-	require.True(t, common.Exists(filepath.Join(dir, "objects", "1")))
+	require.False(t, fs.Exists(filepath.Join(dir, "objects", "1", "abc")))
+	require.True(t, fs.Exists(filepath.Join(dir, "objects", "1")))
 
 	objChan = make(chan string)
 	files = nil
@@ -434,8 +435,8 @@ func TestListObjFiles(t *testing.T) {
 	for obj := range objChan {
 		files = append(files, obj)
 	}
-	require.False(t, common.Exists(filepath.Join(dir, "objects", "1")))
-	require.True(t, common.Exists(filepath.Join(dir, "objects")))
+	require.False(t, fs.Exists(filepath.Join(dir, "objects", "1")))
+	require.True(t, fs.Exists(filepath.Join(dir, "objects")))
 }
 
 func TestCancelListObjFiles(t *testing.T) {
@@ -598,7 +599,7 @@ func TestSyncFileNewerExists(t *testing.T) {
 	}
 	syncs, insync, err := rd.syncFile(file.Name(), dsts)
 	require.Nil(t, err)
-	require.False(t, common.Exists(filename))
+	require.False(t, fs.Exists(filename))
 	require.Equal(t, 0, syncs)
 	require.Equal(t, 1, insync)
 }
@@ -663,7 +664,7 @@ func TestReplicateHandoff(t *testing.T) {
 	nodes := []*ring.Device{remoteDev}
 	rd.replicateHandoff(partition, nodes)
 	require.True(t, syncFileCalled)
-	require.False(t, common.Exists(filename))
+	require.False(t, fs.Exists(filename))
 }
 
 func TestCleanTemp(t *testing.T) {
@@ -685,8 +686,8 @@ func TestCleanTemp(t *testing.T) {
 	oldTime := time.Now().Add(-(time.Hour * 24 * 14))
 	require.Nil(t, os.Chtimes(filepath.Join(tmpDir, "testfile2"), oldTime, oldTime))
 	rd.cleanTemp()
-	require.False(t, common.Exists(filepath.Join(tmpDir, "testfile2")))
-	require.True(t, common.Exists(filepath.Join(tmpDir, "testfile1")))
+	require.False(t, fs.Exists(filepath.Join(tmpDir, "testfile2")))
+	require.True(t, fs.Exists(filepath.Join(tmpDir, "testfile1")))
 }
 
 func TestReplicate(t *testing.T) {

@@ -31,29 +31,15 @@ import (
 	"time"
 
 	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/pickle"
 	"github.com/troubling/hummingbird/common/srv"
-	"github.com/troubling/hummingbird/xattr"
 )
 
 const METADATA_CHUNK_SIZE = 65536
 
 var LockPathError = errors.New("Error locking path")
 var PathNotDirError = errors.New("Path is not a directory")
-
-// AtomicFileWriter saves a new file atomically.
-type AtomicFileWriter interface {
-	// Write writes the data to the underlying file.
-	Write([]byte) (int, error)
-	// Fd returns the file's underlying file descriptor.
-	Fd() uintptr
-	// Save atomically writes the file to its destination.
-	Save(string) error
-	// Abandon removes any resources associated with this file.
-	Abandon() error
-	// Preallocate pre-allocates space on disk, given the expected file size and disk reserve size.
-	Preallocate(int64, int64) error
-}
 
 func PolicyDir(policy int) string {
 	if policy == 0 {
@@ -85,7 +71,7 @@ func RawReadMetadata(fileNameOrFd interface{}) ([]byte, error) {
 			metadataName = "user.swift.metadata" + strconv.Itoa(index)
 		}
 		// get size of xattr
-		length, err := xattr.Getxattr(fileNameOrFd, metadataName, nil)
+		length, err := fs.Getxattr(fileNameOrFd, metadataName, nil)
 		if err != nil || length <= 0 {
 			break
 		}
@@ -94,7 +80,7 @@ func RawReadMetadata(fileNameOrFd interface{}) ([]byte, error) {
 			pickledMetadata = append(pickledMetadata, 0)
 		}
 		pickledMetadata = pickledMetadata[0 : offset+length]
-		if _, err := xattr.Getxattr(fileNameOrFd, metadataName, pickledMetadata[offset:]); err != nil {
+		if _, err := fs.Getxattr(fileNameOrFd, metadataName, pickledMetadata[offset:]); err != nil {
 			return nil, err
 		}
 		offset += length
@@ -139,7 +125,7 @@ func RawWriteMetadata(fd uintptr, buf []byte) error {
 		if len(buf) < writelen {
 			writelen = len(buf)
 		}
-		if _, err := xattr.Setxattr(fd, metadataName, buf[0:writelen]); err != nil {
+		if _, err := fs.Setxattr(fd, metadataName, buf[0:writelen]); err != nil {
 			return err
 		}
 		buf = buf[writelen:]
@@ -174,7 +160,7 @@ func InvalidateHash(hashDir string) error {
 	suffDir := filepath.Dir(hashDir)
 	partitionDir := filepath.Dir(suffDir)
 
-	if partitionLock, err := common.LockPath(partitionDir, 10*time.Second); err != nil {
+	if partitionLock, err := fs.LockPath(partitionDir, 10*time.Second); err != nil {
 		return err
 	} else {
 		defer partitionLock.Close()
@@ -189,13 +175,13 @@ func InvalidateHash(hashDir string) error {
 }
 
 func HashCleanupListDir(hashDir string, reclaimAge int64) ([]string, error) {
-	fileList, err := common.ReadDirNames(hashDir)
+	fileList, err := fs.ReadDirNames(hashDir)
 	returnList := []string{}
 	if err != nil {
 		if os.IsNotExist(err) {
 			return returnList, nil
 		}
-		if common.IsNotDir(err) {
+		if fs.IsNotDir(err) {
 			return returnList, PathNotDirError
 		}
 		return returnList, err
@@ -244,9 +230,9 @@ func RecalculateSuffixHash(suffixDir string, reclaimAge int64) (string, error) {
 	// the is hash_suffix in swift
 	h := md5.New()
 
-	hashList, err := common.ReadDirNames(suffixDir)
+	hashList, err := fs.ReadDirNames(suffixDir)
 	if err != nil {
-		if common.IsNotDir(err) {
+		if fs.IsNotDir(err) {
 			return "", PathNotDirError
 		}
 		return "", err
@@ -300,7 +286,7 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 	}
 	if lsForSuffixes {
 		// couldn't load hashes pickle, start building new one
-		suffs, _ := common.ReadDirNames(partitionDir)
+		suffs, _ := fs.ReadDirNames(partitionDir)
 
 		for _, suffName := range suffs {
 			if len(suffName) == 3 && hashes[suffName] == "" {
@@ -343,7 +329,7 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 		}
 	}
 	if modified {
-		partitionLock, err := common.LockPath(partitionDir, 10*time.Second)
+		partitionLock, err := fs.LockPath(partitionDir, 10*time.Second)
 		defer partitionLock.Close()
 		if err != nil {
 			return nil, LockPathError
@@ -351,7 +337,7 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 			fileInfo, err := os.Stat(invalidFile)
 			if lsForSuffixes || os.IsNotExist(err) || mtime == fileInfo.ModTime().Unix() {
 				tempDir := TempDirPath(driveRoot, device)
-				if tempFile, err := NewAtomicFileWriter(tempDir, partitionDir); err == nil {
+				if tempFile, err := fs.NewAtomicFileWriter(tempDir, partitionDir); err == nil {
 					defer tempFile.Abandon()
 					tempFile.Write(pickle.PickleDumps(hashes))
 					tempFile.Save(pklFile)
@@ -376,7 +362,7 @@ func ObjHashDir(vars map[string]string, driveRoot string, hashPathPrefix string,
 }
 
 func ObjectFiles(directory string) (string, string) {
-	fileList, err := common.ReadDirNames(directory)
+	fileList, err := fs.ReadDirNames(directory)
 	metaFile := ""
 	if err != nil {
 		return "", ""

@@ -29,6 +29,7 @@ import (
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/middleware"
 )
@@ -80,7 +81,7 @@ func rateLimitSleep(startTime time.Time, done int64, rate int64) {
 
 // auditHash of object hash dir.
 func auditHash(hashPath string, skipMd5 bool) (bytesProcessed int64, err error) {
-	objFiles, err := common.ReadDirNames(hashPath)
+	objFiles, err := fs.ReadDirNames(hashPath)
 	if err != nil {
 		return 0, fmt.Errorf("Error reading hash dir")
 	}
@@ -143,7 +144,7 @@ func auditHash(hashPath string, skipMd5 bool) (bytesProcessed int64, err error) 
 
 // auditSuffix directory.  Lists hash dirs, calls auditHash() for each, and quarantines any with errors.
 func (a *Auditor) auditSuffix(suffixDir string) {
-	hashes, err := common.ReadDirNames(suffixDir)
+	hashes, err := fs.ReadDirNames(suffixDir)
 	if err != nil {
 		a.errors++
 		a.totalErrors++
@@ -176,7 +177,7 @@ func (a *Auditor) auditSuffix(suffixDir string) {
 
 // auditPartition directory.  Lists suffixes in the partition and calls auditSuffix() for each.
 func (a *Auditor) auditPartition(partitionDir string) {
-	suffixes, err := common.ReadDirNames(partitionDir)
+	suffixes, err := fs.ReadDirNames(partitionDir)
 	if err != nil {
 		a.errors++
 		a.totalErrors++
@@ -204,7 +205,7 @@ func (a *Auditor) auditPartition(partitionDir string) {
 func (a *Auditor) auditDevice(devPath string) {
 	defer a.LogPanics("PANIC WHILE AUDITING DEVICE")
 
-	if mounted, err := common.IsMount(devPath); a.checkMounts && (err != nil || mounted != true) {
+	if mounted, err := fs.IsMount(devPath); a.checkMounts && (err != nil || mounted != true) {
 		a.LogError("Skipping unmounted device: %s", devPath)
 		return
 	}
@@ -214,7 +215,7 @@ func (a *Auditor) auditDevice(devPath string) {
 			continue
 		}
 		objPath := filepath.Join(devPath, PolicyDir(policy.Index))
-		partitions, err := common.ReadDirNames(objPath)
+		partitions, err := fs.ReadDirNames(objPath)
 		if err != nil {
 			a.errors++
 			a.totalErrors++
@@ -287,7 +288,7 @@ func (a *Auditor) run(c <-chan time.Time) {
 		a.totalQuarantines = 0
 		a.totalErrors = 0
 		a.LogInfo("Begin object audit \"%s\" mode (%s%s)", a.mode, a.auditorType, a.driveRoot)
-		devices, err := common.ReadDirNames(a.driveRoot)
+		devices, err := fs.ReadDirNames(a.driveRoot)
 		if err != nil {
 			a.LogError("Unable to list devices: %s", a.driveRoot)
 			continue
