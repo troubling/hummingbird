@@ -283,10 +283,6 @@ func ParseRange(rangeHeader string, fileSize int64) (reqRanges []httpRange, err 
 	return reqRanges, nil
 }
 
-func UseMaxProcs() {
-	runtime.GOMAXPROCS(runtime.NumCPU())
-}
-
 func SetRlimits() {
 	syscall.Setrlimit(syscall.RLIMIT_NOFILE, &syscall.Rlimit{Max: 65536, Cur: 65536})
 }

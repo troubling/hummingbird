@@ -214,7 +214,6 @@ func ProcessControlCommand(serverCommand func(name string, args ...string)) {
 }
 
 func main() {
-	common.UseMaxProcs()
 	common.SetRlimits()
 	rand.Seed(time.Now().Unix())
 
