@@ -32,6 +32,15 @@ type Policy struct {
 
 type PolicyList map[int]*Policy
 
+func (p PolicyList) Default() int {
+	for _, v := range p {
+		if v.Default {
+			return v.Index
+		}
+	}
+	return 0
+}
+
 // LoadPolicies loads policies, probably from /etc/swift/swift.conf
 func normalLoadPolicies() PolicyList {
 	policies := map[int]*Policy{0: {
