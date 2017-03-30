@@ -25,7 +25,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/fs"
 )
 
 var (
@@ -210,7 +210,7 @@ func (l *lruEngine) containerLocation(vars map[string]string) string {
 }
 
 func (l *lruEngine) getbypath(containerFile string) (c Container, err error) {
-	if !common.Exists(containerFile) {
+	if !fs.Exists(containerFile) {
 		return nil, ErrorNoSuchContainer
 	}
 	ringHash := filepath.Base(filepath.Dir(containerFile))

@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/fs"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -133,12 +134,12 @@ func TestQuarantineHash(t *testing.T) {
 	hashDir := filepath.Join(driveRoot, "sda", "objects", "1", "abc", "fffffffffffffffffffffffffffffabc")
 	os.MkdirAll(hashDir, 0777)
 	QuarantineHash(hashDir)
-	require.True(t, common.Exists(filepath.Join(driveRoot, "sda", "quarantined", "objects")))
-	require.False(t, common.Exists(hashDir))
+	require.True(t, fs.Exists(filepath.Join(driveRoot, "sda", "quarantined", "objects")))
+	require.False(t, fs.Exists(hashDir))
 
 	hashDir = filepath.Join(driveRoot, "sdb", "objects-1", "1", "abc", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	os.MkdirAll(hashDir, 0777)
 	QuarantineHash(hashDir)
-	require.True(t, common.Exists(filepath.Join(driveRoot, "sdb", "quarantined", "objects-1")))
-	require.False(t, common.Exists(hashDir))
+	require.True(t, fs.Exists(filepath.Join(driveRoot, "sdb", "quarantined", "objects-1")))
+	require.False(t, fs.Exists(hashDir))
 }

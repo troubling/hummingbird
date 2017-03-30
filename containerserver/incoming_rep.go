@@ -23,7 +23,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/srv"
 )
 
@@ -190,7 +190,7 @@ func (server *ContainerServer) replicateRsyncThenMerge(request *http.Request, va
 func (server *ContainerServer) replicateCompleteRsync(request *http.Request, vars map[string]string, tmpFileName string) int {
 	containerFile := filepath.Join(server.driveRoot, vars["device"], "containers", vars["partition"], vars["hash"][29:32], vars["hash"], vars["hash"]+".db")
 	tmpContainerFile := filepath.Join(server.driveRoot, vars["device"], "tmp", tmpFileName)
-	if !common.Exists(tmpContainerFile) || common.Exists(containerFile) {
+	if !fs.Exists(tmpContainerFile) || fs.Exists(containerFile) {
 		return http.StatusNotFound
 	}
 	tmpDb, err := sqliteOpenContainer(tmpContainerFile)

@@ -15,7 +15,7 @@
 
 // +build linux darwin
 
-package xattr
+package fs
 
 import (
 	"syscall"

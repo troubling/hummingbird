@@ -25,6 +25,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/fs"
 )
 
 func BenchmarkMergeItems(b *testing.B) {
@@ -673,10 +674,10 @@ func TestCheckSyncLink(t *testing.T) {
 		"X-Container-Sync-To": []string{"//realm/cluster/a/c", "200000000.00001"},
 	})
 	db.CheckSyncLink()
-	require.True(t, common.Exists(link))
+	require.True(t, fs.Exists(link))
 	db.UpdateMetadata(map[string][]string{
 		"X-Container-Sync-To": []string{"", "200000001.00001"},
 	})
 	db.CheckSyncLink()
-	require.False(t, common.Exists(link))
+	require.False(t, fs.Exists(link))
 }

@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/fs"
 )
 
 func TestAuditorMd5(t *testing.T) {
@@ -37,7 +38,7 @@ func TestAuditorMd5(t *testing.T) {
 
 	// make sure the file is still there after an audit pass
 	e.auditors[0].Run()
-	assert.True(t, common.Exists(path))
+	assert.True(t, fs.Exists(path))
 
 	// simulate bit-rot of the file contents
 	f, _ := os.OpenFile(path, os.O_RDWR, 0777)
@@ -46,7 +47,7 @@ func TestAuditorMd5(t *testing.T) {
 
 	// make sure the file is gone after an audit pass
 	e.auditors[0].Run()
-	assert.False(t, common.Exists(path))
+	assert.False(t, fs.Exists(path))
 }
 
 func TestAuditorContentLength(t *testing.T) {
@@ -62,7 +63,7 @@ func TestAuditorContentLength(t *testing.T) {
 
 	// make sure the file is still there after an audit pass
 	e.auditors[0].Run()
-	assert.True(t, common.Exists(path))
+	assert.True(t, fs.Exists(path))
 
 	// simulate bit-rot of the file contents
 	f, _ := os.OpenFile(path, os.O_APPEND|os.O_RDWR, 0777)
@@ -71,5 +72,5 @@ func TestAuditorContentLength(t *testing.T) {
 
 	// make sure the file is gone after an audit pass
 	e.auditors[0].Run()
-	assert.False(t, common.Exists(path))
+	assert.False(t, fs.Exists(path))
 }

@@ -32,6 +32,7 @@ import (
 	"github.com/justinas/alice"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/pickle"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/middleware"
@@ -118,12 +119,12 @@ func (r *Replicator) priorityRepHandler(w http.ResponseWriter, req *http.Request
 		return
 	}
 	if r.checkMounts {
-		if mounted, err := common.IsMount(filepath.Join(r.deviceRoot, pri.FromDevice.Device)); err != nil || mounted == false {
+		if mounted, err := fs.IsMount(filepath.Join(r.deviceRoot, pri.FromDevice.Device)); err != nil || mounted == false {
 			w.WriteHeader(507)
 			return
 		}
 	}
-	if !common.Exists(filepath.Join(r.deviceRoot, pri.FromDevice.Device, "objects", strconv.FormatUint(pri.Partition, 10))) {
+	if !fs.Exists(filepath.Join(r.deviceRoot, pri.FromDevice.Device, "objects", strconv.FormatUint(pri.Partition, 10))) {
 		w.WriteHeader(404)
 		return
 	}
@@ -222,14 +223,14 @@ func (r *Replicator) objRepConnHandler(writer http.ResponseWriter, request *http
 			if ext := filepath.Ext(fileName); (ext != ".data" && ext != ".ts" && ext != ".meta") || len(filepath.Base(filepath.Dir(fileName))) != 32 {
 				return "invalid file path", rc.SendMessage(SyncFileResponse{Msg: "bad file path"})
 			}
-			if common.Exists(fileName) {
+			if fs.Exists(fileName) {
 				return "file exists", rc.SendMessage(SyncFileResponse{Exists: true, Msg: "exists"})
 			}
 			dataFile, metaFile := ObjectFiles(hashDir)
 			if filepath.Base(fileName) < filepath.Base(dataFile) || filepath.Base(fileName) < filepath.Base(metaFile) {
 				return "newer file exists", rc.SendMessage(SyncFileResponse{NewerExists: true, Msg: "newer exists"})
 			}
-			tempFile, err := NewAtomicFileWriter(tempDir, hashDir)
+			tempFile, err := fs.NewAtomicFileWriter(tempDir, hashDir)
 			if err != nil {
 				return "creating file writer", err
 			}

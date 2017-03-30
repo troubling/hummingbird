@@ -15,7 +15,7 @@
 
 // +build !linux
 
-package objectserver
+package fs
 
 import (
 	"io/ioutil"

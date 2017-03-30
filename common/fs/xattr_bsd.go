@@ -15,7 +15,7 @@
 
 // +build freebsd openbsd netbsd dragonfly
 
-package xattr
+package fs
 
 import (
 	"syscall"

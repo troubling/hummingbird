@@ -27,12 +27,13 @@ import (
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/fs"
 )
 
 // SwiftObject implements an Object that is compatible with Swift's object server.
 type SwiftObject struct {
 	file         *os.File
-	afw          AtomicFileWriter
+	afw          fs.AtomicFileWriter
 	hashDir      string
 	tempDir      string
 	dataFile     string
@@ -101,7 +102,7 @@ func (o *SwiftObject) Repr() string {
 func (o *SwiftObject) newFile(class string, size int64) (io.Writer, error) {
 	var err error
 	o.Close()
-	if o.afw, err = NewAtomicFileWriter(o.tempDir, o.hashDir); err != nil {
+	if o.afw, err = fs.NewAtomicFileWriter(o.tempDir, o.hashDir); err != nil {
 		return nil, fmt.Errorf("Error creating temp file: %v", err)
 	}
 	if err := o.afw.Preallocate(size, o.reserve); err != nil {
