@@ -64,7 +64,12 @@ func (FakeLowLevelLogger) Debug(s string) error {
 	return nil
 }
 
-type FakeRing struct{}
+type FakeRing struct {
+	MockLocalDevices       []*ring.Device
+	MockGetJobNodes        []*ring.Device
+	MockGetJobNodesHandoff bool
+	MockGetMoreNodes       ring.MoreNodes
+}
 
 func (r *FakeRing) GetNodes(partition uint64) (response []*ring.Device) {
 	return nil
@@ -73,16 +78,24 @@ func (r *FakeRing) GetNodesInOrder(partition uint64) (response []*ring.Device) {
 	return nil
 }
 func (r *FakeRing) GetJobNodes(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
-	return []*ring.Device{
-		&ring.Device{Device: "sda", ReplicationIp: "127.0.0.1", ReplicationPort: 20000},
-		&ring.Device{Device: "sdb", ReplicationIp: "127.0.0.2", ReplicationPort: 2000},
-	}, false
+	if len(r.MockGetJobNodes) > 0 {
+		return r.MockGetJobNodes, r.MockGetJobNodesHandoff
+	} else {
+		return []*ring.Device{
+			&ring.Device{Device: "sda", ReplicationIp: "127.0.0.1", ReplicationPort: 20000},
+			&ring.Device{Device: "sdb", ReplicationIp: "127.0.0.2", ReplicationPort: 2000},
+		}, r.MockGetJobNodesHandoff
+	}
 }
 func (r *FakeRing) GetPartition(account string, container string, object string) uint64 {
 	return 1
 }
 func (r *FakeRing) LocalDevices(localPort int) (devs []*ring.Device, err error) {
-	return nil, nil
+	if len(r.MockLocalDevices) > 0 {
+		return r.MockLocalDevices, nil
+	} else {
+		return nil, nil
+	}
 }
 func (r *FakeRing) AllDevices() (devs []ring.Device) {
 	return nil

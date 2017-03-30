@@ -64,23 +64,6 @@ func newTestReplicatorWithFlags(settings []string, flags *flag.FlagSet) (*Replic
 	return rep, nil
 }
 
-// TODO: is all this stuff something a mocking library could do for me?
-type mockReplicationRing struct {
-	_GetJobNodes  func(partition uint64, localDevice int) (response []*ring.Device, handoff bool)
-	_GetMoreNodes func(partition uint64) ring.MoreNodes
-	_LocalDevices func(localPort int) (devs []*ring.Device, err error)
-}
-
-func (r *mockReplicationRing) GetJobNodes(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
-	return r._GetJobNodes(partition, localDevice)
-}
-func (r *mockReplicationRing) GetMoreNodes(partition uint64) ring.MoreNodes {
-	return r._GetMoreNodes(partition)
-}
-func (r *mockReplicationRing) LocalDevices(localPort int) (devs []*ring.Device, err error) {
-	return r._LocalDevices(localPort)
-}
-
 type mockRepConn struct {
 	_SendMessage  func(v interface{}) error
 	_RecvMessage  func(v interface{}) error
@@ -852,22 +835,15 @@ func TestReplicatePartition(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
+	testRing := &test.FakeRing{MockGetMoreNodes: &NoMoreNodes{}}
 	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
+		return testRing, nil
 	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no", "devices", deviceRoot)
 	require.Nil(t, err)
-	/* TODO: DELETE
-	replicator.Rings[0] = &mockReplicationRing{
-		_GetJobNodes: func(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
-			return []*ring.Device{{}}, false
-		},
-		_GetMoreNodes: func(partition uint64) ring.MoreNodes { return &NoMoreNodes{} },
-	}
-	*/
 	require.Nil(t, err)
 	rd := newPatchableReplicationDevice(replicator)
 	replicateLocalCalled := false
@@ -883,12 +859,7 @@ func TestReplicatePartition(t *testing.T) {
 	require.True(t, replicateLocalCalled)
 	require.False(t, replicateHandoffCalled)
 
-	replicator.Rings[0] = &mockReplicationRing{
-		_GetJobNodes: func(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
-			return []*ring.Device{{}}, true
-		},
-		_GetMoreNodes: func(partition uint64) ring.MoreNodes { return &NoMoreNodes{} },
-	}
+	testRing.MockGetJobNodesHandoff = true
 	replicateLocalCalled = false
 	replicateHandoffCalled = false
 	rd.replicatePartition("1")
@@ -902,21 +873,15 @@ func TestProcessPriorityJobs(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
+	testRing := &test.FakeRing{MockGetMoreNodes: &NoMoreNodes{}}
 	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
+		return testRing, nil
 	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
 	replicator, err := newTestReplicator()
 	require.Nil(t, err)
-	/* TODO: DELETE
-	replicator.Rings[0] = &mockReplicationRing{
-		_GetJobNodes: func(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
-			return []*ring.Device{{}}, false
-		},
-	}
-	*/
 	rd := newPatchableReplicationDevice(replicator)
 	rd.priRep = make(chan PriorityRepJob, 1)
 	rd.priRep <- PriorityRepJob{
@@ -944,11 +909,7 @@ func TestProcessPriorityJobs(t *testing.T) {
 		ToDevices:  []*ring.Device{{}},
 		Policy:     0,
 	}
-	replicator.Rings[0] = &mockReplicationRing{
-		_GetJobNodes: func(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
-			return []*ring.Device{{}}, true
-		},
-	}
+	testRing.MockGetJobNodesHandoff = true
 	replicateLocalCalled = false
 	replicateHandoffCalled = false
 	rd.processPriorityJobs()
@@ -1014,7 +975,7 @@ func TestVerifyDevices(t *testing.T) {
 	}()
 
 	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
+		return &test.FakeRing{MockLocalDevices: []*ring.Device{{Device: "sda"}}}, nil
 	}
 	oldNewReplicationDevice := newReplicationDevice
 	defer func() {
@@ -1034,11 +995,6 @@ func TestVerifyDevices(t *testing.T) {
 			_Cancel: func() {
 				canceled = true
 			},
-		},
-	}
-	replicator.Rings[0] = &mockReplicationRing{
-		_LocalDevices: func(localPort int) (devs []*ring.Device, err error) {
-			return []*ring.Device{{Device: "sda"}}, nil
 		},
 	}
 	replicator.verifyRunningDevices()
@@ -1248,8 +1204,9 @@ func TestReplicationLocal(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
+	testRing := &test.FakeRing{}
 	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
+		return testRing, nil
 	}
 	ts, err := makeObjectServer()
 	assert.Nil(t, err)
@@ -1280,18 +1237,9 @@ func TestReplicationLocal(t *testing.T) {
 	trs2.replicator.deviceRoot = ts2.objServer.driveRoot
 	ldev := &ring.Device{ReplicationIp: trs1.host, ReplicationPort: trs1.port, Device: "sda"}
 	rdev := &ring.Device{ReplicationIp: trs2.host, ReplicationPort: trs2.port, Device: "sda"}
+	testRing.MockLocalDevices = []*ring.Device{ldev}
+	testRing.MockGetJobNodes = []*ring.Device{rdev}
 
-	trs1.replicator.Rings[0] = &mockReplicationRing{
-		_LocalDevices: func(localPort int) (devs []*ring.Device, err error) {
-			return []*ring.Device{ldev}, nil
-		},
-		_GetJobNodes: func(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
-			return []*ring.Device{rdev}, false
-		},
-		_GetMoreNodes: func(partition uint64) ring.MoreNodes {
-			return &NoMoreNodes{}
-		},
-	}
 	trs1.replicator.Run()
 
 	req, err = http.NewRequest("HEAD", fmt.Sprintf("http://%s:%d/sda/0/a/c/o", ts2.host, ts2.port), nil)
@@ -1307,8 +1255,9 @@ func TestReplicationHandoff(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
+	testRing := &test.FakeRing{}
 	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
+		return testRing, nil
 	}
 	ts, err := makeObjectServer()
 	assert.Nil(t, err)
@@ -1345,15 +1294,10 @@ func TestReplicationHandoff(t *testing.T) {
 
 	ldev := &ring.Device{ReplicationIp: trs1.host, ReplicationPort: trs1.port, Device: "sda"}
 	rdev := &ring.Device{ReplicationIp: trs2.host, ReplicationPort: trs2.port, Device: "sda"}
+	testRing.MockLocalDevices = []*ring.Device{ldev}
+	testRing.MockGetJobNodes = []*ring.Device{rdev}
+	testRing.MockGetJobNodesHandoff = true
 
-	trs1.replicator.Rings[0] = &mockReplicationRing{
-		_LocalDevices: func(localPort int) (devs []*ring.Device, err error) {
-			return []*ring.Device{ldev}, nil
-		},
-		_GetJobNodes: func(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
-			return []*ring.Device{rdev}, true
-		},
-	}
 	trs1.replicator.Run()
 
 	req, err = http.NewRequest("HEAD", fmt.Sprintf("http://%s:%d/sda/0/a/c/o", ts2.host, ts2.port), nil)
@@ -1375,8 +1319,9 @@ func TestReplicationHandoffQuorumDelete(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
+	testRing := &test.FakeRing{}
 	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
+		return testRing, nil
 	}
 	ts, err := makeObjectServer()
 	assert.Nil(t, err)
@@ -1418,15 +1363,9 @@ func TestReplicationHandoffQuorumDelete(t *testing.T) {
 
 	ldev := &ring.Device{ReplicationIp: trs1.host, ReplicationPort: trs1.port, Device: "sda"}
 	rdev := &ring.Device{ReplicationIp: trs2.host, ReplicationPort: trs2.port, Device: "sda"}
+	testRing.MockLocalDevices = []*ring.Device{ldev}
+	testRing.MockGetJobNodes = []*ring.Device{rdev}
 
-	trs1.replicator.Rings[0] = &mockReplicationRing{
-		_LocalDevices: func(localPort int) (devs []*ring.Device, err error) {
-			return []*ring.Device{ldev}, nil
-		},
-		_GetJobNodes: func(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
-			return []*ring.Device{rdev}, true
-		},
-	}
 	trs1.replicator.Run()
 
 	req, err = http.NewRequest("HEAD", fmt.Sprintf("http://%s:%d/sda/0/a/c/o", ts2.host, ts2.port), nil)

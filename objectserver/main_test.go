@@ -110,15 +110,8 @@ func TestReplicateRecalculate(t *testing.T) {
 	f, _ := os.Create(filepath.Join(ts.root, "sda", "objects", "1", "fff", "ffffffffffffffffffffffffffffffff", "1425753549.99999.data"))
 	f.Close()
 
-	//trs1, err := makeReplicatorWebServer()
-	trs1, err := makeReplicatorWebServer("bind_port", "1234", "check_mounts", "no", "devices", ts.root)
+	trs1, err := makeReplicatorWebServer()
 	require.Nil(t, err)
-	trs1.replicator.Rings[0] = &mockReplicationRing{
-		_GetJobNodes: func(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
-			return []*ring.Device{{}}, false
-		},
-		_GetMoreNodes: func(partition uint64) ring.MoreNodes { return &NoMoreNodes{} },
-	}
 	defer trs1.Close()
 	trs1.replicator.deviceRoot = ts.objServer.driveRoot
 
