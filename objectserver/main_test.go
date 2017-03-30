@@ -35,6 +35,8 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/pickle"
+	"github.com/troubling/hummingbird/common/ring"
+	"github.com/troubling/hummingbird/common/test"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -93,6 +95,14 @@ func makeObjectServer(settings ...string) (*TestServer, error) {
 }
 
 func TestReplicateRecalculate(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	ts, err := makeObjectServer()
 	assert.Nil(t, err)
 	defer ts.Close()
@@ -100,8 +110,15 @@ func TestReplicateRecalculate(t *testing.T) {
 	f, _ := os.Create(filepath.Join(ts.root, "sda", "objects", "1", "fff", "ffffffffffffffffffffffffffffffff", "1425753549.99999.data"))
 	f.Close()
 
-	trs1, err := makeReplicatorWebServer()
+	//trs1, err := makeReplicatorWebServer()
+	trs1, err := makeReplicatorWebServer("bind_port", "1234", "check_mounts", "no", "devices", ts.root)
 	require.Nil(t, err)
+	trs1.replicator.Rings[0] = &mockReplicationRing{
+		_GetJobNodes: func(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
+			return []*ring.Device{{}}, false
+		},
+		_GetMoreNodes: func(partition uint64) ring.MoreNodes { return &NoMoreNodes{} },
+	}
 	defer trs1.Close()
 	trs1.replicator.deviceRoot = ts.objServer.driveRoot
 

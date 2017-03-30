@@ -39,6 +39,7 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
+	"github.com/troubling/hummingbird/common/test"
 )
 
 func newTestReplicator(settings ...string) (*Replicator, error) {
@@ -389,6 +390,14 @@ func TestGetFileBadMetadata(t *testing.T) {
 }
 
 func TestListObjFiles(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	repl, err := newTestReplicator()
 	require.Nil(t, err)
 	rd := newReplicationDevice(&ring.Device{}, 0, repl)
@@ -439,6 +448,14 @@ func TestListObjFiles(t *testing.T) {
 }
 
 func TestCancelListObjFiles(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	repl, err := newTestReplicator()
 	require.Nil(t, err)
 	rd := newReplicationDevice(&ring.Device{}, 0, repl)
@@ -461,6 +478,14 @@ func TestCancelListObjFiles(t *testing.T) {
 }
 
 func TestPriorityRepHandler404(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	t.Parallel()
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
@@ -483,10 +508,19 @@ func TestPriorityRepHandler404(t *testing.T) {
 }
 
 func TestSyncFile(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	require.Nil(t, err)
 
 	filename := filepath.Join(deviceRoot, "objects", "1", "aaa", "00000000000000000000000000000000", "1472940619.68559")
 	require.Nil(t, os.MkdirAll(filepath.Dir(filename), 0777))
@@ -526,10 +560,19 @@ func TestSyncFile(t *testing.T) {
 }
 
 func TestSyncFileExists(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	require.Nil(t, err)
 
 	filename := filepath.Join(deviceRoot, "objects", "1", "aaa", "00000000000000000000000000000000", "1472940619.68559")
 	require.Nil(t, os.MkdirAll(filepath.Dir(filename), 0777))
@@ -567,6 +610,14 @@ func TestSyncFileExists(t *testing.T) {
 }
 
 func TestSyncFileNewerExists(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
@@ -604,6 +655,14 @@ func TestSyncFileNewerExists(t *testing.T) {
 }
 
 func TestReplicateLocal(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
@@ -633,6 +692,14 @@ func TestReplicateLocal(t *testing.T) {
 }
 
 func TestReplicateHandoff(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
@@ -667,6 +734,14 @@ func TestReplicateHandoff(t *testing.T) {
 }
 
 func TestCleanTemp(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
@@ -690,6 +765,14 @@ func TestCleanTemp(t *testing.T) {
 }
 
 func TestReplicate(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 	rd := newPatchableReplicationDevice(replicator)
@@ -705,6 +788,14 @@ func TestReplicate(t *testing.T) {
 }
 
 func TestCancelReplicate(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 	rd := newPatchableReplicationDevice(replicator)
@@ -722,6 +813,14 @@ func TestCancelReplicate(t *testing.T) {
 }
 
 func TestListPartitions(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
@@ -748,16 +847,27 @@ func TestListPartitions(t *testing.T) {
 }
 
 func TestReplicatePartition(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no", "devices", deviceRoot)
+	require.Nil(t, err)
+	/* TODO: DELETE
 	replicator.Rings[0] = &mockReplicationRing{
 		_GetJobNodes: func(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
 			return []*ring.Device{{}}, false
 		},
 		_GetMoreNodes: func(partition uint64) ring.MoreNodes { return &NoMoreNodes{} },
 	}
+	*/
 	require.Nil(t, err)
 	rd := newPatchableReplicationDevice(replicator)
 	replicateLocalCalled := false
@@ -787,16 +897,26 @@ func TestReplicatePartition(t *testing.T) {
 }
 
 func TestProcessPriorityJobs(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no", "devices", deviceRoot)
+	replicator, err := newTestReplicator()
+	require.Nil(t, err)
+	/* TODO: DELETE
 	replicator.Rings[0] = &mockReplicationRing{
 		_GetJobNodes: func(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
 			return []*ring.Device{{}}, false
 		},
 	}
-	require.Nil(t, err)
+	*/
 	rd := newPatchableReplicationDevice(replicator)
 	rd.priRep = make(chan PriorityRepJob, 1)
 	rd.priRep <- PriorityRepJob{
@@ -836,6 +956,14 @@ func TestProcessPriorityJobs(t *testing.T) {
 }
 
 func TestCancelStalledDevices(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 	type repDev struct {
@@ -880,6 +1008,14 @@ func TestCancelStalledDevices(t *testing.T) {
 }
 
 func TestVerifyDevices(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	oldNewReplicationDevice := newReplicationDevice
 	defer func() {
 		newReplicationDevice = oldNewReplicationDevice
@@ -929,6 +1065,14 @@ func (s *replicationLogSaver) Debug(l string) error {
 }
 
 func TestReportStats(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 	replicator.runningDevices = map[string]ReplicationDevice{
@@ -965,6 +1109,14 @@ func TestReportStats(t *testing.T) {
 }
 
 func TestPriorityReplicate(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 	priorityReplicateCalled := false
@@ -986,6 +1138,14 @@ func TestPriorityReplicate(t *testing.T) {
 }
 
 func TestGetDeviceProgress(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 	replicator.runningDevices = map[string]ReplicationDevice{
@@ -1022,6 +1182,14 @@ func TestGetDeviceProgress(t *testing.T) {
 }
 
 func TestRunLoopOnceDone(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 	replicator.onceWaiting = 10
@@ -1032,6 +1200,14 @@ func TestRunLoopOnceDone(t *testing.T) {
 }
 
 func TestRunLoopStatUpdate(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 	stats := &ReplicationDeviceStats{
@@ -1067,6 +1243,14 @@ func TestRunLoopStatUpdate(t *testing.T) {
 }
 
 func TestReplicationLocal(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	ts, err := makeObjectServer()
 	assert.Nil(t, err)
 	defer ts.Close()
@@ -1118,6 +1302,14 @@ func TestReplicationLocal(t *testing.T) {
 }
 
 func TestReplicationHandoff(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	ts, err := makeObjectServer()
 	assert.Nil(t, err)
 	defer ts.Close()
@@ -1178,6 +1370,14 @@ func TestReplicationHandoff(t *testing.T) {
 }
 
 func TestReplicationHandoffQuorumDelete(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	ts, err := makeObjectServer()
 	assert.Nil(t, err)
 	defer ts.Close()

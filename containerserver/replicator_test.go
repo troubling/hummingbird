@@ -36,6 +36,7 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
+	"github.com/troubling/hummingbird/common/test"
 )
 
 type patchableReplicationDevice struct {
@@ -116,10 +117,10 @@ func newTestReplicationDevice(dev *ring.Device, r *Replicator) *patchableReplica
 		r.sendStat = make(chan statUpdate, 100)
 	}
 	if r.logger == nil {
-		r.logger = fakeLowLevelLogger{}
+		r.logger = test.FakeLowLevelLogger{}
 	}
 	if r.Ring == nil {
-		r.Ring = &fakeRing{}
+		r.Ring = &test.FakeRing{}
 	}
 	if r.concurrencySem == nil {
 		r.concurrencySem = make(chan struct{}, 1)
@@ -371,7 +372,7 @@ func TestReplicateDatabase(t *testing.T) {
 }
 
 type handoffJobRing struct {
-	fakeRing
+	test.FakeRing
 }
 
 func (r *handoffJobRing) GetJobNodes(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
@@ -457,7 +458,7 @@ func TestReplicate(t *testing.T) {
 }
 
 type localDevicesRing struct {
-	fakeRing
+	test.FakeRing
 	localDevs []*ring.Device
 }
 
@@ -468,7 +469,7 @@ func (r *localDevicesRing) LocalDevices(localPort int) (devs []*ring.Device, err
 func TestVerifyDevicesRemoveStuck(t *testing.T) {
 	r := &Replicator{
 		Ring:   &localDevicesRing{localDevs: []*ring.Device{}},
-		logger: fakeLowLevelLogger{},
+		logger: test.FakeLowLevelLogger{},
 		runningDevices: map[string]*replicationDevice{
 			"sda": &replicationDevice{lastCheckin: time.Now().Add(time.Hour * -2), cancel: make(chan struct{})},
 			"sdb": &replicationDevice{lastCheckin: time.Now().Add(time.Hour * -2), cancel: make(chan struct{})},
@@ -487,7 +488,7 @@ func TestVerifyDevicesLaunchMissing(t *testing.T) {
 				&ring.Device{Device: "sdb"},
 			},
 		},
-		logger:         fakeLowLevelLogger{},
+		logger:         test.FakeLowLevelLogger{},
 		runningDevices: map[string]*replicationDevice{},
 	}
 	r.verifyDevices()
@@ -500,7 +501,7 @@ func TestVerifyDevicesRemoveMissing(t *testing.T) {
 		Ring: &localDevicesRing{
 			localDevs: []*ring.Device{},
 		},
-		logger: fakeLowLevelLogger{},
+		logger: test.FakeLowLevelLogger{},
 		runningDevices: map[string]*replicationDevice{
 			"sda": &replicationDevice{lastCheckin: time.Now(), cancel: make(chan struct{})},
 			"sdb": &replicationDevice{lastCheckin: time.Now(), cancel: make(chan struct{})},
@@ -521,7 +522,7 @@ func TestGetReplicator(t *testing.T) {
 		return "changeme", "changeme", nil
 	}
 	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &fakeRing{}, nil
+		return &test.FakeRing{}, nil
 	}
 	config, err := conf.StringConfig("[container-replicator]\nmount_check=false\nbind_port=1000")
 	require.Nil(t, err)
@@ -552,7 +553,7 @@ func TestGetReplicator(t *testing.T) {
 }
 
 type savingLowLevelLogger struct {
-	fakeLowLevelLogger
+	test.FakeLowLevelLogger
 	logs []string
 }
 
@@ -655,7 +656,7 @@ func TestReplicatorRun(t *testing.T) {
 			&ring.Device{Device: "sda"},
 			&ring.Device{Device: "sdb"},
 		}},
-		logger:         fakeLowLevelLogger{},
+		logger:         test.FakeLowLevelLogger{},
 		deviceRoot:     dir,
 		sendStat:       make(chan statUpdate, 10),
 		startRun:       make(chan string, 10),

@@ -38,9 +38,13 @@ import (
 	"github.com/troubling/hummingbird/middleware"
 )
 
-var StatsReportInterval = 300 * time.Second
-var TmpEmptyTime = 24 * time.Hour
-var ReplicateDeviceTimeout = 4 * time.Hour
+var (
+	StatsReportInterval    = 300 * time.Second
+	TmpEmptyTime           = 24 * time.Hour
+	ReplicateDeviceTimeout = 4 * time.Hour
+	// GetRing is a local pointer to the hummingbird function, for overriding in tests
+	GetRing = ring.GetRing
+)
 
 type PriorityRepJob struct {
 	Partition  uint64         `json:"partition"`
@@ -940,7 +944,7 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, err
 		if policy.Type != "replication" {
 			continue
 		}
-		if replicator.Rings[policy.Index], err = ring.GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index); err != nil {
+		if replicator.Rings[policy.Index], err = GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index); err != nil {
 			return nil, fmt.Errorf("Unable to load ring for Policy %d.", policy.Index)
 		}
 	}
