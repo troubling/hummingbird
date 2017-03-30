@@ -32,6 +32,7 @@ import (
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/pickle"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
@@ -540,11 +541,11 @@ func (rd *replicationDevice) listPartitions() ([]string, error) {
 func (rd *replicationDevice) Replicate() {
 	defer rd.r.LogPanics(fmt.Sprintf("PANIC REPLICATING DEVICE: %s", rd.dev.Device))
 	rd.updateStat("startRun", 1)
-	if mounted, err := common.IsMount(filepath.Join(rd.r.deviceRoot, rd.dev.Device)); rd.r.checkMounts && (err != nil || mounted != true) {
+	if mounted, err := fs.IsMount(filepath.Join(rd.r.deviceRoot, rd.dev.Device)); rd.r.checkMounts && (err != nil || mounted != true) {
 		rd.r.LogError("[replicateDevice] Drive not mounted: %s", rd.dev.Device)
 		return
 	}
-	if common.Exists(filepath.Join(rd.r.deviceRoot, rd.dev.Device, "lock_device")) {
+	if fs.Exists(filepath.Join(rd.r.deviceRoot, rd.dev.Device, "lock_device")) {
 		return
 	}
 

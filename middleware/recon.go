@@ -35,14 +35,14 @@ import (
 	"github.com/shirou/gopsutil/load"
 	"github.com/shirou/gopsutil/mem"
 	"github.com/shirou/gopsutil/process"
-	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/srv"
 )
 
 func DumpReconCache(reconCachePath string, source string, cacheData map[string]interface{}) error {
 	reconFile := filepath.Join(reconCachePath, source+".recon")
 
-	if lock, err := common.LockPath(filepath.Dir(reconFile), 5*time.Second); err != nil {
+	if lock, err := fs.LockPath(filepath.Dir(reconFile), 5*time.Second); err != nil {
 		return err
 	} else {
 		defer lock.Close()
@@ -83,8 +83,17 @@ func DumpReconCache(reconCachePath string, source string, cacheData map[string]i
 			reconData[key] = item
 		}
 	}
-	newdata, _ := json.Marshal(reconData)
-	return common.WriteFileAtomic(reconFile, newdata, 0600)
+	newdata, err := json.Marshal(reconData)
+	if err != nil {
+		return err
+	}
+	f, err := fs.NewAtomicFileWriter(reconCachePath, reconCachePath)
+	if err != nil {
+		return err
+	}
+	defer f.Abandon()
+	f.Write(newdata)
+	return f.Save(reconFile)
 }
 
 // getMem dumps the contents of /proc/meminfo if it's available, otherwise it pulls what it can from gopsutil/mem

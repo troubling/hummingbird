@@ -31,6 +31,7 @@ import (
 	"github.com/justinas/alice"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/middleware"
 )
@@ -518,7 +519,7 @@ func (server *ContainerServer) AcquireDevice(next http.Handler) http.Handler {
 		if device, ok := vars["device"]; ok && device != "" {
 			devicePath := filepath.Join(server.driveRoot, device)
 			if server.checkMounts {
-				if mounted, err := common.IsMount(devicePath); err != nil || !mounted {
+				if mounted, err := fs.IsMount(devicePath); err != nil || !mounted {
 					vars["Method"] = request.Method
 					srv.CustomErrorResponse(writer, 507, vars)
 					return
@@ -544,7 +545,7 @@ func (server *ContainerServer) updateDeviceLocks(seconds int64) {
 		time.Sleep(reloadTime)
 		for _, key := range server.diskInUse.Keys() {
 			lockPath := filepath.Join(server.driveRoot, key, "lock_device")
-			if common.Exists(lockPath) {
+			if fs.Exists(lockPath) {
 				server.diskInUse.Lock(key)
 			} else {
 				server.diskInUse.Unlock(key)

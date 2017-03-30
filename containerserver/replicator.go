@@ -31,6 +31,7 @@ import (
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
 )
@@ -301,7 +302,7 @@ func (rd *replicationDevice) findContainerDbs(devicePath string, results chan st
 			}
 			for _, hash := range hashes {
 				dbFile := filepath.Join(hash, filepath.Base(hash)+".db")
-				if common.Exists(dbFile) {
+				if fs.Exists(dbFile) {
 					select {
 					case results <- dbFile:
 					case <-rd.cancel:
@@ -322,7 +323,7 @@ func (rd *replicationDevice) replicate() {
 		rd.r.LogError("Device doesn't exist: %s", devicePath)
 		return
 	}
-	if mount, err := common.IsMount(devicePath); rd.r.checkMounts && (err != nil || !mount) {
+	if mount, err := fs.IsMount(devicePath); rd.r.checkMounts && (err != nil || !mount) {
 		rd.r.LogError("Device not mounted: %s", devicePath)
 		return
 	}

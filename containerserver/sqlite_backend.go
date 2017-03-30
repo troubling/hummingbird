@@ -37,6 +37,7 @@ import (
 
 	"github.com/mattn/go-sqlite3"
 	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/pickle"
 )
 
@@ -741,14 +742,14 @@ func (db *sqliteContainer) CheckSyncLink() error {
 	}
 	symLoc := filepath.Join(deviceDir, "sync_containers", pathFromDataDir)
 	if metadata["X-Container-Sync-To"] != "" {
-		if common.Exists(symLoc) {
+		if fs.Exists(symLoc) {
 			return nil
 		}
 		if err := os.MkdirAll(filepath.Dir(symLoc), 0755); err != nil {
 			return err
 		}
 		return os.Symlink(db.containerFile, symLoc)
-	} else if common.Exists(symLoc) {
+	} else if fs.Exists(symLoc) {
 		for err := error(nil); err == nil; symLoc = filepath.Dir(symLoc) {
 			err = os.Remove(symLoc)
 		}
@@ -864,7 +865,7 @@ func (db *sqliteContainer) flushAlreadyLocked() error {
 }
 
 func (db *sqliteContainer) flush() error {
-	lock, err := common.LockPath(filepath.Dir(db.containerFile), 10*time.Second)
+	lock, err := fs.LockPath(filepath.Dir(db.containerFile), 10*time.Second)
 	if err != nil {
 		return err
 	}
@@ -873,7 +874,7 @@ func (db *sqliteContainer) flush() error {
 }
 
 func (db *sqliteContainer) addObject(name string, timestamp string, size int64, contentType string, etag string, deleted int, storagePolicyIndex int) error {
-	lock, err := common.LockPath(filepath.Dir(db.containerFile), 10*time.Second)
+	lock, err := fs.LockPath(filepath.Dir(db.containerFile), 10*time.Second)
 	if err != nil {
 		return err
 	}
@@ -972,7 +973,7 @@ func sqliteCreateContainer(containerFile string, account string, container strin
 	var serializedMetadata []byte
 	var err error
 
-	if common.Exists(containerFile) {
+	if fs.Exists(containerFile) {
 		return errors.New("Container exists!")
 	}
 	if metadata == nil {
@@ -1026,7 +1027,7 @@ func sqliteCreateContainer(containerFile string, account string, container strin
 }
 
 func sqliteOpenContainer(containerFile string) (ReplicableContainer, error) {
-	if !common.Exists(containerFile) {
+	if !fs.Exists(containerFile) {
 		return nil, ErrorNoSuchContainer
 	}
 	db := &sqliteContainer{

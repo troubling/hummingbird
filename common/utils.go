@@ -20,13 +20,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"net/http"
-	"os"
-	"path/filepath"
 	"runtime"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -43,77 +39,6 @@ type httpRange struct {
 }
 
 var GMT *time.Location
-
-func WriteFileAtomic(filename string, data []byte, perm os.FileMode) error {
-	partDir := filepath.Dir(filename)
-	tmpFile, err := ioutil.TempFile(partDir, ".tmp-o-file")
-	if err != nil {
-		return err
-	}
-	defer tmpFile.Close()
-	defer os.RemoveAll(tmpFile.Name())
-	if err = tmpFile.Chmod(perm); err != nil {
-		return err
-	}
-	if _, err = tmpFile.Write(data); err != nil {
-		return err
-	}
-	if err = tmpFile.Sync(); err != nil {
-		return err
-	}
-	if err = syscall.Rename(tmpFile.Name(), filename); err != nil {
-		return err
-	}
-	return nil
-}
-
-// LockPath locks a directory with a timeout.
-func LockPath(directory string, timeout time.Duration) (*os.File, error) {
-	lockfile := filepath.Join(directory, ".lock")
-	file, err := os.OpenFile(lockfile, os.O_RDWR|os.O_CREATE, 0660)
-	if err != nil {
-		if os.IsNotExist(err) && os.MkdirAll(directory, 0755) == nil {
-			file, err = os.OpenFile(lockfile, os.O_RDWR|os.O_CREATE, 0660)
-		}
-		if err != nil {
-			return nil, errors.New(fmt.Sprintf("Unable to open lock file (%v)", err))
-		}
-	}
-	success := make(chan error)
-	cancel := make(chan struct{})
-	defer close(cancel)
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	go func(fd int) {
-		select {
-		case success <- syscall.Flock(fd, syscall.LOCK_EX):
-		case <-cancel:
-		}
-	}(int(file.Fd()))
-	select {
-	case err = <-success:
-		if err == nil {
-			return file, nil
-		}
-	case <-timer.C:
-		err = errors.New("Flock timed out")
-	}
-	file.Close()
-	return nil, err
-}
-
-func IsMount(dir string) (bool, error) {
-	dir = filepath.Clean(dir)
-	if fileinfo, err := os.Stat(dir); err == nil {
-		if parentinfo, err := os.Stat(filepath.Dir(dir)); err == nil {
-			return fileinfo.Sys().(*syscall.Stat_t).Dev != parentinfo.Sys().(*syscall.Stat_t).Dev, nil
-		} else {
-			return false, errors.New("Unable to stat parent")
-		}
-	} else {
-		return false, errors.New("Unable to stat directory")
-	}
-}
 
 var urlSafeMap = [256]bool{'A': true, 'B': true, 'C': true, 'D': true, 'E': true, 'F': true,
 	'G': true, 'H': true, 'I': true, 'J': true, 'K': true, 'L': true, 'M': true, 'N': true,
@@ -322,16 +247,6 @@ func StandardizeTimestamp(timestamp string) (string, error) {
 	return timestamp, nil
 }
 
-func IsNotDir(err error) bool {
-	if se, ok := err.(*os.SyscallError); ok {
-		return se.Err == syscall.ENOTDIR || se.Err == syscall.EINVAL
-	}
-	if se, ok := err.(*os.PathError); ok {
-		return os.IsNotExist(se)
-	}
-	return false
-}
-
 var buf64kpool = NewFreePool(128)
 
 func Copy(src io.Reader, dsts ...io.Writer) (written int64, err error) {
@@ -362,22 +277,6 @@ func GetDefault(h http.Header, key string, dfl string) string {
 		return dfl
 	}
 	return val
-}
-
-func ReadDirNames(path string) ([]string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	list, err := f.Readdirnames(-1)
-	f.Close()
-	if err != nil {
-		return nil, err
-	}
-	if len(list) > 1 {
-		sort.Strings(list)
-	}
-	return list, nil
 }
 
 // More like a map of semaphores.  I don't know what to call it.
@@ -447,13 +346,6 @@ func (k *KeyedLimit) MarshalJSON() ([]byte, error) {
 
 func NewKeyedLimit(limitPerKey int64, totalLimit int64) *KeyedLimit {
 	return &KeyedLimit{limitPerKey: limitPerKey, totalLimit: totalLimit, locked: make(map[string]bool), inUse: make(map[string]int64)}
-}
-
-func Exists(file string) bool {
-	if _, err := os.Stat(file); os.IsNotExist(err) {
-		return false
-	}
-	return true
 }
 
 func CollectRuntimeMetrics(statsdHost string, statsdPort, statsdPause int64, prefix string) {

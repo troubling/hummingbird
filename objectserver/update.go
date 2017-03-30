@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/pickle"
 	"github.com/troubling/hummingbird/common/srv"
 )
@@ -100,7 +101,7 @@ func (server *ObjectServer) saveAsync(method, account, container, obj, localDevi
 		"headers":   headerToMap(headers),
 	}
 	if os.MkdirAll(filepath.Dir(asyncFile), 0755) == nil {
-		writer, err := NewAtomicFileWriter(tempDir, filepath.Dir(asyncFile))
+		writer, err := fs.NewAtomicFileWriter(tempDir, filepath.Dir(asyncFile))
 		if err == nil {
 			defer writer.Abandon()
 			writer.Write(pickle.PickleDumps(data))

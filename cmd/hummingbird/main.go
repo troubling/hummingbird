@@ -29,6 +29,7 @@ import (
 	"github.com/troubling/hummingbird/bench"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/containerserver"
 	"github.com/troubling/hummingbird/objectserver"
@@ -83,7 +84,7 @@ func findConfig(name string) string {
 		fmt.Sprintf("/etc/swift/%s-server", configName),
 	}
 	for _, config := range configSearch {
-		if common.Exists(config) {
+		if fs.Exists(config) {
 			return config
 		}
 	}
@@ -188,7 +189,7 @@ func GracefulShutdownServer(name string, args ...string) {
 }
 
 func ProcessControlCommand(serverCommand func(name string, args ...string)) {
-	if !common.Exists("/var/run/hummingbird") {
+	if !fs.Exists("/var/run/hummingbird") {
 		err := os.MkdirAll("/var/run/hummingbird", 0600)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Unable to create /var/run/hummingbird\n")

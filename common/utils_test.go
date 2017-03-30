@@ -17,8 +17,6 @@ package common
 
 import (
 	"bytes"
-	"io/ioutil"
-	"os"
 	"testing"
 	"time"
 
@@ -215,26 +213,6 @@ func TestUrlencode(t *testing.T) {
 	assert.True(t, Urlencode("鐋댋") == "%E9%90%8B%EB%8C%8B")
 }
 
-func TestIsMount(t *testing.T) {
-	isMount, err := IsMount("/dev")
-	assert.Nil(t, err)
-	assert.True(t, isMount)
-	isMount, err = IsMount(".")
-	assert.Nil(t, err)
-	assert.False(t, isMount)
-	isMount, err = IsMount("/slartibartfast")
-	assert.NotNil(t, err)
-}
-
-func TestIsNotDir(t *testing.T) {
-	tempFile, _ := ioutil.TempFile("", "INI")
-	defer os.RemoveAll(tempFile.Name())
-	_, err := ioutil.ReadDir(tempFile.Name())
-	assert.True(t, IsNotDir(err))
-	_, err = ioutil.ReadDir("/aseagullstolemysailorhat")
-	assert.True(t, IsNotDir(err))
-}
-
 func TestCopy(t *testing.T) {
 	src := bytes.NewBuffer([]byte("WELL HELLO THERE"))
 	dst1 := &bytes.Buffer{}
@@ -251,48 +229,4 @@ func TestCopyN(t *testing.T) {
 	CopyN(src, 10, dst1, dst2)
 	assert.Equal(t, []byte("WELL HELLO"), dst1.Bytes())
 	assert.Equal(t, []byte("WELL HELLO"), dst2.Bytes())
-}
-
-func TestWriteFileAtomic(t *testing.T) {
-	tempFile, _ := ioutil.TempFile("", "INI")
-	defer os.RemoveAll(tempFile.Name())
-	WriteFileAtomic(tempFile.Name(), []byte("HI THERE"), 0600)
-	fi, err := os.Stat(tempFile.Name())
-	assert.Nil(t, err)
-	assert.Equal(t, 8, int(fi.Size()))
-}
-
-func TestReadDirNames(t *testing.T) {
-	tempDir, _ := ioutil.TempDir("", "RDN")
-	defer os.RemoveAll(tempDir)
-	ioutil.WriteFile(tempDir+"/Z", []byte{}, 0666)
-	ioutil.WriteFile(tempDir+"/X", []byte{}, 0666)
-	ioutil.WriteFile(tempDir+"/Y", []byte{}, 0666)
-	fileNames, err := ReadDirNames(tempDir)
-	assert.Nil(t, err)
-	assert.Equal(t, fileNames, []string{"X", "Y", "Z"})
-}
-
-func TestLockPath(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "")
-	defer os.RemoveAll(tempDir)
-	require.Nil(t, err)
-	c := make(chan bool)
-	ended := make(chan struct{})
-	defer close(ended)
-	go func() {
-		f, err := LockPath(tempDir, time.Millisecond)
-		c <- true
-		require.Nil(t, err)
-		require.NotNil(t, f)
-		defer f.Close()
-		select {
-		case <-time.After(time.Second):
-		case <-ended:
-		}
-	}()
-	<-c
-	f, err := LockPath(tempDir, time.Millisecond)
-	require.Nil(t, f)
-	require.NotNil(t, err)
 }
