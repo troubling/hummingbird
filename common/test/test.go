@@ -64,21 +64,43 @@ func (FakeLowLevelLogger) Debug(s string) error {
 	return nil
 }
 
+// FakeRing
 type FakeRing struct {
 	MockLocalDevices       []*ring.Device
 	MockGetJobNodes        []*ring.Device
 	MockGetJobNodesHandoff bool
 	MockGetMoreNodes       ring.MoreNodes
+
+	// Used for probe
+	MockMoreNodes *ring.Device
+	MockDevices   []*ring.Device
 }
 
 func (r *FakeRing) GetNodes(partition uint64) (response []*ring.Device) {
-	return nil
+	if len(r.MockDevices) > 0 {
+		return r.MockDevices[0:3]
+	} else {
+		return nil
+	}
 }
+
 func (r *FakeRing) GetNodesInOrder(partition uint64) (response []*ring.Device) {
-	return nil
+	return r.GetNodes(partition)
 }
+
 func (r *FakeRing) GetJobNodes(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
-	if len(r.MockGetJobNodes) > 0 {
+	if len(r.MockDevices) > 0 {
+		switch localDevice {
+		case 0:
+			return []*ring.Device{r.MockDevices[1], r.MockDevices[2]}, false
+		case 1:
+			return []*ring.Device{r.MockDevices[0], r.MockDevices[2]}, false
+		case 2:
+			return []*ring.Device{r.MockDevices[0], r.MockDevices[1]}, false
+		default:
+			return r.MockDevices[0:3], true
+		}
+	} else if len(r.MockGetJobNodes) > 0 {
 		return r.MockGetJobNodes, r.MockGetJobNodesHandoff
 	} else {
 		return []*ring.Device{
@@ -87,27 +109,53 @@ func (r *FakeRing) GetJobNodes(partition uint64, localDevice int) (response []*r
 		}, r.MockGetJobNodesHandoff
 	}
 }
+
 func (r *FakeRing) GetPartition(account string, container string, object string) uint64 {
-	return 1
+	return 0
 }
+
 func (r *FakeRing) LocalDevices(localPort int) (devs []*ring.Device, err error) {
-	if len(r.MockLocalDevices) > 0 {
+	if len(r.MockDevices) > 0 {
+		for _, d := range r.MockDevices {
+			if d.ReplicationPort == localPort {
+				return []*ring.Device{d}, nil
+			}
+		}
+		return nil, nil
+	} else if len(r.MockLocalDevices) > 0 {
 		return r.MockLocalDevices, nil
 	} else {
 		return nil, nil
 	}
 }
+
 func (r *FakeRing) AllDevices() (devs []ring.Device) {
 	return nil
 }
+
 func (r *FakeRing) GetMoreNodes(partition uint64) ring.MoreNodes {
+	if r.MockMoreNodes != nil {
+		return &fakeMoreNodes{r.MockMoreNodes}
+	} else if r.MockGetMoreNodes != nil {
+		return r.MockGetMoreNodes
+	}
 	return nil
 }
+
 func (r *FakeRing) PartitionCount() uint64 {
 	return 1
 }
+
 func (r *FakeRing) ReplicaCount() uint64 {
 	return 3
+}
+
+type fakeMoreNodes struct {
+	dev *ring.Device
+}
+
+func (m *fakeMoreNodes) Next() *ring.Device {
+	return m.dev
 }
 
 type FakeLogger struct{}
