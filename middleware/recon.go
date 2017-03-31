@@ -427,6 +427,15 @@ func ReconHandler(driveRoot string, writer http.ResponseWriter, request *http.Re
 			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
+	case "time":
+		content = time.Now().Unix()
+	case "driveaudit":
+		var err error
+		content, err = fromReconCache("drive", "drive_audit_errors")
+		if err != nil {
+			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
 	default:
 		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
