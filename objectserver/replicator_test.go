@@ -138,7 +138,7 @@ func (d *mockReplicationDevice) ReplicateLoop() {
 	}
 }
 func (d *mockReplicationDevice) Key() string {
-	if d._ReplicateLoop != nil {
+	if d._Key != nil {
 		return d._Key()
 	}
 	return ""
@@ -1044,6 +1044,7 @@ func TestReportStats(t *testing.T) {
 					},
 				}
 			},
+			_Key: func() string { return "1.1:10/sda" },
 		},
 		"sdb": &mockReplicationDevice{
 			_Stats: func() *ReplicationDeviceStats {
@@ -1052,17 +1053,23 @@ func TestReportStats(t *testing.T) {
 					RunStarted:       time.Now().Add(-time.Hour),
 					Stats: map[string]int64{
 						"PartitionsTotal": 100,
-						"PartitionsDone":  50,
+						"PartitionsDone":  40,
 					},
 				}
 			},
+			_Key: func() string { return "1.1:10/sdb" },
 		},
 	}
 	logger := &replicationLogSaver{}
 	replicator.logger = logger
 	replicator.reportStats()
-	require.True(t, strings.Contains(logger.logged[0], "550/1100 (50.00%)"))
+	fmt.Println(logger.logged[0])
+	fmt.Println(logger.logged[1])
+	require.True(t, strings.Contains(logger.logged[0], "Device 1.1:10/sda 500/1000 (50.00%)"))
 	require.True(t, strings.Contains(logger.logged[0], " 1h remaining"))
+
+	require.True(t, strings.Contains(logger.logged[1], "Device 1.1:10/sdb 40/100 (40.00%)"))
+	require.True(t, strings.Contains(logger.logged[1], " 2h remaining"))
 }
 
 func TestPriorityReplicate(t *testing.T) {
