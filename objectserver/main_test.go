@@ -35,6 +35,8 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/pickle"
+	"github.com/troubling/hummingbird/common/ring"
+	"github.com/troubling/hummingbird/common/test"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -93,6 +95,14 @@ func makeObjectServer(settings ...string) (*TestServer, error) {
 }
 
 func TestReplicateRecalculate(t *testing.T) {
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
 	ts, err := makeObjectServer()
 	assert.Nil(t, err)
 	defer ts.Close()

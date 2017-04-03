@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/test"
 )
 
 func TestFormatTimestamp(t *testing.T) {
@@ -38,11 +39,11 @@ func TestContainerGetNotFound(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("GET", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 404, rsp.status)
+	require.Equal(t, 404, rsp.Status)
 }
 
 func TestContainerDeleteNotFound(t *testing.T) {
@@ -50,11 +51,11 @@ func TestContainerDeleteNotFound(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("DELETE", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 404, rsp.status)
+	require.Equal(t, 404, rsp.Status)
 }
 
 func TestContainerPostDeleted(t *testing.T) {
@@ -62,27 +63,27 @@ func TestContainerPostDeleted(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("PUT", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", "1000000000.00001")
 	req.Header.Set("X-Backend-Storage-Policy-Index", "2")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 201, rsp.status)
+	require.Equal(t, 201, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("DELETE", "/device/1/a/c", nil)
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	require.Nil(t, err)
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 204, rsp.status)
+	require.Equal(t, 204, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("POST", "/device/1/a/c", nil)
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	require.Nil(t, err)
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 404, rsp.status)
+	require.Equal(t, 404, rsp.Status)
 }
 
 func TestContainerPostNotFound(t *testing.T) {
@@ -90,12 +91,12 @@ func TestContainerPostNotFound(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("POST", "/device/1/a/c", nil)
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	require.Nil(t, err)
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 404, rsp.status)
+	require.Equal(t, 404, rsp.Status)
 }
 
 func TestContainerPostBadTimestamp(t *testing.T) {
@@ -103,12 +104,12 @@ func TestContainerPostBadTimestamp(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("POST", "/device/1/a/c", nil)
 	req.Header.Set("X-Timestamp", "invalid")
 	require.Nil(t, err)
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 400, rsp.status)
+	require.Equal(t, 400, rsp.Status)
 }
 
 func TestContainerPutBadTimestamp(t *testing.T) {
@@ -116,13 +117,13 @@ func TestContainerPutBadTimestamp(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("PUT", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", "invalid")
 	req.Header.Set("X-Backend-Storage-Policy-Index", "2")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 400, rsp.status)
+	require.Equal(t, 400, rsp.Status)
 }
 
 func TestContainerDeleteBadTimestamp(t *testing.T) {
@@ -130,20 +131,20 @@ func TestContainerDeleteBadTimestamp(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("PUT", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", "1000000000.00001")
 	req.Header.Set("X-Backend-Storage-Policy-Index", "2")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 201, rsp.status)
+	require.Equal(t, 201, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("DELETE", "/device/1/a/c", nil)
 	req.Header.Set("X-Timestamp", "invalid")
 	require.Nil(t, err)
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 400, rsp.status)
+	require.Equal(t, 400, rsp.Status)
 }
 
 func TestContainerPutExisting(t *testing.T) {
@@ -151,21 +152,21 @@ func TestContainerPutExisting(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("PUT", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", "1000000000.00001")
 	req.Header.Set("X-Backend-Storage-Policy-Index", "2")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 201, rsp.status)
+	require.Equal(t, 201, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("PUT", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", "2000000000.00001")
 	req.Header.Set("X-Backend-Storage-Policy-Index", "2")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 202, rsp.status)
+	require.Equal(t, 202, rsp.Status)
 }
 
 func TestContainerPutPolicyConflict(t *testing.T) {
@@ -173,21 +174,21 @@ func TestContainerPutPolicyConflict(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("PUT", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", "1000000000.00001")
 	req.Header.Set("X-Backend-Storage-Policy-Index", "2")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 201, rsp.status)
+	require.Equal(t, 201, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("PUT", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", "2000000000.00001")
 	req.Header.Set("X-Backend-Storage-Policy-Index", "0")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 409, rsp.status)
+	require.Equal(t, 409, rsp.Status)
 }
 
 func TestContainerPutHead(t *testing.T) {
@@ -195,23 +196,23 @@ func TestContainerPutHead(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("PUT", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", "1000000000.00001")
 	req.Header.Set("X-Backend-Storage-Policy-Index", "2")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 201, rsp.status)
+	require.Equal(t, 201, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("HEAD", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 204, rsp.status)
-	require.Equal(t, "0", rsp.header.Get("X-Container-Object-Count"))
-	require.Equal(t, "0", rsp.header.Get("X-Container-Bytes-Used"))
-	require.Equal(t, "2", rsp.header.Get("X-Backend-Storage-Policy-Index"))
-	require.Equal(t, "1000000000.00001", rsp.header.Get("X-Put-Timestamp"))
+	require.Equal(t, 204, rsp.Status)
+	require.Equal(t, "0", rsp.Header().Get("X-Container-Object-Count"))
+	require.Equal(t, "0", rsp.Header().Get("X-Container-Bytes-Used"))
+	require.Equal(t, "2", rsp.Header().Get("X-Backend-Storage-Policy-Index"))
+	require.Equal(t, "1000000000.00001", rsp.Header().Get("X-Put-Timestamp"))
 }
 
 func TestContainerPutNoPolicy(t *testing.T) {
@@ -219,19 +220,19 @@ func TestContainerPutNoPolicy(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("PUT", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", "1000000000.00001")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 201, rsp.status)
+	require.Equal(t, 201, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("HEAD", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 204, rsp.status)
-	require.Equal(t, "0", rsp.header.Get("X-Backend-Storage-Policy-Index"))
+	require.Equal(t, 204, rsp.Status)
+	require.Equal(t, "0", rsp.Header().Get("X-Backend-Storage-Policy-Index"))
 }
 
 func TestContainerDeleteNotEmpty(t *testing.T) {
@@ -239,16 +240,16 @@ func TestContainerDeleteNotEmpty(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("PUT", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", "100000000.00001")
 	req.Header.Set("X-Backend-Storage-Policy-Index", "0")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 201, rsp.status)
+	require.Equal(t, 201, rsp.Status)
 
 	for _, object := range []string{"1", "2", "3"} {
-		rsp := makeCaptureResponse()
+		rsp := test.MakeCaptureResponse()
 		req, err := http.NewRequest("PUT", "/device/1/a/c/"+object, nil)
 		require.Nil(t, err)
 		req.Header.Set("X-Timestamp", common.GetTimestamp())
@@ -256,15 +257,15 @@ func TestContainerDeleteNotEmpty(t *testing.T) {
 		req.Header.Set("X-Size", "2")
 		req.Header.Set("X-Etag", "d41d8cd98f00b204e9800998ecf8427e")
 		handler.ServeHTTP(rsp, req)
-		require.Equal(t, 201, rsp.status)
+		require.Equal(t, 201, rsp.Status)
 	}
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("DELETE", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 409, rsp.status)
+	require.Equal(t, 409, rsp.Status)
 }
 
 func TestContainerPutObjectsGet(t *testing.T) {
@@ -272,16 +273,16 @@ func TestContainerPutObjectsGet(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("PUT", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", "100000000.00001")
 	req.Header.Set("X-Backend-Storage-Policy-Index", "0")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 201, rsp.status)
+	require.Equal(t, 201, rsp.Status)
 
 	for _, object := range []string{"1", "2", "3"} {
-		rsp := makeCaptureResponse()
+		rsp := test.MakeCaptureResponse()
 		req, err := http.NewRequest("PUT", "/device/1/a/c/"+object, nil)
 		require.Nil(t, err)
 		req.Header.Set("X-Timestamp", common.GetTimestamp())
@@ -289,19 +290,19 @@ func TestContainerPutObjectsGet(t *testing.T) {
 		req.Header.Set("X-Size", "2")
 		req.Header.Set("X-Etag", "d41d8cd98f00b204e9800998ecf8427e")
 		handler.ServeHTTP(rsp, req)
-		require.Equal(t, 201, rsp.status)
+		require.Equal(t, 201, rsp.Status)
 	}
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("GET", "/device/1/a/c?format=json", nil)
 	require.Nil(t, err)
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 200, rsp.status)
-	require.Equal(t, "application/json; charset=utf-8", rsp.header.Get("Content-Type"))
-	require.Equal(t, "3", rsp.header.Get("X-Container-Object-Count"))
-	require.Equal(t, "6", rsp.header.Get("X-Container-Bytes-Used"))
+	require.Equal(t, 200, rsp.Status)
+	require.Equal(t, "application/json; charset=utf-8", rsp.Header().Get("Content-Type"))
+	require.Equal(t, "3", rsp.Header().Get("X-Container-Object-Count"))
+	require.Equal(t, "6", rsp.Header().Get("X-Container-Bytes-Used"))
 	var data []ObjectListingRecord
-	require.Nil(t, json.Unmarshal(rsp.body.Bytes(), &data))
+	require.Nil(t, json.Unmarshal(rsp.Body.Bytes(), &data))
 	require.Equal(t, 3, len(data))
 	require.Equal(t, "1", data[0].Name)
 	require.Equal(t, "2", data[1].Name)
@@ -309,27 +310,27 @@ func TestContainerPutObjectsGet(t *testing.T) {
 	require.Equal(t, int64(2), data[2].Size)
 	require.Equal(t, "d41d8cd98f00b204e9800998ecf8427e", data[2].ETag)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("GET", "/device/1/a/c", nil)
 	req.Header.Set("Accept", "application/json")
 	require.Nil(t, err)
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 200, rsp.status)
-	require.Equal(t, "application/json; charset=utf-8", rsp.header.Get("Content-Type"))
+	require.Equal(t, 200, rsp.Status)
+	require.Equal(t, "application/json; charset=utf-8", rsp.Header().Get("Content-Type"))
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("GET", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 200, rsp.status)
-	require.Equal(t, "1\n2\n3\n", rsp.body.String())
+	require.Equal(t, 200, rsp.Status)
+	require.Equal(t, "1\n2\n3\n", rsp.Body.String())
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("GET", "/device/1/a/c?format=xml", nil)
 	require.Nil(t, err)
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 200, rsp.status)
-	require.Equal(t, "application/xml; charset=utf-8", rsp.header.Get("Content-Type"))
+	require.Equal(t, 200, rsp.Status)
+	require.Equal(t, "application/xml; charset=utf-8", rsp.Header().Get("Content-Type"))
 	// TODO parse and validate xml.  or maybe we won't do that.
 }
 
@@ -338,17 +339,17 @@ func TestContainerPutObjectsFails(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("PUT", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", "100000000.00001")
 	req.Header.Set("X-Backend-Storage-Policy-Index", "0")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 201, rsp.status)
+	require.Equal(t, 201, rsp.Status)
 
 	server.containerEngine = fakeContainerEngine{}
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("PUT", "/device/1/a/c/o", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
@@ -356,14 +357,14 @@ func TestContainerPutObjectsFails(t *testing.T) {
 	req.Header.Set("X-Size", "2")
 	req.Header.Set("X-Etag", "d41d8cd98f00b204e9800998ecf8427e")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 500, rsp.status)
+	require.Equal(t, 500, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("DELETE", "/device/1/a/c/o", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 500, rsp.status)
+	require.Equal(t, 500, rsp.Status)
 }
 
 func TestContainerGetTextEmpty(t *testing.T) {
@@ -371,19 +372,19 @@ func TestContainerGetTextEmpty(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("PUT", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", "100000000.00001")
 	req.Header.Set("X-Backend-Storage-Policy-Index", "0")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 201, rsp.status)
+	require.Equal(t, 201, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("GET", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 204, rsp.status)
+	require.Equal(t, 204, rsp.Status)
 }
 
 func TestContainerPutObjectBadRequests(t *testing.T) {
@@ -391,15 +392,15 @@ func TestContainerPutObjectBadRequests(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("PUT", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	req.Header.Set("X-Backend-Storage-Policy-Index", "0")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 201, rsp.status)
+	require.Equal(t, 201, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("PUT", "/device/1/a/c/o", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", "invalid")
@@ -407,23 +408,23 @@ func TestContainerPutObjectBadRequests(t *testing.T) {
 	req.Header.Set("X-Size", "2")
 	req.Header.Set("X-Etag", "d41d8cd98f00b204e9800998ecf8427e")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 400, rsp.status)
+	require.Equal(t, 400, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("PUT", "/device/1/a/c/o", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	req.Header.Set("X-Content-Type", "application/octet-stream")
 	req.Header.Set("X-Etag", "d41d8cd98f00b204e9800998ecf8427e")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 400, rsp.status)
+	require.Equal(t, 400, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("DELETE", "/device/1/a/c/o", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", "invalid")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 400, rsp.status)
+	require.Equal(t, 400, rsp.Status)
 }
 
 func TestContainerPutDeleteObjectsGet(t *testing.T) {
@@ -431,16 +432,16 @@ func TestContainerPutDeleteObjectsGet(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("PUT", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	req.Header.Set("X-Backend-Storage-Policy-Index", "0")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 201, rsp.status)
+	require.Equal(t, 201, rsp.Status)
 
 	for _, object := range []string{"1", "2", "3"} {
-		rsp := makeCaptureResponse()
+		rsp := test.MakeCaptureResponse()
 		req, err := http.NewRequest("PUT", "/device/1/a/c/"+object, nil)
 		require.Nil(t, err)
 		req.Header.Set("X-Timestamp", common.GetTimestamp())
@@ -448,25 +449,25 @@ func TestContainerPutDeleteObjectsGet(t *testing.T) {
 		req.Header.Set("X-Size", "2")
 		req.Header.Set("X-Etag", "d41d8cd98f00b204e9800998ecf8427e")
 		handler.ServeHTTP(rsp, req)
-		require.Equal(t, 201, rsp.status)
+		require.Equal(t, 201, rsp.Status)
 	}
 
 	for _, object := range []string{"1", "2", "3"} {
-		rsp := makeCaptureResponse()
+		rsp := test.MakeCaptureResponse()
 		req, err := http.NewRequest("DELETE", "/device/1/a/c/"+object, nil)
 		require.Nil(t, err)
 		req.Header.Set("X-Timestamp", common.GetTimestamp())
 		handler.ServeHTTP(rsp, req)
-		require.Equal(t, 204, rsp.status)
+		require.Equal(t, 204, rsp.Status)
 	}
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("HEAD", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 204, rsp.status)
-	require.Equal(t, "0", rsp.header.Get("X-Container-Object-Count"))
-	require.Equal(t, "0", rsp.header.Get("X-Container-Bytes-Used"))
+	require.Equal(t, 204, rsp.Status)
+	require.Equal(t, "0", rsp.Header().Get("X-Container-Object-Count"))
+	require.Equal(t, "0", rsp.Header().Get("X-Container-Bytes-Used"))
 }
 
 func TestContainerMetadata(t *testing.T) {
@@ -474,7 +475,7 @@ func TestContainerMetadata(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("PUT", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
@@ -482,31 +483,31 @@ func TestContainerMetadata(t *testing.T) {
 	req.Header.Set("X-Container-Meta-First", "1")
 	req.Header.Set("X-Container-Meta-Second", "2")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 201, rsp.status)
+	require.Equal(t, 201, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("POST", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Container-Meta-First", "!")
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 204, rsp.status)
+	require.Equal(t, 204, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("POST", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Container-Meta-Second", "@")
 	req.Header.Set("X-Timestamp", common.CanonicalTimestamp(1))
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 204, rsp.status)
+	require.Equal(t, 204, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("HEAD", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 204, rsp.status)
-	require.Equal(t, "!", rsp.header.Get("X-Container-Meta-First"))
-	require.Equal(t, "2", rsp.header.Get("X-Container-Meta-Second"))
+	require.Equal(t, 204, rsp.Status)
+	require.Equal(t, "!", rsp.Header().Get("X-Container-Meta-First"))
+	require.Equal(t, "2", rsp.Header().Get("X-Container-Meta-Second"))
 }
 
 func TestContainerDelete(t *testing.T) {
@@ -514,39 +515,39 @@ func TestContainerDelete(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("PUT", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	req.Header.Set("X-Backend-Storage-Policy-Index", "0")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 201, rsp.status)
+	require.Equal(t, 201, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("DELETE", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", common.CanonicalTimestamp(1))
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 204, rsp.status)
+	require.Equal(t, 204, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("HEAD", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 204, rsp.status)
+	require.Equal(t, 204, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("DELETE", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 204, rsp.status)
+	require.Equal(t, 204, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("HEAD", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 404, rsp.status)
+	require.Equal(t, 404, rsp.Status)
 }
 
 func TestHealthcheck(t *testing.T) {
@@ -554,12 +555,12 @@ func TestHealthcheck(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("GET", "/healthcheck", nil)
 	require.Nil(t, err)
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 200, rsp.status)
-	require.Equal(t, "OK", rsp.body.String())
+	require.Equal(t, 200, rsp.Status)
+	require.Equal(t, "OK", rsp.Body.String())
 }
 
 func TestDiskUsage(t *testing.T) {
@@ -569,14 +570,14 @@ func TestDiskUsage(t *testing.T) {
 
 	server.diskInUse = common.NewKeyedLimit(2, 8)
 	server.diskInUse.Acquire("sda", false)
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("GET", "/diskusage", nil)
 	require.Nil(t, err)
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 200, rsp.status)
+	require.Equal(t, 200, rsp.Status)
 	expected, err := server.diskInUse.MarshalJSON()
 	require.Nil(t, err)
-	require.Equal(t, string(expected), string(rsp.body.Bytes()))
+	require.Equal(t, string(expected), string(rsp.Body.Bytes()))
 }
 
 func TestGetServer(t *testing.T) {
@@ -615,7 +616,7 @@ func TestContainerAutoCreateOnPut(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("PUT", "/device/1/.a/c/o", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
@@ -623,13 +624,13 @@ func TestContainerAutoCreateOnPut(t *testing.T) {
 	req.Header.Set("X-Size", "2")
 	req.Header.Set("X-Etag", "d41d8cd98f00b204e9800998ecf8427e")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 201, rsp.status)
+	require.Equal(t, 201, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("HEAD", "/device/1/.a/c", nil)
 	require.Nil(t, err)
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 204, rsp.status)
+	require.Equal(t, 204, rsp.Status)
 }
 
 func TestContainerAutoCreateOnDelete(t *testing.T) {
@@ -637,18 +638,18 @@ func TestContainerAutoCreateOnDelete(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("DELETE", "/device/1/.a/c/o", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 204, rsp.status)
+	require.Equal(t, 204, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("HEAD", "/device/1/.a/c", nil)
 	require.Nil(t, err)
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 204, rsp.status)
+	require.Equal(t, 204, rsp.Status)
 }
 
 func TestContainerNotFoundOnPut(t *testing.T) {
@@ -656,7 +657,7 @@ func TestContainerNotFoundOnPut(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("PUT", "/device/1/a/cX/o", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
@@ -664,14 +665,14 @@ func TestContainerNotFoundOnPut(t *testing.T) {
 	req.Header.Set("X-Size", "2")
 	req.Header.Set("X-Etag", "d41d8cd98f00b204e9800998ecf8427e")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 404, rsp.status)
+	require.Equal(t, 404, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("DELETE", "/device/1/a/cY/o", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 404, rsp.status)
+	require.Equal(t, 404, rsp.Status)
 }
 
 func TestContainerVerifySync(t *testing.T) {
@@ -687,39 +688,39 @@ func TestContainerVerifySync(t *testing.T) {
 		},
 	})
 
-	rsp := makeCaptureResponse()
+	rsp := test.MakeCaptureResponse()
 	req, err := http.NewRequest("PUT", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", "1000000000.00001")
 	req.Header.Set("X-Backend-Storage-Policy-Index", "0")
 	req.Header.Set("X-Container-Sync-To", "//realm2/cluster1/account/container")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 400, rsp.status)
+	require.Equal(t, 400, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("PUT", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", "1000000000.00001")
 	req.Header.Set("X-Backend-Storage-Policy-Index", "0")
 	req.Header.Set("X-Container-Sync-To", "//realm1/cluster1/account/container")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 201, rsp.status)
+	require.Equal(t, 201, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("POST", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", "1000000000.00001")
 	req.Header.Set("X-Backend-Storage-Policy-Index", "0")
 	req.Header.Set("X-Container-Sync-To", "//realm2/cluster1/account/container")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 400, rsp.status)
+	require.Equal(t, 400, rsp.Status)
 
-	rsp = makeCaptureResponse()
+	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("POST", "/device/1/a/c", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", "1000000000.00001")
 	req.Header.Set("X-Backend-Storage-Policy-Index", "0")
 	req.Header.Set("X-Container-Sync-To", "//realm1/cluster1/account/container")
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 204, rsp.status)
+	require.Equal(t, 204, rsp.Status)
 }

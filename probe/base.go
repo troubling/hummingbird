@@ -31,63 +31,9 @@ import (
 
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
+	"github.com/troubling/hummingbird/common/test"
 	"github.com/troubling/hummingbird/objectserver"
 )
-
-// FakeRing simulates a ring with 4 nodes and one partition.  That partition always lives on nodes 0, 1, and 2, with node 3 being the handoff.
-type FakeRing struct {
-	devices []*ring.Device
-}
-
-func (r *FakeRing) GetNodes(partition uint64) (response []*ring.Device) {
-	return r.devices[0:3]
-}
-
-func (r *FakeRing) GetNodesInOrder(partition uint64) (response []*ring.Device) {
-	return r.GetNodes(partition)
-}
-
-func (r *FakeRing) GetJobNodes(partition uint64, localDevice int) (devs []*ring.Device, handoff bool) {
-	switch localDevice {
-	case 0:
-		return []*ring.Device{r.devices[1], r.devices[2]}, false
-	case 1:
-		return []*ring.Device{r.devices[0], r.devices[2]}, false
-	case 2:
-		return []*ring.Device{r.devices[0], r.devices[1]}, false
-	default:
-		return r.devices[0:3], true
-	}
-}
-
-func (r *FakeRing) GetPartition(account string, container string, object string) uint64 {
-	return 0
-}
-
-func (r *FakeRing) LocalDevices(localPort int) (devs []*ring.Device, err error) {
-	for _, d := range r.devices {
-		if d.ReplicationPort == localPort {
-			return []*ring.Device{d}, nil
-		}
-	}
-	return nil, nil
-}
-
-func (r *FakeRing) AllDevices() (devs []ring.Device) {
-	return nil
-}
-
-type fakeMoreNodes struct {
-	dev *ring.Device
-}
-
-func (m *fakeMoreNodes) Next() *ring.Device {
-	return m.dev
-}
-
-func (r *FakeRing) GetMoreNodes(partition uint64) ring.MoreNodes {
-	return &fakeMoreNodes{r.devices[3]}
-}
 
 type TestReplicatorWebServer struct {
 	*httptest.Server
@@ -100,14 +46,6 @@ type TestReplicatorWebServer struct {
 func (t *TestReplicatorWebServer) Close() {
 	os.RemoveAll(t.root)
 	t.Server.Close()
-}
-
-func (r *FakeRing) ReplicaCount() (cnt uint64) {
-	return uint64(0)
-}
-
-func (r *FakeRing) PartitionCount() (cnt uint64) {
-	return uint64(0)
 }
 
 // Environment encapsulates a temporary SAIO-style environment for the object server, replicator, and auditor
@@ -190,6 +128,15 @@ func (e *Environment) ObjExists(server int, timestamp string, policy int) bool {
 
 // NewEnvironment creates a new environment.  Arguments should be a series of key, value pairs that are added to the object server configuration file.
 func NewEnvironment(settings ...string) *Environment {
+	oldGetRing := objectserver.GetRing
+	defer func() {
+		objectserver.GetRing = oldGetRing
+	}()
+
+	testRing := &test.FakeRing{}
+	objectserver.GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return testRing, nil
+	}
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	oldLoadPolicies := conf.LoadPolicies
 	conf.LoadPolicies = func() conf.PolicyList {
@@ -215,7 +162,7 @@ func NewEnvironment(settings ...string) *Environment {
 	defer func() {
 		conf.LoadPolicies = oldLoadPolicies
 	}()
-	env := &Environment{ring: &FakeRing{devices: nil}}
+	env := &Environment{ring: testRing}
 	env.hashPrefix, env.hashSuffix, _ = conf.GetHashPrefixAndSuffix()
 	for i := 0; i < 4; i++ {
 		driveRoot, _ := ioutil.TempDir("", "")
@@ -259,7 +206,7 @@ func NewEnvironment(settings ...string) *Environment {
 			log.Fatal(err)
 		}
 
-		env.ring.(*FakeRing).devices = append(env.ring.(*FakeRing).devices, &ring.Device{
+		env.ring.(*test.FakeRing).MockDevices = append(env.ring.(*test.FakeRing).MockDevices, &ring.Device{
 			Id: i, Device: "sda", Ip: host, Port: port, Region: 0, ReplicationIp: trsHost, ReplicationPort: trsPort, Weight: 1, Zone: i,
 		})
 
@@ -270,5 +217,6 @@ func NewEnvironment(settings ...string) *Environment {
 		env.replicatorServers = append(env.replicatorServers, replicatorServer)
 		env.auditors = append(env.auditors, auditor.(*objectserver.AuditorDaemon))
 	}
+	env.ring.(*test.FakeRing).MockMoreNodes = env.ring.(*test.FakeRing).MockDevices[3]
 	return env
 }
