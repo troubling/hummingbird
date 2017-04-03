@@ -216,6 +216,9 @@ func (r *Replicator) objRepConnHandler(writer http.ResponseWriter, request *http
 			if sfr.Done {
 				return "", replicationDone
 			}
+			if sfr.Ping {
+				return "ping", rc.SendMessage(SyncFileResponse{Msg: "pong"})
+			}
 			tempDir := TempDirPath(r.deviceRoot, vars["device"])
 			fileName := filepath.Join(r.deviceRoot, sfr.Path)
 			hashDir := filepath.Dir(fileName)
@@ -229,6 +232,9 @@ func (r *Replicator) objRepConnHandler(writer http.ResponseWriter, request *http
 			dataFile, metaFile := ObjectFiles(hashDir)
 			if filepath.Base(fileName) < filepath.Base(dataFile) || filepath.Base(fileName) < filepath.Base(metaFile) {
 				return "newer file exists", rc.SendMessage(SyncFileResponse{NewerExists: true, Msg: "newer exists"})
+			}
+			if sfr.Check {
+				return "just check", rc.SendMessage(SyncFileResponse{Exists: false, Msg: "doesn't exist"})
 			}
 			tempFile, err := fs.NewAtomicFileWriter(tempDir, hashDir)
 			if err != nil {
