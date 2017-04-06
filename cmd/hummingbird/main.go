@@ -35,8 +35,6 @@ import (
 	"github.com/troubling/hummingbird/proxyserver"
 )
 
-var Version = "0.1"
-
 func WritePid(name string, pid int) error {
 	file, err := os.Create(fmt.Sprintf("/var/run/hummingbird/%s.pid", name))
 	if err != nil {
@@ -332,7 +330,7 @@ func main() {
 
 	switch flag.Arg(0) {
 	case "version":
-		fmt.Println(Version)
+		fmt.Println(common.Version)
 	case "start":
 		ProcessControlCommand(StartServer)
 	case "stop":

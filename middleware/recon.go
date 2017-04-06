@@ -428,7 +428,8 @@ func ReconHandler(driveRoot string, writer http.ResponseWriter, request *http.Re
 			return
 		}
 	case "time":
-		content = time.Now().Unix()
+		//Similar to python time.time()
+		content = float64(time.Now().UnixNano()) / 1000000000
 	case "driveaudit":
 		var err error
 		content, err = fromReconCache("drive", "drive_audit_errors")
