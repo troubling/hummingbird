@@ -2,7 +2,7 @@ HUMMINGBIRD_VERSION?=$(shell git describe --tags)
 
 all: bin/hummingbird
 
-bin/hummingbird: */*.go
+bin/hummingbird: */*.go */*/*.go
 	mkdir -p bin
 	go build -o bin/hummingbird -ldflags "-X main.Version=$(HUMMINGBIRD_VERSION)" cmd/hummingbird/main.go
 

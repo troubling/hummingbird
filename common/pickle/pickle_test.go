@@ -399,3 +399,54 @@ func TestUnpickleUnableToFindMark(t *testing.T) {
 	assert.NotNil(t, err)
 	assert.True(t, strings.Contains(err.Error(), "unable to find mark"))
 }
+
+func TestPickleWithTupleKey(t *testing.T) {
+	v, err := PickleLoads([]byte("\x80\x02}q\x00U\x02hiq\x01K\x03\x86q\x02U\x05valueq\x03s."))
+	require.Nil(t, err)
+	v2, valid := v.(map[interface{}]interface{})
+	require.True(t, valid)
+	require.Equal(t, 1, len(v2))
+	for k, v := range v2 {
+		require.Equal(t, v, "value")
+		require.Equal(t, k, PickleTuple{Len: 2, A: "hi", B: int64(3)})
+	}
+
+	rt := PickleRoundTrip(t, v2)
+	require.Equal(t, v2, rt)
+}
+
+func TestLoadArray(t *testing.T) {
+	v, err := PickleLoads([]byte("carray\narray\np0\n(S'H'\np1\n(lp2\nI1\naI2\naI3\naI4\naI5\natp3\nRp4\n."))
+	require.Nil(t, err)
+	v2, valid := v.(PickleArray)
+	require.True(t, valid)
+	require.Equal(t, "H", v2.Type)
+	require.Equal(t, []interface{}{int64(1), int64(2), int64(3), int64(4), int64(5)}, v2.Data)
+	rt := PickleRoundTrip(t, v2)
+	require.Equal(t, v2, rt)
+}
+
+func TestLoadArrayDifferentProtocol(t *testing.T) {
+	v, err := PickleLoads([]byte("\x80\x02carray\narray\nq\x00U\x01Hq\x01]q\x02(K\x01K\x02K\x03K\x04K\x05e\x86q\x03Rq\x04."))
+	require.Nil(t, err)
+	v2, valid := v.(PickleArray)
+	require.True(t, valid)
+	require.Equal(t, "H", v2.Type)
+	require.Equal(t, []interface{}{int64(1), int64(2), int64(3), int64(4), int64(5)}, v2.Data)
+	rt := PickleRoundTrip(t, v2)
+	require.Equal(t, v2, rt)
+}
+
+type arbitraryStruct struct {
+	Val1 string
+	Val2 int
+}
+
+func TestArbitraryStruct(t *testing.T) {
+	x := arbitraryStruct{Val1: "hello", Val2: 311}
+	rt := PickleRoundTrip(t, x)
+	v2, valid := rt.(map[interface{}]interface{})
+	require.True(t, valid)
+	require.Equal(t, "hello", v2["Val1"])
+	require.Equal(t, int64(311), v2["Val2"])
+}
