@@ -469,6 +469,12 @@ func (server *ContainerServer) ReconHandler(writer http.ResponseWriter, request 
 	middleware.ReconHandler(server.driveRoot, writer, request)
 }
 
+//OptionsHandler delegates incoming OPTIONS calls to the common options handler.
+func (server *ContainerServer) OptionsHandler(writer http.ResponseWriter, request *http.Request) {
+	middleware.OptionsHandler("container-server", writer, request)
+	return
+}
+
 // DiskUsageHandler returns information on the current outstanding HTTP requests per-disk.
 func (server *ContainerServer) DiskUsageHandler(writer http.ResponseWriter, request *http.Request) {
 	if data, err := server.diskInUse.MarshalJSON(); err == nil {
@@ -573,6 +579,7 @@ func (server *ContainerServer) GetHandler(config conf.Config) http.Handler {
 	router.Replicate("/:device/:partition/:hash", commonHandlers.ThenFunc(server.ContainerReplicateHandler))
 	router.Get("/debug/pprof/:parm", http.DefaultServeMux)
 	router.Post("/debug/pprof/:parm", http.DefaultServeMux)
+	router.Options("/", commonHandlers.ThenFunc(server.OptionsHandler))
 	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Invalid path: %s", r.URL.Path), http.StatusBadRequest)
 	})

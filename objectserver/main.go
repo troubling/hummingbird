@@ -385,6 +385,11 @@ func (server *ObjectServer) ReconHandler(writer http.ResponseWriter, request *ht
 	return
 }
 
+func (server *ObjectServer) OptionsHandler(writer http.ResponseWriter, request *http.Request) {
+	middleware.OptionsHandler("object-server", writer, request)
+	return
+}
+
 func (server *ObjectServer) DiskUsageHandler(writer http.ResponseWriter, request *http.Request) {
 	data, err := server.diskInUse.MarshalJSON()
 	if err == nil {
@@ -489,6 +494,7 @@ func (server *ObjectServer) GetHandler(config conf.Config) http.Handler {
 	router.Head("/:device/:partition/:account/:container/*obj", commonHandlers.ThenFunc(server.ObjGetHandler))
 	router.Put("/:device/:partition/:account/:container/*obj", commonHandlers.ThenFunc(server.ObjPutHandler))
 	router.Delete("/:device/:partition/:account/:container/*obj", commonHandlers.ThenFunc(server.ObjDeleteHandler))
+	router.Options("/", commonHandlers.ThenFunc(server.OptionsHandler))
 	router.Get("/debug/pprof/:parm", http.DefaultServeMux)
 	router.Post("/debug/pprof/:parm", http.DefaultServeMux)
 	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
