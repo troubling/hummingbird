@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/justinas/alice"
@@ -53,6 +54,7 @@ type ObjectServer struct {
 	updateClient     *http.Client
 	objEngines       map[int]ObjectEngine
 	updateTimeout    time.Duration
+	finished         sync.WaitGroup
 }
 
 func (server *ObjectServer) newObject(req *http.Request, vars map[string]string, needData bool) (Object, error) {
@@ -64,7 +66,7 @@ func (server *ObjectServer) newObject(req *http.Request, vars map[string]string,
 	if !ok {
 		return nil, fmt.Errorf("Engine for policy index %d not found.", policy)
 	}
-	return engine.New(vars, needData)
+	return engine.New(vars, needData, &server.finished)
 }
 
 func (server *ObjectServer) ObjGetHandler(writer http.ResponseWriter, request *http.Request) {

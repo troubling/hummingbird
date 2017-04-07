@@ -66,6 +66,7 @@ func (FakeLowLevelLogger) Debug(s string) error {
 
 // FakeRing
 type FakeRing struct {
+	// Overrides for function returns
 	MockLocalDevices       []*ring.Device
 	MockGetJobNodes        []*ring.Device
 	MockGetJobNodesHandoff bool

@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -18,7 +19,9 @@ func TestSwiftObjectRoundtrip(t *testing.T) {
 
 	vars := map[string]string{"device": "sda", "account": "a", "container": "c", "object": "o", "partition": "1"}
 	swcon := &SwiftObjectFactory{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
-	swo, err := swcon.New(vars, false)
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	swo, err := swcon.New(vars, false, &wg)
 	require.Nil(t, err)
 	defer swo.Close()
 	require.Nil(t, err)
@@ -27,7 +30,7 @@ func TestSwiftObjectRoundtrip(t *testing.T) {
 	w.Write([]byte("!"))
 	swo.Commit(map[string]string{"Content-Length": "1", "Content-Type": "text/plain", "X-Timestamp": "1234567890.123456"})
 
-	swo, err = swcon.New(vars, true)
+	swo, err = swcon.New(vars, true, &wg)
 	require.Nil(t, err)
 	defer swo.Close()
 	metadata := swo.Metadata()
@@ -41,11 +44,15 @@ func TestSwiftObjectRoundtrip(t *testing.T) {
 func TestSwiftObjectFailAuditContentLengthWrong(t *testing.T) {
 	driveRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
-	defer os.RemoveAll(driveRoot)
+	var wg sync.WaitGroup
+	defer func() {
+		wg.Wait()
+		os.RemoveAll(driveRoot)
+	}()
 
 	vars := map[string]string{"device": "sda", "account": "a", "container": "c", "object": "o", "partition": "1"}
 	swcon := &SwiftObjectFactory{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
-	swo, err := swcon.New(vars, false)
+	swo, err := swcon.New(vars, false, &wg)
 	require.Nil(t, err)
 	defer swo.Close()
 	w, err := swo.SetData(1)
@@ -53,18 +60,22 @@ func TestSwiftObjectFailAuditContentLengthWrong(t *testing.T) {
 	w.Write([]byte("!"))
 	swo.Commit(map[string]string{"Content-Length": "0", "Content-Type": "text/plain", "X-Timestamp": "1234567890.123456"})
 
-	swo, err = swcon.New(vars, false)
+	swo, err = swcon.New(vars, false, &wg)
 	require.NotNil(t, err)
 }
 
 func TestSwiftObjectFailAuditBadContentLength(t *testing.T) {
 	driveRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
-	defer os.RemoveAll(driveRoot)
+	var wg sync.WaitGroup
+	defer func() {
+		wg.Wait()
+		defer os.RemoveAll(driveRoot)
+	}()
 
 	vars := map[string]string{"device": "sda", "account": "a", "container": "c", "object": "o", "partition": "1"}
 	swcon := &SwiftObjectFactory{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
-	swo, err := swcon.New(vars, false)
+	swo, err := swcon.New(vars, false, &wg)
 	require.Nil(t, err)
 	defer swo.Close()
 	w, err := swo.SetData(1)
@@ -72,18 +83,22 @@ func TestSwiftObjectFailAuditBadContentLength(t *testing.T) {
 	w.Write([]byte("!"))
 	swo.Commit(map[string]string{"Content-Length": "X", "Content-Type": "text/plain", "X-Timestamp": "1234567890.123456"})
 
-	swo, err = swcon.New(vars, false)
+	swo, err = swcon.New(vars, false, &wg)
 	require.NotNil(t, err)
 }
 
 func TestSwiftObjectQuarantine(t *testing.T) {
 	driveRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
-	defer os.RemoveAll(driveRoot)
+	var wg sync.WaitGroup
+	defer func() {
+		wg.Wait()
+		defer os.RemoveAll(driveRoot)
+	}()
 
 	vars := map[string]string{"device": "sda", "account": "a", "container": "c", "object": "o", "partition": "3"}
 	swcon := &SwiftObjectFactory{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
-	swo, err := swcon.New(vars, false)
+	swo, err := swcon.New(vars, false, &wg)
 	require.Nil(t, err)
 	defer swo.Close()
 	w, err := swo.SetData(1)
@@ -97,11 +112,15 @@ func TestSwiftObjectQuarantine(t *testing.T) {
 func TestSwiftObjectMultiCopy(t *testing.T) {
 	driveRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
-	defer os.RemoveAll(driveRoot)
+	var wg sync.WaitGroup
+	defer func() {
+		wg.Wait()
+		defer os.RemoveAll(driveRoot)
+	}()
 
 	vars := map[string]string{"device": "sda", "account": "a", "container": "c", "object": "o", "partition": "1"}
 	swcon := &SwiftObjectFactory{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
-	swo, err := swcon.New(vars, false)
+	swo, err := swcon.New(vars, false, &wg)
 	require.Nil(t, err)
 	defer swo.Close()
 	w, err := swo.SetData(1)
@@ -109,7 +128,7 @@ func TestSwiftObjectMultiCopy(t *testing.T) {
 	w.Write([]byte("!"))
 	swo.Commit(map[string]string{"Content-Length": "1", "Content-Type": "text/plain", "X-Timestamp": "1234567890.123456"})
 
-	swo, err = swcon.New(vars, true)
+	swo, err = swcon.New(vars, true, &wg)
 	require.Nil(t, err)
 	defer swo.Close()
 	buf1 := &bytes.Buffer{}
@@ -123,11 +142,15 @@ func TestSwiftObjectMultiCopy(t *testing.T) {
 func TestSwiftObjectDelete(t *testing.T) {
 	driveRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
-	defer os.RemoveAll(driveRoot)
+	var wg sync.WaitGroup
+	defer func() {
+		wg.Wait()
+		defer os.RemoveAll(driveRoot)
+	}()
 
 	vars := map[string]string{"device": "sda", "account": "a", "container": "c", "object": "o", "partition": "1"}
 	swcon := &SwiftObjectFactory{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
-	swo, err := swcon.New(vars, false)
+	swo, err := swcon.New(vars, false, &wg)
 	require.Nil(t, err)
 	defer swo.Close()
 	w, err := swo.SetData(1)
@@ -135,14 +158,14 @@ func TestSwiftObjectDelete(t *testing.T) {
 	w.Write([]byte("!"))
 	swo.Commit(map[string]string{"Content-Length": "1", "Content-Type": "text/plain", "X-Timestamp": "1234567890.123456"})
 
-	swo, err = swcon.New(vars, false)
+	swo, err = swcon.New(vars, false, &wg)
 	require.Nil(t, err)
 	defer swo.Close()
 	require.True(t, swo.Exists())
 	err = swo.Delete(map[string]string{"X-Timestamp": "1234567891.123456"})
 	require.Nil(t, err)
 
-	swo, err = swcon.New(vars, false)
+	swo, err = swcon.New(vars, false, &wg)
 	require.Nil(t, err)
 	defer swo.Close()
 	require.False(t, swo.Exists())
