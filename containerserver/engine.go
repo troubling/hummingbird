@@ -114,7 +114,7 @@ type Container interface {
 	// GetMetadata returns the container's current metadata.
 	GetMetadata() (map[string]string, error)
 	// UpdateMetadata applies updates to the container's metadata.
-	UpdateMetadata(updates map[string][]string) error
+	UpdateMetadata(updates map[string][]string, timestamp string) error
 	// PutObject adds a new object to the container.
 	PutObject(name string, timestamp string, size int64, contentType string, etag string, storagePolicyIndex int) error
 	// DeleteObject deletes an object from the container.

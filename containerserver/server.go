@@ -108,6 +108,12 @@ func (server *ContainerServer) ContainerGetHandler(writer http.ResponseWriter, r
 		return
 	}
 	headers := writer.Header()
+	if lastModified, err := common.ParseDate(info.PutTimestamp); err == nil {
+		if lastModified.Nanosecond() > 0 { // for some reason, Last-Modified is ceil(X-Timestamp)
+			lastModified = lastModified.Truncate(time.Second).Add(time.Second)
+		}
+		headers.Set("Last-Modified", lastModified.Format(time.RFC1123))
+	}
 	if ts, err := common.GetEpochFromTimestamp(info.CreatedAt); err == nil {
 		headers.Set("X-Backend-Timestamp", ts)
 	}
@@ -222,7 +228,7 @@ func (server *ContainerServer) ContainerGetHandler(writer http.ResponseWriter, r
 		}
 		container := &Container{Name: vars["container"], Objects: objects}
 		writer.Header().Set("Content-Type", "application/xml; charset=utf-8")
-		output, _ := xml.MarshalIndent(container, "", "  ")
+		output, _ := xml.Marshal(container)
 		headers.Set("Content-Length", strconv.Itoa(len(output)+39))
 		writer.WriteHeader(200)
 		writer.Write([]byte("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"))
@@ -363,7 +369,7 @@ func (server *ContainerServer) ContainerPostHandler(writer http.ResponseWriter, 
 		srv.StandardResponse(writer, http.StatusNotFound)
 		return
 	}
-	if err := db.UpdateMetadata(updates); err == ErrorInvalidMetadata {
+	if err := db.UpdateMetadata(updates, timestamp); err == ErrorInvalidMetadata {
 		srv.StandardResponse(writer, http.StatusBadRequest)
 	} else if err != nil {
 		srv.StandardResponse(writer, http.StatusInternalServerError)

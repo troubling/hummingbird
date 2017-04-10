@@ -67,6 +67,33 @@ func (server *ObjectServer) newObject(req *http.Request, vars map[string]string,
 	return engine.New(vars, needData)
 }
 
+func parseIfMatch(s string) map[string]bool {
+	r := make(map[string]bool)
+	if len(strings.Trim(s, " ")) > 0 {
+		for _, ss := range strings.Split(s, ",") {
+			if sst := strings.Trim(ss, " "); sst != "" {
+				if sst[0] == '"' && sst[len(sst)-1] == '"' {
+					r[sst[1:len(sst)-1]] = true
+				} else {
+					r[sst] = true
+				}
+			}
+		}
+	}
+	return r
+}
+
+func resolveEtag(req *http.Request, metadata map[string]string) string {
+	etag := metadata["ETag"]
+	for _, ph := range strings.Split(req.Header.Get("X-Backend-Etag-Is-At"), ",") {
+		ph = strings.Trim(ph, " ")
+		if altEtag, exists := metadata[http.CanonicalHeaderKey(ph)]; exists && ph != "" {
+			etag = altEtag
+		}
+	}
+	return etag
+}
+
 func (server *ObjectServer) ObjGetHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
 	headers := writer.Header()
@@ -78,17 +105,20 @@ func (server *ObjectServer) ObjGetHandler(writer http.ResponseWriter, request *h
 	}
 	defer obj.Close()
 
+	ifMatches := parseIfMatch(request.Header.Get("If-Match"))
+	ifNoneMatches := parseIfMatch(request.Header.Get("If-None-Match"))
+
 	if !obj.Exists() {
-		if im := request.Header.Get("If-Match"); im != "" && strings.Contains(im, "*") {
+		if ifMatches["*"] {
 			srv.StandardResponse(writer, http.StatusPreconditionFailed)
-			return
 		} else {
 			srv.StandardResponse(writer, http.StatusNotFound)
-			return
 		}
+		return
 	}
 
 	metadata := obj.Metadata()
+	etag := resolveEtag(request, metadata)
 
 	headers.Set("X-Backend-Timestamp", metadata["X-Timestamp"])
 	if deleteAt, ok := metadata["X-Delete-At"]; ok {
@@ -109,7 +139,7 @@ func (server *ObjectServer) ObjGetHandler(writer http.ResponseWriter, request *h
 		lastModifiedHeader = lastModified.Truncate(time.Second).Add(time.Second)
 	}
 	headers.Set("Last-Modified", lastModifiedHeader.Format(time.RFC1123))
-	headers.Set("ETag", "\""+metadata["ETag"]+"\"")
+	headers.Set("ETag", "\""+etag+"\"")
 	xTimestamp, err := common.GetEpochFromTimestamp(metadata["X-Timestamp"])
 	if err != nil {
 		srv.GetLogger(request).LogError("Error getting the epoch time from x-timestamp: %s", err.Error())
@@ -125,12 +155,12 @@ func (server *ObjectServer) ObjGetHandler(writer http.ResponseWriter, request *h
 		}
 	}
 
-	if im := request.Header.Get("If-Match"); im != "" && !strings.Contains(im, metadata["ETag"]) && !strings.Contains(im, "*") {
+	if len(ifMatches) > 0 && !ifMatches[etag] && !ifMatches["*"] {
 		srv.StandardResponse(writer, http.StatusPreconditionFailed)
 		return
 	}
 
-	if inm := request.Header.Get("If-None-Match"); inm != "" && (strings.Contains(inm, metadata["ETag"]) || strings.Contains(inm, "*")) {
+	if len(ifNoneMatches) > 0 && (ifNoneMatches[etag] || ifNoneMatches["*"]) {
 		writer.WriteHeader(http.StatusNotModified)
 		return
 	}
@@ -153,6 +183,7 @@ func (server *ObjectServer) ObjGetHandler(writer http.ResponseWriter, request *h
 		ranges, err := common.ParseRange(rangeHeader, obj.ContentLength())
 		if err != nil {
 			headers.Set("Content-Length", "0")
+			headers.Set("Content-Range", fmt.Sprintf("bytes */%d", obj.ContentLength()))
 			writer.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
 			return
 		} else if ranges != nil && len(ranges) == 1 {
@@ -505,7 +536,8 @@ func (server *ObjectServer) GetHandler(config conf.Config) http.Handler {
 
 func GetServer(serverconf conf.Config, flags *flag.FlagSet) (bindIP string, bindPort int, serv srv.Server, logger srv.LowLevelLogger, err error) {
 	server := &ObjectServer{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: "",
-		allowedHeaders: map[string]bool{"Content-Disposition": true,
+		allowedHeaders: map[string]bool{
+			"Content-Disposition":   true,
 			"Content-Encoding":      true,
 			"X-Delete-At":           true,
 			"X-Object-Manifest":     true,

@@ -546,7 +546,7 @@ func (db *sqliteContainer) mergeMetas(a map[string][]string, b map[string][]stri
 }
 
 // UpdateMetadata merges the current container metadata with new incoming metadata.
-func (db *sqliteContainer) UpdateMetadata(newMetadata map[string][]string) error {
+func (db *sqliteContainer) UpdateMetadata(newMetadata map[string][]string, timestamp string) error {
 	if err := db.connect(); err != nil {
 		return err
 	}
@@ -572,7 +572,7 @@ func (db *sqliteContainer) UpdateMetadata(newMetadata map[string][]string) error
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec("UPDATE container_info SET metadata=?", metastr); err != nil {
+	if _, err = tx.Exec("UPDATE container_info SET metadata=?, put_timestamp=MAX(put_timestamp, ?)", metastr, timestamp); err != nil {
 		return err
 	}
 	defer db.invalidateCache()
