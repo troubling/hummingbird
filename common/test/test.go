@@ -164,3 +164,65 @@ func (s FakeLogger) LogError(format string, args ...interface{}) {}
 func (s FakeLogger) LogInfo(format string, args ...interface{})  {}
 func (s FakeLogger) LogDebug(format string, args ...interface{}) {}
 func (s FakeLogger) LogPanics(format string)                     {}
+
+// Fake MemcacheRing
+type FakeMemcacheRing struct {
+	MockIncrResults []int64
+	MockIncrKeys    []string
+	MockSetValues   []interface{}
+}
+
+func (mr *FakeMemcacheRing) Decr(key string, delta int64, timeout int) (int64, error) {
+	return int64(0), nil
+}
+
+func (mr *FakeMemcacheRing) Delete(key string) error {
+	return nil
+}
+
+func (mr *FakeMemcacheRing) Get(key string) (interface{}, error) {
+	return nil, nil
+}
+
+func (mr *FakeMemcacheRing) GetStructured(key string, val interface{}) error {
+	return nil
+}
+
+func (mr *FakeMemcacheRing) GetMulti(serverKey string, keys []string) (map[string]interface{}, error) {
+	return nil, nil
+}
+
+func (mr *FakeMemcacheRing) Incr(key string, delta int64, timeout int) (int64, error) {
+	mr.MockIncrKeys = append(mr.MockIncrKeys, key)
+	if len(mr.MockIncrResults) > 0 {
+		res := mr.MockIncrResults[0] + delta
+		mr.MockIncrResults = mr.MockIncrResults[1:]
+		return res, nil
+	}
+	return int64(0), nil
+}
+
+func (mr *FakeMemcacheRing) Set(key string, value interface{}, timeout int) error {
+	mr.MockSetValues = append(mr.MockSetValues, value)
+	return nil
+}
+
+func (mr *FakeMemcacheRing) SetMulti(serverKey string, values map[string]interface{}, timeout int) error {
+	return nil
+}
+
+type MockResponseWriter struct{}
+
+func (m MockResponseWriter) Header() (h http.Header) {
+	return http.Header{}
+}
+
+func (m MockResponseWriter) Write(p []byte) (n int, err error) {
+	return len(p), nil
+}
+
+func (m MockResponseWriter) WriteString(s string) (n int, err error) {
+	return len(s), nil
+}
+
+func (m MockResponseWriter) WriteHeader(int) {}

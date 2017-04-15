@@ -230,3 +230,38 @@ func TestCopyN(t *testing.T) {
 	assert.Equal(t, []byte("WELL HELLO"), dst1.Bytes())
 	assert.Equal(t, []byte("WELL HELLO"), dst2.Bytes())
 }
+
+func TestParseProxyPath(t *testing.T) {
+	tests := [][]string{
+		[]string{"", "vrs", ""},
+		[]string{"", "account", ""},
+		[]string{"/", "vrs", ""},
+		[]string{"/", "object", ""},
+		[]string{"/v/a/c/o/a/b/c/d", "vrs", "v"},
+		[]string{"/v/a/c/o/a/b/c/d", "account", "a"},
+		[]string{"/v/a/c/o/a/b/c/d", "container", "c"},
+		[]string{"/v/a/c/o/a/b/c/d", "object", "o/a/b/c/d"},
+		[]string{"/v/a/c/o/a/b/c///d", "object", "o/a/b/c///d"},
+		[]string{"/v/a/c//o/b/c///d", "object", "/o/b/c///d"},
+		[]string{"/v", "vrs", "v"},
+		[]string{"/v/", "vrs", "v"},
+		[]string{"/v/a", "account", "a"},
+		[]string{"/v/a/", "account", "a"},
+		[]string{"/v/a/", "container", ""},
+	}
+	for i := 0; i < len(tests); i++ {
+		tSlice := tests[i]
+		res, err := ParseProxyPath(tSlice[0])
+		assert.Equal(t, res[tSlice[1]], tSlice[2])
+		assert.Equal(t, err, nil)
+	}
+	res, err := ParseProxyPath("v/a")
+	assert.Equal(t, len(res), 0)
+	assert.NotEqual(t, err, nil)
+	res, err = ParseProxyPath("//")
+	assert.Equal(t, len(res), 0)
+	assert.NotEqual(t, err, nil)
+	res, err = ParseProxyPath("/v//c")
+	assert.Equal(t, len(res), 0)
+	assert.NotEqual(t, err, nil)
+}

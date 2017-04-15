@@ -157,7 +157,7 @@ func testIncr(t *testing.T, ring *memcacheRing) {
 	// increment multiple times and check running total
 	key := "testIncr"
 	var running_total int64 = 0
-	for i := 1; i <= 10; i++ {
+	for i := int64(1); i <= 10; i++ {
 		running_total += int64(i)
 		if j, err := ring.Incr(key, i, 2); err != nil {
 			t.Error(err)
@@ -184,14 +184,14 @@ func testDecr(t *testing.T, ring *memcacheRing) {
 		assert.EqualValues(t, int64(0), value)
 	}
 	// test running total goes to and stays at zero
-	var running_total int = 30
+	var running_total int64 = 30
 	if value, err := ring.Incr(key, running_total, 2); err != nil {
 		t.Error(err)
 		return
 	} else {
 		assert.EqualValues(t, running_total, value)
 	}
-	for i := 1; i <= 10; i++ {
+	for i := int64(1); i <= 10; i++ {
 		if i < running_total {
 			running_total -= i
 		} else {
