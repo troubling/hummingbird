@@ -24,7 +24,6 @@ import (
 	"net/http"
 	_ "net/http/pprof" // install pprof http handlers
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
