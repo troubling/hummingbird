@@ -166,6 +166,9 @@ type ContainerEngine interface {
 	GetByHash(device, hash, partition string) (c ReplicableContainer, err error)
 	// Invalidate removes a container from the cache entirely.  This will probably also move, since it's only used by replication.
 	Invalidate(c Container)
+
+	// Number of containers that have been Get()ted but not Return()ed
+	OpenCount() (count int)
 }
 
 // My attempts at making this lruEngine reusable have not been successful, so for now it's sqlite-specific and not exported.
@@ -199,6 +202,18 @@ func (l *lruEngine) add(c Container) {
 	holder := &lruEntry{c: c, inUse: 1}
 	holder.elem = l.used.PushBack(holder)
 	l.cache[c.ID()] = holder
+}
+
+func (l *lruEngine) OpenCount() int {
+	count := 0
+	l.m.Lock()
+	for elem := l.used.Front(); elem != nil; elem = elem.Next() {
+		if entry, ok := elem.Value.(*lruEntry); ok && entry.inUse == 1 {
+			count++
+		}
+	}
+	defer l.m.Unlock()
+	return count
 }
 
 func (l *lruEngine) containerLocation(vars map[string]string) string {

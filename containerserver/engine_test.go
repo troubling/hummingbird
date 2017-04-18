@@ -80,3 +80,23 @@ func TestAddOnReturn(t *testing.T) {
 	require.Equal(t, 0, len(l.cache))
 	require.Equal(t, 0, l.used.Len())
 }
+
+func TestOpenCount(t *testing.T) {
+	l := &lruEngine{
+		maxSize: 3,
+		cache:   make(map[string]*lruEntry),
+		used:    list.New(),
+	}
+	dbs := make([]hashDatabase, 5)
+	for i, db := range dbs {
+		db.hash = fmt.Sprintf("%d", i)
+		l.add(db)
+	}
+	require.Equal(t, 5, l.OpenCount())
+
+	for i, db := range dbs {
+		db.hash = fmt.Sprintf("%d", i)
+		l.Return(db)
+	}
+	require.Equal(t, 0, l.OpenCount())
+}

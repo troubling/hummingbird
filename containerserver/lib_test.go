@@ -175,6 +175,10 @@ func (f fakeDatabase) DeleteObject(name string, timestamp string, storagePolicyI
 
 type fakeContainerEngine struct{}
 
+func (fakeContainerEngine) OpenCount() int {
+	return 0
+}
+
 func (fakeContainerEngine) Get(vars map[string]string) (c Container, err error) {
 	return nil, errors.New("")
 }
