@@ -432,22 +432,6 @@ func (c *ProxyDirectClient) DeleteObject(account string, container string, obj s
 	return c.quorumResponse(reqs...)
 }
 
-func (c *ProxyDirectClient) OverrideRings(accountRing ring.Ring, containerRing ring.Ring, objectRing ring.Ring) {
-	if accountRing != nil {
-		c.AccountRing = accountRing
-	}
-	if containerRing != nil {
-		c.ContainerRing = containerRing
-	}
-	if objectRing != nil {
-		c.ObjectRing = objectRing
-	}
-}
-
-func (c *ProxyDirectClient) GetRings() (ring.Ring, ring.Ring, ring.Ring) {
-	return c.AccountRing, c.ContainerRing, c.ObjectRing
-}
-
 func NewProxyDirectClient() (ProxyClient, error) {
 	c := &ProxyDirectClient{}
 	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
@@ -466,6 +450,23 @@ func NewProxyDirectClient() (ProxyClient, error) {
 	if err != nil {
 		return nil, err
 	}
+	c.client = &http.Client{
+		Transport: &http.Transport{
+			Dial: (&net.Dialer{
+				Timeout:   10 * time.Second,
+				KeepAlive: 5 * time.Second,
+			}).Dial,
+		},
+		Timeout: 120 * time.Minute,
+	}
+	return c, nil
+}
+
+func NewProxyDirectClientWithRings(accountRing ring.Ring, containerRing ring.Ring, objectRing ring.Ring) (ProxyClient, error) {
+	c := &ProxyDirectClient{}
+	c.AccountRing = accountRing
+	c.ContainerRing = containerRing
+	c.ObjectRing = objectRing
 	c.client = &http.Client{
 		Transport: &http.Transport{
 			Dial: (&net.Dialer{

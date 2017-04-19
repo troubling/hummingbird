@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-
-	"github.com/troubling/hummingbird/common/ring"
 )
 
 // HTTPError represents a non-200 HTTP response code.
@@ -67,6 +65,4 @@ type ProxyClient interface {
 	GetObject(account string, container string, obj string, headers http.Header) (io.ReadCloser, http.Header, int)
 	HeadObject(account string, container string, obj string, headers http.Header) (http.Header, int)
 	DeleteObject(account string, container string, obj string, headers http.Header) int
-	GetRings() (ring.Ring, ring.Ring, ring.Ring)
-	OverrideRings(accountRing ring.Ring, containerRing ring.Ring, objRing ring.Ring)
 }
