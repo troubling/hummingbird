@@ -269,9 +269,6 @@ func (server *ContainerServer) ContainerPutHandler(writer http.ResponseWriter, r
 		metadata[key] = []string{request.Header.Get(key), timestamp}
 	}
 	created, db, err := server.containerEngine.Create(vars, timestamp, metadata, policyIndex, defaultPolicyIndex)
-	if db != nil {
-		defer server.containerEngine.Return(db)
-	}
 	if err == ErrorPolicyConflict {
 		srv.StandardResponse(writer, http.StatusConflict)
 		return
@@ -280,6 +277,7 @@ func (server *ContainerServer) ContainerPutHandler(writer http.ResponseWriter, r
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
+	defer server.containerEngine.Return(db)
 	if info, err := db.GetInfo(); err == nil {
 		server.accountUpdate(request, vars, info, srv.GetLogger(request))
 	}

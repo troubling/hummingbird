@@ -264,6 +264,10 @@ func (l *lruEngine) Create(vars map[string]string, putTimestamp string, metadata
 		}
 	} else {
 		created, err = sqliteCreateExistingContainer(c, putTimestamp, metadata, policyIndex, defaultPolicyIndex)
+		if err != nil {
+			l.Return(c)
+			c = nil
+		}
 	}
 	return created, c, err
 }
