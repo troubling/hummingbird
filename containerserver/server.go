@@ -269,7 +269,7 @@ func (server *ContainerServer) ContainerPutHandler(writer http.ResponseWriter, r
 		metadata[key] = []string{request.Header.Get(key), timestamp}
 	}
 	created, db, err := server.containerEngine.Create(vars, timestamp, metadata, policyIndex, defaultPolicyIndex)
-	if db!= nil {
+	if db != nil {
 		defer server.containerEngine.Return(db)
 	}
 	if err == ErrorPolicyConflict {
