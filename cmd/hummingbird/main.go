@@ -26,6 +26,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/troubling/hummingbird/accountserver"
 	"github.com/troubling/hummingbird/bench"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
@@ -202,10 +203,11 @@ func ProcessControlCommand(serverCommand func(name string, args ...string)) {
 	}
 
 	switch flag.Arg(1) {
-	case "proxy", "object", "object-replicator", "object-auditor", "container", "container-replicator":
+	case "proxy", "object", "object-replicator", "object-auditor", "container", "container-replicator", "account", "account-replicator":
 		serverCommand(flag.Arg(1), flag.Args()[2:]...)
 	case "all":
-		for _, server := range []string{"proxy", "object", "object-replicator", "object-auditor", "container", "container-replicator"} {
+		for _, server := range []string{"proxy", "object", "object-replicator", "object-auditor",
+			"container", "container-replicator", "account", "account-replicator"} {
 			serverCommand(server)
 		}
 	default:
@@ -283,6 +285,26 @@ func main() {
 		containerReplicatorFlags.PrintDefaults()
 	}
 
+	accountFlags := flag.NewFlagSet("account server", flag.ExitOnError)
+	accountFlags.Bool("d", false, "Close stdio once the server is running")
+	accountFlags.String("c", findConfig("account"), "Config file/directory to use")
+	accountFlags.Bool("v", false, "Send all log messages to the console (if -d is not specified)")
+	accountFlags.Usage = func() {
+		fmt.Fprintf(os.Stderr, "hummingbird account [ARGS]\n")
+		fmt.Fprintf(os.Stderr, "  Run account server\n")
+		accountFlags.PrintDefaults()
+	}
+
+	accountReplicatorFlags := flag.NewFlagSet("account replicator", flag.ExitOnError)
+	accountReplicatorFlags.Bool("d", false, "Close stdio once the server is running")
+	accountReplicatorFlags.String("c", findConfig("account"), "Config file/directory to use")
+	accountReplicatorFlags.Bool("once", false, "Run one pass of the replicator")
+	accountReplicatorFlags.Usage = func() {
+		fmt.Fprintf(os.Stderr, "hummingbird account-replicator [ARGS]\n")
+		fmt.Fprintf(os.Stderr, "  Run account replicator\n")
+		accountReplicatorFlags.PrintDefaults()
+	}
+
 	/* main flag parser, which doesn't do much */
 
 	flag.Usage = func() {
@@ -351,6 +373,12 @@ func main() {
 	case "container-replicator":
 		containerFlags.Parse(flag.Args()[1:])
 		srv.RunDaemon(containerserver.GetReplicator, containerReplicatorFlags)
+	case "account":
+		accountFlags.Parse(flag.Args()[1:])
+		srv.RunServers(accountserver.GetServer, accountFlags)
+	case "account-replicator":
+		accountFlags.Parse(flag.Args()[1:])
+		srv.RunDaemon(accountserver.GetReplicator, accountReplicatorFlags)
 	case "object":
 		objectFlags.Parse(flag.Args()[1:])
 		srv.RunServers(objectserver.GetServer, objectFlags)
