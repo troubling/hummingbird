@@ -33,6 +33,12 @@ import (
 // Config represents an ini file.
 type Config struct{ ini.File }
 
+type Section struct {
+	ini.Section
+	c       Config
+	section string
+}
+
 // Get fetches a value from the Config, looking in the DEFAULT section if not found in the specific section.  Also ignores "set " key prefixes, like paste.
 func (f Config) Get(section string, key string) (string, bool) {
 	if value, ok := f.File.Get(section, key); ok {
@@ -96,6 +102,35 @@ func (f Config) GetLimit(section string, key string, dfla int64, dflb int64) (in
 // HasSection determines whether or not the section exists in the ini file.
 func (f Config) HasSection(section string) bool {
 	return f.File[section] != nil
+}
+
+// GetSection returns a Section struct.
+func (f Config) GetSection(section string) Section {
+	return Section{f.File[section], f, section}
+}
+
+func (s Section) Get(key string) (string, bool) {
+	return s.c.Get(s.section, key)
+}
+
+func (s Section) GetDefault(key string, dfl string) string {
+	return s.c.GetDefault(s.section, key, dfl)
+}
+
+func (s Section) GetBool(key string, dfl bool) bool {
+	return s.c.GetBool(s.section, key, dfl)
+}
+
+func (s Section) GetInt(key string, dfl int64) int64 {
+	return s.c.GetInt(s.section, key, dfl)
+}
+
+func (s Section) GetFloat(key string, dfl float64) float64 {
+	return s.c.GetFloat(s.section, key, dfl)
+}
+
+func (s Section) GetLimit(key string, dfla int64, dflb int64) (int64, int64) {
+	return s.c.GetLimit(s.section, key, dfla, dflb)
 }
 
 // LoadConfig loads an ini from a path.  The path should be a *.conf file or a *.conf.d directory.

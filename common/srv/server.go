@@ -88,13 +88,17 @@ type WebWriter struct {
 }
 
 func (w *WebWriter) WriteHeader(status int) {
-	w.ResponseWriter.WriteHeader(status)
 	w.Status = status
 	w.ResponseStarted = true
+	w.ResponseWriter.WriteHeader(status)
 }
 
 func (w WebWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return w.ResponseWriter.(http.Hijacker).Hijack()
+}
+
+func (w *WebWriter) Response() (bool, int) {
+	return w.ResponseStarted, w.Status
 }
 
 func CopyResponseHeaders(w http.ResponseWriter, src *http.Response) {
@@ -134,7 +138,10 @@ func CopyRequestHeaders(r *http.Request, dst *http.Request) {
 type RequestLogger struct {
 	Request *http.Request
 	Logger  LowLevelLogger
-	W       *WebWriter
+	W       interface {
+		http.ResponseWriter
+		Response() (bool, int)
+	}
 }
 
 func (r RequestLogger) LogError(format string, args ...interface{}) {
@@ -157,7 +164,7 @@ func (r RequestLogger) LogPanics(msg string) {
 		transactionId := r.Request.Header.Get("X-Trans-Id")
 		r.Logger.Err(fmt.Sprintf("PANIC (%s): %s: %s", msg, e, debug.Stack()) + " (txn:" + transactionId + ")")
 		// if we haven't set a status code yet, we can send a 500 response.
-		if !r.W.ResponseStarted {
+		if started, _ := r.W.Response(); !started {
 			StandardResponse(r.W, http.StatusInternalServerError)
 		}
 	}
