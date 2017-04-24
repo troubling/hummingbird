@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/justinas/alice"
@@ -59,6 +60,7 @@ type ContainerServer struct {
 	autoCreatePrefix string
 	syncRealms       conf.SyncRealmList
 	defaultPolicy    int
+	asyncWG          sync.WaitGroup
 }
 
 var saveHeaders = map[string]bool{
@@ -82,6 +84,10 @@ func formatTimestamp(ts string) string {
 		return strings.Repeat("0", 16-len(ret)) + ret
 	}
 	return ret
+}
+
+func (server *ContainerServer) GetAsyncWG() *sync.WaitGroup {
+	return &server.asyncWG
 }
 
 // ContainerGetHandler handles GET and HEAD requests for a container.

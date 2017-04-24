@@ -51,7 +51,7 @@ type TestServer struct {
 }
 
 func (t *TestServer) Close() {
-	t.objServer.finished.Wait()
+	t.objServer.asyncWG.Wait()
 	os.RemoveAll(t.root)
 	t.Server.Close()
 }
@@ -66,7 +66,7 @@ func (t *TestServer) Do(method string, path string, body io.ReadCloser) (*http.R
 }
 
 func makeObjectServer(settings ...string) (*TestServer, error) {
-	driveRoot, err := ioutil.TempDir("", "xxx")
+	driveRoot, err := ioutil.TempDir("", "")
 	if err != nil {
 		return nil, err
 	}

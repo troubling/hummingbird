@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/justinas/alice"
@@ -51,6 +52,7 @@ type AccountServer struct {
 	accountEngine    AccountEngine
 	updateClient     *http.Client
 	autoCreatePrefix string
+	asyncWG          sync.WaitGroup
 }
 
 func formatTimestamp(ts string) (string, error) {
@@ -66,6 +68,10 @@ func formatTimestamp(ts string) (string, error) {
 		return strings.Repeat("0", 16-len(ret)) + ret, nil
 	}
 	return ret, nil
+}
+
+func (server *AccountServer) GetAsyncWG() *sync.WaitGroup {
+	return &server.asyncWG
 }
 
 // AccountGetHandler handles GET and HEAD requests for an account.
