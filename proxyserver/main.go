@@ -19,7 +19,6 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
-	"sync"
 
 	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common/conf"
@@ -31,14 +30,12 @@ import (
 )
 
 type ProxyServer struct {
-	C       client.ProxyClient
-	logger  srv.LowLevelLogger
-	mc      ring.MemcacheRing
-	asyncWG sync.WaitGroup
+	C      client.ProxyClient
+	logger srv.LowLevelLogger
+	mc     ring.MemcacheRing
 }
 
-func (server *ProxyServer) GetAsyncWG() *sync.WaitGroup {
-	return &server.asyncWG
+func (server *ProxyServer) Finalize() {
 }
 
 func (server *ProxyServer) HealthcheckHandler(writer http.ResponseWriter, request *http.Request) {

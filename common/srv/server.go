@@ -241,7 +241,7 @@ type HummingbirdServer struct {
 	http.Server
 	Listener net.Listener
 	logger   LowLevelLogger
-	asyncWG  *sync.WaitGroup
+	finalize func()
 }
 
 func ShutdownStdio() {
@@ -284,7 +284,7 @@ func DumpGoroutinesStackTrace(pid int) {
 
 type Server interface {
 	GetHandler(conf.Config) http.Handler
-	GetAsyncWG() *sync.WaitGroup
+	Finalize() // This is called before stoping gracefully so that a server can clean up before closing
 }
 
 /*
@@ -328,7 +328,7 @@ func RunServers(GetServer func(conf.Config, *flag.FlagSet) (string, int, Server,
 			},
 			Listener: sock,
 			logger:   logger,
-			asyncWG:  server.GetAsyncWG(),
+			finalize: server.Finalize,
 		}
 		go srv.Serve(sock)
 		servers = append(servers, &srv)
@@ -361,7 +361,7 @@ func RunServers(GetServer func(conf.Config, *flag.FlagSet) (string, int, Server,
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					srv.asyncWG.Wait()
+					srv.finalize()
 				}()
 			}
 			// Wait for everything to complete

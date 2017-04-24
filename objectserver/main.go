@@ -57,8 +57,8 @@ type ObjectServer struct {
 	asyncWG          sync.WaitGroup // Used to wait on async goroutines
 }
 
-func (server *ObjectServer) GetAsyncWG() *sync.WaitGroup {
-	return &server.asyncWG
+func (server *ObjectServer) Finalize() {
+	server.asyncWG.Wait()
 }
 
 func (server *ObjectServer) newObject(req *http.Request, vars map[string]string, needData bool) (Object, error) {
