@@ -376,7 +376,7 @@ func RunServers(GetServer func(conf.Config, *flag.FlagSet) (string, int, Server,
 				fmt.Println("Graceful shutdown complete.")
 				return
 			case <-ctx.Done():
-				// Timeout before everyhting completing
+				// Timeout before everything completing
 				fmt.Println("Forcing shutdown after timeout.")
 				return
 			}
