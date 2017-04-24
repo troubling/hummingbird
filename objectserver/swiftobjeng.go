@@ -43,7 +43,7 @@ type SwiftObject struct {
 	metadata     map[string]string
 	reserve      int64
 	reclaimAge   int64
-	finished     *sync.WaitGroup // Used to keep track of async goroutines
+	asyncWG      *sync.WaitGroup // Used to keep track of async goroutines
 }
 
 // Metadata returns the object's metadata.
@@ -132,9 +132,9 @@ func (o *SwiftObject) Commit(metadata map[string]string) error {
 	}
 	fileName := filepath.Join(o.hashDir, fmt.Sprintf("%s.%s", timestamp, o.workingClass))
 	o.afw.Save(fileName)
-	o.finished.Add(1)
+	o.asyncWG.Add(1)
 	go func() {
-		defer o.finished.Done()
+		defer o.asyncWG.Done()
 		HashCleanupListDir(o.hashDir, o.reclaimAge)
 		if dir, err := os.OpenFile(o.hashDir, os.O_RDONLY, 0666); err == nil {
 			dir.Sync()
@@ -178,9 +178,9 @@ type SwiftObjectFactory struct {
 }
 
 // New returns an instance of SwiftObject with the given parameters. Metadata is read in and if needData is true, the file is opened.  Finished is a waitgroup if the object spawns any async operations
-func (f *SwiftObjectFactory) New(vars map[string]string, needData bool, finished *sync.WaitGroup) (Object, error) {
+func (f *SwiftObjectFactory) New(vars map[string]string, needData bool, asyncWG *sync.WaitGroup) (Object, error) {
 	var err error
-	sor := &SwiftObject{reclaimAge: f.reclaimAge, reserve: f.reserve, finished: finished}
+	sor := &SwiftObject{reclaimAge: f.reclaimAge, reserve: f.reserve, asyncWG: asyncWG}
 	sor.hashDir = ObjHashDir(vars, f.driveRoot, f.hashPathPrefix, f.hashPathSuffix, f.policy)
 	sor.tempDir = TempDirPath(f.driveRoot, vars["device"])
 	sor.dataFile, sor.metaFile = ObjectFiles(sor.hashDir)

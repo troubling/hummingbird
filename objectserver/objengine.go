@@ -55,7 +55,7 @@ type Object interface {
 // ObjectEngine is the type you have to give hummingbird to create a new object engine.
 type ObjectEngine interface {
 	// New creates a new instance of the Object, for interacting with a single object.
-	New(vars map[string]string, needData bool, finished *sync.WaitGroup) (Object, error)
+	New(vars map[string]string, needData bool, asyncWG *sync.WaitGroup) (Object, error)
 }
 
 // ObjectEngineConstructor> is a function that, given configs and flags, returns an ObjectEngine
