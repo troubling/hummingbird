@@ -177,7 +177,7 @@ type SwiftObjectFactory struct {
 	policy         int
 }
 
-// New returns an instance of SwiftObject with the given parameters. Metadata is read in and if needData is true, the file is opened.  Finished is a waitgroup if the object spawns any async operations
+// New returns an instance of SwiftObject with the given parameters. Metadata is read in and if needData is true, the file is opened.  AsyncWG is a waitgroup if the object spawns any async operations
 func (f *SwiftObjectFactory) New(vars map[string]string, needData bool, asyncWG *sync.WaitGroup) (Object, error) {
 	var err error
 	sor := &SwiftObject{reclaimAge: f.reclaimAge, reserve: f.reserve, asyncWG: asyncWG}
