@@ -20,11 +20,12 @@ import (
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/proxyserver/middleware"
 )
 
 func (server *ProxyServer) ContainerGetHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
-	ctx := GetProxyContext(request)
+	ctx := middleware.GetProxyContext(request)
 	if ctx == nil {
 		srv.StandardResponse(writer, 500)
 		return
@@ -58,7 +59,7 @@ func (server *ProxyServer) ContainerGetHandler(writer http.ResponseWriter, reque
 
 func (server *ProxyServer) ContainerHeadHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
-	ctx := GetProxyContext(request)
+	ctx := middleware.GetProxyContext(request)
 	if ctx == nil {
 		srv.StandardResponse(writer, 500)
 		return
@@ -80,7 +81,7 @@ func (server *ProxyServer) ContainerHeadHandler(writer http.ResponseWriter, requ
 
 func (server *ProxyServer) ContainerPutHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
-	ctx := GetProxyContext(request)
+	ctx := middleware.GetProxyContext(request)
 	if ctx == nil {
 		srv.StandardResponse(writer, 500)
 		return
@@ -99,7 +100,7 @@ func (server *ProxyServer) ContainerPutHandler(writer http.ResponseWriter, reque
 
 func (server *ProxyServer) ContainerDeleteHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
-	ctx := GetProxyContext(request)
+	ctx := middleware.GetProxyContext(request)
 	if ctx == nil {
 		srv.StandardResponse(writer, 500)
 		return
