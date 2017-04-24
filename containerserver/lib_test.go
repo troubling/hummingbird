@@ -127,7 +127,7 @@ func (f fakeDatabase) ListObjects(limit int, marker string, endMarker string, pr
 func (f fakeDatabase) GetMetadata() (map[string]string, error) {
 	return nil, errors.New("")
 }
-func (f fakeDatabase) UpdateMetadata(updates map[string][]string) error {
+func (f fakeDatabase) UpdateMetadata(updates map[string][]string, timestamp string) error {
 	return errors.New("")
 }
 func (f fakeDatabase) MergeItems(records []*ObjectRecord, remoteID string) error {
@@ -174,6 +174,10 @@ func (f fakeDatabase) DeleteObject(name string, timestamp string, storagePolicyI
 }
 
 type fakeContainerEngine struct{}
+
+func (fakeContainerEngine) OpenCount() int {
+	return 0
+}
 
 func (fakeContainerEngine) Get(vars map[string]string) (c Container, err error) {
 	return nil, errors.New("")

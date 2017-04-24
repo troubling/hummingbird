@@ -1,4 +1,4 @@
-//  Copyright (c) 2016 Rackspace
+//  Copyright (c) 2016-2017 Rackspace
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
 //  you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-package containerserver
+package accountserver
 
 import (
 	"encoding/json"
@@ -39,14 +39,8 @@ import (
 // GetHashPrefixAndSuffix is a pointer to hummingbird's function of the same name, for overriding in tests.
 var GetHashPrefixAndSuffix = conf.GetHashPrefixAndSuffix
 
-// GetSyncRealms is a pointer to hummingbird's function of the same name, for overriding in tests.
-var GetSyncRealms = conf.GetSyncRealms
-
-// LoadPolicies is a pointer to hummingbird's function of the same name, for overriding in tests.
-var LoadPolicies = conf.LoadPolicies
-
-// ContainerServer contains all of the information for a running container server.
-type ContainerServer struct {
+// AccountServer contains all of the information for a running account server.
+type AccountServer struct {
 	driveRoot        string
 	hashPathPrefix   string
 	hashPathSuffix   string
@@ -54,79 +48,62 @@ type ContainerServer struct {
 	logLevel         string
 	diskInUse        *common.KeyedLimit
 	checkMounts      bool
-	containerEngine  ContainerEngine
+	accountEngine    AccountEngine
 	updateClient     *http.Client
 	autoCreatePrefix string
-	syncRealms       conf.SyncRealmList
-	defaultPolicy    int
 }
 
-var saveHeaders = map[string]bool{
-	"X-Container-Read":     true,
-	"X-Container-Write":    true,
-	"X-Container-Sync-Key": true,
-	"X-Container-Sync-To":  true,
-	"X-Versions-Location":  true,
-}
-
-func formatTimestamp(ts string) string {
+func formatTimestamp(ts string) (string, error) {
 	if len(ts) == 16 && ts[10] == '.' {
-		return ts
+		return ts, nil
 	}
 	t, err := strconv.ParseFloat(ts, 64)
 	if err != nil {
-		return "0000000000.00000"
+		return "", err
 	}
 	ret := strconv.FormatFloat(t, 'f', 5, 64)
 	if len(ret) < 16 {
-		return strings.Repeat("0", 16-len(ret)) + ret
+		return strings.Repeat("0", 16-len(ret)) + ret, nil
 	}
-	return ret
+	return ret, nil
 }
 
-// ContainerGetHandler handles GET and HEAD requests for a container.
-func (server *ContainerServer) ContainerGetHandler(writer http.ResponseWriter, request *http.Request) {
+// AccountGetHandler handles GET and HEAD requests for an account.
+func (server *AccountServer) AccountGetHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
 	if err := request.ParseForm(); err != nil {
 		srv.StandardResponse(writer, http.StatusBadRequest)
 		return
 	}
-	db, err := server.containerEngine.Get(vars)
-	if err == ErrorNoSuchContainer {
+	db, err := server.accountEngine.Get(vars)
+	if err == ErrorNoSuchAccount {
 		srv.StandardResponse(writer, http.StatusNotFound)
 		return
 	} else if err != nil {
-		srv.GetLogger(request).LogError("Unable to get container: %v", err)
+		srv.GetLogger(request).LogError("Unable to get account: %v", err)
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
-	defer server.containerEngine.Return(db)
+	defer server.accountEngine.Return(db)
 	info, err := db.GetInfo()
 	if err != nil {
-		srv.GetLogger(request).LogError("Unable to get container info: %v", err)
+		srv.GetLogger(request).LogError("Unable to get account info: %v", err)
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 	headers := writer.Header()
-	if lastModified, err := common.ParseDate(info.PutTimestamp); err == nil {
-		if lastModified.Nanosecond() > 0 { // for some reason, Last-Modified is ceil(X-Timestamp)
-			lastModified = lastModified.Truncate(time.Second).Add(time.Second)
-		}
-		headers.Set("Last-Modified", lastModified.Format(time.RFC1123))
-	}
-	if ts, err := common.GetEpochFromTimestamp(info.CreatedAt); err == nil {
+	if ts, err := formatTimestamp(info.CreatedAt); err == nil {
 		headers.Set("X-Backend-Timestamp", ts)
 	}
-	if ts, err := common.GetEpochFromTimestamp(info.PutTimestamp); err == nil {
+	if ts, err := formatTimestamp(info.PutTimestamp); err == nil {
 		headers.Set("X-Backend-Put-Timestamp", ts)
 	}
-	if ts, err := common.GetEpochFromTimestamp(info.DeleteTimestamp); err == nil {
+	if ts, err := formatTimestamp(info.DeleteTimestamp); err == nil {
 		headers.Set("X-Backend-Delete-Timestamp", ts)
 	}
-	if ts, err := common.GetEpochFromTimestamp(info.StatusChangedAt); err == nil {
+	if ts, err := formatTimestamp(info.StatusChangedAt); err == nil {
 		headers.Set("X-Backend-Status-Changed-At", ts)
 	}
-	headers.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(info.StoragePolicyIndex))
 	metadata, err := db.GetMetadata()
 	if err != nil {
 		srv.GetLogger(request).LogError("Unable to get metadata: %v", err)
@@ -144,12 +121,13 @@ func (server *ContainerServer) ContainerGetHandler(writer http.ResponseWriter, r
 		srv.StandardResponse(writer, http.StatusNotFound)
 		return
 	} else {
-		headers.Set("X-Container-Object-Count", strconv.FormatInt(info.ObjectCount, 10))
-		headers.Set("X-Container-Bytes-Used", strconv.FormatInt(info.BytesUsed, 10))
-		if ts, err := common.GetEpochFromTimestamp(info.CreatedAt); err == nil {
+		headers.Set("X-Account-Container-Count", strconv.FormatInt(info.ContainerCount, 10))
+		headers.Set("X-Account-Object-Count", strconv.FormatInt(info.ObjectCount, 10))
+		headers.Set("X-Account-Bytes-Used", strconv.FormatInt(info.BytesUsed, 10))
+		if ts, err := formatTimestamp(info.CreatedAt); err == nil {
 			headers.Set("X-Timestamp", ts)
 		}
-		if ts, err := common.GetEpochFromTimestamp(info.PutTimestamp); err == nil {
+		if ts, err := formatTimestamp(info.PutTimestamp); err == nil {
 			headers.Set("X-Put-Timestamp", ts)
 		}
 	}
@@ -159,25 +137,20 @@ func (server *ContainerServer) ContainerGetHandler(writer http.ResponseWriter, r
 		return
 	}
 	limit, _ := strconv.ParseInt(request.FormValue("limit"), 10, 64)
-	if limit <= 0 || limit > 10000 {
+	if limit > 10000 {
+		srv.StandardResponse(writer, http.StatusPreconditionFailed)
+		return
+	} else if limit <= 0 {
 		limit = 10000
 	}
 	marker := request.Form.Get("marker")
 	delimiter := request.Form.Get("delimiter")
 	endMarker := request.Form.Get("end_marker")
 	prefix := request.Form.Get("prefix")
-	var path *string
-	if v, ok := request.Form["path"]; ok && len(v) > 0 {
-		path = &v[0]
-	}
-	policyIndex, err := strconv.Atoi(request.Header.Get("X-Backend-Storage-Policy-Index"))
-	if err != nil {
-		policyIndex = info.StoragePolicyIndex
-	}
 	reverse := common.LooksTrue(request.Form.Get("reverse"))
-	objects, err := db.ListObjects(int(limit), marker, endMarker, prefix, delimiter, path, reverse, policyIndex)
+	containers, err := db.ListContainers(int(limit), marker, endMarker, prefix, delimiter, reverse)
 	if err != nil {
-		srv.GetLogger(request).LogError("Unable to list objects: %v", err)
+		srv.GetLogger(request).LogError("Unable to list containers: %v", err)
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -194,8 +167,8 @@ func (server *ContainerServer) ContainerGetHandler(writer http.ResponseWriter, r
 	}
 	if format == "text" {
 		response := ""
-		for _, obj := range objects {
-			if or, ok := obj.(*ObjectListingRecord); ok {
+		for _, obj := range containers {
+			if or, ok := obj.(*ContainerListingRecord); ok {
 				response += or.Name + "\n"
 			} else if sr, ok := obj.(*SubdirListingRecord); ok {
 				response += sr.Name + "\n"
@@ -211,7 +184,7 @@ func (server *ContainerServer) ContainerGetHandler(writer http.ResponseWriter, r
 			writer.Write([]byte(""))
 		}
 	} else if format == "json" {
-		output, err := json.Marshal(objects)
+		output, err := json.Marshal(containers)
 		if err != nil {
 			srv.StandardResponse(writer, http.StatusInternalServerError)
 			return
@@ -221,12 +194,12 @@ func (server *ContainerServer) ContainerGetHandler(writer http.ResponseWriter, r
 		writer.WriteHeader(200)
 		writer.Write(output)
 	} else if format == "xml" {
-		type Container struct {
-			XMLName xml.Name `xml:"container"`
-			Name    string   `xml:"name,attr"`
-			Objects []interface{}
+		type Account struct {
+			XMLName    xml.Name `xml:"account"`
+			Name       string   `xml:"name,attr"`
+			Containers []interface{}
 		}
-		container := &Container{Name: vars["container"], Objects: objects}
+		container := &Account{Name: vars["account"], Containers: containers}
 		writer.Header().Set("Content-Type", "application/xml; charset=utf-8")
 		output, _ := xml.Marshal(container)
 		headers.Set("Content-Length", strconv.Itoa(len(output)+39))
@@ -236,51 +209,27 @@ func (server *ContainerServer) ContainerGetHandler(writer http.ResponseWriter, r
 	}
 }
 
-// ContainerPutHandler handles PUT requests for a container.
-func (server *ContainerServer) ContainerPutHandler(writer http.ResponseWriter, request *http.Request) {
+// AccountPutHandler handles PUT requests for an account.
+func (server *AccountServer) AccountPutHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
 	timestamp, err := common.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
 	if err != nil {
 		srv.StandardResponse(writer, http.StatusBadRequest)
 		return
 	}
-	if syncTo := request.Header.Get("X-Container-Sync-To"); syncTo != "" {
-		if !server.syncRealms.ValidateSyncTo(syncTo) {
-			srv.StandardResponse(writer, http.StatusBadRequest)
-			return
-		}
-	}
-	policyIndex, err := strconv.Atoi(request.Header.Get("X-Backend-Storage-Policy-Index"))
-	if err != nil {
-		policyIndex = -1
-	}
-	defaultPolicyIndex, err := strconv.Atoi(request.Header.Get("X-Backend-Storage-Policy-Default"))
-	if err != nil {
-		defaultPolicyIndex = server.defaultPolicy
-	}
 	metadata := make(map[string][]string)
 	for key, values := range request.Header {
-		_, inSaveHeaders := saveHeaders[key]
-		if !(strings.HasPrefix(key, "X-Container-Meta-") || strings.HasPrefix(key, "X-Container-Sysmeta-") || inSaveHeaders) {
-			continue
-		} else if len(values) == 0 || values[0] == "" {
-			continue
+		if (strings.HasPrefix(key, "X-Account-Meta-") || strings.HasPrefix(key, "X-Account-Sysmeta-")) && len(values) > 0 || values[0] != "" {
+			metadata[key] = []string{request.Header.Get(key), timestamp}
 		}
-		metadata[key] = []string{request.Header.Get(key), timestamp}
 	}
-	created, db, err := server.containerEngine.Create(vars, timestamp, metadata, policyIndex, defaultPolicyIndex)
-	if err == ErrorPolicyConflict {
-		srv.StandardResponse(writer, http.StatusConflict)
-		return
-	} else if err != nil {
+	created, db, err := server.accountEngine.Create(vars, timestamp, metadata)
+	if err != nil {
 		srv.GetLogger(request).LogError("Unable to create database: %v", err)
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
-	defer server.containerEngine.Return(db)
-	if info, err := db.GetInfo(); err == nil {
-		server.accountUpdate(request, vars, info, srv.GetLogger(request))
-	}
+	defer server.accountEngine.Return(db)
 	if created {
 		srv.StandardResponse(writer, http.StatusCreated)
 	} else {
@@ -288,19 +237,19 @@ func (server *ContainerServer) ContainerPutHandler(writer http.ResponseWriter, r
 	}
 }
 
-// ContainerDeleteHandler handles DELETE requests for the container.
-func (server *ContainerServer) ContainerDeleteHandler(writer http.ResponseWriter, request *http.Request) {
+// AccountDeleteHandler handles DELETE requests for an account.
+func (server *AccountServer) AccountDeleteHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
-	db, err := server.containerEngine.Get(vars)
-	if err == ErrorNoSuchContainer {
+	db, err := server.accountEngine.Get(vars)
+	if err == ErrorNoSuchAccount {
 		srv.StandardResponse(writer, http.StatusNotFound)
 		return
 	} else if err != nil {
-		srv.GetLogger(request).LogError("Unable to get container: %v", err)
+		srv.GetLogger(request).LogError("Unable to get account: %v", err)
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
-	defer server.containerEngine.Return(db)
+	defer server.accountEngine.Return(db)
 	timestamp, err := common.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
 	if err != nil {
 		srv.StandardResponse(writer, http.StatusBadRequest)
@@ -308,11 +257,11 @@ func (server *ContainerServer) ContainerDeleteHandler(writer http.ResponseWriter
 	}
 	info, err := db.GetInfo()
 	if err != nil {
-		srv.GetLogger(request).LogError("Unable to get container info: %v", err)
+		srv.GetLogger(request).LogError("Unable to get account info: %v", err)
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
-	if info.ObjectCount > 0 {
+	if info.ContainerCount > 0 {
 		srv.StandardResponse(writer, http.StatusConflict)
 		return
 	}
@@ -322,45 +271,34 @@ func (server *ContainerServer) ContainerDeleteHandler(writer http.ResponseWriter
 		return
 	}
 	info, err = db.GetInfo()
-	if err == nil {
-		server.accountUpdate(request, vars, info, srv.GetLogger(request))
-	}
 	writer.WriteHeader(http.StatusNoContent)
 	writer.Write([]byte(""))
 }
 
-// ContainerPostHandler handles POST requests for a container.
-func (server *ContainerServer) ContainerPostHandler(writer http.ResponseWriter, request *http.Request) {
+// AccountPostHandler handles POST requests for an account.
+func (server *AccountServer) AccountPostHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
 	timestamp, err := common.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
 	if err != nil {
 		srv.StandardResponse(writer, http.StatusBadRequest)
 		return
 	}
-	if syncTo := request.Header.Get("X-Container-Sync-To"); syncTo != "" {
-		if !server.syncRealms.ValidateSyncTo(syncTo) {
-			srv.StandardResponse(writer, http.StatusBadRequest)
-			return
-		}
-	}
 	updates := make(map[string][]string)
 	for key := range request.Header {
-		_, inSaveHeaders := saveHeaders[key]
-		if !(strings.HasPrefix(key, "X-Container-Meta-") || strings.HasPrefix(key, "X-Container-Sysmeta") || inSaveHeaders) {
-			continue
+		if strings.HasPrefix(key, "X-Account-Meta-") || strings.HasPrefix(key, "X-Account-Sysmeta-") {
+			updates[key] = []string{request.Header.Get(key), timestamp}
 		}
-		updates[key] = []string{request.Header.Get(key), timestamp}
 	}
-	db, err := server.containerEngine.Get(vars)
-	if err == ErrorNoSuchContainer {
+	db, err := server.accountEngine.Get(vars)
+	if err == ErrorNoSuchAccount {
 		srv.StandardResponse(writer, http.StatusNotFound)
 		return
 	} else if err != nil {
-		srv.GetLogger(request).LogError("Unable to get container: %v", err)
+		srv.GetLogger(request).LogError("Unable to get account: %v", err)
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
-	defer server.containerEngine.Return(db)
+	defer server.accountEngine.Return(db)
 	if deleted, err := db.IsDeleted(); err != nil {
 		srv.GetLogger(request).LogError("Error calling IsDeleted: %v", err)
 		srv.StandardResponse(writer, http.StatusInternalServerError)
@@ -369,7 +307,7 @@ func (server *ContainerServer) ContainerPostHandler(writer http.ResponseWriter, 
 		srv.StandardResponse(writer, http.StatusNotFound)
 		return
 	}
-	if err := db.UpdateMetadata(updates, timestamp); err == ErrorInvalidMetadata {
+	if err := db.UpdateMetadata(updates); err == ErrorInvalidMetadata {
 		srv.StandardResponse(writer, http.StatusBadRequest)
 	} else if err != nil {
 		srv.StandardResponse(writer, http.StatusInternalServerError)
@@ -379,30 +317,33 @@ func (server *ContainerServer) ContainerPostHandler(writer http.ResponseWriter, 
 	}
 }
 
-// ObjPutHandler handles the PUT of object records to a container.
-func (server *ContainerServer) ObjPutHandler(writer http.ResponseWriter, request *http.Request) {
+// ContainerPutHandler handles the PUT of container records to an account.
+func (server *AccountServer) ContainerPutHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
-	timestamp, err := common.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
+	putTimestamp, err := common.StandardizeTimestamp(request.Header.Get("X-Put-Timestamp"))
 	if err != nil {
 		srv.StandardResponse(writer, http.StatusBadRequest)
 		return
 	}
-	contentType := request.Header.Get("X-Content-Type")
-	etag := request.Header.Get("X-Etag")
-	size, err := strconv.ParseInt(request.Header.Get("X-Size"), 10, 64)
-	if err != nil || contentType == "" || etag == "" {
+	var objectCount, bytesUsed, storagePolicyIndex int64
+	if objectCount, err = strconv.ParseInt(request.Header.Get("X-Object-Count"), 10, 64); err != nil {
 		srv.StandardResponse(writer, http.StatusBadRequest)
 		return
 	}
-	policyIndex, err := strconv.Atoi(request.Header.Get("X-Backend-Storage-Policy-Index"))
-	if err != nil {
-		policyIndex = 0
+	if bytesUsed, err = strconv.ParseInt(request.Header.Get("X-Bytes-Used"), 10, 64); err != nil {
+		srv.StandardResponse(writer, http.StatusBadRequest)
+		return
 	}
-	db, err := server.containerEngine.Get(vars)
-	if err == ErrorNoSuchContainer {
+	if storagePolicyIndex, err = strconv.ParseInt(request.Header.Get("X-Backend-Storage-Policy-Index"), 10, 64); err != nil {
+		srv.StandardResponse(writer, http.StatusBadRequest)
+		return
+	}
+	deleteTimestamp := request.Header.Get("X-Delete-Timestamp")
+	db, err := server.accountEngine.Get(vars)
+	if err == ErrorNoSuchAccount {
 		if strings.HasPrefix(vars["account"], server.autoCreatePrefix) {
-			if _, db, err = server.containerEngine.Create(vars, timestamp, map[string][]string{}, policyIndex, 0); err != nil {
-				srv.GetLogger(request).LogError("Unable to auto-create container: %v", err)
+			if _, db, err = server.accountEngine.Create(vars, putTimestamp, map[string][]string{}); err != nil {
+				srv.GetLogger(request).LogError("Unable to auto-create account: %v", err)
 				srv.StandardResponse(writer, http.StatusInternalServerError)
 				return
 			}
@@ -411,12 +352,12 @@ func (server *ContainerServer) ObjPutHandler(writer http.ResponseWriter, request
 			return
 		}
 	} else if err != nil {
-		srv.GetLogger(request).LogError("Unable to get container: %v", err)
+		srv.GetLogger(request).LogError("Unable to get account: %v", err)
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
-	defer server.containerEngine.Return(db)
-	if err := db.PutObject(vars["obj"], timestamp, size, contentType, etag, policyIndex); err != nil {
+	defer server.accountEngine.Return(db)
+	if err := db.PutContainer(vars["container"], putTimestamp, deleteTimestamp, objectCount, bytesUsed, int(storagePolicyIndex)); err != nil {
 		srv.GetLogger(request).LogError("Error adding object to container: %v", err)
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
@@ -424,65 +365,20 @@ func (server *ContainerServer) ObjPutHandler(writer http.ResponseWriter, request
 	srv.StandardResponse(writer, http.StatusCreated)
 }
 
-// ObjDeleteHandler handles the DELETE of object records in a container.
-func (server *ContainerServer) ObjDeleteHandler(writer http.ResponseWriter, request *http.Request) {
-	vars := srv.GetVars(request)
-	timestamp, err := common.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
-	if err != nil {
-		srv.StandardResponse(writer, http.StatusBadRequest)
-		return
-	}
-	policyIndex, err := strconv.Atoi(request.Header.Get("X-Backend-Storage-Policy-Index"))
-	if err != nil {
-		policyIndex = 0
-	}
-	db, err := server.containerEngine.Get(vars)
-	if err == ErrorNoSuchContainer {
-		if strings.HasPrefix(vars["account"], server.autoCreatePrefix) {
-			if _, db, err = server.containerEngine.Create(vars, timestamp, map[string][]string{}, policyIndex, 0); err != nil {
-				srv.GetLogger(request).LogError("Unable to auto-create container: %v", err)
-				srv.StandardResponse(writer, http.StatusInternalServerError)
-				return
-			}
-		} else {
-			srv.StandardResponse(writer, http.StatusNotFound)
-			return
-		}
-	} else if err != nil {
-		srv.GetLogger(request).LogError("Unable to get container: %v", err)
-		srv.StandardResponse(writer, http.StatusInternalServerError)
-		return
-	}
-	defer server.containerEngine.Return(db)
-	if err := db.DeleteObject(vars["obj"], timestamp, policyIndex); err != nil {
-		srv.GetLogger(request).LogError("Error adding object to container: %v", err)
-		srv.StandardResponse(writer, http.StatusInternalServerError)
-		return
-	}
-	writer.WriteHeader(http.StatusNoContent)
-	writer.Write([]byte(""))
-}
-
 // HealthcheckHandler implements a basic health check, that just returns "OK".
-func (server *ContainerServer) HealthcheckHandler(writer http.ResponseWriter, request *http.Request) {
+func (server *AccountServer) HealthcheckHandler(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Content-Length", "2")
 	writer.WriteHeader(http.StatusOK)
 	writer.Write([]byte("OK"))
 }
 
 // ReconHandler delegates incoming /recon calls to the common recon handler.
-func (server *ContainerServer) ReconHandler(writer http.ResponseWriter, request *http.Request) {
+func (server *AccountServer) ReconHandler(writer http.ResponseWriter, request *http.Request) {
 	middleware.ReconHandler(server.driveRoot, writer, request)
 }
 
-//OptionsHandler delegates incoming OPTIONS calls to the common options handler.
-func (server *ContainerServer) OptionsHandler(writer http.ResponseWriter, request *http.Request) {
-	middleware.OptionsHandler("container-server", writer, request)
-	return
-}
-
 // DiskUsageHandler returns information on the current outstanding HTTP requests per-disk.
-func (server *ContainerServer) DiskUsageHandler(writer http.ResponseWriter, request *http.Request) {
+func (server *AccountServer) DiskUsageHandler(writer http.ResponseWriter, request *http.Request) {
 	if data, err := server.diskInUse.MarshalJSON(); err == nil {
 		writer.WriteHeader(http.StatusOK)
 		writer.Write(data)
@@ -493,7 +389,7 @@ func (server *ContainerServer) DiskUsageHandler(writer http.ResponseWriter, requ
 }
 
 // LogRequest is a middleware that logs requests and also sets up a logger in the request context.
-func (server *ContainerServer) LogRequest(next http.Handler) http.Handler {
+func (server *AccountServer) LogRequest(next http.Handler) http.Handler {
 	fn := func(writer http.ResponseWriter, request *http.Request) {
 		newWriter := &srv.WebWriter{ResponseWriter: writer, Status: 500, ResponseStarted: false}
 		requestLogger := &srv.RequestLogger{Request: request, Logger: server.logger, W: newWriter}
@@ -525,7 +421,7 @@ func (server *ContainerServer) LogRequest(next http.Handler) http.Handler {
 }
 
 // AcquireDevice is a middleware that makes sure the device is available - mounted and not beyond its max concurrency.
-func (server *ContainerServer) AcquireDevice(next http.Handler) http.Handler {
+func (server *AccountServer) AcquireDevice(next http.Handler) http.Handler {
 	fn := func(writer http.ResponseWriter, request *http.Request) {
 		vars := srv.GetVars(request)
 		if device, ok := vars["device"]; ok && device != "" {
@@ -551,7 +447,7 @@ func (server *ContainerServer) AcquireDevice(next http.Handler) http.Handler {
 	return http.HandlerFunc(fn)
 }
 
-func (server *ContainerServer) updateDeviceLocks(seconds int64) {
+func (server *AccountServer) updateDeviceLocks(seconds int64) {
 	reloadTime := time.Duration(seconds) * time.Second
 	for {
 		time.Sleep(reloadTime)
@@ -567,25 +463,23 @@ func (server *ContainerServer) updateDeviceLocks(seconds int64) {
 }
 
 // GetHandler returns the server's http handler - it sets up routes and instantiates middleware.
-func (server *ContainerServer) GetHandler(config conf.Config) http.Handler {
+func (server *AccountServer) GetHandler(config conf.Config) http.Handler {
 	commonHandlers := alice.New(server.LogRequest, middleware.ValidateRequest, server.AcquireDevice)
 	router := srv.NewRouter()
 	router.Get("/healthcheck", commonHandlers.ThenFunc(server.HealthcheckHandler))
 	router.Get("/diskusage", commonHandlers.ThenFunc(server.DiskUsageHandler))
 	router.Get("/recon/:method/:recon_type", commonHandlers.ThenFunc(server.ReconHandler))
 	router.Get("/recon/:method", commonHandlers.ThenFunc(server.ReconHandler))
-	router.Put("/:device/tmp/:filename", commonHandlers.ThenFunc(server.ContainerTmpUploadHandler))
-	router.Put("/:device/:partition/:account/:container/*obj", commonHandlers.ThenFunc(server.ObjPutHandler))
-	router.Delete("/:device/:partition/:account/:container/*obj", commonHandlers.ThenFunc(server.ObjDeleteHandler))
+	router.Put("/:device/tmp/:filename", commonHandlers.ThenFunc(server.TmpUploadHandler))
 	router.Put("/:device/:partition/:account/:container", commonHandlers.ThenFunc(server.ContainerPutHandler))
-	router.Get("/:device/:partition/:account/:container", commonHandlers.ThenFunc(server.ContainerGetHandler))
-	router.Head("/:device/:partition/:account/:container", commonHandlers.ThenFunc(server.ContainerGetHandler))
-	router.Delete("/:device/:partition/:account/:container", commonHandlers.ThenFunc(server.ContainerDeleteHandler))
-	router.Post("/:device/:partition/:account/:container", commonHandlers.ThenFunc(server.ContainerPostHandler))
-	router.Replicate("/:device/:partition/:hash", commonHandlers.ThenFunc(server.ContainerReplicateHandler))
+	router.Put("/:device/:partition/:account", commonHandlers.ThenFunc(server.AccountPutHandler))
+	router.Delete("/:device/:partition/:account", commonHandlers.ThenFunc(server.AccountDeleteHandler))
+	router.Get("/:device/:partition/:account", commonHandlers.ThenFunc(server.AccountGetHandler))
+	router.Head("/:device/:partition/:account", commonHandlers.ThenFunc(server.AccountGetHandler))
+	router.Post("/:device/:partition/:account", commonHandlers.ThenFunc(server.AccountPostHandler))
+	router.Replicate("/:device/:partition/:hash", commonHandlers.ThenFunc(server.AccountReplicateHandler))
 	router.Get("/debug/pprof/:parm", http.DefaultServeMux)
 	router.Post("/debug/pprof/:parm", http.DefaultServeMux)
-	router.Options("/", commonHandlers.ThenFunc(server.OptionsHandler))
 	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Invalid path: %s", r.URL.Path), http.StatusBadRequest)
 	})
@@ -594,27 +488,24 @@ func (server *ContainerServer) GetHandler(config conf.Config) http.Handler {
 
 // GetServer parses configs and command-line flags, returning a configured server object and the ip and port it should bind on.
 func GetServer(serverconf conf.Config, flags *flag.FlagSet) (bindIP string, bindPort int, serv srv.Server, logger srv.LowLevelLogger, err error) {
-	server := &ContainerServer{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: ""}
-	server.syncRealms = GetSyncRealms()
+	server := &AccountServer{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: ""}
 	server.hashPathPrefix, server.hashPathSuffix, err = GetHashPrefixAndSuffix()
 	if err != nil {
 		return "", 0, nil, nil, err
 	}
-	policies := LoadPolicies()
-	server.defaultPolicy = policies.Default()
-	server.autoCreatePrefix = serverconf.GetDefault("app:container-server", "auto_create_account_prefix", ".")
-	server.driveRoot = serverconf.GetDefault("app:container-server", "devices", "/srv/node")
-	server.checkMounts = serverconf.GetBool("app:container-server", "mount_check", true)
-	server.logLevel = serverconf.GetDefault("app:container-server", "log_level", "INFO")
-	server.diskInUse = common.NewKeyedLimit(serverconf.GetLimit("app:container-server", "disk_limit", 25, 10000))
-	bindIP = serverconf.GetDefault("app:container-server", "bind_ip", "0.0.0.0")
-	bindPort = int(serverconf.GetInt("app:container-server", "bind_port", 6000))
-	if server.logger, err = srv.SetupLogger(serverconf, flags, "app:container-server", "container-server"); err != nil {
+	server.autoCreatePrefix = serverconf.GetDefault("app:account-server", "auto_create_account_prefix", ".")
+	server.driveRoot = serverconf.GetDefault("app:account-server", "devices", "/srv/node")
+	server.checkMounts = serverconf.GetBool("app:account-server", "mount_check", true)
+	server.logLevel = serverconf.GetDefault("app:account-server", "log_level", "INFO")
+	server.diskInUse = common.NewKeyedLimit(serverconf.GetLimit("app:account-server", "disk_limit", 25, 10000))
+	bindIP = serverconf.GetDefault("app:account-server", "bind_ip", "0.0.0.0")
+	bindPort = int(serverconf.GetInt("app:account-server", "bind_port", 6000))
+	if server.logger, err = srv.SetupLogger(serverconf, flags, "app:account-server", "account-server"); err != nil {
 		return "", 0, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
-	server.containerEngine = newLRUEngine(server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, 32)
-	connTimeout := time.Duration(serverconf.GetFloat("app:container-server", "conn_timeout", 1.0) * float64(time.Second))
-	nodeTimeout := time.Duration(serverconf.GetFloat("app:container-server", "node_timeout", 10.0) * float64(time.Second))
+	server.accountEngine = newLRUEngine(server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, 32)
+	connTimeout := time.Duration(serverconf.GetFloat("app:account-server", "conn_timeout", 1.0) * float64(time.Second))
+	nodeTimeout := time.Duration(serverconf.GetFloat("app:account-server", "node_timeout", 10.0) * float64(time.Second))
 	server.updateClient = &http.Client{
 		Timeout:   nodeTimeout,
 		Transport: &http.Transport{Dial: (&net.Dialer{Timeout: connTimeout}).Dial},

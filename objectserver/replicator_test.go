@@ -66,16 +66,20 @@ func newTestReplicatorWithFlags(settings []string, flags *flag.FlagSet) (*Replic
 }
 
 type mockRepConn struct {
-	_SendMessage  func(v interface{}) error
-	_RecvMessage  func(v interface{}) error
-	_Write        func(data []byte) (l int, err error)
-	_Flush        func() error
-	_Read         func(data []byte) (l int, err error)
-	_Disconnected func() bool
-	_Close        func()
+	_SendMessage    func(v interface{}) error
+	_RecvMessage    func(v interface{}, sfrq *SyncFileRequest) error
+	_Write          func(data []byte) (l int, err error)
+	_Flush          func() error
+	_Read           func(data []byte) (l int, err error)
+	_Disconnected   func() bool
+	_Close          func()
+	lastSentMessage *SyncFileRequest
 }
 
 func (f *mockRepConn) SendMessage(v interface{}) error {
+	if sfr, ok := v.(SyncFileRequest); ok {
+		f.lastSentMessage = &sfr
+	}
 	if f._SendMessage != nil {
 		return f._SendMessage(v)
 	}
@@ -83,7 +87,7 @@ func (f *mockRepConn) SendMessage(v interface{}) error {
 }
 func (f *mockRepConn) RecvMessage(v interface{}) error {
 	if f._RecvMessage != nil {
-		return f._RecvMessage(v)
+		return f._RecvMessage(v, f.lastSentMessage)
 	}
 	return nil
 }
@@ -138,7 +142,7 @@ func (d *mockReplicationDevice) ReplicateLoop() {
 	}
 }
 func (d *mockReplicationDevice) Key() string {
-	if d._ReplicateLoop != nil {
+	if d._Key != nil {
 		return d._Key()
 	}
 	return ""
@@ -165,7 +169,7 @@ type patchableReplicationDevice struct {
 	*replicationDevice
 	_beginReplication   func(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse)
 	_listObjFiles       func(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool)
-	_syncFile           func(objFile string, dst []*syncFileArg) (syncs int, insync int, err error)
+	_syncFile           func(objFile string, dst []*syncFileArg, handoff bool) (syncs int, insync int, err error)
 	_replicateLocal     func(partition string, nodes []*ring.Device, moreNodes ring.MoreNodes)
 	_replicateHandoff   func(partition string, nodes []*ring.Device)
 	_cleanTemp          func()
@@ -201,11 +205,11 @@ func (d *patchableReplicationDevice) listObjFiles(objChan chan string, cancel ch
 	}
 	d.replicationDevice.listObjFiles(objChan, cancel, partdir, needSuffix)
 }
-func (d *patchableReplicationDevice) syncFile(objFile string, dst []*syncFileArg) (syncs int, insync int, err error) {
+func (d *patchableReplicationDevice) syncFile(objFile string, dst []*syncFileArg, handoff bool) (syncs int, insync int, err error) {
 	if d._syncFile != nil {
-		return d._syncFile(objFile, dst)
+		return d._syncFile(objFile, dst, handoff)
 	}
-	return d.replicationDevice.syncFile(objFile, dst)
+	return d.replicationDevice.syncFile(objFile, dst, handoff)
 }
 func (d *patchableReplicationDevice) replicateLocal(partition string, nodes []*ring.Device, moreNodes ring.MoreNodes) {
 	if d._replicateLocal != nil {
@@ -520,7 +524,7 @@ func TestSyncFile(t *testing.T) {
 	dataReceived := 0
 	rd := newPatchableReplicationDevice(replicator)
 	rc := &mockRepConn{
-		_RecvMessage: func(v interface{}) error {
+		_RecvMessage: func(v interface{}, sfrq *SyncFileRequest) error {
 			if sfr, ok := v.(*SyncFileResponse); ok {
 				sfr.GoAhead = true
 			} else if fur, ok := v.(*FileUploadResponse); ok {
@@ -536,7 +540,7 @@ func TestSyncFile(t *testing.T) {
 	dsts := []*syncFileArg{
 		{conn: rc, dev: &ring.Device{}},
 	}
-	syncs, insync, err := rd.syncFile(file.Name(), dsts)
+	syncs, insync, err := rd.syncFile(file.Name(), dsts, false)
 	require.Nil(t, err)
 	require.Equal(t, 1, syncs)
 	require.Equal(t, 1, insync)
@@ -572,7 +576,7 @@ func TestSyncFileExists(t *testing.T) {
 	dataReceived := 0
 	rd := newPatchableReplicationDevice(replicator)
 	rc := &mockRepConn{
-		_RecvMessage: func(v interface{}) error {
+		_RecvMessage: func(v interface{}, sfrq *SyncFileRequest) error {
 			if sfr, ok := v.(*SyncFileResponse); ok {
 				sfr.Exists = true
 			}
@@ -586,7 +590,7 @@ func TestSyncFileExists(t *testing.T) {
 	dsts := []*syncFileArg{
 		{conn: rc, dev: &ring.Device{}},
 	}
-	syncs, insync, err := rd.syncFile(file.Name(), dsts)
+	syncs, insync, err := rd.syncFile(file.Name(), dsts, false)
 	require.Nil(t, err)
 	require.Equal(t, 0, syncs)
 	require.Equal(t, 1, insync)
@@ -621,7 +625,7 @@ func TestSyncFileNewerExists(t *testing.T) {
 	})
 	rd := newPatchableReplicationDevice(replicator)
 	rc := &mockRepConn{
-		_RecvMessage: func(v interface{}) error {
+		_RecvMessage: func(v interface{}, sfrq *SyncFileRequest) error {
 			if sfr, ok := v.(*SyncFileResponse); ok {
 				sfr.NewerExists = true
 			}
@@ -631,7 +635,7 @@ func TestSyncFileNewerExists(t *testing.T) {
 	dsts := []*syncFileArg{
 		{conn: rc, dev: &ring.Device{}},
 	}
-	syncs, insync, err := rd.syncFile(file.Name(), dsts)
+	syncs, insync, err := rd.syncFile(file.Name(), dsts, false)
 	require.Nil(t, err)
 	require.False(t, fs.Exists(filename))
 	require.Equal(t, 0, syncs)
@@ -659,13 +663,15 @@ func TestReplicateLocal(t *testing.T) {
 	syncFileCalled := false
 	rd := newPatchableReplicationDevice(replicator)
 	rd._beginReplication = func(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse) {
-		rChan <- beginReplicationResponse{dev: remoteDev, hashes: make(map[string]string), conn: &mockRepConn{}}
+		fakeHashes := make(map[string]string)
+		fakeHashes["aaa"] = "hey"
+		rChan <- beginReplicationResponse{dev: remoteDev, hashes: fakeHashes, conn: &mockRepConn{}}
 	}
 	rd._listObjFiles = func(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool) {
 		objChan <- filename
 		close(objChan)
 	}
-	rd._syncFile = func(objFile string, dst []*syncFileArg) (syncs int, insync int, err error) {
+	rd._syncFile = func(objFile string, dst []*syncFileArg, handoff bool) (syncs int, insync int, err error) {
 		syncFileCalled = true
 		require.Equal(t, filename, objFile)
 		return 0, 0, nil
@@ -706,7 +712,7 @@ func TestReplicateHandoff(t *testing.T) {
 		objChan <- filename
 		close(objChan)
 	}
-	rd._syncFile = func(objFile string, dst []*syncFileArg) (syncs int, insync int, err error) {
+	rd._syncFile = func(objFile string, dst []*syncFileArg, handoff bool) (syncs int, insync int, err error) {
 		syncFileCalled = true
 		require.Equal(t, filename, objFile)
 		return 1, 1, nil
@@ -1044,6 +1050,7 @@ func TestReportStats(t *testing.T) {
 					},
 				}
 			},
+			_Key: func() string { return "1.1:10/sda" },
 		},
 		"sdb": &mockReplicationDevice{
 			_Stats: func() *ReplicationDeviceStats {
@@ -1052,17 +1059,23 @@ func TestReportStats(t *testing.T) {
 					RunStarted:       time.Now().Add(-time.Hour),
 					Stats: map[string]int64{
 						"PartitionsTotal": 100,
-						"PartitionsDone":  50,
+						"PartitionsDone":  40,
 					},
 				}
 			},
+			_Key: func() string { return "1.1:10/sdb" },
 		},
 	}
 	logger := &replicationLogSaver{}
 	replicator.logger = logger
 	replicator.reportStats()
-	require.True(t, strings.Contains(logger.logged[0], "550/1100 (50.00%)"))
+	fmt.Println(logger.logged[0])
+	fmt.Println(logger.logged[1])
+	require.True(t, strings.Contains(logger.logged[0], "Device 1.1:10/sda 500/1000 (50.00%)"))
 	require.True(t, strings.Contains(logger.logged[0], " 1h remaining"))
+
+	require.True(t, strings.Contains(logger.logged[1], "Device 1.1:10/sdb 40/100 (40.00%)"))
+	require.True(t, strings.Contains(logger.logged[1], " 2h remaining"))
 }
 
 func TestPriorityReplicate(t *testing.T) {
@@ -1374,4 +1387,309 @@ func TestReplicationHandoffQuorumDelete(t *testing.T) {
 	resp, err = http.DefaultClient.Do(req)
 	require.Nil(t, err)
 	require.Equal(t, 200, resp.StatusCode)
+}
+
+func TestAllDifferentRegionsSync(t *testing.T) {
+	// syncing a file in non handoff partition to 3 devs in separate remote regions
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
+	deviceRoot, err := ioutil.TempDir("", "")
+	require.Nil(t, err)
+	defer os.RemoveAll(deviceRoot)
+	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	require.Nil(t, err)
+
+	filename := filepath.Join(deviceRoot, "objects", "1", "aaa", "00000000000000000000000000000000", "1472940619.68559")
+	require.Nil(t, os.MkdirAll(filepath.Dir(filename), 0777))
+	file, err := os.Create(filename)
+	require.Nil(t, err)
+	file.Write([]byte("SOME DATA"))
+	WriteMetadata(file.Fd(), map[string]string{
+		"ETag":           "662411c1698ecc13dd07aee13439eadc",
+		"X-Timestamp":    "1472940619.68559",
+		"Content-Length": "9",
+		"name":           "/a/c/o",
+	})
+	dataReceived := 0
+	rd := newPatchableReplicationDevice(replicator)
+	rc := &mockRepConn{
+		_RecvMessage: func(v interface{}, sfrq *SyncFileRequest) error {
+			if sfr, ok := v.(*SyncFileResponse); ok {
+				sfr.GoAhead = true
+			} else if fur, ok := v.(*FileUploadResponse); ok {
+				fur.Success = true
+			}
+			return nil
+		},
+		_Write: func(data []byte) (l int, err error) {
+			dataReceived += len(data)
+			return len(data), nil
+		},
+	}
+	dsts := []*syncFileArg{
+		{conn: rc, dev: &ring.Device{Device: fmt.Sprintf("sda1"), Region: 1}},
+		{conn: rc, dev: &ring.Device{Device: fmt.Sprintf("sda2"), Region: 2}},
+		{conn: rc, dev: &ring.Device{Device: fmt.Sprintf("sda3"), Region: 3}},
+	}
+	syncs, insync, err := rd.syncFile(file.Name(), dsts, false)
+	require.Nil(t, err)
+	require.Equal(t, 3, syncs)
+	require.Equal(t, 3, insync)
+	require.Equal(t, 27, dataReceived)
+}
+
+func TestAllSameRegionsSync(t *testing.T) {
+	// syncing a file in non handoff partition to 3 devs in local region
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
+	deviceRoot, err := ioutil.TempDir("", "")
+	require.Nil(t, err)
+	defer os.RemoveAll(deviceRoot)
+	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	require.Nil(t, err)
+
+	filename := filepath.Join(deviceRoot, "objects", "1", "aaa", "00000000000000000000000000000000", "1472940619.68559")
+	require.Nil(t, os.MkdirAll(filepath.Dir(filename), 0777))
+	file, err := os.Create(filename)
+	require.Nil(t, err)
+	file.Write([]byte("SOME DATA"))
+	WriteMetadata(file.Fd(), map[string]string{
+		"ETag":           "662411c1698ecc13dd07aee13439eadc",
+		"X-Timestamp":    "1472940619.68559",
+		"Content-Length": "9",
+		"name":           "/a/c/o",
+	})
+	dataReceived := 0
+	rd := newPatchableReplicationDevice(replicator)
+	rc := &mockRepConn{
+		_RecvMessage: func(v interface{}, sfrq *SyncFileRequest) error {
+			if sfr, ok := v.(*SyncFileResponse); ok {
+				sfr.GoAhead = true
+			} else if fur, ok := v.(*FileUploadResponse); ok {
+				fur.Success = true
+			}
+			return nil
+		},
+		_Write: func(data []byte) (l int, err error) {
+			dataReceived += len(data)
+			return len(data), nil
+		},
+	}
+	dsts := []*syncFileArg{
+		{conn: rc, dev: &ring.Device{Device: fmt.Sprintf("sda1"), Region: 0}},
+		{conn: rc, dev: &ring.Device{Device: fmt.Sprintf("sda2"), Region: 0}},
+		{conn: rc, dev: &ring.Device{Device: fmt.Sprintf("sda3"), Region: 0}},
+	}
+	syncs, insync, err := rd.syncFile(file.Name(), dsts, false)
+	require.Nil(t, err)
+	require.Equal(t, 3, syncs)
+	require.Equal(t, 3, insync)
+	require.Equal(t, 27, dataReceived)
+}
+
+func TestHalfSameRegionsSync(t *testing.T) {
+	// syncing a file in non handoff part in reg0 to dev in reg1 and 2 devs in reg2
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
+	deviceRoot, err := ioutil.TempDir("", "")
+	require.Nil(t, err)
+	defer os.RemoveAll(deviceRoot)
+	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	require.Nil(t, err)
+
+	filename := filepath.Join(deviceRoot, "objects", "1", "aaa", "00000000000000000000000000000000", "1472940619.68559")
+	require.Nil(t, os.MkdirAll(filepath.Dir(filename), 0777))
+	file, err := os.Create(filename)
+	require.Nil(t, err)
+	file.Write([]byte("SOME DATA"))
+	WriteMetadata(file.Fd(), map[string]string{
+		"ETag":           "662411c1698ecc13dd07aee13439eadc",
+		"X-Timestamp":    "1472940619.68559",
+		"Content-Length": "9",
+		"name":           "/a/c/o",
+	})
+	dataReceived := 0
+	rd := newPatchableReplicationDevice(replicator)
+	rc := &mockRepConn{
+		_RecvMessage: func(v interface{}, sfrq *SyncFileRequest) error {
+			sfr, ok := v.(*SyncFileResponse)
+			if ok {
+				if sfrq != nil && sfrq.Ping {
+					sfr.Msg = "pong"
+				} else {
+					sfr.GoAhead = true
+				}
+			} else if fur, ok := v.(*FileUploadResponse); ok {
+				fur.Success = true
+			}
+			return nil
+		},
+		_Write: func(data []byte) (l int, err error) {
+			dataReceived += len(data)
+			return len(data), nil
+		},
+	}
+	dsts := []*syncFileArg{
+		{conn: rc, dev: &ring.Device{Device: fmt.Sprintf("sda1"), Region: 1}},
+		{conn: rc, dev: &ring.Device{Device: fmt.Sprintf("sda2"), Region: 2}},
+		{conn: rc, dev: &ring.Device{Device: fmt.Sprintf("sda3"), Region: 2}},
+	}
+	syncs, insync, err := rd.syncFile(file.Name(), dsts, false)
+	require.Nil(t, err)
+	require.Equal(t, 2, syncs)
+	require.Equal(t, 2, insync)
+	require.Equal(t, 18, dataReceived)
+}
+
+func TestHalfSameRegionsSyncHandoffNotExists(t *testing.T) {
+	// syncing a file in handoff part in reg0 to dev in reg1 and
+	// 2 devs in reg2. file is on neither remote dev
+
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
+	deviceRoot, err := ioutil.TempDir("", "")
+	require.Nil(t, err)
+	defer os.RemoveAll(deviceRoot)
+	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	require.Nil(t, err)
+
+	filename := filepath.Join(deviceRoot, "objects", "1", "aaa", "00000000000000000000000000000000", "1472940619.68559")
+	require.Nil(t, os.MkdirAll(filepath.Dir(filename), 0777))
+	file, err := os.Create(filename)
+	require.Nil(t, err)
+	file.Write([]byte("SOME DATA"))
+	WriteMetadata(file.Fd(), map[string]string{
+		"ETag":           "662411c1698ecc13dd07aee13439eadc",
+		"X-Timestamp":    "1472940619.68559",
+		"Content-Length": "9",
+		"name":           "/a/c/o",
+	})
+	dataReceived := 0
+	gotACheck := false
+	rd := newPatchableReplicationDevice(replicator)
+	rc := &mockRepConn{
+		_RecvMessage: func(v interface{}, sfrq *SyncFileRequest) error {
+			sfr, ok := v.(*SyncFileResponse)
+			if ok {
+				if sfrq != nil && sfrq.Ping {
+					sfr.Msg = "pong"
+				} else if sfrq != nil && sfrq.Check {
+					sfr.Msg = "just check"
+					sfr.Exists = false
+					gotACheck = true
+				} else {
+					sfr.GoAhead = true
+				}
+			} else if fur, ok := v.(*FileUploadResponse); ok {
+				fur.Success = true
+			}
+			return nil
+		},
+		_Write: func(data []byte) (l int, err error) {
+			dataReceived += len(data)
+			return len(data), nil
+		},
+	}
+	dsts := []*syncFileArg{
+		{conn: rc, dev: &ring.Device{Device: fmt.Sprintf("sda1"), Region: 1}},
+		{conn: rc, dev: &ring.Device{Device: fmt.Sprintf("sda2"), Region: 2}},
+		{conn: rc, dev: &ring.Device{Device: fmt.Sprintf("sda3"), Region: 2}},
+	}
+	syncs, insync, err := rd.syncFile(file.Name(), dsts, true)
+	require.Nil(t, err)
+	require.Equal(t, 2, syncs)
+	require.Equal(t, 2, insync)
+	require.Equal(t, 18, dataReceived)
+	require.True(t, gotACheck)
+}
+
+func TestHalfSameRegionsSyncHandoffYesExists(t *testing.T) {
+	// syncing a file in handoff part in reg0 to dev in reg1 and
+	// 2 devs in reg2. file already on remote that you are only checking
+	oldGetRing := GetRing
+	defer func() {
+		GetRing = oldGetRing
+	}()
+
+	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+		return &test.FakeRing{}, nil
+	}
+	deviceRoot, err := ioutil.TempDir("", "")
+	require.Nil(t, err)
+	defer os.RemoveAll(deviceRoot)
+	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	require.Nil(t, err)
+
+	filename := filepath.Join(deviceRoot, "objects", "1", "aaa", "00000000000000000000000000000000", "1472940619.68559")
+	require.Nil(t, os.MkdirAll(filepath.Dir(filename), 0777))
+	file, err := os.Create(filename)
+	require.Nil(t, err)
+	file.Write([]byte("SOME DATA"))
+	WriteMetadata(file.Fd(), map[string]string{
+		"ETag":           "662411c1698ecc13dd07aee13439eadc",
+		"X-Timestamp":    "1472940619.68559",
+		"Content-Length": "9",
+		"name":           "/a/c/o",
+	})
+	dataReceived := 0
+	gotACheck := false
+	rd := newPatchableReplicationDevice(replicator)
+	rc := &mockRepConn{
+		_RecvMessage: func(v interface{}, sfrq *SyncFileRequest) error {
+			sfr, ok := v.(*SyncFileResponse)
+			if ok {
+				if sfrq != nil && sfrq.Ping {
+					sfr.Msg = "pong"
+				} else if sfrq != nil && sfrq.Check {
+					sfr.Msg = "file exists"
+					sfr.Exists = true
+					gotACheck = true
+				} else {
+					sfr.GoAhead = true
+				}
+			} else if fur, ok := v.(*FileUploadResponse); ok {
+				fur.Success = true
+			}
+			return nil
+		},
+		_Write: func(data []byte) (l int, err error) {
+			dataReceived += len(data)
+			return len(data), nil
+		},
+	}
+	dsts := []*syncFileArg{
+		{conn: rc, dev: &ring.Device{Device: fmt.Sprintf("sda1"), Region: 1}},
+		{conn: rc, dev: &ring.Device{Device: fmt.Sprintf("sda2"), Region: 2}},
+		{conn: rc, dev: &ring.Device{Device: fmt.Sprintf("sda3"), Region: 2}},
+	}
+	syncs, insync, err := rd.syncFile(file.Name(), dsts, true)
+	require.Nil(t, err)
+	require.True(t, gotACheck)
+	require.Equal(t, 2, syncs)
+	require.Equal(t, 3, insync)
+	require.Equal(t, 18, dataReceived)
 }

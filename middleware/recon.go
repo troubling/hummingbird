@@ -1,4 +1,4 @@
-//  Copyright (c) 2015 Rackspace
+//  Copyright (c) 2017 Rackspace
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
 //  you may not use this file except in compliance with the License.
@@ -432,6 +432,16 @@ func ReconHandler(driveRoot string, writer http.ResponseWriter, request *http.Re
 	case "diskusage":
 		var err error
 		content, err = diskUsage(driveRoot)
+		if err != nil {
+			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+	case "time":
+		//Similar to python time.time()
+		content = float64(time.Now().UnixNano()) / float64(time.Second)
+	case "driveaudit":
+		var err error
+		content, err = fromReconCache("drive", "drive_audit_errors")
 		if err != nil {
 			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return

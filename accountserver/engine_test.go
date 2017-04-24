@@ -1,4 +1,4 @@
-//  Copyright (c) 2016 Rackspace
+//  Copyright (c) 2016-2017 Rackspace
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
 //  you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-package containerserver
+package accountserver
 
 import (
 	"container/list"
@@ -79,24 +79,4 @@ func TestAddOnReturn(t *testing.T) {
 	l.Close()
 	require.Equal(t, 0, len(l.cache))
 	require.Equal(t, 0, l.used.Len())
-}
-
-func TestOpenCount(t *testing.T) {
-	l := &lruEngine{
-		maxSize: 3,
-		cache:   make(map[string]*lruEntry),
-		used:    list.New(),
-	}
-	dbs := make([]hashDatabase, 5)
-	for i, db := range dbs {
-		db.hash = fmt.Sprintf("%d", i)
-		l.add(db)
-	}
-	require.Equal(t, 5, l.OpenCount())
-
-	for i, db := range dbs {
-		db.hash = fmt.Sprintf("%d", i)
-		l.Return(db)
-	}
-	require.Equal(t, 0, l.OpenCount())
 }

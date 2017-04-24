@@ -449,7 +449,7 @@ func TestGetUpdateMetadata(t *testing.T) {
 
 	require.Nil(t, db.UpdateMetadata(map[string][]string{
 		"X-Container-Meta-Hi": []string{"", "100000000.00001"},
-	}))
+	}, "100000000.00001"))
 	m, err = db.GetMetadata()
 	require.Nil(t, err)
 	require.Equal(t, metadataValues, m)
@@ -457,8 +457,8 @@ func TestGetUpdateMetadata(t *testing.T) {
 	require.Nil(t, db.UpdateMetadata(map[string][]string{
 		"X-Container-Meta-Hi":         []string{"", "200000001.00001"},
 		"X-Container-Meta-Some-Other": []string{"value", "200000001.00001"},
-	}))
-	require.Nil(t, db.UpdateMetadata(map[string][]string{}))
+	}, "200000001.00001"))
+	require.Nil(t, db.UpdateMetadata(map[string][]string{}, "200000001.00001"))
 	m, err = db.GetMetadata()
 	require.Nil(t, err)
 	require.Equal(t, map[string]string{"X-Container-Meta-Some-Other": "value"}, m)
@@ -632,7 +632,7 @@ func TestCleanupTombstones(t *testing.T) {
 	require.Nil(t, db.MergeItems([]*ObjectRecord{&ObjectRecord{Name: "a", CreatedAt: "10000000.00000", Deleted: 0}}, ""))
 	db.UpdateMetadata(map[string][]string{
 		"X-Container-Meta-Old-Value": []string{"", "10000000.00000"},
-	})
+	}, "10000000.00000")
 	info, err := db.GetInfo()
 	require.Nil(t, err)
 	_, ok := info.Metadata["X-Container-Meta-Old-Value"]
@@ -655,7 +655,7 @@ func TestDeleteRemovesMetadata(t *testing.T) {
 
 	db.UpdateMetadata(map[string][]string{
 		"X-Container-Meta-Key": []string{"Value", "200000000.00001"},
-	})
+	}, "10000000.00001")
 	require.Nil(t, db.Delete("200000001.00000"))
 	deleted, err := db.IsDeleted()
 	require.Nil(t, err)
@@ -672,12 +672,12 @@ func TestCheckSyncLink(t *testing.T) {
 	link := strings.Replace(db.containerFile, "containers", "sync_containers", -1)
 	db.UpdateMetadata(map[string][]string{
 		"X-Container-Sync-To": []string{"//realm/cluster/a/c", "200000000.00001"},
-	})
+	}, "20000000.00001")
 	db.CheckSyncLink()
 	require.True(t, fs.Exists(link))
 	db.UpdateMetadata(map[string][]string{
 		"X-Container-Sync-To": []string{"", "200000001.00001"},
-	})
+	}, "20000001.00001")
 	db.CheckSyncLink()
 	require.False(t, fs.Exists(link))
 }

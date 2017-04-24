@@ -77,7 +77,7 @@ func pickleobj(o interface{}, buf *bytes.Buffer, scratch []byte) {
 	case reflect.Float32, reflect.Float64:
 		scratch[0] = 'G' // BINFLOAT
 		bits := math.Float64bits(v.Float())
-		binary.LittleEndian.PutUint64(scratch[1:9], bits)
+		binary.BigEndian.PutUint64(scratch[1:9], bits)
 		buf.Write(scratch[0:9])
 	case reflect.Slice, reflect.Array:
 		buf.WriteByte('(') // MARK
@@ -112,6 +112,29 @@ func pickleobj(o interface{}, buf *bytes.Buffer, scratch []byte) {
 			}
 		}
 		buf.WriteByte('d') // DICT
+	case reflect.Struct:
+		switch o := o.(type) {
+		case PickleTuple:
+			buf.WriteByte('(') // MARK
+			for _, to := range []interface{}{o.A, o.B, o.C, o.D}[:o.Len] {
+				pickleobj(to, buf, scratch)
+			}
+			buf.WriteByte('l') // TUPLE
+		case PickleArray:
+			buf.WriteString("carray\narray\n")
+			buf.WriteByte('(') // MARK
+			pickleobj(o.Type, buf, scratch)
+			pickleobj(o.Data, buf, scratch)
+			buf.WriteByte('l') // TUPLE
+			buf.WriteByte('R') // REDUCE
+		default: // why not serialize arbitrary structs as dicts while we're here
+			buf.WriteByte('(') // MARK
+			for i := 0; i < v.NumField(); i++ {
+				picklestring(v.Type().Field(i).Name, buf, scratch)
+				pickleobj(v.Field(i).Interface(), buf, scratch)
+			}
+			buf.WriteByte('d') // DICT
+		}
 	default:
 		panic(fmt.Sprintf("Unknown object type in pickle: %v", v))
 	}

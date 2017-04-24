@@ -1,4 +1,4 @@
-//  Copyright (c) 2016 Rackspace
+//  Copyright (c) 2016-2017 Rackspace
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
 //  you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-package containerserver
+package accountserver
 
 import (
 	"crypto/md5"
@@ -26,7 +26,6 @@ import (
 	"io"
 	"io/ioutil"
 	"math"
-	"mime"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -70,7 +69,7 @@ func chexor(old, name, timestamp string) string {
 
 func init() {
 	// register our sql driver with user-defined chexor function
-	sql.Register("sqlite3_hummingbird",
+	sql.Register("sqlite3_account",
 		&sqlite3.SQLiteDriver{
 			ConnectHook: func(conn *sqlite3.SQLiteConn) error {
 				if err := conn.RegisterFunc("chexor", chexor, true); err != nil {
@@ -80,7 +79,7 @@ func init() {
 					return err
 				}
 				if _, err := conn.Exec(`CREATE TEMPORARY VIEW IF NOT EXISTS maxrowid (max) AS
-				  						SELECT IFNULL(MAX(seq), -1) FROM sqlite_sequence WHERE name='object'`, nil); err != nil {
+				  						SELECT IFNULL(MAX(seq), -1) FROM sqlite_sequence WHERE name='container'`, nil); err != nil {
 					return err
 				}
 				return nil
@@ -89,66 +88,58 @@ func init() {
 	)
 }
 
-// SqliteContainer wraps a connection to the underlying database and provides all of the operations on that database.
-type sqliteContainer struct {
+type sqliteAccount struct {
 	connectLock sync.Mutex
 	*sql.DB
-	containerFile       string
+	accountFile         string
 	hasDeletedNameIndex bool
 	infoCache           atomic.Value
 	ringhash            string
 }
 
-var _ Container = &sqliteContainer{}
+var _ Account = &sqliteAccount{}
 
-func (db *sqliteContainer) connect() error {
+func (db *sqliteAccount) connect() error {
 	db.connectLock.Lock()
 	defer db.connectLock.Unlock()
 	if db.DB != nil {
 		return nil
 	}
-	dbConn, err := sql.Open("sqlite3_hummingbird", "file:"+db.containerFile+"?psow=1&_txlock=immediate&mode=rw")
+	dbConn, err := sql.Open("sqlite3_account", "file:"+db.accountFile+"?psow=1&_txlock=immediate&mode=rw")
 	if err != nil {
 		return fmt.Errorf("Failed to open: %v", err)
 	}
 	dbConn.SetMaxOpenConns(maxOpenConns)
 	dbConn.SetMaxIdleConns(maxIdleConns)
-	hasDeletedNameIndex, err := schemaMigrate(dbConn)
-	if err != nil {
+	if db.hasDeletedNameIndex, err = schemaMigrate(dbConn); err != nil {
 		db.Close()
 		return fmt.Errorf("Error migrating database: %v", err)
 	}
-	db.hasDeletedNameIndex = hasDeletedNameIndex
 	db.DB = dbConn
 	return nil
 }
 
-// GetInfo returns the container's information as a ContainerInfo struct.
-func (db *sqliteContainer) GetInfo() (*ContainerInfo, error) {
+// GetInfo returns the account's information as a AccountInfo struct.
+func (db *sqliteAccount) GetInfo() (*AccountInfo, error) {
 	if err := db.connect(); err != nil {
 		return nil, err
 	}
 	if err := db.flush(); err != nil {
 		return nil, err
 	}
-	if info, ok := db.infoCache.Load().(*ContainerInfo); ok && !info.invalid && time.Since(info.updated) < infoCacheTimeout {
+	if info, ok := db.infoCache.Load().(*AccountInfo); ok && !info.invalid && time.Since(info.updated) < infoCacheTimeout {
 		return info, nil
 	}
-	info := &ContainerInfo{updated: time.Now()}
-	row := db.QueryRow(`SELECT cs.account, cs.container, cs.created_at, cs.put_timestamp,
+	info := &AccountInfo{updated: time.Now()}
+	row := db.QueryRow(`SELECT cs.account, cs.created_at, cs.put_timestamp,
 							cs.delete_timestamp, cs.status_changed_at,
-							cs.object_count, cs.bytes_used,
-							cs.reported_put_timestamp, cs.reported_delete_timestamp,
-							cs.reported_object_count, cs.reported_bytes_used, cs.hash,
-							cs.id, cs.x_container_sync_point1, cs.x_container_sync_point2,
-							cs.storage_policy_index, cs.metadata, maxrowid.max
-						FROM container_stat cs, maxrowid`)
-	if err := row.Scan(&info.Account, &info.Container, &info.CreatedAt, &info.PutTimestamp,
-		&info.DeleteTimestamp, &info.StatusChangedAt, &info.ObjectCount,
-		&info.BytesUsed, &info.ReportedPutTimestamp, &info.ReportedDeleteTimestamp,
-		&info.ReportedObjectCount, &info.ReportedBytesUsed, &info.Hash,
-		&info.ID, &info.XContainerSyncPoint1, &info.XContainerSyncPoint2,
-		&info.StoragePolicyIndex, &info.RawMetadata, &info.MaxRow); err != nil {
+							cs.object_count, cs.bytes_used, cs.container_count,
+							cs.hash, cs.id, cs.metadata, maxrowid.max
+						FROM account_stat cs, maxrowid`)
+	if err := row.Scan(&info.Account, &info.CreatedAt, &info.PutTimestamp,
+		&info.DeleteTimestamp, &info.StatusChangedAt,
+		&info.ObjectCount, &info.BytesUsed, &info.ContainerCount,
+		&info.Hash, &info.ID, &info.RawMetadata, &info.MaxRow); err != nil {
 		return nil, err
 	}
 	if info.RawMetadata == "" {
@@ -160,12 +151,12 @@ func (db *sqliteContainer) GetInfo() (*ContainerInfo, error) {
 	return info, nil
 }
 
-func (db *sqliteContainer) invalidateCache() {
-	db.infoCache.Store(&ContainerInfo{invalid: true})
+func (db *sqliteAccount) invalidateCache() {
+	db.infoCache.Store(&AccountInfo{invalid: true})
 }
 
-// IsDeleted returns true if the container is deleted - if its delete timestamp is later than its put timestamp.
-func (db *sqliteContainer) IsDeleted() (bool, error) {
+// IsDeleted returns true if the account is deleted - if its delete timestamp is later than its put timestamp.
+func (db *sqliteAccount) IsDeleted() (bool, error) {
 	info, err := db.GetInfo()
 	if err != nil {
 		return false, err
@@ -173,9 +164,9 @@ func (db *sqliteContainer) IsDeleted() (bool, error) {
 	return info.DeleteTimestamp > info.PutTimestamp, nil
 }
 
-// Delete sets the container's deleted timestamp and tombstones any metadata older than that timestamp.
-// This may or may not make the container "deleted".
-func (db *sqliteContainer) Delete(timestamp string) error {
+// Delete sets the account's deleted timestamp and tombstones any metadata older than that timestamp.
+// This may or may not make the account "deleted".
+func (db *sqliteAccount) Delete(timestamp string) error {
 	if err := db.connect(); err != nil {
 		return err
 	}
@@ -184,10 +175,13 @@ func (db *sqliteContainer) Delete(timestamp string) error {
 		return err
 	}
 	defer tx.Rollback()
-	var metastr string
+	var deleteTimestamp, metastr string
 	var metadata map[string][]string
-	if err := tx.QueryRow("SELECT metadata FROM container_info").Scan(&metastr); err != nil {
+	if err := tx.QueryRow("SELECT delete_timestamp, metadata FROM account_stat").Scan(&deleteTimestamp, &metastr); err != nil {
 		return err
+	}
+	if deleteTimestamp >= timestamp {
+		return nil
 	}
 	if err := json.Unmarshal([]byte(metastr), &metadata); err != nil {
 		return err
@@ -201,25 +195,20 @@ func (db *sqliteContainer) Delete(timestamp string) error {
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec("UPDATE container_info SET delete_timestamp = ?, metadata = ?", timestamp, string(serializedMetadata)); err != nil {
+	if _, err = tx.Exec("UPDATE account_stat SET delete_timestamp = ?, metadata = ?", timestamp, string(serializedMetadata)); err != nil {
 		return err
 	}
 	defer db.invalidateCache()
 	return tx.Commit()
 }
 
-// MergeItems merges ObjectRecords into the container.  If a remote id is provided (incoming replication), the incoming_sync table is updated.
-func (db *sqliteContainer) MergeItems(records []*ObjectRecord, remoteID string) error {
+// MergeItems merges ContainerRecords into the account.  If a remote id is provided (incoming replication), the incoming_sync table is updated.
+func (db *sqliteAccount) MergeItems(records []*ContainerRecord, remoteID string) error {
 	if err := db.connect(); err != nil {
 		return err
 	}
-	type recordID struct {
-		policy int
-		name   string
-	}
 	names := make([]interface{}, len(records))
-	existing := make(map[recordID]*ObjectRecord)
-	toAdd := make(map[recordID]*ObjectRecord)
+	existing := make(map[string]*ContainerRecord)
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -236,24 +225,24 @@ func (db *sqliteContainer) MergeItems(records []*ObjectRecord, remoteID string) 
 		batch := names[i:j]
 		query := ""
 		if db.hasDeletedNameIndex {
-			query = fmt.Sprintf("SELECT name, storage_policy_index, created_at, ROWID FROM object WHERE deleted IN (0, 1) AND name IN (%s)",
+			query = fmt.Sprintf("SELECT name, put_timestamp, delete_timestamp, ROWID FROM container WHERE deleted IN (0, 1) AND name IN (%s)",
 				strings.TrimRight(strings.Repeat("?,", len(batch)), ","))
 		} else {
-			query = fmt.Sprintf("SELECT name, storage_policy_index, created_at, ROWID FROM object WHERE name IN (%s)",
+			query = fmt.Sprintf("SELECT name, put_timestamp, delete_timestamp, ROWID FROM container WHERE name IN (%s)",
 				strings.TrimRight(strings.Repeat("?,", len(batch)), ","))
 		}
 		rows, err := tx.Query(query, batch...)
 		if err != nil {
 			return err
 		}
+		defer rows.Close()
 		for rows.Next() {
-			var name, timestamp string
+			var name, putTimestamp, deleteTimestamp string
 			var rowid int64
-			var policy int
-			if err := rows.Scan(&name, &policy, &timestamp, &rowid); err != nil {
+			if err := rows.Scan(&name, &putTimestamp, &deleteTimestamp, &rowid); err != nil {
 				return err
 			}
-			existing[recordID{policy, name}] = &ObjectRecord{CreatedAt: timestamp, Rowid: rowid}
+			existing[name] = &ContainerRecord{PutTimestamp: putTimestamp, DeleteTimestamp: deleteTimestamp, Rowid: rowid}
 		}
 		if err := rows.Err(); err != nil {
 			return err
@@ -263,13 +252,14 @@ func (db *sqliteContainer) MergeItems(records []*ObjectRecord, remoteID string) 
 		}
 	}
 
-	dst, err := tx.Prepare("DELETE FROM object WHERE ROWID=?")
+	dst, err := tx.Prepare("DELETE FROM container WHERE ROWID=?")
 	if err != nil {
 		return err
 	}
 	defer dst.Close()
 
-	ast, err := tx.Prepare("INSERT INTO object (name, created_at, size, content_type, etag, deleted, storage_policy_index) VALUES (?, ?, ?, ?, ?, ?, ?)")
+	ast, err := tx.Prepare(`INSERT INTO container (name, put_timestamp, delete_timestamp, object_count, bytes_used, deleted, storage_policy_index)
+							VALUES (?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -280,25 +270,29 @@ func (db *sqliteContainer) MergeItems(records []*ObjectRecord, remoteID string) 
 		if record.Rowid > maxRowid {
 			maxRowid = record.Rowid
 		}
-		rid := recordID{record.StoragePolicyIndex, record.Name}
-		if alreadyIn, ok := toAdd[rid]; !ok || record.CreatedAt > alreadyIn.CreatedAt {
-			current, inExisting := existing[rid]
-			if inExisting && current.CreatedAt < record.CreatedAt {
-				if _, err := dst.Exec(current.Rowid); err != nil {
-					return err
-				}
-				delete(existing, rid)
-				toAdd[rid] = record
-			} else if !inExisting {
-				toAdd[rid] = record
+		if er, exists := existing[record.Name]; exists {
+			if _, err := dst.Exec(er.Rowid); err != nil {
+				return err
+			}
+			if er.PutTimestamp > record.PutTimestamp {
+				record.PutTimestamp = er.PutTimestamp
+			}
+			if er.DeleteTimestamp > record.DeleteTimestamp {
+				record.DeleteTimestamp = er.DeleteTimestamp
+			}
+			if record.DeleteTimestamp > record.PutTimestamp {
+				record.Deleted = 1
+			} else {
+				record.Deleted = 0
 			}
 		}
-	}
-
-	for _, record := range toAdd {
-		if _, err := ast.Exec(record.Name, record.CreatedAt, record.Size, record.ContentType, record.ETag, record.Deleted, record.StoragePolicyIndex); err != nil {
+		if res, err := ast.Exec(record.Name, record.PutTimestamp, record.DeleteTimestamp, record.ObjectCount,
+			record.BytesUsed, record.Deleted, record.StoragePolicyIndex); err != nil {
+			return err
+		} else if record.Rowid, err = res.LastInsertId(); err != nil {
 			return err
 		}
+		existing[record.Name] = record
 	}
 
 	if remoteID != "" && maxRowid > -1 {
@@ -321,55 +315,15 @@ func indexAfter(s, sep string, after int) int {
 	return index + after
 }
 
-func updateRecord(rec *ObjectListingRecord) error {
-	f, err := strconv.ParseFloat(rec.LastModified, 64)
-	if err != nil {
-		return err
-	}
-	whole, nans := math.Modf(f)
-	rec.LastModified = time.Unix(int64(whole), int64(nans*1.0e9)).Format("2006-01-02T15:04:05.000000")
-
-	// somewhat dirty check to see if we need to parse the content-type
-	if strings.Contains(rec.ContentType, ";") && strings.Contains(rec.ContentType, "swift_bytes") {
-		contentType, params, err := mime.ParseMediaType(rec.ContentType)
-		if err != nil {
-			return err
-		}
-		for k, v := range params {
-			if k == "swift_bytes" {
-				if rec.Size, err = strconv.ParseInt(v, 0, 64); err != nil {
-					return err
-				}
-				delete(params, k)
-			}
-		}
-		rec.ContentType = mime.FormatMediaType(contentType, params)
-	}
-
-	return nil
-}
-
-// ListObjects implements object listings.  Path is a string pointer because behavior is different for empty and missing path query parameters.
-func (db *sqliteContainer) ListObjects(limit int, marker string, endMarker string, prefix string, delimiter string,
-	path *string, reverse bool, storagePolicyIndex int) ([]interface{}, error) {
+// ListContainers implements object listings.
+func (db *sqliteAccount) ListContainers(limit int, marker string, endMarker string, prefix string, delimiter string,
+	reverse bool) ([]interface{}, error) {
 	if err := db.connect(); err != nil {
 		return nil, err
 	}
 	var point, pointDirection, queryTail, queryStart string
 
-	if path != nil {
-		if *path != "" {
-			p := strings.TrimRight(*path, "/") + "/"
-			path = &p
-		}
-		delimiter = "/"
-		prefix = *path
-	}
-	if db.hasDeletedNameIndex {
-		queryStart = "SELECT name, created_at, size, content_type, etag FROM object WHERE deleted = 0 AND"
-	} else {
-		queryStart = "SELECT name, created_at, size, content_type, etag FROM object WHERE +deleted = 0 AND"
-	}
+	queryStart = "SELECT name, object_count, bytes_used, put_timestamp FROM container WHERE "
 	if reverse {
 		marker, endMarker = endMarker, marker
 		queryTail = "ORDER BY name DESC LIMIT ?"
@@ -385,8 +339,12 @@ func (db *sqliteContainer) ListObjects(limit int, marker string, endMarker strin
 	gotResults := true
 
 	for len(results) < limit && gotResults {
-		wheres := append(wheres[:0], "storage_policy_index == ?")
-		queryArgs := append(queryArgs[:0], storagePolicyIndex)
+		if db.hasDeletedNameIndex {
+			wheres = append(wheres[:0], "deleted = 0")
+		} else {
+			wheres = append(wheres[:0], "+deleted = 0")
+		}
+		queryArgs = queryArgs[:0]
 		if prefix != "" {
 			wheres = append(wheres, "name BETWEEN ? AND ?")
 			queryArgs = append(queryArgs, prefix, prefix+"\xFF")
@@ -408,34 +366,35 @@ func (db *sqliteContainer) ListObjects(limit int, marker string, endMarker strin
 		if err != nil {
 			return nil, err
 		}
+		defer rows.Close()
 		gotResults = false
 		for rows.Next() && len(results) < limit {
 			gotResults = true
-			record := &ObjectListingRecord{}
-			if err := rows.Scan(&record.Name, &record.LastModified, &record.Size, &record.ContentType, &record.ETag); err != nil {
+			record := &ContainerListingRecord{}
+			if err := rows.Scan(&record.Name, &record.Count, &record.Bytes, &record.LastModified); err != nil {
 				return nil, err
+			}
+			if f, err := strconv.ParseFloat(record.LastModified, 64); err != nil {
+				return nil, err
+			} else {
+				whole, nans := math.Modf(f)
+				record.LastModified = time.Unix(int64(whole), int64(nans*1.0e9)).Format("2006-01-02T15:04:05.000000")
 			}
 			point = record.Name
 			if delimiter != "" {
-				if path != nil && record.Name == *path {
-					continue
-				}
 				end := indexAfter(record.Name, delimiter, len(prefix))
-				if end >= 0 && (path == nil || len(record.Name) > end+1) {
+				if end >= 0 && len(record.Name) > end+1 {
 					dirName := record.Name[:end] + delimiter
 					if reverse {
 						point = record.Name[:end+len(delimiter)]
 					} else {
 						point = dirName + "\xFF"
 					}
-					if path == nil && dirName != marker {
+					if dirName != marker {
 						results = append(results, &SubdirListingRecord{Name2: dirName, Name: dirName})
 					}
 					break
 				}
-			}
-			if err := updateRecord(record); err != nil {
-				return nil, err
 			}
 			results = append(results, record)
 		}
@@ -443,15 +402,15 @@ func (db *sqliteContainer) ListObjects(limit int, marker string, endMarker strin
 			return nil, err
 		}
 		rows.Close()
-		if delimiter == "" && path == nil {
+		if delimiter == "" {
 			break
 		}
 	}
 	return results, nil
 }
 
-// NewID sets the container's ID to a new, random string.
-func (db *sqliteContainer) NewID() error {
+// NewID sets the account's ID to a new, random string.
+func (db *sqliteAccount) NewID() error {
 	if err := db.connect(); err != nil {
 		return err
 	}
@@ -461,11 +420,11 @@ func (db *sqliteContainer) NewID() error {
 	}
 	defer tx.Rollback()
 	_, err = tx.Exec(`INSERT OR REPLACE INTO incoming_sync (remote_id, sync_point)
-					  SELECT container_info.id, maxrowid.max FROM container_info, maxrowid`)
+					  SELECT account_stat.id, maxrowid.max FROM account_stat, maxrowid`)
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec("UPDATE container_info SET id = ?", common.UUID()); err != nil {
+	if _, err = tx.Exec("UPDATE account_stat SET id = ?", common.UUID()); err != nil {
 		return err
 	}
 	defer db.invalidateCache()
@@ -473,17 +432,19 @@ func (db *sqliteContainer) NewID() error {
 }
 
 // ItemsSince returns (count) object records with a rowid greater than (start).
-func (db *sqliteContainer) ItemsSince(start int64, count int) ([]*ObjectRecord, error) {
+func (db *sqliteAccount) ItemsSince(start int64, count int) ([]*ContainerRecord, error) {
 	db.flush()
-	records := []*ObjectRecord{}
-	rows, err := db.Query(`SELECT ROWID, name, created_at, size, content_type, etag, deleted, storage_policy_index
-						   FROM object WHERE ROWID > ? ORDER BY ROWID ASC LIMIT ?`, start, count)
+	records := []*ContainerRecord{}
+	rows, err := db.Query(`SELECT ROWID, name, put_timestamp, delete_timestamp, object_count,
+						   bytes_used, deleted, storage_policy_index
+						   FROM container WHERE ROWID > ? ORDER BY ROWID ASC LIMIT ?`, start, count)
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 	for rows.Next() {
-		r := &ObjectRecord{}
-		if err := rows.Scan(&r.Rowid, &r.Name, &r.CreatedAt, &r.Size, &r.ContentType, &r.ETag, &r.Deleted, &r.StoragePolicyIndex); err != nil {
+		r := &ContainerRecord{}
+		if err := rows.Scan(&r.Rowid, &r.Name, &r.PutTimestamp, &r.DeleteTimestamp, &r.ObjectCount, &r.BytesUsed, &r.Deleted, &r.StoragePolicyIndex); err != nil {
 			return nil, err
 		}
 		records = append(records, r)
@@ -491,12 +452,11 @@ func (db *sqliteContainer) ItemsSince(start int64, count int) ([]*ObjectRecord, 
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	rows.Close()
 	return records, nil
 }
 
-// GetMetadata returns the current container metadata as a simple map[string]string, i.e. it leaves out tombstones and timestamps.
-func (db *sqliteContainer) GetMetadata() (map[string]string, error) {
+// GetMetadata returns the current account metadata as a simple map[string]string, i.e. it leaves out tombstones and timestamps.
+func (db *sqliteAccount) GetMetadata() (map[string]string, error) {
 	info, err := db.GetInfo()
 	if err != nil {
 		return nil, err
@@ -510,7 +470,7 @@ func (db *sqliteContainer) GetMetadata() (map[string]string, error) {
 	return metadata, nil
 }
 
-func (db *sqliteContainer) mergeMetas(a map[string][]string, b map[string][]string, deleteTimestamp string) (string, error) {
+func (db *sqliteAccount) mergeMetas(a map[string][]string, b map[string][]string, deleteTimestamp string) (string, error) {
 	newMeta := map[string][]string{}
 	for k, v := range a {
 		newMeta[k] = v
@@ -529,8 +489,8 @@ func (db *sqliteContainer) mergeMetas(a map[string][]string, b map[string][]stri
 	for k, v := range newMeta {
 		if deleteTimestamp != "" && v[1] < deleteTimestamp {
 			newMeta[k] = []string{"", deleteTimestamp}
-		} else if v[0] != "" && strings.HasPrefix(strings.ToLower(k), "x-container-meta-") {
-			metaSize += len(k) - 17
+		} else if v[0] != "" && strings.HasPrefix(strings.ToLower(k), "x-account-meta-") {
+			metaSize += len(k) - 15
 			metaSize += len(v[0])
 			metaCount++
 		}
@@ -545,8 +505,8 @@ func (db *sqliteContainer) mergeMetas(a map[string][]string, b map[string][]stri
 	return string(serMeta), nil
 }
 
-// UpdateMetadata merges the current container metadata with new incoming metadata.
-func (db *sqliteContainer) UpdateMetadata(newMetadata map[string][]string, timestamp string) error {
+// UpdateMetadata merges the current account metadata with new incoming metadata.
+func (db *sqliteAccount) UpdateMetadata(newMetadata map[string][]string) error {
 	if err := db.connect(); err != nil {
 		return err
 	}
@@ -559,7 +519,7 @@ func (db *sqliteContainer) UpdateMetadata(newMetadata map[string][]string, times
 	}
 	defer tx.Rollback()
 	var metadataValue, deleteTimestamp string
-	if err := tx.QueryRow("SELECT metadata, delete_timestamp FROM container_info").Scan(&metadataValue, &deleteTimestamp); err != nil {
+	if err := tx.QueryRow("SELECT metadata, delete_timestamp FROM account_stat").Scan(&metadataValue, &deleteTimestamp); err != nil {
 		return err
 	}
 	var existingMetadata map[string][]string
@@ -572,15 +532,15 @@ func (db *sqliteContainer) UpdateMetadata(newMetadata map[string][]string, times
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec("UPDATE container_info SET metadata=?, put_timestamp=MAX(put_timestamp, ?)", metastr, timestamp); err != nil {
+	if _, err = tx.Exec("UPDATE account_stat SET metadata=?", metastr); err != nil {
 		return err
 	}
 	defer db.invalidateCache()
 	return tx.Commit()
 }
 
-// MergeSyncTable updates the container's current incoming_sync table records.
-func (db *sqliteContainer) MergeSyncTable(records []*SyncRecord) error {
+// MergeSyncTable updates the account's current incoming_sync table records.
+func (db *sqliteAccount) MergeSyncTable(records []*SyncRecord) error {
 	if err := db.connect(); err != nil {
 		return err
 	}
@@ -600,7 +560,7 @@ func (db *sqliteContainer) MergeSyncTable(records []*SyncRecord) error {
 }
 
 // CleanupTombstones removes any expired tombstoned objects or metadata.
-func (db *sqliteContainer) CleanupTombstones(reclaimAge int64) error {
+func (db *sqliteAccount) CleanupTombstones(reclaimAge int64) error {
 	if err := db.connect(); err != nil {
 		return err
 	}
@@ -612,11 +572,11 @@ func (db *sqliteContainer) CleanupTombstones(reclaimAge int64) error {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = tx.Exec("DELETE FROM object WHERE deleted=1 AND created_at < ?", reclaimTimestamp); err != nil {
+	if _, err = tx.Exec("DELETE FROM container WHERE deleted=1 AND delete_timestamp < ?", reclaimTimestamp); err != nil {
 		return err
 	}
 	var metastr string
-	if err := tx.QueryRow("SELECT metadata FROM container_info").Scan(&metastr); err != nil {
+	if err := tx.QueryRow("SELECT metadata FROM account_stat").Scan(&metastr); err != nil {
 		return err
 	}
 	var metadata map[string][]string
@@ -640,7 +600,7 @@ func (db *sqliteContainer) CleanupTombstones(reclaimAge int64) error {
 	if updated {
 		if mb, err := json.Marshal(metadata); err != nil {
 			return err
-		} else if _, err = tx.Exec("UPDATE container_info SET metadata = ?", string(mb)); err != nil {
+		} else if _, err = tx.Exec("UPDATE account_stat SET metadata = ?", string(mb)); err != nil {
 			return err
 		}
 	}
@@ -648,20 +608,21 @@ func (db *sqliteContainer) CleanupTombstones(reclaimAge int64) error {
 	return tx.Commit()
 }
 
-// SyncTable returns the container's current incoming_sync table, and also includes the current container's id and max row as an entry.
-func (db *sqliteContainer) SyncTable() ([]*SyncRecord, error) {
+// SyncTable returns the account's current incoming_sync table, and also includes the current account's id and max row as an entry.
+func (db *sqliteAccount) SyncTable() ([]*SyncRecord, error) {
 	if err := db.connect(); err != nil {
 		return nil, err
 	}
 	records := []*SyncRecord{}
 	rows, err := db.Query(`SELECT sync_point, remote_id FROM incoming_sync
-						   WHERE remote_id NOT IN (SELECT id FROM container_info)
+						   WHERE remote_id NOT IN (SELECT id FROM account_stat)
 						   UNION
-						   SELECT maxrowid.max AS sync_point, container_info.id AS remote_id
-						   FROM container_info, maxrowid`)
+						   SELECT maxrowid.max AS sync_point, account_stat.id AS remote_id
+						   FROM account_stat, maxrowid`)
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 	for rows.Next() {
 		rec := &SyncRecord{}
 		if err := rows.Scan(&rec.SyncPoint, &rec.RemoteID); err != nil {
@@ -672,12 +633,11 @@ func (db *sqliteContainer) SyncTable() ([]*SyncRecord, error) {
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	rows.Close()
 	return records, nil
 }
 
-// SyncRemoteData compares a remote container's info to the local info and updates any necessary replication bookkeeping, returning the current container's info.
-func (db *sqliteContainer) SyncRemoteData(maxRow int64, hash, id, createdAt, putTimestamp, deleteTimestamp, metadata string) (*ContainerInfo, error) {
+// SyncRemoteData compares a remote account's info to the local info and updates any necessary replication bookkeeping, returning the current account's info.
+func (db *sqliteAccount) SyncRemoteData(maxRow int64, hash, id, createdAt, putTimestamp, deleteTimestamp, metadata string) (*AccountInfo, error) {
 	if err := db.connect(); err != nil {
 		return nil, err
 	}
@@ -688,7 +648,7 @@ func (db *sqliteContainer) SyncRemoteData(maxRow int64, hash, id, createdAt, put
 	defer tx.Rollback()
 	var localMeta, localHash, localDeleteTimestamp string
 	var localPoint int64
-	if err := tx.QueryRow("SELECT hash, metadata, delete_timestamp FROM container_info").Scan(&localHash, &localMeta, &localDeleteTimestamp); err != nil {
+	if err := tx.QueryRow("SELECT hash, metadata, delete_timestamp FROM account_stat").Scan(&localHash, &localMeta, &localDeleteTimestamp); err != nil {
 		return nil, err
 	}
 	var lm, rm map[string][]string
@@ -702,7 +662,7 @@ func (db *sqliteContainer) SyncRemoteData(maxRow int64, hash, id, createdAt, put
 		localDeleteTimestamp = deleteTimestamp
 	}
 	metastr, err := db.mergeMetas(lm, rm, localDeleteTimestamp)
-	if _, err = tx.Exec(`UPDATE container_info SET created_at=MIN(?, created_at), put_timestamp=MAX(?, put_timestamp),
+	if _, err = tx.Exec(`UPDATE account_stat SET created_at=MIN(?, created_at), put_timestamp=MAX(?, put_timestamp),
 	  					 delete_timestamp=MAX(?, delete_timestamp), metadata=?`,
 		createdAt, putTimestamp, deleteTimestamp, metastr); err != nil {
 		return nil, err
@@ -728,100 +688,71 @@ func (db *sqliteContainer) SyncRemoteData(maxRow int64, hash, id, createdAt, put
 	return info, nil
 }
 
-// CheckSyncLink makes sure the database's container sync symlink exists or doesn't exist, as in accordance with the existence of the X-Container-Sync-To header.
-func (db *sqliteContainer) CheckSyncLink() error {
-	metadata, err := db.GetMetadata()
-	if err != nil {
-		return err
-	}
-	containersDir := filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(db.containerFile))))
-	deviceDir := filepath.Dir(containersDir)
-	pathFromDataDir, err := filepath.Rel(containersDir, db.containerFile)
-	if err != nil {
-		return err
-	}
-	symLoc := filepath.Join(deviceDir, "sync_containers", pathFromDataDir)
-	if metadata["X-Container-Sync-To"] != "" {
-		if fs.Exists(symLoc) {
-			return nil
-		}
-		if err := os.MkdirAll(filepath.Dir(symLoc), 0755); err != nil {
-			return err
-		}
-		return os.Symlink(db.containerFile, symLoc)
-	} else if fs.Exists(symLoc) {
-		for err := error(nil); err == nil; symLoc = filepath.Dir(symLoc) {
-			err = os.Remove(symLoc)
-		}
-	}
-	return nil
-}
-
 // OpenDatabaseFile blocks updates and opens the underlying database file for reading, so it can be uploaded to a remote server.
-func (db *sqliteContainer) OpenDatabaseFile() (*os.File, func(), error) {
+func (db *sqliteAccount) OpenDatabaseFile() (*os.File, func(), error) {
 	if err := db.connect(); err != nil {
 		return nil, nil, err
 	}
 	var fp *os.File
 	if _, err := db.Exec(`
 		PRAGMA locking_mode = EXCLUSIVE;      -- grab and hold a shared lock
-		SELECT 1 FROM container_info LIMIT 1; -- it doesn't actually lock until you hit the database
+		SELECT 1 FROM account_stat LIMIT 1;   -- it doesn't actually lock until you hit the database
 		PRAGMA wal_checkpoint(TRUNCATE);      -- truncate the wal file, if it exists`,
 	); err != nil {
-		return nil, nil, fmt.Errorf("Error locking database%s: %v", db.containerFile, err)
+		return nil, nil, fmt.Errorf("Error locking database%s: %v", db.accountFile, err)
 	}
 	cleanup := func() {
 		db.Exec(`
 			PRAGMA locking_mode = NORMAL;         -- release shared lock
-			SELECT 1 FROM container_info LIMIT 1; -- actually release shared lock
+			SELECT 1 FROM account_stat LIMIT 1; -- actually release shared lock
 		`)
 		if fp != nil {
 			fp.Close()
 		}
 	}
 	// make sure there aren't any journals lying around
-	if stat, err := os.Stat(db.containerFile + "-wal"); err == nil && stat.Size() != 0 {
+	if stat, err := os.Stat(db.accountFile + "-wal"); err == nil && stat.Size() != 0 {
 		cleanup()
-		return nil, nil, fmt.Errorf("Stubborn wal file still exists: %s", db.containerFile)
+		return nil, nil, fmt.Errorf("Stubborn wal file still exists: %s", db.accountFile)
 	}
-	if stat, err := os.Stat(db.containerFile + "-journal"); err == nil && stat.Size() != 0 {
+	if stat, err := os.Stat(db.accountFile + "-journal"); err == nil && stat.Size() != 0 {
 		cleanup()
-		return nil, nil, fmt.Errorf("Stubborn journal file still exists: %s", db.containerFile)
+		return nil, nil, fmt.Errorf("Stubborn journal file still exists: %s", db.accountFile)
 	}
-	fp, err := os.Open(db.containerFile)
+	fp, err := os.Open(db.accountFile)
 	if err != nil {
 		fp = nil
 		cleanup()
-		return nil, nil, fmt.Errorf("Error opening %s: %v", db.containerFile, err)
+		return nil, nil, fmt.Errorf("Error opening %s: %v", db.accountFile, err)
 	}
 	return fp, cleanup, nil
 }
 
-// ID returns the container's ring hash as a unique identifier for it.
-func (db *sqliteContainer) ID() string {
+// ID returns the account's ring hash as a unique identifier for it.
+func (db *sqliteAccount) ID() string {
 	return db.ringhash
 }
 
-// RingHash returns the container's ring hash as a string.
-func (db *sqliteContainer) RingHash() string {
+// RingHash returns the account's ring hash as a string.
+func (db *sqliteAccount) RingHash() string {
 	return db.ringhash
 }
 
-func (db *sqliteContainer) flushAlreadyLocked() error {
+func (db *sqliteAccount) flushAlreadyLocked() error {
 	if err := db.connect(); err != nil {
 		return err
 	}
-	if stat, err := os.Stat(db.containerFile + ".pending"); err != nil || stat.Size() == 0 {
+	if stat, err := os.Stat(db.accountFile + ".pending"); err != nil || stat.Size() == 0 {
 		return nil
 	}
-	contents, err := ioutil.ReadFile(db.containerFile + ".pending")
+	contents, err := ioutil.ReadFile(db.accountFile + ".pending")
 	if err != nil || len(contents) == 0 {
 		if os.IsNotExist(err) {
 			return nil
 		}
 		return err
 	}
-	var records []*ObjectRecord
+	var records []*ContainerRecord
 	for _, base64ed := range strings.Split(string(contents), ":") {
 		if len(base64ed) < 1 {
 			continue
@@ -839,17 +770,17 @@ func (db *sqliteContainer) flushAlreadyLocked() error {
 			return fmt.Errorf("Invalid commit pending record")
 		}
 		casts := make([]bool, 7)
-		var deleted, policy int64
-		rec := &ObjectRecord{}
+		var deleted, spi int64
+		rec := &ContainerRecord{}
 		rec.Name, casts[0] = record[0].(string)
-		rec.CreatedAt, casts[1] = record[1].(string)
-		rec.Size, casts[2] = record[2].(int64)
-		rec.ContentType, casts[3] = record[3].(string)
-		rec.ETag, casts[4] = record[4].(string)
+		rec.PutTimestamp, casts[1] = record[1].(string)
+		rec.DeleteTimestamp, casts[2] = record[2].(string)
+		rec.ObjectCount, casts[3] = record[3].(int64)
+		rec.BytesUsed, casts[4] = record[4].(int64)
 		deleted, casts[5] = record[5].(int64)
-		policy, casts[6] = record[6].(int64)
 		rec.Deleted = int(deleted)
-		rec.StoragePolicyIndex = int(policy)
+		spi, casts[6] = record[6].(int64)
+		rec.StoragePolicyIndex = int(spi)
 		for i := 0; i < 7; i++ {
 			if !casts[i] {
 				return fmt.Errorf("Invalid commit pending record")
@@ -859,13 +790,13 @@ func (db *sqliteContainer) flushAlreadyLocked() error {
 	}
 	err = db.MergeItems(records, "")
 	if err == nil {
-		err = os.Truncate(db.containerFile+".pending", 0)
+		err = os.Truncate(db.accountFile+".pending", 0)
 	}
 	return err
 }
 
-func (db *sqliteContainer) flush() error {
-	lock, err := fs.LockPath(filepath.Dir(db.containerFile), 10*time.Second)
+func (db *sqliteAccount) flush() error {
+	lock, err := fs.LockPath(filepath.Dir(db.accountFile), 10*time.Second)
 	if err != nil {
 		return err
 	}
@@ -873,14 +804,19 @@ func (db *sqliteContainer) flush() error {
 	return db.flushAlreadyLocked()
 }
 
-func (db *sqliteContainer) addObject(name string, timestamp string, size int64, contentType string, etag string, deleted int, storagePolicyIndex int) error {
-	lock, err := fs.LockPath(filepath.Dir(db.containerFile), 10*time.Second)
+// PutContainer adds a container to the account, by way of pending file.
+func (db *sqliteAccount) PutContainer(name string, putTimestamp string, deleteTimestamp string, objectCount int64, bytesUsed int64, storagePolicyIndex int) error {
+	lock, err := fs.LockPath(filepath.Dir(db.accountFile), 10*time.Second)
 	if err != nil {
 		return err
 	}
 	defer lock.Close()
-	tuple := []interface{}{name, timestamp, size, contentType, etag, deleted, storagePolicyIndex}
-	file, err := os.OpenFile(db.containerFile+".pending", os.O_RDWR|os.O_APPEND|os.O_CREATE, 0644)
+	deleted := 0
+	if deleteTimestamp > putTimestamp {
+		deleted = 1
+	}
+	tuple := []interface{}{name, putTimestamp, deleteTimestamp, objectCount, bytesUsed, deleted, storagePolicyIndex}
+	file, err := os.OpenFile(db.accountFile+".pending", os.O_RDWR|os.O_APPEND|os.O_CREATE, 0644)
 	if err != nil {
 		return err
 	}
@@ -894,18 +830,8 @@ func (db *sqliteContainer) addObject(name string, timestamp string, size int64, 
 	return nil
 }
 
-// PutObject adds an object to the container, by way of pending file.
-func (db *sqliteContainer) PutObject(name string, timestamp string, size int64, contentType string, etag string, storagePolicyIndex int) error {
-	return db.addObject(name, timestamp, size, contentType, etag, 0, storagePolicyIndex)
-}
-
-// DeleteObject removes an object from the container, by way of pending file.
-func (db *sqliteContainer) DeleteObject(name string, timestamp string, storagePolicyIndex int) error {
-	return db.addObject(name, timestamp, 0, "", "", 1, storagePolicyIndex)
-}
-
 // Close closes the underlying sqlite database connection.
-func (db *sqliteContainer) Close() error {
+func (db *sqliteAccount) Close() error {
 	db.connectLock.Lock()
 	defer func() {
 		db.DB = nil
@@ -917,10 +843,10 @@ func (db *sqliteContainer) Close() error {
 	return nil
 }
 
-func sqliteCreateExistingContainer(db Container, putTimestamp string, newMetadata map[string][]string, policyIndex, defaultPolicyIndex int) (bool, error) {
-	cdb, ok := db.(*sqliteContainer)
+func sqliteCreateExistingAccount(db Account, putTimestamp string, newMetadata map[string][]string) (bool, error) {
+	cdb, ok := db.(*sqliteAccount)
 	if !ok {
-		return false, errors.New("Unable to work with non-sqliteContainer")
+		return false, errors.New("Unable to work with non-sqliteAccount")
 	}
 	if err := cdb.connect(); err != nil {
 		return false, err
@@ -931,21 +857,9 @@ func sqliteCreateExistingContainer(db Container, putTimestamp string, newMetadat
 	}
 	defer tx.Rollback()
 	var cDeleteTimestamp, cPutTimestamp, cMetadata string
-	var cPolicyIndex int
-	row := tx.QueryRow("SELECT put_timestamp, delete_timestamp, storage_policy_index, metadata FROM container_info")
-	if err := row.Scan(&cPutTimestamp, &cDeleteTimestamp, &cPolicyIndex, &cMetadata); err != nil {
+	row := tx.QueryRow("SELECT put_timestamp, delete_timestamp, metadata FROM account_stat")
+	if err := row.Scan(&cPutTimestamp, &cDeleteTimestamp, &cMetadata); err != nil {
 		return false, err
-	}
-	if cDeleteTimestamp <= cPutTimestamp { // not deleted
-		if policyIndex < 0 {
-			policyIndex = cPolicyIndex
-		} else if cPolicyIndex != policyIndex {
-			return false, ErrorPolicyConflict
-		}
-	} else { // deleted
-		if policyIndex < 0 {
-			policyIndex = defaultPolicyIndex
-		}
 	}
 	var existingMetadata map[string][]string
 	if cMetadata == "" {
@@ -957,8 +871,8 @@ func sqliteCreateExistingContainer(db Container, putTimestamp string, newMetadat
 	if err != nil {
 		return false, err
 	}
-	if _, err := tx.Exec("UPDATE container_info SET put_timestamp = ?, storage_policy_index = ?, metadata = ?",
-		putTimestamp, policyIndex, metastr); err != nil {
+	if _, err := tx.Exec("UPDATE account_stat SET put_timestamp = ?, metadata = ?",
+		putTimestamp, metastr); err != nil {
 		return false, err
 	}
 	defer cdb.invalidateCache()
@@ -968,20 +882,19 @@ func sqliteCreateExistingContainer(db Container, putTimestamp string, newMetadat
 	return (cDeleteTimestamp > cPutTimestamp && putTimestamp > cDeleteTimestamp), nil
 }
 
-func sqliteCreateContainer(containerFile string, account string, container string, putTimestamp string,
-	metadata map[string][]string, policyIndex int) error {
+func sqliteCreateAccount(accountFile string, account string, putTimestamp string, metadata map[string][]string) error {
 	var serializedMetadata []byte
 	var err error
 
-	if fs.Exists(containerFile) {
-		return errors.New("Container exists!")
+	if fs.Exists(accountFile) {
+		return errors.New("Account exists!")
 	}
 	if metadata == nil {
 		serializedMetadata = []byte("{}")
 	} else if serializedMetadata, err = json.Marshal(metadata); err != nil {
 		return err
 	}
-	hashDir := filepath.Dir(containerFile)
+	hashDir := filepath.Dir(accountFile)
 	if err := os.MkdirAll(hashDir, 0755); err != nil {
 		return err
 	}
@@ -994,7 +907,7 @@ func sqliteCreateContainer(containerFile string, account string, container strin
 	}
 	defer tfp.Close()
 	tempFile := tfp.Name()
-	dbConn, err := sql.Open("sqlite3_hummingbird", "file:"+tempFile+"?psow=1&_txlock=immediate&mode=rwc")
+	dbConn, err := sql.Open("sqlite3_account", "file:"+tempFile+"?psow=1&_txlock=immediate&mode=rwc")
 	if err != nil {
 		return err
 	}
@@ -1004,36 +917,31 @@ func sqliteCreateContainer(containerFile string, account string, container strin
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(objectTableScript + policyStatTableScript + policyStatTriggerScript +
-		containerInfoTableScript + containerStatViewScript + syncTableScript); err != nil {
+	if _, err := tx.Exec(accountDBScript + policyStatTableScript + policyStatTriggerScript); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`INSERT INTO container_info (account, container, created_at, id, put_timestamp,
-						  status_changed_at, storage_policy_index, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		account, container, common.GetTimestamp(), common.UUID(), putTimestamp,
-		putTimestamp, policyIndex, string(serializedMetadata)); err != nil {
-		return err
-	}
-	if _, err := tx.Exec("INSERT INTO policy_stat (storage_policy_index) VALUES (?)", policyIndex); err != nil {
+	if _, err := tx.Exec(`INSERT INTO account_stat (account, created_at, id, put_timestamp,
+						  status_changed_at, metadata, container_count) VALUES (?, ?, ?, ?, ?, ?, 0)`,
+		account, common.GetTimestamp(), common.UUID(), putTimestamp, putTimestamp, string(serializedMetadata)); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	if err := os.Rename(tempFile, containerFile); err != nil {
+	if err := os.Rename(tempFile, accountFile); err != nil {
 		return err
 	}
 	return nil
 }
 
-func sqliteOpenContainer(containerFile string) (ReplicableContainer, error) {
-	if !fs.Exists(containerFile) {
-		return nil, ErrorNoSuchContainer
+func sqliteOpenAccount(accountFile string) (ReplicableAccount, error) {
+	if !fs.Exists(accountFile) {
+		return nil, ErrorNoSuchAccount
 	}
-	db := &sqliteContainer{
-		containerFile:       containerFile,
+	db := &sqliteAccount{
+		accountFile:         accountFile,
 		hasDeletedNameIndex: false,
-		ringhash:            filepath.Base(filepath.Dir(containerFile)),
+		ringhash:            filepath.Base(filepath.Dir(accountFile)),
 	}
 	return db, nil
 }

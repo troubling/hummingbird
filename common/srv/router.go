@@ -177,6 +177,10 @@ func (r *router) Post(path string, handler http.Handler) {
 	r.Handle("POST", path, handler)
 }
 
+func (r *router) Options(path string, handler http.Handler) {
+	r.Handle("OPTIONS", path, handler)
+}
+
 func (r *router) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	policy, err := strconv.Atoi(request.Header.Get("X-Backend-Storage-Policy-Index"))
 	if err != nil {

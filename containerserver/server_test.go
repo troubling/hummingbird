@@ -170,7 +170,7 @@ func TestContainerPutExisting(t *testing.T) {
 }
 
 func TestContainerPutPolicyConflict(t *testing.T) {
-	handler, cleanup, err := makeTestServer()
+	server, handler, cleanup, err := makeTestServer2()
 	require.Nil(t, err)
 	defer cleanup()
 
@@ -181,6 +181,7 @@ func TestContainerPutPolicyConflict(t *testing.T) {
 	req.Header.Set("X-Backend-Storage-Policy-Index", "2")
 	handler.ServeHTTP(rsp, req)
 	require.Equal(t, 201, rsp.Status)
+	require.Equal(t, 0, server.containerEngine.OpenCount())
 
 	rsp = test.MakeCaptureResponse()
 	req, err = http.NewRequest("PUT", "/device/1/a/c", nil)
@@ -189,6 +190,7 @@ func TestContainerPutPolicyConflict(t *testing.T) {
 	req.Header.Set("X-Backend-Storage-Policy-Index", "0")
 	handler.ServeHTTP(rsp, req)
 	require.Equal(t, 409, rsp.Status)
+	require.Equal(t, 0, server.containerEngine.OpenCount())
 }
 
 func TestContainerPutHead(t *testing.T) {

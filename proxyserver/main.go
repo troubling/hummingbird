@@ -19,14 +19,12 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/troubling/hummingbird/client"
-	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
-	"github.com/troubling/hummingbird/middleware"
+	"github.com/troubling/hummingbird/proxyserver/middleware"
 
 	"github.com/justinas/alice"
 )
@@ -42,35 +40,6 @@ func (server *ProxyServer) HealthcheckHandler(writer http.ResponseWriter, reques
 	writer.WriteHeader(http.StatusOK)
 	writer.Write([]byte("OK"))
 	return
-}
-
-func (server *ProxyServer) LogRequest(next http.Handler) http.Handler {
-	fn := func(writer http.ResponseWriter, request *http.Request) {
-		transId := common.GetTransactionId()
-
-		newWriter := &srv.WebWriter{ResponseWriter: writer, Status: 500, ResponseStarted: false}
-		requestLogger := &srv.RequestLogger{Request: request, Logger: server.logger, W: newWriter}
-		defer requestLogger.LogPanics("LOGGING REQUEST")
-		start := time.Now()
-		request = srv.SetLogger(request, requestLogger)
-		request.Header.Set("X-Trans-Id", transId)
-		newWriter.Header().Set("X-Trans-Id", transId)
-		request.Header.Set("X-Timestamp", common.GetTimestamp())
-		next.ServeHTTP(newWriter, request)
-		server.logger.Info(fmt.Sprintf("%s - - [%s] \"%s %s\" %d %s \"%s\" \"%s\" \"%s\" %.4f \"%s\"",
-			request.RemoteAddr,
-			time.Now().Format("02/Jan/2006:15:04:05 -0700"),
-			request.Method,
-			common.Urlencode(request.URL.Path),
-			newWriter.Status,
-			common.GetDefault(newWriter.Header(), "Content-Length", "-"),
-			common.GetDefault(request.Header, "Referer", "-"),
-			common.GetDefault(request.Header, "X-Trans-Id", "-"),
-			common.GetDefault(request.Header, "User-Agent", "-"),
-			time.Since(start).Seconds(),
-			"-")) // TODO: "additional info"?
-	}
-	return http.HandlerFunc(fn)
 }
 
 func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
@@ -104,12 +73,25 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 	router.Post("/v1/:account", http.HandlerFunc(server.AccountPutHandler))
 	router.Post("/v1/:account/", http.HandlerFunc(server.AccountPutHandler))
 
-	return alice.New(
-		server.LogRequest,
-		middleware.ValidateRequest,
-		NewProxyContextMiddleware(server.mc, server.C),
-		NewTempAuth(server.mc, config),
-	).Then(router)
+	// TODO: make this all dynamical and stuff
+	middlewares := []struct {
+		construct func(config conf.Section) (func(http.Handler) http.Handler, error)
+		section   string
+	}{
+		{middleware.NewHealthcheck, "filter:healthcheck"},
+		{middleware.NewRequestLogger, "filter:proxy-logging"},
+		{middleware.NewTempAuth, "filter:tempauth"},
+	}
+	pipeline := alice.New(middleware.NewContext(server.mc, server.C, server.logger))
+	for _, m := range middlewares {
+		mid, err := m.construct(config.GetSection(m.section))
+		if err != nil {
+			// TODO: propagate error upwards instead of panicking
+			panic("Unable to construct middleware")
+		}
+		pipeline = pipeline.Append(mid)
+	}
+	return pipeline.Then(router)
 }
 
 func GetServer(serverconf conf.Config, flags *flag.FlagSet) (string, int, srv.Server, srv.LowLevelLogger, error) {

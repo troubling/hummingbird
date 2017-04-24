@@ -40,7 +40,7 @@ import (
 )
 
 var (
-	StatsReportInterval    = 300 * time.Second
+	StatsReportInterval    = 10 * time.Minute
 	TmpEmptyTime           = 24 * time.Hour
 	ReplicateDeviceTimeout = 4 * time.Hour
 	// GetRing is a local pointer to the hummingbird function, for overriding in tests
@@ -137,6 +137,7 @@ type ReplicationDeviceStats struct {
 	LastCheckin      time.Time
 	RunStarted       time.Time
 	DeviceStarted    time.Time
+	LastPassDate     time.Time
 	LastPassDuration time.Duration
 	TotalPasses      int64
 }
@@ -155,7 +156,7 @@ type replicationDevice struct {
 	i interface {
 		beginReplication(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse)
 		listObjFiles(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool)
-		syncFile(objFile string, dst []*syncFileArg) (syncs int, insync int, err error)
+		syncFile(objFile string, dst []*syncFileArg, handoff bool) (syncs int, insync int, err error)
 		replicateLocal(partition string, nodes []*ring.Device, moreNodes ring.MoreNodes)
 		replicateHandoff(partition string, nodes []*ring.Device)
 		cleanTemp()
@@ -248,7 +249,8 @@ type syncFileArg struct {
 	dev  *ring.Device
 }
 
-func (rd *replicationDevice) syncFile(objFile string, dst []*syncFileArg) (syncs int, insync int, err error) {
+func (rd *replicationDevice) syncFile(objFile string, dst []*syncFileArg, handoff bool) (syncs int, insync int, err error) {
+	// TODO: parallelize the data transfer someday
 	var wrs []*syncFileArg
 	lst := strings.Split(objFile, string(os.PathSeparator))
 	relPath := filepath.Join(lst[len(lst)-5:]...)
@@ -263,15 +265,26 @@ func (rd *replicationDevice) syncFile(objFile string, dst []*syncFileArg) (syncs
 	}
 	defer fp.Close()
 
+	// are we already going to sync to this region?
+	syncingRemoteRegion := make(map[int]bool)
+
 	// ask each server if we need to sync the file
 	for _, sfa := range dst {
 		var sfr SyncFileResponse
 		thisPath := filepath.Join(sfa.dev.Device, relPath)
-		sfa.conn.SendMessage(SyncFileRequest{Path: thisPath, Xattrs: hex.EncodeToString(xattrs), Size: fileSize})
+		sfa.conn.SendMessage(SyncFileRequest{Path: thisPath, Xattrs: hex.EncodeToString(xattrs), Size: fileSize,
+			// if we're already syncing handoffs to this remote region, just do a check
+			Check: handoff && syncingRemoteRegion[sfa.dev.Region],
+			// If we're not syncing handoffs, we don't care about the state. Just ping to keep the connection alive.
+			Ping: !handoff && syncingRemoteRegion[sfa.dev.Region],
+		})
 		if err := sfa.conn.RecvMessage(&sfr); err != nil {
 			continue
 		} else if sfr.GoAhead {
 			wrs = append(wrs, sfa)
+			if sfa.dev.Region != rd.dev.Region {
+				syncingRemoteRegion[sfa.dev.Region] = true
+			}
 		} else if sfr.NewerExists {
 			insync++
 			if os.Remove(objFile) == nil {
@@ -407,13 +420,15 @@ func (rd *replicationDevice) replicateLocal(partition string, nodes []*ring.Devi
 		suffix := filepath.Base(filepath.Dir(filepath.Dir(objFile)))
 		for _, dev := range nodes {
 			if rhashes, ok := remoteHashes[dev.Id]; ok && hashes[suffix] != rhashes[suffix] {
-				if remoteConnections[dev.Id].Disconnected() {
-					continue
+				if !remoteConnections[dev.Id].Disconnected() {
+					toSync = append(toSync, &syncFileArg{conn: remoteConnections[dev.Id], dev: dev})
 				}
-				toSync = append(toSync, &syncFileArg{conn: remoteConnections[dev.Id], dev: dev})
 			}
 		}
-		if syncs, _, err := rd.i.syncFile(objFile, toSync); err == nil {
+		if len(toSync) == 0 {
+			break
+		}
+		if syncs, _, err := rd.i.syncFile(objFile, toSync, false); err == nil {
 			syncCount += syncs
 		} else {
 			rd.r.LogError("[syncFile] %v", err)
@@ -461,7 +476,10 @@ func (rd *replicationDevice) replicateHandoff(partition string, nodes []*ring.De
 				toSync = append(toSync, &syncFileArg{conn: remoteConnections[dev.Id], dev: dev})
 			}
 		}
-		if syncs, insync, err := rd.i.syncFile(objFile, toSync); err == nil {
+		if len(toSync) == 0 {
+			return
+		}
+		if syncs, insync, err := rd.i.syncFile(objFile, toSync, true); err == nil {
 			syncCount += syncs
 
 			success := insync == len(nodes)
@@ -474,6 +492,7 @@ func (rd *replicationDevice) replicateHandoff(partition string, nodes []*ring.De
 			}
 		} else {
 			rd.r.LogError("[syncFile] %v", err)
+			return
 		}
 	}
 	for _, conn := range remoteConnections {
@@ -748,28 +767,23 @@ func (r *Replicator) verifyRunningDevices() {
 func (r *Replicator) reportStats() {
 	r.runningDevicesLock.Lock()
 	defer r.runningDevicesLock.Unlock()
-	var totalDuration time.Duration
-	var maxLastPass time.Time
-	var doneParts, totalParts int64
-	var processingTime float64
+	minLastPass := time.Now()
 	allHaveCompleted := true
 	for _, rd := range r.runningDevices {
 		stats := rd.Stats()
 		if stats.TotalPasses <= 1 {
 			allHaveCompleted = false
 		}
-		if maxLastPass.Before(stats.RunStarted) {
-			maxLastPass = stats.RunStarted
+		if stats.LastPassDate.Before(minLastPass) {
+			minLastPass = stats.LastPassDate
 		}
-		totalDuration += stats.LastPassDuration
-		totalParts += stats.Stats["PartitionsTotal"]
-		doneParts += stats.Stats["PartitionsDone"]
-		processingTime += time.Since(stats.RunStarted).Seconds()
-	}
-	if processingTime > 0 {
-		partsPerSecond := float64(doneParts) / processingTime
-		remaining := time.Duration((1.0 / partsPerSecond) * float64(time.Second) *
-			float64(totalParts-doneParts) / float64(len(r.runningDevices)))
+		processingTimeSec := time.Since(stats.RunStarted).Seconds()
+		doneParts := stats.Stats["PartitionsDone"]
+		totalParts := stats.Stats["PartitionsTotal"]
+		partsPerSecond := float64(doneParts) / processingTimeSec
+
+		remaining := time.Duration(
+			int64(float64(totalParts-doneParts)/partsPerSecond)) * time.Second
 		var remainingStr string
 		if remaining >= time.Hour {
 			remainingStr = fmt.Sprintf("%.0fh", remaining.Hours())
@@ -778,16 +792,23 @@ func (r *Replicator) reportStats() {
 		} else {
 			remainingStr = fmt.Sprintf("%.0fs", remaining.Seconds())
 		}
-		r.LogInfo("%d/%d (%.2f%%) partitions replicated in %.2f worker seconds (%.2f/sec, %v remaining)",
-			doneParts, totalParts, float64(100*doneParts)/float64(totalParts),
-			processingTime, partsPerSecond, remainingStr)
-	}
 
+		r.LogInfo("Device %s %d/%d (%.2f%%) partitions replicated in %.2f worker seconds (%.2f/sec, %v remaining)",
+			rd.Key(), doneParts, totalParts,
+			float64(100*doneParts)/float64(totalParts),
+			processingTimeSec, partsPerSecond, remainingStr)
+
+	}
 	if allHaveCompleted {
+		// this is a mess but object_replication_time (in old way) is # minutes
+		// passed since 1 complete pass of all devices started.
+		// replication_last is unix time stamp when last complete pass was finished
+		// now "last pass" means oldest device lastPass
+		maxLastPassComplete := time.Since(minLastPass).Minutes()
 		middleware.DumpReconCache(r.reconCachePath, "object",
 			map[string]interface{}{
-				"object_replication_time": float64(totalDuration) / float64(len(r.runningDevices)) / float64(time.Second),
-				"object_replication_last": float64(maxLastPass.UnixNano()) / float64(time.Second),
+				"object_replication_time": maxLastPassComplete,
+				"object_replication_last": float64(minLastPass.UnixNano()) / float64(time.Second),
 			})
 	}
 }
@@ -809,12 +830,13 @@ func (r *Replicator) getDeviceProgress() map[string]map[string]interface{} {
 	for key, device := range r.runningDevices {
 		stats := device.Stats()
 		deviceProgress[key] = map[string]interface{}{
-			"StartDate":        stats.DeviceStarted,
-			"LastUpdate":       stats.LastCheckin,
-			"LastPassDuration": stats.LastPassDuration,
-			"LastPassUpdate":   stats.RunStarted,
-			"TotalPasses":      stats.TotalPasses,
-			"CancelCount":      r.cancelCounts[key],
+			"StartDate":          stats.DeviceStarted,
+			"LastUpdate":         stats.LastCheckin,
+			"LastPassDuration":   stats.LastPassDuration,
+			"LastPassFinishDate": stats.LastPassDate,
+			"LastPassUpdate":     stats.RunStarted,
+			"TotalPasses":        stats.TotalPasses,
+			"CancelCount":        r.cancelCounts[key],
 		}
 		for k, v := range stats.Stats {
 			deviceProgress[key][k] = v
@@ -830,17 +852,20 @@ func (r *Replicator) runLoopCheck(reportTimer <-chan time.Time) {
 		defer r.runningDevicesLock.Unlock()
 		if rd, ok := r.runningDevices[update.deviceKey]; ok {
 			stats := rd.Stats()
-			if update.stat == "checkin" {
-				stats.LastCheckin = time.Now()
-			} else if update.stat == "startRun" {
-				stats.TotalPasses++
-				stats.LastPassDuration = time.Since(stats.RunStarted)
+			stats.LastCheckin = time.Now()
+			switch update.stat {
+			case "checkin":
+			case "startRun":
 				stats.RunStarted = time.Now()
-				stats.LastCheckin = time.Now()
 				for k := range stats.Stats {
 					stats.Stats[k] = 0
 				}
-			} else {
+			case "FullReplicateCount":
+				stats.LastPassDuration = time.Since(stats.RunStarted)
+				stats.LastPassDate = time.Now()
+				stats.TotalPasses++
+				stats.Stats["FullReplicateCount"] += update.value
+			default:
 				stats.Stats[update.stat] += update.value
 			}
 		}
