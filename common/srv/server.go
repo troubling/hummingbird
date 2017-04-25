@@ -350,15 +350,15 @@ func RunServers(GetServer func(conf.Config, *flag.FlagSet) (string, int, Server,
 			for _, srv := range servers {
 				// Shutdown the HTTP server
 				wg.Add(1)
-				go func() {
+				go func(hserv *HummingbirdServer) {
 					defer wg.Done()
-					if err := srv.Shutdown(ctx); err != nil {
+					if err := hserv.Shutdown(ctx); err != nil {
 						// failure/timeout shutting down the server gracefully
-						srv.logger.Err(fmt.Sprintf("Error with graceful shutdown: %v", err))
+						hserv.logger.Err(fmt.Sprintf("Error with graceful shutdown: %v", err))
 					}
 					// Wait for any async processes to quit
-					srv.finalize()
-				}()
+					hserv.finalize()
+				}(srv)
 			}
 			// Wait for everything to complete
 			wgc := make(chan struct{})
