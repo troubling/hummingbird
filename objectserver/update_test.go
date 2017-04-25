@@ -28,14 +28,15 @@ import (
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/pickle"
 	"github.com/troubling/hummingbird/common/srv"
+	"go.uber.org/zap/zapcore"
 )
 
 type DummyLogger struct{}
 
-func (a *DummyLogger) LogDebug(format string, args ...interface{}) {}
-func (a *DummyLogger) LogError(format string, args ...interface{}) {}
-func (a *DummyLogger) LogInfo(format string, args ...interface{})  {}
-func (a *DummyLogger) LogPanics(m string) {
+func (a *DummyLogger) LogDebug(msg string, fields ...zapcore.Field) {}
+func (a *DummyLogger) LogError(msg string, fields ...zapcore.Field) {}
+func (a *DummyLogger) LogInfo(msg string, fields ...zapcore.Field)  {}
+func (a *DummyLogger) LogPanics(msg string, fields ...zapcore.Field) {
 	if e := recover(); e != nil {
 	}
 }

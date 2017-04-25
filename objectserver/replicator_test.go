@@ -29,7 +29,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -41,6 +40,9 @@ import (
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/test"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func newTestReplicator(settings ...string) (*Replicator, error) {
@@ -1010,23 +1012,6 @@ func TestVerifyDevices(t *testing.T) {
 	require.True(t, canceled)
 }
 
-type replicationLogSaver struct {
-	logged []string
-}
-
-func (s *replicationLogSaver) Err(l string) error {
-	s.logged = append(s.logged, l)
-	return nil
-}
-func (s *replicationLogSaver) Info(l string) error {
-	s.logged = append(s.logged, l)
-	return nil
-}
-func (s *replicationLogSaver) Debug(l string) error {
-	s.logged = append(s.logged, l)
-	return nil
-}
-
 func TestReportStats(t *testing.T) {
 	oldGetRing := GetRing
 	defer func() {
@@ -1066,24 +1051,57 @@ func TestReportStats(t *testing.T) {
 			_Key: func() string { return "1.1:10/sdb" },
 		},
 	}
-	logger := &replicationLogSaver{}
-	replicator.logger = logger
+	obs, logs := observer.New(zap.InfoLevel)
+	replicator.logger = zap.New(obs)
 	replicator.reportStats()
-	fmt.Println(logger.logged[0])
-	fmt.Println(logger.logged[1])
-	require.Equal(t, 2, len(logger.logged))
-	for _, line := range logger.logged {
-		if strings.Contains(line, "sda") {
-			require.True(t, strings.Contains(line, "Device 1.1:10/sda 500/1000 (50.00%)"))
-			require.True(t, strings.Contains(line, " 1h remaining"))
-		} else if strings.Contains(line, "sdb") {
-			require.True(t, strings.Contains(line, "Device 1.1:10/sdb 40/100 (40.00%)"))
-			require.True(t, strings.Contains(line, " 2h remaining"))
-		} else {
-			require.FailNow(t, fmt.Sprintf("Unexpected log line: '%s'\n", line))
-		}
+	want := []observer.LoggedEntry{{
+		Entry: zapcore.Entry{Level: zap.InfoLevel, Message: "Partition Replicated"},
+		Context: []zapcore.Field{zap.String("Device", "1.1:10/sda"),
+			zap.Int64("doneParts", 500),
+			zap.Int64("totalParts", 1000),
+			zap.Float64("DoneParts/TotalParts", 50.00),
+			zap.Float64("processingTimeSec", 0.00),
+			zap.Float64("partsPerSecond", 0.00),
+			zap.String("remainingStr", "1h")},
+	}, {
+		Entry: zapcore.Entry{Level: zap.InfoLevel, Message: "Partition Replicated"},
+		Context: []zapcore.Field{zap.String("Device", "1.1:10/sdb"),
+			zap.Int64("doneParts", 40),
+			zap.Int64("totalParts", 100),
+			zap.Float64("DoneParts/TotalParts", 40.00),
+			zap.Float64("processingTimeSec", 0.00),
+			zap.Float64("partsPerSecond", 0.00),
+			zap.String("remainingStr", "2h")},
+	}}
+	require.Equal(t, 2, logs.Len())
+	var obslog1, obslog2 observer.LoggedEntry
+	if logs.AllUntimed()[0].Context[1].Integer == 500 {
+		obslog1 = logs.AllUntimed()[0]
+		obslog2 = logs.AllUntimed()[1]
+	} else {
+		obslog2 = logs.AllUntimed()[0]
+		obslog1 = logs.AllUntimed()[1]
 	}
 
+	require.Equal(t, want[0].Message, obslog1.Message)
+	require.Equal(t, want[0].Context[0], obslog1.Context[0])
+	require.Equal(t, want[0].Context[1], obslog1.Context[1])
+	require.Equal(t, want[0].Context[2], obslog1.Context[2])
+	//unable to do float comparison
+	//require.Equal(t, want[0].Context[3], obslog1.Context[3])
+	//require.Equal(t, want[0].Context[4], obslog1.Context[4])
+	//require.Equal(t, want[0].Context[5], obslog1.Context[5])
+	require.Equal(t, want[0].Context[6], obslog1.Context[6])
+
+	require.Equal(t, want[1].Message, obslog2.Message)
+	require.Equal(t, want[1].Context[0], obslog2.Context[0])
+	require.Equal(t, want[1].Context[1], obslog2.Context[1])
+	require.Equal(t, want[1].Context[2], obslog2.Context[2])
+	//unable to do float comparison
+	//require.Equal(t, want[1].Context[3], obslog2.Context[3])
+	//require.Equal(t, want[1].Context[4], obslog2.Context[4])
+	//require.Equal(t, want[1].Context[5], obslog2.Context[5])
+	require.Equal(t, want[1].Context[6], obslog2.Context[6])
 }
 
 func TestPriorityReplicate(t *testing.T) {

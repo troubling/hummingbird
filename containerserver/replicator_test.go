@@ -28,7 +28,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -37,6 +36,9 @@ import (
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/test"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 type patchableReplicationDevice struct {
@@ -552,18 +554,9 @@ func TestGetReplicator(t *testing.T) {
 	require.NotNil(t, err)
 }
 
-type savingLowLevelLogger struct {
-	test.FakeLowLevelLogger
-	logs []string
-}
-
-func (s *savingLowLevelLogger) Info(l string) error {
-	s.logs = append(s.logs, l)
-	return nil
-}
-
 func TestReportStats(t *testing.T) {
-	logger := &savingLowLevelLogger{logs: make([]string, 0)}
+	obs, logs := observer.New(zap.InfoLevel)
+	logger := zap.New(obs)
 	r := &Replicator{
 		logger: logger,
 		runningDevices: map[string]*replicationDevice{
@@ -589,13 +582,28 @@ func TestReportStats(t *testing.T) {
 		},
 	}
 	r.reportStats()
-	require.True(t, strings.HasPrefix(logger.logs[0], "Attempted to replicate 20 dbs in 600."))
-	require.Equal(t, "Removed 10 dbs", logger.logs[1])
-	require.Equal(t, "14 successes, 6 failures", logger.logs[2])
+	require.Equal(t, 3, logs.Len())
+	want := []observer.LoggedEntry{{
+		Entry: zapcore.Entry{Level: zap.InfoLevel, Message: "Attempted to replicate dbs"},
+		Context: []zapcore.Field{zap.Int64("aggStats['attempted']", 20),
+			zap.Float64("runningTime", 600.000008246),
+			zap.Float64("rate", 0.03333333150538899)},
+	}, {
+		Entry:   zapcore.Entry{Level: zap.InfoLevel, Message: "Removed dbs"},
+		Context: []zapcore.Field{zap.Int64("aggStats['remove']", 10)},
+	}, {
+		Entry: zapcore.Entry{Level: zap.InfoLevel, Message: "Sucess & Failure"},
+		Context: []zapcore.Field{zap.Int64("success", 14),
+			zap.Int64("failure", 6)},
+	}}
+	require.Equal(t, want[0].Message, logs.AllUntimed()[0].Message)
+	require.Equal(t, want[1], logs.AllUntimed()[1])
+	require.Equal(t, want[2], logs.AllUntimed()[2])
 }
 
 func TestRunLoop(t *testing.T) {
-	logger := &savingLowLevelLogger{logs: make([]string, 0)}
+	obs, logs := observer.New(zap.InfoLevel)
+	logger := zap.New(obs)
 	r := &Replicator{
 		logger: logger,
 		Ring: &localDevicesRing{
@@ -629,7 +637,7 @@ func TestRunLoop(t *testing.T) {
 	rpTimer := make(chan time.Time, 1)
 	rpTimer <- time.Now()
 	r.runLoopCheck(rpTimer)
-	require.True(t, strings.HasPrefix(logger.logs[0], "Attempted to replicate "))
+	require.Equal(t, logs.AllUntimed()[0].Message, "Attempted to replicate dbs")
 
 	r.sendStat <- statUpdate{"sda", "attempted", 1}
 	r.runLoopCheck(rpTimer)
