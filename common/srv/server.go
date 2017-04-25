@@ -356,11 +356,7 @@ func RunServers(GetServer func(conf.Config, *flag.FlagSet) (string, int, Server,
 						// failure/timeout shutting down the server gracefully
 						srv.logger.Err(fmt.Sprintf("Error with graceful shutdown: %v", err))
 					}
-				}()
-				// Make sure we wait for any async processes still running
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
+					// Wait for any async processes to quit
 					srv.finalize()
 				}()
 			}
