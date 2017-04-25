@@ -1,0 +1,32 @@
+sudo: required
+
+language: go
+
+go:
+  - master
+
+install:
+  - sudo make get install
+  - sudo apt-get -y install build-essential memcached rsync xfsprogs git-core libffi-dev python-dev liberasurecode-dev python-virtualenv curl
+  - sudo mkdir -p /var/cache/swift /var/cache/swift2 /var/cache/swift3 /var/cache/swift4 /var/run/swift /srv/1/node/sdb1 /srv/2/node/sdb2 /srv/3/node/sdb3 /srv/4/node/sdb4 /var/run/hummingbird /etc/hummingbird /etc/swift
+  - sudo chown -R "${USER}" /etc/swift /etc/hummingbird /srv/* /var/cache/swift* /var/run/swift /var/run/hummingbird
+  - git clone 'https://github.com/openstack/swift.git' ~/swift
+  - virtualenv ~/swift-venv
+  - ~/swift-venv/bin/pip install -U pip setuptools
+  - ~/swift-venv/bin/pip install -r ~/swift/requirements.txt
+  - ~/swift-venv/bin/pip install -r ~/swift/test-requirements.txt
+  - cd ~/swift; ~/swift-venv/bin/python setup.py install
+  - cp ~/swift/doc/saio/bin/* ~/swift-venv/bin
+  - cp -r ~/swift/doc/saio/swift/* /etc/swift
+  - cp ~/swift/test/sample.conf /etc/swift/test.conf
+  - find /etc/swift/ -name "*.conf" | xargs sed -i "s/<your-user-name>/${USER}/"
+  - printf "[swift-hash]\nswift_hash_path_prefix = changeme\nswift_hash_path_suffix = changeme\n" > /etc/swift/swift.conf
+  - ~/swift-venv/bin/remakerings
+
+script:
+  - make test
+  - swift-init start proxy
+  - hummingbird start object
+  - hummingbird start container
+  - hummingbird start account
+  - ~/swift/.functests
