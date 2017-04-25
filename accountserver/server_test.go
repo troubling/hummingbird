@@ -26,6 +26,8 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/test"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 func makeTestServer() (http.Handler, func(), error) {
@@ -40,7 +42,7 @@ func makeTestServer() (http.Handler, func(), error) {
 		driveRoot:        dir,
 		hashPathPrefix:   "changeme",
 		hashPathSuffix:   "changeme",
-		logLevel:         "INFO",
+		logLevel:         zap.NewAtomicLevelAt(zapcore.InfoLevel),
 		logger:           test.FakeLowLevelLogger{},
 		checkMounts:      false,
 		updateClient:     http.DefaultClient,

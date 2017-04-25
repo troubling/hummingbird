@@ -21,6 +21,7 @@ import (
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"go.uber.org/zap"
 )
 
 func NewRequestLogger(config conf.Section) (func(http.Handler) http.Handler, error) {
@@ -31,18 +32,17 @@ func NewRequestLogger(config conf.Section) (func(http.Handler) http.Handler, err
 				next.ServeHTTP(writer, request)
 				ctx := GetProxyContext(request)
 				_, status := ctx.Response()
-				ctx.Logger.LogInfo("%s - - [%s] \"%s %s\" %d %s \"%s\" \"%s\" \"%s\" %.4f \"%s\"",
-					request.RemoteAddr,
-					time.Now().Format("02/Jan/2006:15:04:05 -0700"),
-					request.Method,
-					common.Urlencode(request.URL.Path),
-					status,
-					common.GetDefault(writer.Header(), "Content-Length", "-"),
-					common.GetDefault(request.Header, "Referer", "-"),
-					common.GetDefault(request.Header, "X-Trans-Id", "-"),
-					common.GetDefault(request.Header, "User-Agent", "-"),
-					time.Since(start).Seconds(),
-					"-") // TODO: "additional info"?
+				ctx.Logger.LogInfo("Request log",
+					zap.String("remoteAddr", request.RemoteAddr),
+					zap.String("eventTime", time.Now().Format("02/Jan/2006:15:04:05 -0700")),
+					zap.String("method", request.Method),
+					zap.String("urlPath", common.Urlencode(request.URL.Path)),
+					zap.Int("status", status),
+					zap.String("contentLength", common.GetDefault(writer.Header(), "Content-Length", "-")),
+					zap.String("referer", common.GetDefault(request.Header, "Referer", "-")),
+					zap.String("txn", common.GetDefault(request.Header, "X-Trans-Id", "-")),
+					zap.String("userAgent", common.GetDefault(request.Header, "User-Agent", "-")),
+					zap.Float64("requestTimeSeconds", time.Since(start).Seconds()))
 			},
 		)
 	}, nil

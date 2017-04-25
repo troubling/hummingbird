@@ -24,6 +24,7 @@ import (
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/srv"
+	"go.uber.org/zap"
 )
 
 var waitForAccountUpdate = time.Second * 5
@@ -63,12 +64,16 @@ func (server *ContainerServer) accountUpdate(request *http.Request, vars map[str
 			}
 			resp, err := server.updateClient.Do(req)
 			if err != nil {
-				logger.LogError("Account update failed: bad response from %s/%s", hosts[index], devices[index])
+				logger.LogError("Account update failed: bad response",
+					zap.String("hosts[index]", hosts[index]),
+					zap.String("devices[index]", devices[index]))
 				continue
 			}
 			defer resp.Body.Close()
 			if (resp.StatusCode / 100) != 2 {
-				logger.LogError("Account update failed: bad response from %s/%s", hosts[index], devices[index])
+				logger.LogError("Account update failed: bad response",
+					zap.String("hosts[index]", hosts[index]),
+					zap.String("devices[index]", devices[index]))
 			}
 		}
 	}()

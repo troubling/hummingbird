@@ -22,14 +22,12 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log/syslog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime"
-	"runtime/debug"
 	"strconv"
 	"sync"
 	"syscall"
@@ -37,6 +35,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/troubling/hummingbird/common/conf"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 var responseTemplate = "<html><h1>%s</h1><p>%s</p></html>"
@@ -145,25 +145,30 @@ type RequestLogger struct {
 	}
 }
 
-func (r RequestLogger) LogError(format string, args ...interface{}) {
+func (r RequestLogger) LogError(msg string, fields ...zapcore.Field) {
 	transactionId := r.Request.Header.Get("X-Trans-Id")
-	r.Logger.Err(fmt.Sprintf(format, args...) + " (txn:" + transactionId + ")")
+	fields = append(fields, zap.String("txn", transactionId))
+	r.Logger.Error(msg, fields...)
 }
 
-func (r RequestLogger) LogInfo(format string, args ...interface{}) {
+func (r RequestLogger) LogInfo(msg string, fields ...zapcore.Field) {
 	transactionId := r.Request.Header.Get("X-Trans-Id")
-	r.Logger.Info(fmt.Sprintf(format, args...) + " (txn:" + transactionId + ")")
+	fields = append(fields, zap.String("txn", transactionId))
+	r.Logger.Info(msg, fields...)
 }
 
-func (r RequestLogger) LogDebug(format string, args ...interface{}) {
+func (r RequestLogger) LogDebug(msg string, fields ...zapcore.Field) {
 	transactionId := r.Request.Header.Get("X-Trans-Id")
-	r.Logger.Debug(fmt.Sprintf(format, args...) + " (txn:" + transactionId + ")")
+	fields = append(fields, zap.String("txn", transactionId))
+	r.Logger.Debug(msg, fields...)
 }
 
-func (r RequestLogger) LogPanics(msg string) {
+func (r RequestLogger) LogPanics(msg string, fields ...zapcore.Field) {
 	if e := recover(); e != nil {
 		transactionId := r.Request.Header.Get("X-Trans-Id")
-		r.Logger.Err(fmt.Sprintf("PANIC (%s): %s: %s", msg, e, debug.Stack()) + " (txn:" + transactionId + ")")
+		fields = append(fields, zap.Any("err", (e)), zap.String("txn", transactionId))
+		panicMsg := fmt.Sprintf("PANIC (%s)", msg)
+		r.Logger.Error(panicMsg, fields...)
 		// if we haven't set a status code yet, we can send a 500 response.
 		if started, _ := r.W.Response(); !started {
 			StandardResponse(r.W, http.StatusInternalServerError)
@@ -176,62 +181,35 @@ func ValidateRequest(r *http.Request) bool {
 }
 
 type LoggingContext interface {
-	LogError(format string, args ...interface{})
-	LogInfo(format string, args ...interface{})
-	LogDebug(format string, args ...interface{})
-	LogPanics(format string)
+	LogError(msg string, fields ...zapcore.Field)
+	LogInfo(msg string, fields ...zapcore.Field)
+	LogDebug(msg string, fields ...zapcore.Field)
+	LogPanics(msg string, fields ...zapcore.Field)
 }
 
 type LowLevelLogger interface {
-	Err(string) error
-	Info(string) error
-	Debug(string) error
+	Error(msg string, fields ...zapcore.Field)
+	Info(msg string, fields ...zapcore.Field)
+	Debug(msg string, fields ...zapcore.Field)
 }
 
-type consoleLogger struct{}
-
-func (c *consoleLogger) Err(m string) error {
-	fmt.Println("ERROR:", m)
-	return nil
-}
-
-func (c *consoleLogger) Info(m string) error {
-	fmt.Println("INFO:", m)
-	return nil
-}
-
-func (c *consoleLogger) Debug(m string) error {
-	fmt.Println("DEBUG:", m)
-	return nil
-}
-
-var syslogFacilityMapping = map[string]syslog.Priority{"LOG_USER": syslog.LOG_USER,
-	"LOG_MAIL": syslog.LOG_MAIL, "LOG_DAEMON": syslog.LOG_DAEMON,
-	"LOG_AUTH": syslog.LOG_AUTH, "LOG_SYSLOG": syslog.LOG_SYSLOG,
-	"LOG_LPR": syslog.LOG_LPR, "LOG_NEWS": syslog.LOG_NEWS,
-	"LOG_UUCP": syslog.LOG_UUCP, "LOG_CRON": syslog.LOG_CRON,
-	"LOG_AUTHPRIV": syslog.LOG_AUTHPRIV, "LOG_FTP": syslog.LOG_FTP,
-	"LOG_LOCAL0": syslog.LOG_LOCAL0, "LOG_LOCAL1": syslog.LOG_LOCAL1,
-	"LOG_LOCAL2": syslog.LOG_LOCAL2, "LOG_LOCAL3": syslog.LOG_LOCAL3,
-	"LOG_LOCAL4": syslog.LOG_LOCAL4, "LOG_LOCAL5": syslog.LOG_LOCAL5,
-	"LOG_LOCAL6": syslog.LOG_LOCAL6, "LOG_LOCAL7": syslog.LOG_LOCAL7}
-
-// SetupLogger pulls configuration information from the config and flags to create a UDP syslog logger.
-// If -d was not specified, it also logs to the console.
-func SetupLogger(conf conf.Config, flags *flag.FlagSet, section, prefix string) (LowLevelLogger, error) {
+// SetupLogger configures structured logging using uber's zap library.
+func SetupLogger(prefix string, atomicLevel *zap.AtomicLevel, flags *flag.FlagSet, logPath string) (LowLevelLogger, error) {
+	productionConfig := zap.NewProductionConfig()
+	productionConfig.Level = *atomicLevel
+	productionConfig.OutputPaths = []string{logPath}
+	productionConfig.ErrorOutputPaths = []string{logPath}
 	vFlag := flags.Lookup("v")
 	dFlag := flags.Lookup("d")
 	if vFlag != nil && dFlag != nil && vFlag.Value.(flag.Getter).Get().(bool) && !dFlag.Value.(flag.Getter).Get().(bool) {
-		return &consoleLogger{}, nil
+		productionConfig.OutputPaths = []string{"stdout"}
+		productionConfig.ErrorOutputPaths = []string{"stderr"}
 	}
-	facility := conf.GetDefault(section, "log_facility", "LOG_LOCAL0")
-	host := conf.GetDefault(section, "log_udp_host", "127.0.0.1")
-	port := conf.GetInt(section, "log_udp_port", 514)
-	dialHost := fmt.Sprintf("%s:%d", host, port)
-	logger, err := syslog.Dial("udp", dialHost, syslogFacilityMapping[facility], prefix)
+	baseLogger, err := productionConfig.Build()
 	if err != nil {
-		return nil, fmt.Errorf("Unable to dial logger: %v", err)
+		return nil, fmt.Errorf("Unable to create logger: %v", err)
 	}
+	logger := baseLogger.With(zap.String("name", prefix))
 	return logger, nil
 }
 
@@ -317,7 +295,7 @@ func RunServers(GetServer func(conf.Config, *flag.FlagSet) (string, int, Server,
 		sock, err := RetryListen(ip, port)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error listening: %v\n", err)
-			logger.Err(fmt.Sprintf("Error listening: %v", err))
+			logger.Error("Error listening", zap.Error(err))
 			os.Exit(1)
 		}
 		srv := HummingbirdServer{
@@ -332,8 +310,7 @@ func RunServers(GetServer func(conf.Config, *flag.FlagSet) (string, int, Server,
 		}
 		go srv.Serve(sock)
 		servers = append(servers, &srv)
-		logger.Err(fmt.Sprintf("Server started on port %d", port))
-		fmt.Printf("Server started on port %d\n", port)
+		logger.Info("Server started", zap.Int("port", port))
 	}
 
 	if len(servers) > 0 {
@@ -354,7 +331,7 @@ func RunServers(GetServer func(conf.Config, *flag.FlagSet) (string, int, Server,
 					defer wg.Done()
 					if err := hserv.Shutdown(ctx); err != nil {
 						// failure/timeout shutting down the server gracefully
-						hserv.logger.Err(fmt.Sprintf("Error with graceful shutdown: %v", err))
+						hserv.logger.Error("Error with graceful shutdown", zap.Error(err))
 					}
 					// Wait for any async processes to quit
 					hserv.finalize()
@@ -382,7 +359,7 @@ func RunServers(GetServer func(conf.Config, *flag.FlagSet) (string, int, Server,
 		} else {
 			for _, srv := range servers {
 				if err := srv.Close(); err != nil {
-					srv.logger.Err(fmt.Sprintf("Error shutdown: %v", err))
+					srv.logger.Error("Error shutdown", zap.Error(err))
 				}
 			}
 		}
@@ -392,7 +369,7 @@ func RunServers(GetServer func(conf.Config, *flag.FlagSet) (string, int, Server,
 type Daemon interface {
 	Run()
 	RunForever()
-	LogError(format string, args ...interface{})
+	LogError(msg string, fields ...zapcore.Field)
 }
 
 func RunDaemon(GetDaemon func(conf.Config, *flag.FlagSet) (Daemon, error), flags *flag.FlagSet) {

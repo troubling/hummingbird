@@ -24,7 +24,6 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,6 +36,8 @@ import (
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/middleware"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 var (
@@ -196,7 +197,7 @@ func (rd *replicationDevice) listObjFiles(objChan chan string, cancel chan struc
 	defer close(objChan)
 	suffixDirs, err := filepath.Glob(filepath.Join(partdir, "[a-f0-9][a-f0-9][a-f0-9]"))
 	if err != nil {
-		rd.r.LogError("[listObjFiles] %v", err)
+		rd.r.LogError("[listObjFiles]", zap.Error(err))
 		return
 	}
 	if len(suffixDirs) == 0 {
@@ -216,7 +217,7 @@ func (rd *replicationDevice) listObjFiles(objChan chan string, cancel chan struc
 		}
 		hashDirs, err := filepath.Glob(filepath.Join(suffDir, "????????????????????????????????"))
 		if err != nil {
-			rd.r.LogError("[listObjFiles] %v", err)
+			rd.r.LogError("[listObjFiles]", zap.Error(err))
 			return
 		}
 		if len(hashDirs) == 0 {
@@ -230,7 +231,7 @@ func (rd *replicationDevice) listObjFiles(objChan chan string, cancel chan struc
 				continue
 			}
 			if err != nil {
-				rd.r.LogError("[listObjFiles] %v", err)
+				rd.r.LogError("[listObjFiles]", zap.Error(err))
 				return
 			}
 			for _, objFile := range fileList {
@@ -257,7 +258,9 @@ func (rd *replicationDevice) syncFile(objFile string, dst []*syncFileArg, handof
 	fp, xattrs, fileSize, err := getFile(objFile)
 	if _, ok := err.(quarantineFileError); ok {
 		hashDir := filepath.Dir(objFile)
-		rd.r.LogError("[syncFile] %s failed audit and is being quarantined: %s", hashDir, err.Error())
+		rd.r.LogError("[syncFile] Failed audit and is being quarantined",
+			zap.String("hashDir", hashDir),
+			zap.Error(err))
 		QuarantineHash(hashDir)
 		return 0, 0, nil
 	} else if err != nil {
@@ -309,7 +312,9 @@ func (rd *replicationDevice) syncFile(objFile string, dst []*syncFileArg, handof
 				continue
 			}
 			if _, err := sfa.conn.Write(scratch[0:length]); err != nil {
-				rd.r.LogError("Failed to write to remoteDevice: %d, %v", sfa.dev.Id, err)
+				rd.r.LogError("Failed to write to remoteDevice",
+					zap.Int("device id", sfa.dev.Id),
+					zap.Error(err))
 				wrs[index] = nil
 			}
 		}
@@ -385,7 +390,7 @@ func (rd *replicationDevice) replicateLocal(partition string, nodes []*ring.Devi
 	recalc := []string{}
 	hashes, err := GetHashes(rd.r.deviceRoot, rd.dev.Device, partition, recalc, rd.r.reclaimAge, rd.policy, rd.r)
 	if err != nil {
-		rd.r.LogError("[replicateLocal] error getting local hashes: %v", err)
+		rd.r.LogError("[replicateLocal] error getting local hashes", zap.Error(err))
 		return
 	}
 	for suffix, localHash := range hashes {
@@ -398,7 +403,7 @@ func (rd *replicationDevice) replicateLocal(partition string, nodes []*ring.Devi
 	}
 	hashes, err = GetHashes(rd.r.deviceRoot, rd.dev.Device, partition, recalc, rd.r.reclaimAge, rd.policy, rd.r)
 	if err != nil {
-		rd.r.LogError("[replicateLocal] error recalculating local hashes: %v", err)
+		rd.r.LogError("[replicateLocal] error recalculating local hashes", zap.Error(err))
 		return
 	}
 	timeGetHashesLocal := float64(time.Now().Sub(startGetHashesLocal)) / float64(time.Second)
@@ -431,7 +436,7 @@ func (rd *replicationDevice) replicateLocal(partition string, nodes []*ring.Devi
 		if syncs, _, err := rd.i.syncFile(objFile, toSync, false); err == nil {
 			syncCount += syncs
 		} else {
-			rd.r.LogError("[syncFile] %v", err)
+			rd.r.LogError("[syncFile]", zap.Error(err))
 			return
 		}
 	}
@@ -442,7 +447,12 @@ func (rd *replicationDevice) replicateLocal(partition string, nodes []*ring.Devi
 	}
 	timeSyncing := float64(time.Now().Sub(startSyncing)) / float64(time.Second)
 	if syncCount > 0 {
-		rd.r.LogInfo("[replicateLocal] Partition %s synced %d files (%.2fs / %.2fs / %.2fs)", path, syncCount, timeGetHashesRemote, timeGetHashesLocal, timeSyncing)
+		rd.r.LogInfo("[replicateLocal]",
+			zap.String("Partition", path),
+			zap.Any("Files Synced", syncCount),
+			zap.Float64("timeGetHashesRemote", timeGetHashesRemote),
+			zap.Float64("timeGetHashesLocal", timeGetHashesLocal),
+			zap.Float64("timeSyncing", timeSyncing))
 	}
 }
 
@@ -491,7 +501,7 @@ func (rd *replicationDevice) replicateHandoff(partition string, nodes []*ring.De
 				os.Remove(filepath.Dir(objFile))
 			}
 		} else {
-			rd.r.LogError("[syncFile] %v", err)
+			rd.r.LogError("[syncFile]", zap.Error(err))
 			return
 		}
 	}
@@ -501,7 +511,7 @@ func (rd *replicationDevice) replicateHandoff(partition string, nodes []*ring.De
 		}
 	}
 	if syncCount > 0 {
-		rd.r.LogInfo("[replicateHandoff] Partition %s synced %d files", path, syncCount)
+		rd.r.LogInfo("[replicateHandoff]", zap.String("Partition", path), zap.Any("Files Synced", syncCount))
 	}
 }
 
@@ -565,7 +575,7 @@ func (rd *replicationDevice) Replicate() {
 	defer rd.r.LogPanics(fmt.Sprintf("PANIC REPLICATING DEVICE: %s", rd.dev.Device))
 	rd.updateStat("startRun", 1)
 	if mounted, err := fs.IsMount(filepath.Join(rd.r.deviceRoot, rd.dev.Device)); rd.r.checkMounts && (err != nil || mounted != true) {
-		rd.r.LogError("[replicateDevice] Drive not mounted: %s", rd.dev.Device)
+		rd.r.LogError("[replicateDevice] Drive not mounted", zap.String("Device", rd.dev.Device))
 		return
 	}
 	if fs.Exists(filepath.Join(rd.r.deviceRoot, rd.dev.Device, "lock_device")) {
@@ -576,10 +586,13 @@ func (rd *replicationDevice) Replicate() {
 
 	partitionList, err := rd.i.listPartitions()
 	if err != nil {
-		rd.r.LogError("[replicateDevice] Error getting partition list: %s (%v)", rd.dev.Device, err)
+		rd.r.LogError("[replicateDevice] Error getting partition list",
+			zap.String("Device", rd.dev.Device),
+			zap.Error(err))
 		return
 	} else if len(partitionList) == 0 {
-		rd.r.LogError("[replicateDevice] No partitions found: %s", filepath.Join(rd.r.deviceRoot, rd.dev.Device, PolicyDir(rd.policy)))
+		rd.r.LogError("[replicateDevice] No partitions found",
+			zap.String("filepath", filepath.Join(rd.r.deviceRoot, rd.dev.Device, PolicyDir(rd.policy))))
 		return
 	}
 	rd.updateStat("PartitionsTotal", int64(len(partitionList)))
@@ -589,7 +602,7 @@ func (rd *replicationDevice) Replicate() {
 		select {
 		case <-rd.cancel:
 			{
-				rd.r.LogError("replicateDevice canceled for device: %s", rd.dev.Device)
+				rd.r.LogError("replicateDevice canceled for device", zap.String("Device", rd.dev.Device))
 				return
 			}
 		default:
@@ -654,7 +667,11 @@ func (rd *replicationDevice) processPriorityJobs() {
 				if handoff {
 					jobType = "handoff"
 				}
-				rd.r.LogInfo("PriorityReplicationJob. Partition: %d as %s from %s to %s", pri.Partition, jobType, pri.FromDevice.Device, strings.Join(toDevicesArr, ","))
+				rd.r.LogInfo("PriorityReplicationJob",
+					zap.Uint64("partition", pri.Partition),
+					zap.String("jobType", jobType),
+					zap.String("From Device", pri.FromDevice.Device),
+					zap.String("To Device", strings.Join(toDevicesArr, ",")))
 				if handoff {
 					rd.i.replicateHandoff(partition, pri.ToDevices)
 				} else {
@@ -697,7 +714,7 @@ type Replicator struct {
 	deviceRoot         string
 	reconCachePath     string
 	logger             srv.LowLevelLogger
-	logLevel           string
+	logLevel           *zap.AtomicLevel
 	port               int
 	bindIp             string
 	Rings              map[int]replicationRing
@@ -740,7 +757,7 @@ func (r *Replicator) verifyRunningDevices() {
 	for policy, ring := range r.Rings {
 		ringDevices, err := ring.LocalDevices(r.port)
 		if err != nil {
-			r.LogError("Error getting local devices from ring: %v", err)
+			r.LogError("Error getting local devices from ring", zap.Error(err))
 			return
 		}
 		// look for devices that aren't running but should be
@@ -792,11 +809,14 @@ func (r *Replicator) reportStats() {
 		} else {
 			remainingStr = fmt.Sprintf("%.0fs", remaining.Seconds())
 		}
-
-		r.LogInfo("Device %s %d/%d (%.2f%%) partitions replicated in %.2f worker seconds (%.2f/sec, %v remaining)",
-			rd.Key(), doneParts, totalParts,
-			float64(100*doneParts)/float64(totalParts),
-			processingTimeSec, partsPerSecond, remainingStr)
+		r.LogInfo("Partition Replicated",
+			zap.String("Device", rd.Key()),
+			zap.Int64("doneParts", doneParts),
+			zap.Int64("totalParts", totalParts),
+			zap.Float64("DoneParts/TotalParts", float64(100*doneParts)/float64(totalParts)),
+			zap.Float64("processingTimeSec", processingTimeSec),
+			zap.Float64("partsPerSecond", partsPerSecond),
+			zap.String("remainingStr", remainingStr))
 
 	}
 	if allHaveCompleted {
@@ -893,7 +913,7 @@ func (r *Replicator) Run() {
 	for policy, theRing := range r.Rings {
 		devices, err := theRing.LocalDevices(r.port)
 		if err != nil {
-			r.LogError("Error getting local devices from ring: %v", err)
+			r.LogError("Error getting local devices from ring", zap.Error(err))
 			return
 		}
 		for _, dev := range devices {
@@ -913,21 +933,22 @@ func (r *Replicator) Run() {
 	r.reportStats()
 }
 
-func (r *Replicator) LogError(format string, args ...interface{}) {
-	r.logger.Err(fmt.Sprintf(format, args...))
+func (r *Replicator) LogError(msg string, fields ...zapcore.Field) {
+	r.logger.Error(msg, fields...)
 }
 
-func (r *Replicator) LogInfo(format string, args ...interface{}) {
-	r.logger.Info(fmt.Sprintf(format, args...))
+func (r *Replicator) LogInfo(msg string, fields ...zapcore.Field) {
+	r.logger.Info(msg, fields...)
 }
 
-func (r *Replicator) LogDebug(format string, args ...interface{}) {
-	r.logger.Debug(fmt.Sprintf(format, args...))
+func (r *Replicator) LogDebug(msg string, fields ...zapcore.Field) {
+	r.logger.Debug(msg, fields...)
 }
 
-func (r *Replicator) LogPanics(m string) {
+func (r *Replicator) LogPanics(msg string, fields ...zapcore.Field) {
 	if e := recover(); e != nil {
-		r.LogError("%s: %s: %s", m, e, debug.Stack())
+		recoveredMsg := fmt.Sprintf("PANIC (%s): %s", msg, e)
+		r.LogError(recoveredMsg, fields...)
 	}
 }
 
@@ -936,6 +957,10 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, err
 		return nil, fmt.Errorf("Unable to find object-replicator config section")
 	}
 	concurrency := int(serverconf.GetInt("object-replicator", "concurrency", 1))
+
+	logLevelString := serverconf.GetDefault("object-replicator", "log_level", "INFO")
+	logLevel := zap.NewAtomicLevel()
+	logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
 
 	replicator := &Replicator{
 		runningDevices:   make(map[string]ReplicationDevice),
@@ -950,7 +975,7 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, err
 		bindIp:           serverconf.GetDefault("object-replicator", "bind_ip", "0.0.0.0"),
 		quorumDelete:     serverconf.GetBool("object-replicator", "quorum_delete", false),
 		reclaimAge:       int64(serverconf.GetInt("object-replicator", "reclaim_age", int64(common.ONE_WEEK))),
-		logLevel:         serverconf.GetDefault("object-replicator", "log_level", "INFO"),
+		logLevel:         &logLevel,
 		Rings:            make(map[int]replicationRing),
 		concurrency:      concurrency,
 		concurrencySem:   make(chan struct{}, concurrency),
@@ -974,7 +999,8 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, err
 			return nil, fmt.Errorf("Unable to load ring for Policy %d.", policy.Index)
 		}
 	}
-	if replicator.logger, err = srv.SetupLogger(serverconf, flags, "app:object-replicator", "object-replicator"); err != nil {
+	logPath := serverconf.GetDefault("object-replicator", "log_path", "/var/log/swift/objectreplicator.log")
+	if replicator.logger, err = srv.SetupLogger("object-replicator", &logLevel, flags, logPath); err != nil {
 		return nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 	devices_flag := flags.Lookup("devices")

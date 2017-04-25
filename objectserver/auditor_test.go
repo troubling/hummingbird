@@ -27,6 +27,9 @@ import (
 
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/pickle"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -174,24 +177,26 @@ func TestAuditHashNoMetadata(t *testing.T) {
 	assert.Equal(t, bytesProcessed, int64(0))
 }
 
-type auditLogSaver struct {
-	logged []string
-}
+// type auditLogSaver struct {
+// 	logged []string
+// }
 
-func (s *auditLogSaver) Err(line string) error {
-	s.logged = append(s.logged, line)
-	return nil
-}
+// func (s *auditLogSaver) Err(line string) error {
+// 	s.logged = append(s.logged, line)
+// 	return nil
+// }
 
-func (s *auditLogSaver) Info(line string) error {
-	s.logged = append(s.logged, line)
-	return nil
-}
+// func (s *auditLogSaver) Info(line string) error {
+// 	s.logged = append(s.logged, line)
+// 	return nil
+// }
 
-func (s *auditLogSaver) Debug(line string) error {
-	s.logged = append(s.logged, line)
-	return nil
-}
+// func (s *auditLogSaver) Debug(line string) error {
+// 	s.logged = append(s.logged, line)
+// 	return nil
+// }
+var obs zapcore.Core
+var logs *observer.ObservedLogs
 
 func makeAuditor(settings ...string) *Auditor {
 	configString := "[object-auditor]\n"
@@ -200,7 +205,8 @@ func makeAuditor(settings ...string) *Auditor {
 	}
 	conf, _ := conf.StringConfig(configString)
 	auditorDaemon, _ := NewAuditor(conf, &flag.FlagSet{})
-	auditorDaemon.(*AuditorDaemon).logger = &auditLogSaver{}
+	obs, logs = observer.New(zap.InfoLevel)
+	auditorDaemon.(*AuditorDaemon).logger = zap.New(obs)
 	return &Auditor{AuditorDaemon: auditorDaemon.(*AuditorDaemon), filesPerSecond: 1}
 }
 
@@ -215,13 +221,12 @@ func TestFailsWithoutSection(t *testing.T) {
 
 func TestAuditSuffixNotDir(t *testing.T) {
 	auditor := makeAuditor()
-	auditor.logger = &auditLogSaver{}
 	file, _ := ioutil.TempFile("", "")
 	defer file.Close()
 	defer os.RemoveAll(file.Name())
 	errors := auditor.errors
 	auditor.auditSuffix(file.Name())
-	assert.True(t, strings.HasPrefix(auditor.logger.(*auditLogSaver).logged[0], "Error reading suffix dir"))
+	assert.Equal(t, logs.TakeAll()[0].Message, "Error reading suffix dir")
 	assert.True(t, auditor.errors > errors)
 }
 
@@ -261,18 +266,17 @@ func TestAuditSuffixSkipsBad(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "objects", "1", "abc", "notavalidhash"), 0777)
 	auditor := makeAuditor()
 	auditor.auditSuffix(filepath.Join(dir, "objects", "1", "abc"))
-	assert.True(t, strings.HasPrefix(auditor.logger.(*auditLogSaver).logged[0], "Skipping invalid file in suffix"))
+	assert.Equal(t, logs.TakeAll()[0].Message, "Skipping invalid file in suffix")
 }
 
 func TestAuditPartitionNotDir(t *testing.T) {
 	auditor := makeAuditor()
-	auditor.logger = &auditLogSaver{}
 	file, _ := ioutil.TempFile("", "")
 	defer file.Close()
 	defer os.RemoveAll(file.Name())
 	errors := auditor.errors
 	auditor.auditPartition(file.Name())
-	assert.True(t, strings.HasPrefix(auditor.logger.(*auditLogSaver).logged[0], "Error reading partition dir"))
+	assert.Equal(t, logs.TakeAll()[0].Message, "Error reading partition dir ")
 	assert.True(t, auditor.errors > errors)
 }
 
@@ -313,13 +317,12 @@ func TestAuditPartitionSkipsBadData(t *testing.T) {
 
 func TestAuditDeviceNotDir(t *testing.T) {
 	auditor := makeAuditor("mount_check", "false")
-	auditor.logger = &auditLogSaver{}
 	file, _ := ioutil.TempFile("", "")
 	defer file.Close()
 	defer os.RemoveAll(file.Name())
 	errors := auditor.errors
 	auditor.auditDevice(file.Name())
-	assert.True(t, strings.HasPrefix(auditor.logger.(*auditLogSaver).logged[0], "Error reading objects dir"))
+	assert.Equal(t, logs.TakeAll()[0].Message, "Error reading objects dir")
 	assert.True(t, auditor.errors > errors)
 }
 
@@ -360,13 +363,11 @@ func TestAuditDeviceUnmounted(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "sda", "objects", "1"), 0777)
 	auditor := makeAuditor("mount_check", "true")
 	auditor.auditDevice(filepath.Join(dir, "sda"))
-	assert.True(t, strings.HasPrefix(auditor.logger.(*auditLogSaver).logged[0], "Skipping unmounted device"))
+	assert.Equal(t, logs.TakeAll()[0].Message, "Skipping unmounted device")
 }
 
 func TestFinalLog(t *testing.T) {
 	auditor := makeAuditor()
-	logger := &auditLogSaver{}
-	auditor.logger = logger
 	auditor.passStart = time.Now().Add(-60 * time.Second)
 	auditor.totalQuarantines = 5
 	auditor.totalErrors = 3
@@ -375,8 +376,30 @@ func TestFinalLog(t *testing.T) {
 	auditor.auditorType = "ALL"
 	auditor.mode = "forever"
 	auditor.finalLog()
-	assert.Equal(t, "Object audit (ALL) \"forever\" mode completed: 60.00s. Total quarantined: 5, Total errors: 3, Total files/sec: 2.00, "+
-		"Total bytes/sec: 2000.00, Auditing time: 0.00, Rate: 0.00", logger.logged[0])
+	want := []observer.LoggedEntry{{
+		Entry: zapcore.Entry{Level: zap.InfoLevel, Message: "Object Audit"},
+		Context: []zapcore.Field{zap.String("Auditor type", "ALL"),
+			zap.String("Mode", "forever"),
+			zap.Float64("completed", 60.00),
+			zap.Int64("Total quarantined", 5),
+			zap.Int64("Total errors", 3),
+			zap.Float64("Total files/sec", 2.00),
+			zap.Float64("Total bytes/sec", 2000.00),
+			zap.Float64("Auditing time", 0.00),
+			zap.Float64("Auditing rate", 0.00)},
+	}}
+	obslog := logs.AllUntimed()[0]
+	require.Equal(t, want[0].Message, obslog.Message)
+	require.Equal(t, want[0].Context[0], obslog.Context[0])
+	require.Equal(t, want[0].Context[1], obslog.Context[1])
+	//TODO: Figure out how to do float comparison.
+	//require.Equal(t, want[0].Context[2], obslog.Context[2])
+	require.Equal(t, want[0].Context[3], obslog.Context[3])
+	require.Equal(t, want[0].Context[4], obslog.Context[4])
+	//require.Equal(t, want[0].Context[5], obslog.Context[5])
+	//require.Equal(t, want[0].Context[6], obslog.Context[6])
+	require.Equal(t, want[0].Context[7], obslog.Context[7])
+	require.Equal(t, want[0].Context[8], obslog.Context[8])
 }
 
 func TestAuditRun(t *testing.T) {
@@ -389,8 +412,6 @@ func TestAuditRun(t *testing.T) {
 	f.Write([]byte("testcontents"))
 	auditor := makeAuditor("mount_check", "false")
 	auditor.driveRoot = dir
-	logger := &auditLogSaver{}
-	auditor.logger = logger
 	totalPasses := auditor.totalPasses
 	auditor.run(OneTimeChan())
 	assert.Equal(t, totalPasses+1, auditor.totalPasses)
@@ -406,20 +427,30 @@ func TestStatReport(t *testing.T) {
 	auditor.quarantines = 17
 	auditor.errors = 41
 	auditor.statsReport()
-	args := [13]float64{}
-	var stra, strb string
-	pargs := []interface{}{&stra, &strb}
-	for i := range args {
-		pargs = append(pargs, &args[i])
-	}
-	fmt.Sscanf(
-		auditor.logger.(*auditLogSaver).logged[0],
-		"Object audit (). Since %s %s %f %f:%f:%f %f: Locally: %f passed, %f quarantined, %f errors, files/sec: %f , bytes/sec: %f, Total time: %f, Auditing time: %f, Rate: %f",
-		pargs...)
-	assert.Equal(t, 120.0, args[5])
-	assert.Equal(t, 17.0, args[6])
-	assert.Equal(t, 41.0, args[7])
-	assert.Equal(t, 1.0, args[8])
-	assert.Equal(t, 1000.0, args[9])
-	assert.Equal(t, 120.0, args[10])
+	want := []observer.LoggedEntry{{
+		Entry: zapcore.Entry{Level: zap.InfoLevel, Message: "statsReport"},
+		Context: []zapcore.Field{zap.String("Object audit", ""),
+			zap.String("Since", "Tue May  2 05:48:19 2017"),
+			zap.Int64("Locally passed", 120),
+			zap.Int64("Locally quarantied", 17),
+			zap.Int64("Locally errored", 41),
+			zap.Float64("files/sec", 1),
+			zap.Float64("bytes/sec", 2),
+			zap.Float64("Total time", 3),
+			zap.Float64("Auditing Time", 0.00),
+			zap.Float64("Auditing Rate", 0.00)},
+	}}
+	obslog := logs.AllUntimed()[0]
+	require.Equal(t, want[0].Message, obslog.Message)
+	require.Equal(t, want[0].Context[0], obslog.Context[0])
+	//unable to do time string comparison.
+	//require.Equal(t, want[0].Context[1], obslog.Context[1])
+	require.Equal(t, want[0].Context[2], obslog.Context[2])
+	require.Equal(t, want[0].Context[3], obslog.Context[3])
+	require.Equal(t, want[0].Context[4], obslog.Context[4])
+	//require.Equal(t, want[0].Context[5], obslog.Context[5])
+	//require.Equal(t, want[0].Context[6], obslog.Context[6])
+	//require.Equal(t, want[0].Context[7], obslog.Context[7])
+	require.Equal(t, want[0].Context[8], obslog.Context[8])
+	require.Equal(t, want[0].Context[9], obslog.Context[9])
 }

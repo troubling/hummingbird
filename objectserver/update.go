@@ -31,6 +31,7 @@ import (
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/pickle"
 	"github.com/troubling/hummingbird/common/srv"
+	"go.uber.org/zap"
 )
 
 /*This hash is used to represent a zero byte async file that is
@@ -132,7 +133,9 @@ func (server *ObjectServer) updateContainer(metadata map[string]string, request 
 	failures := 0
 	for index := range hosts {
 		if !server.sendContainerUpdate(hosts[index], devices[index], request.Method, partition, vars["account"], vars["container"], vars["obj"], requestHeaders) {
-			logger.LogError("ERROR container update failed with %s/%s (saving for async update later)", hosts[index], devices[index])
+			logger.LogError("ERROR container update failed (saving for async update later)",
+				zap.String("Host", hosts[index]),
+				zap.String("Device", devices[index]))
 			failures++
 		}
 	}
@@ -169,7 +172,9 @@ func (server *ObjectServer) updateDeleteAt(request *http.Request, deleteAtStr st
 	failures := 0
 	for index := range hosts {
 		if !server.sendContainerUpdate(hosts[index], devices[index], request.Method, partition, deleteAtAccount, container, obj, requestHeaders) {
-			logger.LogError("ERROR container update failed with %s/%s (saving for async update later)", hosts[index], devices[index])
+			logger.LogError("ERROR container update failed with (saving for async update later)",
+				zap.String("Host", hosts[index]),
+				zap.String("Device", devices[index]))
 			failures++
 		}
 	}

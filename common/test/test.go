@@ -20,6 +20,7 @@ import (
 	"net/http"
 
 	"github.com/troubling/hummingbird/common/ring"
+	"go.uber.org/zap/zapcore"
 )
 
 // a place for utility functions and interface satisifiers that are used across tests
@@ -52,17 +53,9 @@ func MakeCaptureResponse() *CaptureResponse {
 
 type FakeLowLevelLogger struct{}
 
-func (FakeLowLevelLogger) Err(s string) error {
-	return nil
-}
-
-func (FakeLowLevelLogger) Info(s string) error {
-	return nil
-}
-
-func (FakeLowLevelLogger) Debug(s string) error {
-	return nil
-}
+func (FakeLowLevelLogger) Error(msg string, fields ...zapcore.Field) {}
+func (FakeLowLevelLogger) Info(msg string, fields ...zapcore.Field)  {}
+func (FakeLowLevelLogger) Debug(msg string, fields ...zapcore.Field) {}
 
 // FakeRing
 type FakeRing struct {
@@ -161,10 +154,10 @@ func (m *fakeMoreNodes) Next() *ring.Device {
 
 type FakeLogger struct{}
 
-func (s FakeLogger) LogError(format string, args ...interface{}) {}
-func (s FakeLogger) LogInfo(format string, args ...interface{})  {}
-func (s FakeLogger) LogDebug(format string, args ...interface{}) {}
-func (s FakeLogger) LogPanics(format string)                     {}
+func (s FakeLogger) LogError(msg string, fields ...zapcore.Field)  {}
+func (s FakeLogger) LogInfo(msg string, fields ...zapcore.Field)   {}
+func (s FakeLogger) LogDebug(msg string, fields ...zapcore.Field)  {}
+func (s FakeLogger) LogPanics(msg string, fields ...zapcore.Field) {}
 
 // Fake MemcacheRing
 type FakeMemcacheRing struct {

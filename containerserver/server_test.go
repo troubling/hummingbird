@@ -25,6 +25,7 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/test"
+	"go.uber.org/zap"
 )
 
 func TestFormatTimestamp(t *testing.T) {
@@ -607,7 +608,7 @@ func TestGetServer(t *testing.T) {
 	require.Equal(t, 1000, bindPort)
 	require.NotNil(t, logger)
 	require.Equal(t, "whatever", server.driveRoot)
-	require.Equal(t, "INFO", server.logLevel)
+	require.Equal(t, zap.NewAtomicLevelAt(zap.InfoLevel), server.logLevel)
 	require.False(t, server.checkMounts)
 	require.NotNil(t, server.updateClient)
 	require.NotNil(t, server.containerEngine)
