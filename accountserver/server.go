@@ -68,6 +68,9 @@ func formatTimestamp(ts string) (string, error) {
 	return ret, nil
 }
 
+func (server *AccountServer) Finalize() {
+}
+
 // AccountGetHandler handles GET and HEAD requests for an account.
 func (server *AccountServer) AccountGetHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)

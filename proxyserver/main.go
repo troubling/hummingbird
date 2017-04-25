@@ -35,6 +35,9 @@ type ProxyServer struct {
 	mc     ring.MemcacheRing
 }
 
+func (server *ProxyServer) Finalize() {
+}
+
 func (server *ProxyServer) HealthcheckHandler(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Content-Length", "2")
 	writer.WriteHeader(http.StatusOK)

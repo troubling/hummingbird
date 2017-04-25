@@ -84,6 +84,9 @@ func formatTimestamp(ts string) string {
 	return ret
 }
 
+func (server *ContainerServer) Finalize() {
+}
+
 // ContainerGetHandler handles GET and HEAD requests for a container.
 func (server *ContainerServer) ContainerGetHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)

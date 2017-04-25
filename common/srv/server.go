@@ -31,6 +31,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 	"unicode/utf8"
@@ -240,6 +241,7 @@ type HummingbirdServer struct {
 	http.Server
 	Listener net.Listener
 	logger   LowLevelLogger
+	finalize func()
 }
 
 func ShutdownStdio() {
@@ -282,6 +284,7 @@ func DumpGoroutinesStackTrace(pid int) {
 
 type Server interface {
 	GetHandler(conf.Config) http.Handler
+	Finalize() // This is called before stoping gracefully so that a server can clean up before closing
 }
 
 /*
@@ -325,6 +328,7 @@ func RunServers(GetServer func(conf.Config, *flag.FlagSet) (string, int, Server,
 			},
 			Listener: sock,
 			logger:   logger,
+			finalize: server.Finalize,
 		}
 		go srv.Serve(sock)
 		servers = append(servers, &srv)
@@ -340,13 +344,37 @@ func RunServers(GetServer func(conf.Config, *flag.FlagSet) (string, int, Server,
 		signal.Notify(c, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGABRT)
 		s := <-c
 		if s == syscall.SIGINT {
+			var wg sync.WaitGroup
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
+			defer cancel()
 			for _, srv := range servers {
-				ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
-				defer cancel()
-				if err := srv.Shutdown(ctx); err != nil {
-					// failure/timeout shutting down the server gracefully
-					srv.logger.Err(fmt.Sprintf("Error while graceful shutdown: %v", err))
-				}
+				// Shutdown the HTTP server
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					if err := srv.Shutdown(ctx); err != nil {
+						// failure/timeout shutting down the server gracefully
+						srv.logger.Err(fmt.Sprintf("Error with graceful shutdown: %v", err))
+					}
+					// Wait for any async processes to quit
+					srv.finalize()
+				}()
+			}
+			// Wait for everything to complete
+			wgc := make(chan struct{})
+			go func() {
+				defer close(wgc)
+				wg.Wait()
+			}()
+			select {
+			case <-wgc:
+				// Everything has completed
+				fmt.Println("Graceful shutdown complete.")
+				return
+			case <-ctx.Done():
+				// Timeout before everything completing
+				fmt.Println("Forcing shutdown after timeout.")
+				return
 			}
 		} else if s == syscall.SIGABRT {
 			pid := os.Getpid()

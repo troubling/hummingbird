@@ -51,6 +51,7 @@ type TestServer struct {
 }
 
 func (t *TestServer) Close() {
+	t.objServer.asyncWG.Wait()
 	os.RemoveAll(t.root)
 	t.Server.Close()
 }
