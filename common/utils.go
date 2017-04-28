@@ -247,6 +247,28 @@ func StandardizeTimestamp(timestamp string) (string, error) {
 	return timestamp, nil
 }
 
+// will split out url path the proxy would receive and return map
+// with keys: "vrs", "account", "container", "object"
+func ParseProxyPath(path string) (pathMap map[string]string, err error) {
+	pathParts := []string{"", "vrs", "account", "container", "object"}
+	pathSplit := strings.SplitN(path, "/", 5)
+	if pathSplit[0] != "" {
+		return nil, errors.New(fmt.Sprintf("Invalid path: %s", path))
+	}
+	pathMap = map[string]string{}
+	for i := 1; i < len(pathParts); i++ {
+		if len(pathSplit) <= i {
+			pathMap[pathParts[i]] = ""
+		} else {
+			if pathSplit[i] == "" && len(pathSplit)-1 != i {
+				return nil, errors.New(fmt.Sprintf("Invalid path: %s", path))
+			}
+			pathMap[pathParts[i]] = pathSplit[i]
+		}
+	}
+	return pathMap, err
+}
+
 var buf64kpool = NewFreePool(128)
 
 func Copy(src io.Reader, dsts ...io.Writer) (written int64, err error) {

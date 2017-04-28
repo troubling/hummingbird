@@ -43,12 +43,12 @@ const (
 )
 
 type MemcacheRing interface {
-	Decr(key string, delta int, timeout int) (int64, error)
+	Decr(key string, delta int64, timeout int) (int64, error)
 	Delete(key string) error
 	Get(key string) (interface{}, error)
 	GetStructured(key string, val interface{}) error
 	GetMulti(serverKey string, keys []string) (map[string]interface{}, error)
-	Incr(key string, delta int, timeout int) (int64, error)
+	Incr(key string, delta int64, timeout int) (int64, error)
 	Set(key string, value interface{}, timeout int) error
 	SetMulti(serverKey string, values map[string]interface{}, timeout int) error
 }
@@ -133,7 +133,7 @@ func (ring *memcacheRing) sortServerKeys() {
 	sort.Strings(ring.serverKeys)
 }
 
-func (ring *memcacheRing) Decr(key string, delta int, timeout int) (int64, error) {
+func (ring *memcacheRing) Decr(key string, delta int64, timeout int) (int64, error) {
 	return ring.Incr(key, -delta, timeout)
 }
 
@@ -225,7 +225,7 @@ func (ring *memcacheRing) GetMulti(serverKey string, keys []string) (map[string]
 	return ret.value, ring.loop(serverKey, fn)
 }
 
-func (ring *memcacheRing) Incr(key string, delta int, timeout int) (int64, error) {
+func (ring *memcacheRing) Incr(key string, delta int64, timeout int) (int64, error) {
 	type Return struct {
 		value int64
 	}

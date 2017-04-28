@@ -136,6 +136,7 @@ func RunBench(args []string) {
 		fmt.Println("    num_gets = 30000")
 		fmt.Println("    delete = yes")
 		fmt.Println("    allow_insecure_auth_cert = no")
+		fmt.Println("    single_container = false")
 		os.Exit(1)
 	}
 
@@ -153,6 +154,7 @@ func RunBench(args []string) {
 	numObjects := benchconf.GetInt("bench", "num_objects", 5000)
 	numGets := benchconf.GetInt("bench", "num_gets", 30000)
 	delete := benchconf.GetBool("bench", "delete", true)
+	singleContainer := benchconf.GetBool("bench", "single_container", false)
 	allowInsecureAuthCert := benchconf.GetBool("bench", "allow_insecure_auth_cert", false)
 	salt := fmt.Sprintf("%d", rand.Int63())
 
@@ -166,8 +168,11 @@ func RunBench(args []string) {
 		fmt.Println("Error creating client:", err)
 		os.Exit(1)
 	}
-
-	for i := 0; i < concurrency; i++ {
+	numContainers := concurrency
+	if singleContainer {
+		numContainers = 1
+	}
+	for i := 0; i < numContainers; i++ {
 		if err := cli.PutContainer(fmt.Sprintf("%d-%s", i, salt), nil); err != nil {
 			fmt.Println("Error putting container:", err)
 			os.Exit(1)
@@ -179,7 +184,7 @@ func RunBench(args []string) {
 	for i := range objects {
 		objects[i] = &Object{
 			state:     0,
-			container: fmt.Sprintf("%d-%s", i%concurrency, salt),
+			container: fmt.Sprintf("%d-%s", i%numContainers, salt),
 			name:      fmt.Sprintf("%x", rand.Int63()),
 			data:      data,
 			c:         cli,

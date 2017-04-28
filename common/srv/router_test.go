@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/troubling/hummingbird/common/test"
 )
 
 func newRequest(method, path string) *http.Request {
@@ -29,22 +30,6 @@ func newRequest(method, path string) *http.Request {
 	r.RequestURI = path
 	return r
 }
-
-type mockResponseWriter struct{}
-
-func (m mockResponseWriter) Header() (h http.Header) {
-	return http.Header{}
-}
-
-func (m mockResponseWriter) Write(p []byte) (n int, err error) {
-	return len(p), nil
-}
-
-func (m mockResponseWriter) WriteString(s string) (n int, err error) {
-	return len(s), nil
-}
-
-func (m mockResponseWriter) WriteHeader(int) {}
 
 func TestRouterDisambiguation(t *testing.T) {
 	var vars map[string]string
@@ -61,7 +46,7 @@ func TestRouterDisambiguation(t *testing.T) {
 	makeRequest := func(method, path string) {
 		handledBy = "UNKNOWN"
 		vars = nil
-		router.ServeHTTP(mockResponseWriter{}, newRequest(method, path))
+		router.ServeHTTP(test.MockResponseWriter{}, newRequest(method, path))
 	}
 
 	addRoute("GET", "/", "ROOT")
@@ -164,11 +149,11 @@ func TestRouterDisambiguation(t *testing.T) {
 	req, _ := http.NewRequest("GET", "/reconstruct", nil)
 	req.URL, _ = url.Parse("/reconstruct")
 	req.RequestURI = "/reconstruct"
-	router.ServeHTTP(mockResponseWriter{}, req)
+	router.ServeHTTP(test.MockResponseWriter{}, req)
 	assert.Equal(t, "NOT_FOUND", handledBy)
 
 	req.Header.Set("X-Backend-Storage-Policy-Index", "10")
-	router.ServeHTTP(mockResponseWriter{}, req)
+	router.ServeHTTP(test.MockResponseWriter{}, req)
 	assert.Equal(t, "POLICY_VERB_WORKED", handledBy)
 }
 
@@ -187,7 +172,7 @@ func BenchmarkRouteObject(b *testing.B) {
 	router.Get("/:device/:partition/:account/:container/*obj", objGet)
 
 	r := newRequest("GET", "/sda/123/acc/cont/a/bunch/of/stuff")
-	w := mockResponseWriter{}
+	w := test.MockResponseWriter{}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
