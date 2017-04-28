@@ -1,18 +1,26 @@
 sudo: required
 
+dist: trusty
+
 language: go
 
 go:
   - master
 
 install:
-  - sudo make get install
-  - sudo apt-get -y install build-essential memcached rsync xfsprogs git-core libffi-dev python-dev liberasurecode-dev python-virtualenv curl
+  - make get
+  - make all
+  - sudo make install
+  - sudo apt-get -y install build-essential memcached rsync xfsprogs git-core libffi-dev python-dev liberasurecode-dev python-virtualenv curl libjerasure-dev
+  - sudo truncate -s 4GB /tmp/hb-disk
+  - sudo mkfs.xfs /tmp/hb-disk
+  - sudo mkdir -p /srv
+  - sudo mount -o loop /tmp/hb-disk /srv
   - sudo mkdir -p /var/cache/swift /var/cache/swift2 /var/cache/swift3 /var/cache/swift4 /var/run/swift /srv/1/node/sdb1 /srv/2/node/sdb2 /srv/3/node/sdb3 /srv/4/node/sdb4 /var/run/hummingbird /etc/hummingbird /etc/swift
   - sudo chown -R "${USER}" /etc/swift /etc/hummingbird /srv/* /var/cache/swift* /var/run/swift /var/run/hummingbird
-  - git clone 'https://github.com/openstack/swift.git' ~/swift
+  - git clone --depth 1 'https://github.com/openstack/swift.git' ~/swift
   - virtualenv ~/swift-venv
-  - ~/swift-venv/bin/pip install -U pip setuptools
+  - ~/swift-venv/bin/pip install -U pip setuptools python-subunit
   - ~/swift-venv/bin/pip install -r ~/swift/requirements.txt
   - ~/swift-venv/bin/pip install -r ~/swift/test-requirements.txt
   - cd ~/swift; ~/swift-venv/bin/python setup.py install
@@ -20,13 +28,16 @@ install:
   - cp -r ~/swift/doc/saio/swift/* /etc/swift
   - cp ~/swift/test/sample.conf /etc/swift/test.conf
   - find /etc/swift/ -name "*.conf" | xargs sed -i "s/<your-user-name>/${USER}/"
+  - sed -i "s/eventlet_debug = true/object_post_as_copy = true/" /etc/swift/proxy-server.conf
   - printf "[swift-hash]\nswift_hash_path_prefix = changeme\nswift_hash_path_suffix = changeme\n" > /etc/swift/swift.conf
-  - ~/swift-venv/bin/remakerings
+  - PATH=$PATH:~/swift-venv/bin remakerings
 
 script:
-  - make test
-  - swift-init start proxy
+  - test -z "$(find . -name '*.go' | xargs gofmt -l)" || (echo "You need to run 'go fmt ./...'"; exit 1)
+  - go vet github.com/troubling/hummingbird/...
+  - go test github.com/troubling/hummingbird/...
+  - PATH=$PATH:~/swift-venv/bin swift-init start proxy
   - hummingbird start object
   - hummingbird start container
   - hummingbird start account
-  - ~/swift/.functests
+  - PATH=$PATH:~/swift-venv/bin nosetests -e test_unicode_metadata ~/swift/test/functional
