@@ -16,8 +16,8 @@ install:
   - sudo mkfs.xfs /tmp/hb-disk
   - sudo mkdir -p /srv
   - sudo mount -o loop /tmp/hb-disk /srv
-  - sudo mkdir -p /var/cache/swift /var/cache/swift2 /var/cache/swift3 /var/cache/swift4 /var/run/swift /srv/1/node/sdb1 /srv/2/node/sdb2 /srv/3/node/sdb3 /srv/4/node/sdb4 /var/run/hummingbird /etc/hummingbird /etc/swift
-  - sudo chown -R "${USER}" /etc/swift /etc/hummingbird /srv/* /var/cache/swift* /var/run/swift /var/run/hummingbird
+  - sudo mkdir -p /var/cache/swift /var/cache/swift2 /var/cache/swift3 /var/cache/swift4 /var/run/swift /srv/1/node/sdb1 /srv/2/node/sdb2 /srv/3/node/sdb3 /srv/4/node/sdb4 /var/run/hummingbird /etc/hummingbird /etc/swift /var/log/swift
+  - sudo chown -R "${USER}" /etc/swift /etc/hummingbird /srv/* /var/cache/swift* /var/run/swift /var/run/hummingbird /var/log/swift
   - git clone --depth 1 'https://github.com/openstack/swift.git' ~/swift
   - virtualenv ~/swift-venv
   - ~/swift-venv/bin/pip install -U pip setuptools python-subunit
