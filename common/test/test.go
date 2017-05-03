@@ -17,6 +17,7 @@ package test
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 
 	"github.com/troubling/hummingbird/common/ring"
@@ -143,6 +144,29 @@ type fakeMoreNodes struct {
 
 func (m *fakeMoreNodes) Next() *ring.Device {
 	return m.dev
+}
+
+type FakeLogger struct{}
+
+func (s FakeLogger) LogError(format string, args ...interface{}) {
+	fmt.Printf("ERROR: ")
+	fmt.Printf(format, args...)
+	fmt.Printf("\n")
+}
+func (s FakeLogger) LogInfo(format string, args ...interface{}) {
+	fmt.Printf("INFO: ")
+	fmt.Printf(format, args...)
+	fmt.Printf("\n")
+}
+func (s FakeLogger) LogDebug(format string, args ...interface{}) {
+	fmt.Printf("DEBUG: ")
+	fmt.Printf(format, args...)
+	fmt.Printf("\n")
+}
+func (s FakeLogger) LogPanics(format string) {
+	fmt.Printf("PANIC: ")
+	fmt.Printf(format)
+	fmt.Printf("\n")
 }
 
 // Fake MemcacheRing

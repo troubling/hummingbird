@@ -497,6 +497,7 @@ func NewProxyDirectClient() (ProxyClient, error) {
 	}
 	c.client = &http.Client{
 		Transport: &http.Transport{
+			DisableCompression: true,
 			Dial: (&net.Dialer{
 				Timeout:   10 * time.Second,
 				KeepAlive: 5 * time.Second,
@@ -514,6 +515,7 @@ func NewProxyDirectClientWithRings(accountRing ring.Ring, containerRing ring.Rin
 	c.ObjectRing = objectRing
 	c.client = &http.Client{
 		Transport: &http.Transport{
+			DisableCompression: true,
 			Dial: (&net.Dialer{
 				Timeout:   10 * time.Second,
 				KeepAlive: 5 * time.Second,
