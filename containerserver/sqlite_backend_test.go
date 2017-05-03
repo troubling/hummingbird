@@ -351,7 +351,7 @@ func TestCreateAndGetInfo(t *testing.T) {
 	defer os.RemoveAll(dir)
 	dbFile := filepath.Join(dir, "db.db")
 	metadata := map[string][]string{
-		"X-Container-Meta-Hi": []string{"There", "100000000.00001"},
+		"X-Container-Meta-Hi": {"There", "100000000.00001"},
 	}
 	err = sqliteCreateContainer(dbFile, "a", "c", "100000000.00000", metadata, 2)
 	require.Nil(t, err)
@@ -400,7 +400,7 @@ func TestMergeItems(t *testing.T) {
 	require.Nil(t, err)
 	require.Equal(t, int64(5), info.ObjectCount)
 
-	require.Nil(t, db.MergeItems([]*ObjectRecord{&ObjectRecord{Name: "a", CreatedAt: "20000000.00001", Deleted: 1}}, ""))
+	require.Nil(t, db.MergeItems([]*ObjectRecord{{Name: "a", CreatedAt: "20000000.00001", Deleted: 1}}, ""))
 	info, err = db.GetInfo()
 	require.Nil(t, err)
 	require.Equal(t, int64(4), info.ObjectCount)
@@ -430,7 +430,7 @@ func TestGetUpdateMetadata(t *testing.T) {
 	defer os.RemoveAll(dir)
 	dbFile := filepath.Join(dir, "db.db")
 	metadata := map[string][]string{
-		"X-Container-Meta-Hi": []string{"There", "200000000.00001"},
+		"X-Container-Meta-Hi": {"There", "200000000.00001"},
 	}
 	metadataValues := map[string]string{
 		"X-Container-Meta-Hi": "There",
@@ -448,15 +448,15 @@ func TestGetUpdateMetadata(t *testing.T) {
 	require.Equal(t, metadataValues, m)
 
 	require.Nil(t, db.UpdateMetadata(map[string][]string{
-		"X-Container-Meta-Hi": []string{"", "100000000.00001"},
+		"X-Container-Meta-Hi": {"", "100000000.00001"},
 	}, "100000000.00001"))
 	m, err = db.GetMetadata()
 	require.Nil(t, err)
 	require.Equal(t, metadataValues, m)
 
 	require.Nil(t, db.UpdateMetadata(map[string][]string{
-		"X-Container-Meta-Hi":         []string{"", "200000001.00001"},
-		"X-Container-Meta-Some-Other": []string{"value", "200000001.00001"},
+		"X-Container-Meta-Hi":         {"", "200000001.00001"},
+		"X-Container-Meta-Some-Other": {"value", "200000001.00001"},
 	}, "200000001.00001"))
 	require.Nil(t, db.UpdateMetadata(map[string][]string{}, "200000001.00001"))
 	m, err = db.GetMetadata()
@@ -487,8 +487,8 @@ func TestMergeSyncTable(t *testing.T) {
 	info, err := db.GetInfo()
 	require.Nil(t, err)
 	someSyncs := []*SyncRecord{
-		&SyncRecord{SyncPoint: 5, RemoteID: "some guy I guess"},
-		&SyncRecord{SyncPoint: 1, RemoteID: "some other guy"},
+		{SyncPoint: 5, RemoteID: "some guy I guess"},
+		{SyncPoint: 1, RemoteID: "some other guy"},
 	}
 	require.Nil(t, db.MergeSyncTable(someSyncs))
 	points, err := db.SyncTable()
@@ -503,8 +503,8 @@ func TestMergeSyncTable(t *testing.T) {
 	}
 	require.Equal(t, expectedSyncs, actualSyncs)
 	newSyncs := []*SyncRecord{
-		&SyncRecord{SyncPoint: 1000000, RemoteID: "some other guy"},
-		&SyncRecord{SyncPoint: 10, RemoteID: "new guy"},
+		{SyncPoint: 1000000, RemoteID: "some other guy"},
+		{SyncPoint: 10, RemoteID: "new guy"},
 	}
 	require.Nil(t, db.MergeSyncTable(newSyncs))
 	expectedSyncs = map[string]int64{
@@ -601,7 +601,7 @@ func TestCreateExistingNoPolicy(t *testing.T) {
 	require.NotNil(t, err)
 
 	newMetadata := map[string][]string{
-		"X-Container-Meta-Whatever": []string{"something", "200000002.00000"},
+		"X-Container-Meta-Whatever": {"something", "200000002.00000"},
 	}
 	c, err = sqliteCreateExistingContainer(db, "200000002.00000", newMetadata, -1, 0)
 	require.Nil(t, err)
@@ -611,7 +611,7 @@ func TestCreateExistingNoPolicy(t *testing.T) {
 	require.Equal(t, info.Metadata, newMetadata)
 
 	newMetadata = map[string][]string{
-		"X-Container-Meta-Another": []string{"whatevs", "200000003.00000"},
+		"X-Container-Meta-Another": {"whatevs", "200000003.00000"},
 	}
 	c, err = sqliteCreateExistingContainer(db, "200000003.00000", newMetadata, -1, 0)
 	require.Nil(t, err)
@@ -619,8 +619,8 @@ func TestCreateExistingNoPolicy(t *testing.T) {
 	info, err = db.GetInfo()
 	require.Nil(t, err)
 	require.Equal(t, info.Metadata, map[string][]string{
-		"X-Container-Meta-Another":  []string{"whatevs", "200000003.00000"},
-		"X-Container-Meta-Whatever": []string{"something", "200000002.00000"},
+		"X-Container-Meta-Another":  {"whatevs", "200000003.00000"},
+		"X-Container-Meta-Whatever": {"something", "200000002.00000"},
 	})
 }
 
@@ -629,15 +629,15 @@ func TestCleanupTombstones(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 
-	require.Nil(t, db.MergeItems([]*ObjectRecord{&ObjectRecord{Name: "a", CreatedAt: "10000000.00000", Deleted: 0}}, ""))
+	require.Nil(t, db.MergeItems([]*ObjectRecord{{Name: "a", CreatedAt: "10000000.00000", Deleted: 0}}, ""))
 	db.UpdateMetadata(map[string][]string{
-		"X-Container-Meta-Old-Value": []string{"", "10000000.00000"},
+		"X-Container-Meta-Old-Value": {"", "10000000.00000"},
 	}, "10000000.00000")
 	info, err := db.GetInfo()
 	require.Nil(t, err)
 	_, ok := info.Metadata["X-Container-Meta-Old-Value"]
 	require.True(t, ok)
-	require.Nil(t, db.MergeItems([]*ObjectRecord{&ObjectRecord{Name: "a", CreatedAt: "10000001.00000", Deleted: 1}}, ""))
+	require.Nil(t, db.MergeItems([]*ObjectRecord{{Name: "a", CreatedAt: "10000001.00000", Deleted: 1}}, ""))
 	require.Nil(t, db.CleanupTombstones(0))
 	info, err = db.GetInfo()
 	require.Nil(t, err)
@@ -654,7 +654,7 @@ func TestDeleteRemovesMetadata(t *testing.T) {
 	defer cleanup()
 
 	db.UpdateMetadata(map[string][]string{
-		"X-Container-Meta-Key": []string{"Value", "200000000.00001"},
+		"X-Container-Meta-Key": {"Value", "200000000.00001"},
 	}, "10000000.00001")
 	require.Nil(t, db.Delete("200000001.00000"))
 	deleted, err := db.IsDeleted()
@@ -671,12 +671,12 @@ func TestCheckSyncLink(t *testing.T) {
 	defer cleanup()
 	link := strings.Replace(db.containerFile, "containers", "sync_containers", -1)
 	db.UpdateMetadata(map[string][]string{
-		"X-Container-Sync-To": []string{"//realm/cluster/a/c", "200000000.00001"},
+		"X-Container-Sync-To": {"//realm/cluster/a/c", "200000000.00001"},
 	}, "20000000.00001")
 	db.CheckSyncLink()
 	require.True(t, fs.Exists(link))
 	db.UpdateMetadata(map[string][]string{
-		"X-Container-Sync-To": []string{"", "200000001.00001"},
+		"X-Container-Sync-To": {"", "200000001.00001"},
 	}, "20000001.00001")
 	db.CheckSyncLink()
 	require.False(t, fs.Exists(link))

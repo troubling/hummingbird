@@ -114,7 +114,7 @@ func TestServerReplicateMergeItems(t *testing.T) {
 
 	// merge a new object
 	mergeRequest([]ObjectRecord{
-		ObjectRecord{
+		{
 			Rowid:       0,
 			Name:        "an object",
 			CreatedAt:   common.CanonicalTimestamp(100),
@@ -132,7 +132,7 @@ func TestServerReplicateMergeItems(t *testing.T) {
 
 	// merge a delete for that object
 	mergeRequest([]ObjectRecord{
-		ObjectRecord{
+		{
 			Rowid:       0,
 			Name:        "an object",
 			CreatedAt:   common.CanonicalTimestamp(101),
@@ -252,7 +252,7 @@ func TestServerReplicateMergeSyncs(t *testing.T) {
 	require.Equal(t, int64(10), info.Point)
 
 	// send merge_syncs REPLICATE request with a new sync point for us
-	replRequest := []interface{}{"merge_syncs", []SyncRecord{SyncRecord{SyncPoint: 15, RemoteID: pretendLocalID}}}
+	replRequest := []interface{}{"merge_syncs", []SyncRecord{{SyncPoint: 15, RemoteID: pretendLocalID}}}
 	msg, err := json.Marshal(replRequest)
 	require.Nil(t, err)
 	rsp = test.MakeCaptureResponse()

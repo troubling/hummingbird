@@ -88,7 +88,7 @@ type proxyWriter struct {
 
 func (w *proxyWriter) WriteHeader(status int) {
 	// strip out any bad headers before calling real WriteHeader
-	for k, _ := range w.Header() {
+	for k := range w.Header() {
 		for _, ex := range excludeHeaders {
 			if strings.HasPrefix(k, ex) || k == "X-Timestamp" {
 				delete(w.Header(), k)
@@ -245,7 +245,7 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 		return
 	}
 
-	for k, _ := range request.Header {
+	for k := range request.Header {
 		for _, ex := range excludeHeaders {
 			if strings.HasPrefix(k, ex) || k == "X-Timestamp" {
 				delete(request.Header, k)

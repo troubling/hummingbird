@@ -377,8 +377,8 @@ type handoffJobRing struct {
 
 func (r *handoffJobRing) GetJobNodes(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
 	return []*ring.Device{
-		&ring.Device{Device: "sda", ReplicationIp: "127.0.0.1", ReplicationPort: 20000},
-		&ring.Device{Device: "sdb", ReplicationIp: "127.0.0.2", ReplicationPort: 2000},
+		{Device: "sda", ReplicationIp: "127.0.0.1", ReplicationPort: 20000},
+		{Device: "sdb", ReplicationIp: "127.0.0.2", ReplicationPort: 2000},
 	}, true
 }
 
@@ -471,8 +471,8 @@ func TestVerifyDevicesRemoveStuck(t *testing.T) {
 		Ring:   &localDevicesRing{localDevs: []*ring.Device{}},
 		logger: test.FakeLowLevelLogger{},
 		runningDevices: map[string]*replicationDevice{
-			"sda": &replicationDevice{lastCheckin: time.Now().Add(time.Hour * -2), cancel: make(chan struct{})},
-			"sdb": &replicationDevice{lastCheckin: time.Now().Add(time.Hour * -2), cancel: make(chan struct{})},
+			"sda": {lastCheckin: time.Now().Add(time.Hour * -2), cancel: make(chan struct{})},
+			"sdb": {lastCheckin: time.Now().Add(time.Hour * -2), cancel: make(chan struct{})},
 		},
 	}
 	r.verifyDevices()
@@ -484,8 +484,8 @@ func TestVerifyDevicesLaunchMissing(t *testing.T) {
 	r := &Replicator{
 		Ring: &localDevicesRing{
 			localDevs: []*ring.Device{
-				&ring.Device{Device: "sda"},
-				&ring.Device{Device: "sdb"},
+				{Device: "sda"},
+				{Device: "sdb"},
 			},
 		},
 		logger:         test.FakeLowLevelLogger{},
@@ -503,8 +503,8 @@ func TestVerifyDevicesRemoveMissing(t *testing.T) {
 		},
 		logger: test.FakeLowLevelLogger{},
 		runningDevices: map[string]*replicationDevice{
-			"sda": &replicationDevice{lastCheckin: time.Now(), cancel: make(chan struct{})},
-			"sdb": &replicationDevice{lastCheckin: time.Now(), cancel: make(chan struct{})},
+			"sda": {lastCheckin: time.Now(), cancel: make(chan struct{})},
+			"sdb": {lastCheckin: time.Now(), cancel: make(chan struct{})},
 		},
 	}
 	r.verifyDevices()
@@ -567,7 +567,7 @@ func TestReportStats(t *testing.T) {
 	r := &Replicator{
 		logger: logger,
 		runningDevices: map[string]*replicationDevice{
-			"sda": &replicationDevice{
+			"sda": {
 				runStarted: time.Now().Add(-5 * time.Minute),
 				cancel:     make(chan struct{}),
 				stats: map[string]int64{
@@ -577,7 +577,7 @@ func TestReportStats(t *testing.T) {
 					"empty": 0, "remote_merge": 0, "diff_capped": 0,
 				},
 			},
-			"sdb": &replicationDevice{
+			"sdb": {
 				runStarted: time.Now().Add(-15 * time.Minute),
 				stats: map[string]int64{
 					"attempted": 10, "success": 9, "failure": 1,
@@ -600,12 +600,12 @@ func TestRunLoop(t *testing.T) {
 		logger: logger,
 		Ring: &localDevicesRing{
 			localDevs: []*ring.Device{
-				&ring.Device{Device: "sda"},
-				&ring.Device{Device: "sdb"},
+				{Device: "sda"},
+				{Device: "sdb"},
 			},
 		},
 		runningDevices: map[string]*replicationDevice{
-			"sda": &replicationDevice{
+			"sda": {
 				runStarted:  time.Now().Add(-5 * time.Minute),
 				lastCheckin: time.Now().Add(-5 * time.Minute),
 				stats: map[string]int64{
@@ -613,7 +613,7 @@ func TestRunLoop(t *testing.T) {
 					"rsync": 0, "diff": 0, "remove": 0, "empty": 0, "remote_merge": 0, "diff_capped": 0,
 				},
 			},
-			"sdb": &replicationDevice{
+			"sdb": {
 				runStarted:  time.Now().Add(-15 * time.Minute),
 				lastCheckin: time.Now().Add(-15 * time.Minute),
 				stats: map[string]int64{
@@ -653,8 +653,8 @@ func TestReplicatorRun(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "sdb"), 0777)
 	r := &Replicator{
 		Ring: &localDevicesRing{localDevs: []*ring.Device{
-			&ring.Device{Device: "sda"},
-			&ring.Device{Device: "sdb"},
+			{Device: "sda"},
+			{Device: "sdb"},
 		}},
 		logger:         test.FakeLowLevelLogger{},
 		deviceRoot:     dir,

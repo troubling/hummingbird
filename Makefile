@@ -13,7 +13,7 @@ fmt:
 	gofmt -l -w -s  .
 
 test:
-	@test -z "$(shell find . -name '*.go' | xargs gofmt -l)" || (echo "You need to run 'go fmt ./...'"; exit 1)
+	@test -z "$(shell find . -name '*.go' | xargs gofmt -l -s)" || (echo "You need to run 'make fmt'"; exit 1)
 	go vet ./...
 	go test -cover ./...
 
