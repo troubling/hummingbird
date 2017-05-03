@@ -233,21 +233,21 @@ func TestCopyN(t *testing.T) {
 
 func TestParseProxyPath(t *testing.T) {
 	tests := [][]string{
-		[]string{"", "vrs", ""},
-		[]string{"", "account", ""},
-		[]string{"/", "vrs", ""},
-		[]string{"/", "object", ""},
-		[]string{"/v/a/c/o/a/b/c/d", "vrs", "v"},
-		[]string{"/v/a/c/o/a/b/c/d", "account", "a"},
-		[]string{"/v/a/c/o/a/b/c/d", "container", "c"},
-		[]string{"/v/a/c/o/a/b/c/d", "object", "o/a/b/c/d"},
-		[]string{"/v/a/c/o/a/b/c///d", "object", "o/a/b/c///d"},
-		[]string{"/v/a/c//o/b/c///d", "object", "/o/b/c///d"},
-		[]string{"/v", "vrs", "v"},
-		[]string{"/v/", "vrs", "v"},
-		[]string{"/v/a", "account", "a"},
-		[]string{"/v/a/", "account", "a"},
-		[]string{"/v/a/", "container", ""},
+		{"", "vrs", ""},
+		{"", "account", ""},
+		{"/", "vrs", ""},
+		{"/", "object", ""},
+		{"/v/a/c/o/a/b/c/d", "vrs", "v"},
+		{"/v/a/c/o/a/b/c/d", "account", "a"},
+		{"/v/a/c/o/a/b/c/d", "container", "c"},
+		{"/v/a/c/o/a/b/c/d", "object", "o/a/b/c/d"},
+		{"/v/a/c/o/a/b/c///d", "object", "o/a/b/c///d"},
+		{"/v/a/c//o/b/c///d", "object", "/o/b/c///d"},
+		{"/v", "vrs", "v"},
+		{"/v/", "vrs", "v"},
+		{"/v/a", "account", "a"},
+		{"/v/a/", "account", "a"},
+		{"/v/a/", "container", ""},
 	}
 	for i := 0; i < len(tests); i++ {
 		tSlice := tests[i]

@@ -118,7 +118,7 @@ func RunCBench(args []string) {
 	}
 
 	objects := make([]*ContainerObject, numObjects)
-	for i, _ := range objects {
+	for i := range objects {
 		container := containers[i%len(containers)]
 		objects[i] = &ContainerObject{
 			Url: fmt.Sprintf("%s/%d", container, rand.Int63()),
@@ -126,7 +126,7 @@ func RunCBench(args []string) {
 	}
 
 	work := make([]func() bool, len(objects))
-	for i, _ := range objects {
+	for i := range objects {
 		work[i] = objects[i].Put
 	}
 	DoJobs("OBJECT PUT", work, concurrency)
@@ -156,7 +156,7 @@ func RunCBench(args []string) {
 
 	if delete {
 		work = make([]func() bool, len(objects))
-		for i, _ := range objects {
+		for i := range objects {
 			work[i] = objects[i].Delete
 		}
 		DoJobs("OBJECT DELETE", work, concurrency)
@@ -219,14 +219,14 @@ func RunCGBench(args []string) {
 	for totalObjects := int64(0); totalObjects < numObjects; totalObjects += reportInterval {
 		fmt.Println("Object count:", totalObjects)
 		objects := make([]*ContainerObject, int(reportInterval))
-		for i, _ := range objects {
+		for i := range objects {
 			objects[i] = &ContainerObject{
 				Url: fmt.Sprintf("%s/%d", container, rand.Int63()),
 			}
 		}
 
 		work := make([]func() bool, len(objects))
-		for i, _ := range objects {
+		for i := range objects {
 			work[i] = objects[i].Put
 		}
 		DoJobs("OBJECT PUT", work, concurrency)

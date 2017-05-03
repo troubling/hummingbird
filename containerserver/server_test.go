@@ -682,7 +682,7 @@ func TestContainerVerifySync(t *testing.T) {
 	require.Nil(t, err)
 	defer cleanup()
 	server.syncRealms = conf.SyncRealmList(map[string]conf.SyncRealm{
-		"realm1": conf.SyncRealm{
+		"realm1": {
 			Name:     "realm1",
 			Key1:     "somekey",
 			Key2:     "someotherkey",

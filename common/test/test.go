@@ -105,8 +105,8 @@ func (r *FakeRing) GetJobNodes(partition uint64, localDevice int) (response []*r
 		return r.MockGetJobNodes, r.MockGetJobNodesHandoff
 	} else {
 		return []*ring.Device{
-			&ring.Device{Device: "sda", ReplicationIp: "127.0.0.1", ReplicationPort: 20000},
-			&ring.Device{Device: "sdb", ReplicationIp: "127.0.0.2", ReplicationPort: 2000},
+			{Device: "sda", ReplicationIp: "127.0.0.1", ReplicationPort: 20000},
+			{Device: "sdb", ReplicationIp: "127.0.0.2", ReplicationPort: 2000},
 		}, r.MockGetJobNodesHandoff
 	}
 }

@@ -33,7 +33,7 @@ install:
   - PATH=$PATH:~/swift-venv/bin remakerings
 
 script:
-  - test -z "$(find . -name '*.go' | xargs gofmt -l)" || (echo "You need to run 'go fmt ./...'"; exit 1)
+  - test -z "$(find . -name '*.go' | xargs gofmt -l -s)" || (echo "You need to run 'make fmt'"; exit 1)
   - go vet github.com/troubling/hummingbird/...
   - go test github.com/troubling/hummingbird/...
   - PATH=$PATH:~/swift-venv/bin swift-init start proxy

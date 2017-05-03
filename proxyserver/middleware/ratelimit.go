@@ -120,7 +120,7 @@ func NewRatelimiter(config conf.Section) (func(http.Handler) http.Handler, error
 	accLimit := int64(config.GetInt("account_db_max_writes_per_sec", 0))
 	contLimit := int64(config.GetInt("container_db_max_writes_per_sec", 0))
 	//TODO: add account metadata global-write-ratelimit ratelimiter
-	RegisterInfo("ratelimit", map[string]interface{}{"account_ratelimit": accLimit, "container_ratelimits": [][]int64{[]int64{contLimit}}, "max_sleep_time_seconds": float64(60.0)})
+	RegisterInfo("ratelimit", map[string]interface{}{"account_ratelimit": accLimit, "container_ratelimits": [][]int64{{contLimit}}, "max_sleep_time_seconds": float64(60.0)})
 	return func(next http.Handler) http.Handler {
 		return &ratelimiter{
 			accountLimit:   accLimit,
