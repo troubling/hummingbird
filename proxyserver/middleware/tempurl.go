@@ -115,7 +115,6 @@ func tempurl(next http.Handler) http.Handler {
 		q := request.URL.Query()
 		sig := q.Get("temp_url_sig")
 		exps := q.Get("temp_url_expires")
-		prefix := q.Get("temp_url_prefix")
 		_, inline := q["inline"]
 
 		if sig == "" && exps == "" {
@@ -150,7 +149,8 @@ func tempurl(next http.Handler) http.Handler {
 		}
 
 		path := ""
-		if prefix != "" {
+		if _, hasPrefix := q["temp_url_prefix"]; hasPrefix {
+			prefix := q.Get("temp_url_prefix")
 			if !strings.HasPrefix(obj, prefix) {
 				srv.StandardResponse(writer, 401)
 				return
