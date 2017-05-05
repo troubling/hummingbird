@@ -92,34 +92,34 @@ func (c *ProxyDirectClient) quorumResponse(reqs ...*http.Request) int {
 }
 
 func (c *ProxyDirectClient) firstResponse(reqs ...*http.Request) (resp *http.Response) {
-	resps := make(chan *http.Response)
-	cancel := make(chan struct{})
-	defer close(cancel)
+	success := make(chan *http.Response)
+	returned := make(chan struct{})
+	defer close(returned)
 
 	for _, req := range reqs {
-		req.Cancel = cancel
-		go func(req *http.Request) {
-			resp, err := c.client.Do(req)
+		go func(r *http.Request) {
+			cancel := make(chan struct{})
+			r.Cancel = cancel
+			response, err := c.client.Do(r)
 			if err != nil {
-				resp = nil
+				response = nil
 			}
 			select {
-			case resps <- resp:
-			case <-cancel:
-				if resp != nil {
-					resp.Body.Close()
-				}
+			case success <- response:
+			case <-returned:
+				close(cancel)
 			}
 		}(req)
+
 		select {
-		case <-time.After(time.Second):
-		case resp = <-resps:
-			if resp.StatusCode/100 == 2 {
-				return
+		case resp = <-success:
+			if resp != nil && resp.StatusCode/100 == 2 {
+				return resp
 			}
+		case <-time.After(time.Second):
 		}
 	}
-	return
+	return nil
 }
 
 var _ ProxyClient = &ProxyDirectClient{}
