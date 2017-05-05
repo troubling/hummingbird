@@ -222,7 +222,7 @@ func (ctx *ProxyContext) GetAccountInfo(account string) *AccountInfo {
 	return ai
 }
 
-func (ctx *ProxyContext) InvalidateAccountInfo(account, container string) {
+func (ctx *ProxyContext) InvalidateAccountInfo(account string) {
 	key := fmt.Sprintf("account/%s", account)
 	delete(ctx.accountInfoCache, key)
 	ctx.Cache.Delete(key)
