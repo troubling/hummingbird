@@ -1071,11 +1071,19 @@ func TestReportStats(t *testing.T) {
 	replicator.reportStats()
 	fmt.Println(logger.logged[0])
 	fmt.Println(logger.logged[1])
-	require.True(t, strings.Contains(logger.logged[0], "Device 1.1:10/sda 500/1000 (50.00%)"))
-	require.True(t, strings.Contains(logger.logged[0], " 1h remaining"))
+	require.Equal(t, 2, len(logger.logged))
+	for _, line := range logger.logged {
+		if strings.Contains(line, "sda") {
+			require.True(t, strings.Contains(line, "Device 1.1:10/sda 500/1000 (50.00%)"))
+			require.True(t, strings.Contains(line, " 1h remaining"))
+		} else if strings.Contains(line, "sdb") {
+			require.True(t, strings.Contains(line, "Device 1.1:10/sdb 40/100 (40.00%)"))
+			require.True(t, strings.Contains(line, " 2h remaining"))
+		} else {
+			require.FailNow(t, fmt.Sprintf("Unexpected log line: '%s'\n", line))
+		}
+	}
 
-	require.True(t, strings.Contains(logger.logged[1], "Device 1.1:10/sdb 40/100 (40.00%)"))
-	require.True(t, strings.Contains(logger.logged[1], " 2h remaining"))
 }
 
 func TestPriorityReplicate(t *testing.T) {
