@@ -53,7 +53,7 @@ func dispositionFormat(dtype string, filename string) string {
 
 func (w *tuWriter) WriteHeader(status int) {
 	if (w.method == "GET" || w.method == "HEAD") && status/100 == 2 {
-		for k, _ := range w.Header() {
+		for k := range w.Header() {
 			if strings.HasPrefix(k, "X-Object-Meta") && !strings.HasPrefix(k, "X-Object-Meta-Public-") {
 				w.Header().Del(k)
 			}
