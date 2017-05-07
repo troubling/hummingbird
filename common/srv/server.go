@@ -136,61 +136,27 @@ func CopyRequestHeaders(r *http.Request, dst *http.Request) {
 	}
 }
 
-type RequestLogger struct {
-	Request *http.Request
-	Logger  LowLevelLogger
-	W       interface {
-		http.ResponseWriter
-		Response() (bool, int)
-	}
-}
-
-func (r RequestLogger) LogError(msg string, fields ...zapcore.Field) {
-	transactionId := r.Request.Header.Get("X-Trans-Id")
-	fields = append(fields, zap.String("txn", transactionId))
-	r.Logger.Error(msg, fields...)
-}
-
-func (r RequestLogger) LogInfo(msg string, fields ...zapcore.Field) {
-	transactionId := r.Request.Header.Get("X-Trans-Id")
-	fields = append(fields, zap.String("txn", transactionId))
-	r.Logger.Info(msg, fields...)
-}
-
-func (r RequestLogger) LogDebug(msg string, fields ...zapcore.Field) {
-	transactionId := r.Request.Header.Get("X-Trans-Id")
-	fields = append(fields, zap.String("txn", transactionId))
-	r.Logger.Debug(msg, fields...)
-}
-
-func (r RequestLogger) LogPanics(msg string, fields ...zapcore.Field) {
-	if e := recover(); e != nil {
-		transactionId := r.Request.Header.Get("X-Trans-Id")
-		fields = append(fields, zap.Any("err", (e)), zap.String("txn", transactionId))
-		panicMsg := fmt.Sprintf("PANIC (%s)", msg)
-		r.Logger.Error(panicMsg, fields...)
-		// if we haven't set a status code yet, we can send a 500 response.
-		if started, _ := r.W.Response(); !started {
-			StandardResponse(r.W, http.StatusInternalServerError)
-		}
-	}
+type WebWriterInterface interface {
+	http.ResponseWriter
+	Response() (bool, int)
 }
 
 func ValidateRequest(r *http.Request) bool {
 	return utf8.ValidString(r.URL.Path) && utf8.ValidString(r.Header.Get("Content-Type"))
 }
 
-type LoggingContext interface {
-	LogError(msg string, fields ...zapcore.Field)
-	LogInfo(msg string, fields ...zapcore.Field)
-	LogDebug(msg string, fields ...zapcore.Field)
-	LogPanics(msg string, fields ...zapcore.Field)
-}
-
 type LowLevelLogger interface {
 	Error(msg string, fields ...zapcore.Field)
 	Info(msg string, fields ...zapcore.Field)
 	Debug(msg string, fields ...zapcore.Field)
+	With(fields ...zapcore.Field) *zap.Logger
+}
+
+func LogPanics(logger LowLevelLogger, msg string) {
+	if e := recover(); e != nil {
+		recoveredMsg := fmt.Sprintf("PANIC (%s)", msg)
+		logger.Error(recoveredMsg, zap.Any("err", e))
+	}
 }
 
 // SetupLogger configures structured logging using uber's zap library.
@@ -369,10 +335,9 @@ func RunServers(GetServer func(conf.Config, *flag.FlagSet) (string, int, Server,
 type Daemon interface {
 	Run()
 	RunForever()
-	LogError(msg string, fields ...zapcore.Field)
 }
 
-func RunDaemon(GetDaemon func(conf.Config, *flag.FlagSet) (Daemon, error), flags *flag.FlagSet) {
+func RunDaemon(GetDaemon func(conf.Config, *flag.FlagSet) (Daemon, LowLevelLogger, error), flags *flag.FlagSet) {
 	var daemons []Daemon
 
 	if flags.NArg() != 0 {
@@ -390,16 +355,16 @@ func RunDaemon(GetDaemon func(conf.Config, *flag.FlagSet) (Daemon, error), flags
 	once := flags.Lookup("once").Value.(flag.Getter).Get() == true
 
 	for _, config := range configs {
-		if daemon, err := GetDaemon(config, flags); err == nil {
+		if daemon, logger, err := GetDaemon(config, flags); err == nil {
 			if once {
 				daemon.Run()
 				fmt.Fprintf(os.Stderr, "Daemon pass completed.\n")
-				daemon.LogError("Daemon pass completed.")
+				logger.Error("Daemon pass completed.")
 			} else {
 				daemons = append(daemons, daemon)
 				go daemon.RunForever()
 				fmt.Fprintf(os.Stderr, "Daemon started.\n")
-				daemon.LogError("Daemon started.")
+				logger.Error("Daemon started.")
 			}
 		} else {
 			fmt.Fprintf(os.Stderr, "Failed to create daemon: %v", err)

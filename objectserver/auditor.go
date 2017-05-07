@@ -33,7 +33,6 @@ import (
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/middleware"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 // AuditForeverInterval represents how often a auditor check should be performed.
@@ -150,14 +149,14 @@ func (a *Auditor) auditSuffix(suffixDir string) {
 	if err != nil {
 		a.errors++
 		a.totalErrors++
-		a.LogError("Error reading suffix dir", zap.String("suffixDir", suffixDir))
+		a.logger.Error("Error reading suffix dir", zap.String("suffixDir", suffixDir))
 		return
 	}
 	for _, hash := range hashes {
 		_, hexErr := hex.DecodeString(hash)
 		hashDir := filepath.Join(suffixDir, hash)
 		if finfo, err := os.Stat(hashDir); err != nil || len(hash) != 32 || hexErr != nil || !finfo.Mode().IsDir() {
-			a.LogError("Skipping invalid file in suffix", zap.String("hashDir", hashDir))
+			a.logger.Error("Skipping invalid file in suffix", zap.String("hashDir", hashDir))
 			continue
 		}
 		a.passes++
@@ -168,7 +167,7 @@ func (a *Auditor) auditSuffix(suffixDir string) {
 		rateLimitSleep(a.passStart, a.totalPasses, a.filesPerSecond)
 		rateLimitSleep(a.passStart, a.totalBytes, a.bytesPerSecond)
 		if err != nil {
-			a.LogError("Failed audit and is being quarantined",
+			a.logger.Error("Failed audit and is being quarantined",
 				zap.String("hashDir", hashDir),
 				zap.Error(err))
 			QuarantineHash(hashDir)
@@ -185,7 +184,7 @@ func (a *Auditor) auditPartition(partitionDir string) {
 	if err != nil {
 		a.errors++
 		a.totalErrors++
-		a.LogError("Error reading partition dir ", zap.String("partitionDir", partitionDir))
+		a.logger.Error("Error reading partition dir ", zap.String("partitionDir", partitionDir))
 		return
 	}
 	for _, suffix := range suffixes {
@@ -195,7 +194,7 @@ func (a *Auditor) auditPartition(partitionDir string) {
 		}
 		_, hexErr := strconv.ParseInt(suffix, 16, 64)
 		if finfo, err := os.Stat(suffixDir); err != nil || len(suffix) != 3 || hexErr != nil || !finfo.Mode().IsDir() {
-			a.LogError("Skipping invalid file in partition.", zap.String("suffixDir", suffixDir))
+			a.logger.Error("Skipping invalid file in partition.", zap.String("suffixDir", suffixDir))
 			continue
 		}
 		a.auditSuffix(suffixDir)
@@ -207,10 +206,10 @@ func (a *Auditor) auditPartition(partitionDir string) {
 
 // auditDevice, checking for mount, list partitions, then call auditPartition() for each.
 func (a *Auditor) auditDevice(devPath string) {
-	defer a.LogPanics("PANIC WHILE AUDITING DEVICE")
+	defer srv.LogPanics(a.logger, "PANIC WHILE AUDITING DEVICE")
 
 	if mounted, err := fs.IsMount(devPath); a.checkMounts && (err != nil || mounted != true) {
-		a.LogError("Skipping unmounted device", zap.String("devPath", devPath))
+		a.logger.Error("Skipping unmounted device", zap.String("devPath", devPath))
 		return
 	}
 
@@ -223,14 +222,14 @@ func (a *Auditor) auditDevice(devPath string) {
 		if err != nil {
 			a.errors++
 			a.totalErrors++
-			a.LogError("Error reading objects dir", zap.String("objPath", objPath))
+			a.logger.Error("Error reading objects dir", zap.String("objPath", objPath))
 			continue
 		}
 		for _, partition := range partitions {
 			_, intErr := strconv.ParseInt(partition, 10, 64)
 			partitionDir := filepath.Join(objPath, partition)
 			if finfo, err := os.Stat(partitionDir); err != nil || intErr != nil || !finfo.Mode().IsDir() {
-				a.LogError("Skipping invalid file in objects directory", zap.String("partitionDir", partitionDir))
+				a.logger.Error("Skipping invalid file in objects directory", zap.String("partitionDir", partitionDir))
 				continue
 			}
 			a.auditPartition(partitionDir)
@@ -247,7 +246,7 @@ func (a *Auditor) statsReport() {
 	brate := float64(a.bytesProcessed) / sinceLast
 	audit := 0.0      // TODO maybe
 	audit_rate := 0.0 // TODO maybe
-	a.LogInfo("statsReport",
+	a.logger.Info("statsReport",
 		zap.String("Object audit", a.auditorType),
 		zap.String("Since", a.lastLog.Format(time.ANSIC)),
 		zap.Int64("Locally passed", a.passes),
@@ -282,7 +281,7 @@ func (a *Auditor) finalLog() {
 	brate := float64(a.totalBytes) / elapsed
 	audit := 0.0      // TODO maybe
 	audit_rate := 0.0 // TODO maybe
-	a.LogInfo("Object Audit",
+	a.logger.Info("Object Audit",
 		zap.String("Auditor type", a.auditorType),
 		zap.String("Mode", a.mode),
 		zap.Float64("completed", elapsed),
@@ -307,37 +306,19 @@ func (a *Auditor) run(c <-chan time.Time) {
 		a.totalBytes = 0
 		a.totalQuarantines = 0
 		a.totalErrors = 0
-		a.LogInfo("Begin object audit",
+		a.logger.Info("Begin object audit",
 			zap.String("mode", a.mode),
 			zap.String("auditorType", a.auditorType),
 			zap.String("driveRoot", a.driveRoot))
 		devices, err := fs.ReadDirNames(a.driveRoot)
 		if err != nil {
-			a.LogError("Unable to list devices", zap.String("driveRoot", a.driveRoot))
+			a.logger.Error("Unable to list devices", zap.String("driveRoot", a.driveRoot))
 			continue
 		}
 		for _, dev := range devices {
 			a.auditDevice(filepath.Join(a.driveRoot, dev))
 		}
 		a.finalLog()
-	}
-}
-
-// LogError with AuditorDaemon
-func (a *AuditorDaemon) LogError(msg string, fields ...zapcore.Field) {
-	a.logger.Error(msg, fields...)
-}
-
-// LogInfo with AuditorDaemon
-func (a *AuditorDaemon) LogInfo(msg string, fields ...zapcore.Field) {
-	a.logger.Info(msg, fields...)
-}
-
-// LogPanics with AuditorDaemon
-func (a *AuditorDaemon) LogPanics(msg string, fields ...zapcore.Field) {
-	if e := recover(); e != nil {
-		recoveredMsg := fmt.Sprintf("PANIC (%s): %s", msg, e)
-		a.logger.Error(recoveredMsg, fields...)
 	}
 }
 
@@ -368,10 +349,10 @@ func (d *AuditorDaemon) RunForever() {
 }
 
 // NewAuditor returns a new AuditorDaemon with the given conf.
-func NewAuditor(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, error) {
+func NewAuditor(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv.LowLevelLogger, error) {
 	var err error
 	if !serverconf.HasSection("object-auditor") {
-		return nil, fmt.Errorf("Unable to find object-auditor config section")
+		return nil, nil, fmt.Errorf("Unable to find object-auditor config section")
 	}
 	d := &AuditorDaemon{}
 	d.policies = conf.LoadPolicies()
@@ -383,12 +364,12 @@ func NewAuditor(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, error)
 	logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
 	logPath := serverconf.GetDefault("object-auditor", "log_path", "/var/log/swift/objectauditor.log")
 	if d.logger, err = srv.SetupLogger("object-auditor", &logLevel, flags, logPath); err != nil {
-		return nil, fmt.Errorf("Error setting up logger: %v", err)
+		return nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 	d.bytesPerSecond = serverconf.GetInt("object-auditor", "bytes_per_second", 10000000)
 	d.regFilesPerSecond = serverconf.GetInt("object-auditor", "files_per_second", 20)
 	d.zbFilesPerSecond = serverconf.GetInt("object-auditor", "zero_byte_files_per_second", 50)
 	d.reconCachePath = serverconf.GetDefault("object-auditor", "recon_cache_path", "/var/cache/swift")
 	d.logTime = serverconf.GetInt("object-auditor", "log_time", 3600)
-	return d, nil
+	return d, d.logger, nil
 }

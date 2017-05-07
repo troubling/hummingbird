@@ -28,18 +28,8 @@ import (
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/pickle"
 	"github.com/troubling/hummingbird/common/srv"
-	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap"
 )
-
-type DummyLogger struct{}
-
-func (a *DummyLogger) LogDebug(msg string, fields ...zapcore.Field) {}
-func (a *DummyLogger) LogError(msg string, fields ...zapcore.Field) {}
-func (a *DummyLogger) LogInfo(msg string, fields ...zapcore.Field)  {}
-func (a *DummyLogger) LogPanics(msg string, fields ...zapcore.Field) {
-	if e := recover(); e != nil {
-	}
-}
 
 func TestExpirerContainer(t *testing.T) {
 	ts, err := makeObjectServer()
@@ -89,16 +79,16 @@ func TestUpdateDeleteAt(t *testing.T) {
 	req.Header.Add("X-Delete-At-Device", "sdb")
 	req.Header.Add("X-Timestamp", "12345.6789")
 
-	dl := DummyLogger{}
+	dl := zap.NewNop()
 
 	vars := map[string]string{"account": "a", "container": "c", "obj": "o", "device": "sda"}
 	req = srv.SetVars(req, vars)
 	deleteAtStr := "1434707411"
-	server.updateDeleteAt(req, deleteAtStr, vars, &dl)
+	server.updateDeleteAt(req, deleteAtStr, vars, dl)
 	require.True(t, requestSent)
 
 	cs.Close()
-	server.updateDeleteAt(req, deleteAtStr, vars, &dl)
+	server.updateDeleteAt(req, deleteAtStr, vars, dl)
 	expectedFile := filepath.Join(ts.root, "sda", "async_pending", "8fc", "02cc012fe572f27e455edbea32da78fc-12345.6789")
 	require.True(t, fs.Exists(expectedFile))
 	data, err := ioutil.ReadFile(expectedFile)
@@ -126,7 +116,7 @@ func TestUpdateDeleteAtNoHeaders(t *testing.T) {
 	vars := map[string]string{"account": "a", "container": "c", "obj": "o", "device": "sda"}
 	req = srv.SetVars(req, vars)
 	deleteAtStr := "1434707411"
-	server.updateDeleteAt(req, deleteAtStr, vars, &DummyLogger{})
+	server.updateDeleteAt(req, deleteAtStr, vars, zap.NewNop())
 	expectedFile := filepath.Join(ts.root, "sda", "async_pending", "8fc", "02cc012fe572f27e455edbea32da78fc-12345.6789")
 	require.True(t, fs.Exists(expectedFile))
 	data, err := ioutil.ReadFile(expectedFile)
@@ -166,7 +156,7 @@ func TestUpdateContainer(t *testing.T) {
 	req.Header.Add("X-Container-Device", "sdb")
 	req.Header.Add("X-Timestamp", "12345.6789")
 
-	dl := DummyLogger{}
+	dl := zap.NewNop()
 
 	vars := map[string]string{"account": "a", "container": "c", "obj": "o", "device": "sda"}
 	req = srv.SetVars(req, vars)
@@ -176,11 +166,11 @@ func TestUpdateContainer(t *testing.T) {
 		"Content-Length": "30",
 		"ETag":           "ffffffffffffffffffffffffffffffff",
 	}
-	server.updateContainer(metadata, req, vars, &dl)
+	server.updateContainer(metadata, req, vars, dl)
 	require.True(t, requestSent)
 
 	cs.Close()
-	server.updateContainer(metadata, req, vars, &dl)
+	server.updateContainer(metadata, req, vars, dl)
 	expectedFile := filepath.Join(ts.root, "sda", "async_pending", "099", "2f714cd91b0e5d803cde2012b01d7099-12345.6789")
 	require.True(t, fs.Exists(expectedFile))
 	data, err := ioutil.ReadFile(expectedFile)
@@ -219,12 +209,12 @@ func TestUpdateContainerNoHeaders(t *testing.T) {
 		"Content-Length": "30",
 		"ETag":           "ffffffffffffffffffffffffffffffff",
 	}
-	dl := DummyLogger{}
-	server.updateContainer(metadata, req, vars, &dl)
+	dl := zap.NewNop()
+	server.updateContainer(metadata, req, vars, dl)
 	require.False(t, requestSent)
 
 	cs.Close()
-	server.updateContainer(metadata, req, vars, &dl)
+	server.updateContainer(metadata, req, vars, dl)
 	expectedFile := filepath.Join(ts.root, "sda", "async_pending", "099", "2f714cd91b0e5d803cde2012b01d7099-12345.6789")
 	require.False(t, fs.Exists(expectedFile))
 }

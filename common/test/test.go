@@ -20,7 +20,6 @@ import (
 	"net/http"
 
 	"github.com/troubling/hummingbird/common/ring"
-	"go.uber.org/zap/zapcore"
 )
 
 // a place for utility functions and interface satisifiers that are used across tests
@@ -50,12 +49,6 @@ func MakeCaptureResponse() *CaptureResponse {
 		Body:   new(bytes.Buffer),
 	}
 }
-
-type FakeLowLevelLogger struct{}
-
-func (FakeLowLevelLogger) Error(msg string, fields ...zapcore.Field) {}
-func (FakeLowLevelLogger) Info(msg string, fields ...zapcore.Field)  {}
-func (FakeLowLevelLogger) Debug(msg string, fields ...zapcore.Field) {}
 
 // FakeRing
 type FakeRing struct {
@@ -151,13 +144,6 @@ type fakeMoreNodes struct {
 func (m *fakeMoreNodes) Next() *ring.Device {
 	return m.dev
 }
-
-type FakeLogger struct{}
-
-func (s FakeLogger) LogError(msg string, fields ...zapcore.Field)  {}
-func (s FakeLogger) LogInfo(msg string, fields ...zapcore.Field)   {}
-func (s FakeLogger) LogDebug(msg string, fields ...zapcore.Field)  {}
-func (s FakeLogger) LogPanics(msg string, fields ...zapcore.Field) {}
 
 // Fake MemcacheRing
 type FakeMemcacheRing struct {

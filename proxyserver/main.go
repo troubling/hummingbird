@@ -41,16 +41,8 @@ type ProxyServer struct {
 func (server *ProxyServer) Finalize() {
 }
 
-func (server *ProxyServer) HealthcheckHandler(writer http.ResponseWriter, request *http.Request) {
-	writer.Header().Set("Content-Length", "2")
-	writer.WriteHeader(http.StatusOK)
-	writer.Write([]byte("OK"))
-	return
-}
-
 func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 	router := srv.NewRouter()
-	router.Get("/healthcheck", http.HandlerFunc(server.HealthcheckHandler))
 	router.Get("/loglevel", server.logLevel)
 	router.Put("/loglevel", server.logLevel)
 	router.Get("/v1/:account/:container/*obj", http.HandlerFunc(server.ObjectGetHandler))
@@ -85,6 +77,7 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 		construct func(config conf.Section) (func(http.Handler) http.Handler, error)
 		section   string
 	}{
+		{middleware.NewCatchError, "filter:catch_errors"},
 		{middleware.NewHealthcheck, "filter:healthcheck"},
 		{middleware.NewRequestLogger, "filter:proxy-logging"},
 		{middleware.NewTempURL, "filter:tempurl"},

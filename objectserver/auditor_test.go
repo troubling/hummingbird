@@ -204,7 +204,7 @@ func makeAuditor(settings ...string) *Auditor {
 		configString += fmt.Sprintf("%s=%s\n", settings[i], settings[i+1])
 	}
 	conf, _ := conf.StringConfig(configString)
-	auditorDaemon, _ := NewAuditor(conf, &flag.FlagSet{})
+	auditorDaemon, _, _ := NewAuditor(conf, &flag.FlagSet{})
 	obs, logs = observer.New(zap.InfoLevel)
 	auditorDaemon.(*AuditorDaemon).logger = zap.New(obs)
 	return &Auditor{AuditorDaemon: auditorDaemon.(*AuditorDaemon), filesPerSecond: 1}
@@ -213,8 +213,9 @@ func makeAuditor(settings ...string) *Auditor {
 func TestFailsWithoutSection(t *testing.T) {
 	conf, err := conf.StringConfig("")
 	require.Nil(t, err)
-	auditorDaemon, err := NewAuditor(conf, &flag.FlagSet{})
+	auditorDaemon, logger, err := NewAuditor(conf, &flag.FlagSet{})
 	require.NotNil(t, err)
+	require.Nil(t, logger)
 	assert.Nil(t, auditorDaemon)
 	assert.True(t, strings.HasPrefix(err.Error(), "Unable to find object-auditor"))
 }

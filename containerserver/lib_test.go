@@ -24,7 +24,6 @@ import (
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
-	"github.com/troubling/hummingbird/common/test"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -74,7 +73,7 @@ func makeTestServer() (http.Handler, func(), error) {
 		hashPathPrefix:   "changeme",
 		hashPathSuffix:   "changeme",
 		logLevel:         zap.NewAtomicLevelAt(zap.InfoLevel),
-		logger:           test.FakeLowLevelLogger{},
+		logger:           zap.NewNop(),
 		checkMounts:      false,
 		updateClient:     http.DefaultClient,
 		containerEngine:  newLRUEngine(dir, "changeme", "changeme", 32),
@@ -100,7 +99,7 @@ func makeTestServer2() (*ContainerServer, http.Handler, func(), error) {
 		hashPathPrefix:  "changeme",
 		hashPathSuffix:  "changeme",
 		logLevel:        zap.NewAtomicLevelAt(zapcore.InfoLevel),
-		logger:          test.FakeLowLevelLogger{},
+		logger:          zap.NewNop(),
 		checkMounts:     false,
 		updateClient:    http.DefaultClient,
 		containerEngine: newLRUEngine(dir, "changeme", "changeme", 32),

@@ -106,7 +106,7 @@ func (server *ObjectServer) ObjGetHandler(writer http.ResponseWriter, request *h
 	headers := writer.Header()
 	obj, err := server.newObject(request, vars, request.Method == "GET")
 	if err != nil {
-		srv.GetLogger(request).LogError("Unable to open object.", zap.Error(err))
+		srv.GetLogger(request).Error("Unable to open object.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -137,7 +137,7 @@ func (server *ObjectServer) ObjGetHandler(writer http.ResponseWriter, request *h
 
 	lastModified, err := common.ParseDate(metadata["X-Timestamp"])
 	if err != nil {
-		srv.GetLogger(request).LogError("Error getting timestamp",
+		srv.GetLogger(request).Error("Error getting timestamp",
 			zap.String("obj", obj.Repr()),
 			zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
@@ -151,7 +151,7 @@ func (server *ObjectServer) ObjGetHandler(writer http.ResponseWriter, request *h
 	headers.Set("ETag", "\""+etag+"\"")
 	xTimestamp, err := common.GetEpochFromTimestamp(metadata["X-Timestamp"])
 	if err != nil {
-		srv.GetLogger(request).LogError("Error getting the epoch time from x-timestamp", zap.Error(err))
+		srv.GetLogger(request).Error("Error getting the epoch time from x-timestamp", zap.Error(err))
 		http.Error(writer, "Invalid X-Timestamp header", http.StatusBadRequest)
 		return
 	}
@@ -241,7 +241,7 @@ func (server *ObjectServer) ObjPutHandler(writer http.ResponseWriter, request *h
 
 	requestTimestamp, err := common.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
 	if err != nil {
-		srv.GetLogger(request).LogError("Error standardizing request X-Timestamp", zap.Error(err))
+		srv.GetLogger(request).Error("Error standardizing request X-Timestamp", zap.Error(err))
 		http.Error(writer, "Invalid X-Timestamp header", http.StatusBadRequest)
 		return
 	}
@@ -262,7 +262,7 @@ func (server *ObjectServer) ObjPutHandler(writer http.ResponseWriter, request *h
 
 	obj, err := server.newObject(request, vars, false)
 	if err != nil {
-		srv.GetLogger(request).LogError("Error getting obj", zap.Error(err))
+		srv.GetLogger(request).Error("Error getting obj", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -289,11 +289,11 @@ func (server *ObjectServer) ObjPutHandler(writer http.ResponseWriter, request *h
 
 	tempFile, err := obj.SetData(request.ContentLength)
 	if err == DriveFullError {
-		srv.GetLogger(request).LogDebug("Not enough space available")
+		srv.GetLogger(request).Debug("Not enough space available")
 		srv.CustomErrorResponse(writer, 507, vars)
 		return
 	} else if err != nil {
-		srv.GetLogger(request).LogError("Error making new file", zap.Error(err))
+		srv.GetLogger(request).Error("Error making new file", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -304,7 +304,7 @@ func (server *ObjectServer) ObjPutHandler(writer http.ResponseWriter, request *h
 		srv.StandardResponse(writer, 499)
 		return
 	} else if err != nil {
-		srv.GetLogger(request).LogError("Error writing to file", zap.Error(err))
+		srv.GetLogger(request).Error("Error writing to file", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -330,11 +330,11 @@ func (server *ObjectServer) ObjPutHandler(writer http.ResponseWriter, request *h
 	outHeaders.Set("ETag", metadata["ETag"])
 
 	if err := obj.Commit(metadata); err != nil {
-		srv.GetLogger(request).LogError("Error saving object", zap.Error(err))
+		srv.GetLogger(request).Error("Error saving object", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
-	server.containerUpdates(request, metadata, request.Header.Get("X-Delete-At"), vars, srv.GetLogger(request))
+	server.containerUpdates(writer, request, metadata, request.Header.Get("X-Delete-At"), vars, srv.GetLogger(request))
 	srv.StandardResponse(writer, http.StatusCreated)
 }
 
@@ -343,7 +343,7 @@ func (server *ObjectServer) ObjDeleteHandler(writer http.ResponseWriter, request
 	headers := writer.Header()
 	requestTimestamp, err := common.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
 	if err != nil {
-		srv.GetLogger(request).LogError("Error standardizing request X-Timestamp", zap.Error(err))
+		srv.GetLogger(request).Error("Error standardizing request X-Timestamp", zap.Error(err))
 		http.Error(writer, "Invalid X-Timestamp header", http.StatusBadRequest)
 		return
 	}
@@ -351,7 +351,7 @@ func (server *ObjectServer) ObjDeleteHandler(writer http.ResponseWriter, request
 
 	obj, err := server.newObject(request, vars, false)
 	if err != nil {
-		srv.GetLogger(request).LogError("Error getting obj", zap.Error(err))
+		srv.GetLogger(request).Error("Error getting obj", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -400,16 +400,16 @@ func (server *ObjectServer) ObjDeleteHandler(writer http.ResponseWriter, request
 		"name":        "/" + vars["account"] + "/" + vars["container"] + "/" + vars["obj"],
 	}
 	if err := obj.Delete(metadata); err == DriveFullError {
-		srv.GetLogger(request).LogDebug("Not enough space available")
+		srv.GetLogger(request).Debug("Not enough space available")
 		srv.CustomErrorResponse(writer, 507, vars)
 		return
 	} else if err != nil {
-		srv.GetLogger(request).LogError("Error deleting object", zap.Error(err))
+		srv.GetLogger(request).Error("Error deleting object", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 	headers.Set("X-Backend-Timestamp", metadata["X-Timestamp"])
-	server.containerUpdates(request, metadata, deleteAt, vars, srv.GetLogger(request))
+	server.containerUpdates(writer, request, metadata, deleteAt, vars, srv.GetLogger(request))
 	srv.StandardResponse(writer, responseStatus)
 }
 
@@ -445,10 +445,9 @@ func (server *ObjectServer) DiskUsageHandler(writer http.ResponseWriter, request
 func (server *ObjectServer) LogRequest(next http.Handler) http.Handler {
 	fn := func(writer http.ResponseWriter, request *http.Request) {
 		newWriter := &srv.WebWriter{ResponseWriter: writer, Status: 500, ResponseStarted: false}
-		requestLogger := &srv.RequestLogger{Request: request, Logger: server.logger, W: newWriter}
-		defer requestLogger.LogPanics("LOGGING REQUEST")
 		start := time.Now()
-		request = srv.SetLogger(request, requestLogger)
+		logr := server.logger.With(zap.String("txn", request.Header.Get("X-Trans-Id")))
+		request = srv.SetLogger(request, logr)
 		next.ServeHTTP(newWriter, request)
 		forceAcquire := request.Header.Get("X-Force-Acquire") == "true"
 
@@ -456,7 +455,7 @@ func (server *ObjectServer) LogRequest(next http.Handler) http.Handler {
 		if forceAcquire {
 			extraInfo = "FA"
 		}
-		server.logger.Info("Request log",
+		logr.Info("Request log",
 			zap.String("remoteAddr", request.RemoteAddr),
 			zap.String("eventTime", time.Now().Format("02/Jan/2006:15:04:05 -0700")),
 			zap.String("method", request.Method),
@@ -464,7 +463,6 @@ func (server *ObjectServer) LogRequest(next http.Handler) http.Handler {
 			zap.Int("status", newWriter.Status),
 			zap.String("contentLength", common.GetDefault(newWriter.Header(), "Content-Length", "-")),
 			zap.String("referer", common.GetDefault(request.Header, "Referer", "-")),
-			zap.String("txn", common.GetDefault(request.Header, "X-Trans-Id", "-")),
 			zap.String("userAgent", common.GetDefault(request.Header, "User-Agent", "-")),
 			zap.Float64("requestTimeSeconds", time.Since(start).Seconds()),
 			zap.String("extraInfo", extraInfo))
@@ -523,7 +521,7 @@ func (server *ObjectServer) updateDeviceLocks(seconds int64) {
 }
 
 func (server *ObjectServer) GetHandler(config conf.Config) http.Handler {
-	commonHandlers := alice.New(server.LogRequest, middleware.ValidateRequest, server.AcquireDevice)
+	commonHandlers := alice.New(server.LogRequest, middleware.RecoverHandler, middleware.ValidateRequest, server.AcquireDevice)
 	router := srv.NewRouter()
 	router.Get("/loglevel", server.logLevel)
 	router.Put("/loglevel", server.logLevel)

@@ -119,7 +119,7 @@ func newTestReplicationDevice(dev *ring.Device, r *Replicator) *patchableReplica
 		r.sendStat = make(chan statUpdate, 100)
 	}
 	if r.logger == nil {
-		r.logger = test.FakeLowLevelLogger{}
+		r.logger = zap.NewNop()
 	}
 	if r.Ring == nil {
 		r.Ring = &test.FakeRing{}
@@ -471,7 +471,7 @@ func (r *localDevicesRing) LocalDevices(localPort int) (devs []*ring.Device, err
 func TestVerifyDevicesRemoveStuck(t *testing.T) {
 	r := &Replicator{
 		Ring:   &localDevicesRing{localDevs: []*ring.Device{}},
-		logger: test.FakeLowLevelLogger{},
+		logger: zap.NewNop(),
 		runningDevices: map[string]*replicationDevice{
 			"sda": {lastCheckin: time.Now().Add(time.Hour * -2), cancel: make(chan struct{})},
 			"sdb": {lastCheckin: time.Now().Add(time.Hour * -2), cancel: make(chan struct{})},
@@ -490,7 +490,7 @@ func TestVerifyDevicesLaunchMissing(t *testing.T) {
 				{Device: "sdb"},
 			},
 		},
-		logger:         test.FakeLowLevelLogger{},
+		logger:         zap.NewNop(),
 		runningDevices: map[string]*replicationDevice{},
 	}
 	r.verifyDevices()
@@ -503,7 +503,7 @@ func TestVerifyDevicesRemoveMissing(t *testing.T) {
 		Ring: &localDevicesRing{
 			localDevs: []*ring.Device{},
 		},
-		logger: test.FakeLowLevelLogger{},
+		logger: zap.NewNop(),
 		runningDevices: map[string]*replicationDevice{
 			"sda": {lastCheckin: time.Now(), cancel: make(chan struct{})},
 			"sdb": {lastCheckin: time.Now(), cancel: make(chan struct{})},
@@ -528,8 +528,9 @@ func TestGetReplicator(t *testing.T) {
 	}
 	config, err := conf.StringConfig("[container-replicator]\nmount_check=false\nbind_port=1000")
 	require.Nil(t, err)
-	r, err := GetReplicator(config, &flag.FlagSet{})
+	r, logger, err := GetReplicator(config, &flag.FlagSet{})
 	require.Nil(t, err)
+	require.NotNil(t, logger)
 	replicator, ok := r.(*Replicator)
 	require.True(t, ok)
 	require.Equal(t, 1000, replicator.serverPort)
@@ -542,16 +543,18 @@ func TestGetReplicator(t *testing.T) {
 
 	config, err = conf.StringConfig("")
 	require.Nil(t, err)
-	r, err = GetReplicator(config, &flag.FlagSet{})
+	r, logger, err = GetReplicator(config, &flag.FlagSet{})
 	require.NotNil(t, err)
+	require.Nil(t, logger)
 
 	GetHashPrefixAndSuffix = func() (pfx string, sfx string, err error) {
 		return "", "", errors.New("I AM A BAD CONFIGURATION")
 	}
 	config, err = conf.StringConfig("[container-replicator]\nmount_check=false\nbind_port=1000")
 	require.Nil(t, err)
-	r, err = GetReplicator(config, &flag.FlagSet{})
+	r, logger, err = GetReplicator(config, &flag.FlagSet{})
 	require.NotNil(t, err)
+	require.Nil(t, logger)
 }
 
 func TestReportStats(t *testing.T) {
@@ -664,7 +667,7 @@ func TestReplicatorRun(t *testing.T) {
 			{Device: "sda"},
 			{Device: "sdb"},
 		}},
-		logger:         test.FakeLowLevelLogger{},
+		logger:         zap.NewNop(),
 		deviceRoot:     dir,
 		sendStat:       make(chan statUpdate, 10),
 		startRun:       make(chan string, 10),

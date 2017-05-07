@@ -24,25 +24,26 @@ import (
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/middleware"
 	"go.uber.org/zap"
 )
 
 var waitForAccountUpdate = time.Second * 5
 
-func (server *ContainerServer) accountUpdate(request *http.Request, vars map[string]string, info *ContainerInfo, logger srv.LoggingContext) {
+func (server *ContainerServer) accountUpdate(writer http.ResponseWriter, request *http.Request, vars map[string]string, info *ContainerInfo, logger srv.LowLevelLogger) {
 	firstDone := make(chan struct{}, 1)
 	go func() {
 		defer func() { firstDone <- struct{}{} }()
-		defer logger.LogPanics("PANIC WHILE UPDATING ACCOUNT")
+		defer middleware.Recover(writer, request, "PANIC WHILE UPDATING ACCOUNT")
 		accpartition := request.Header.Get("X-Account-Partition")
 		if accpartition == "" {
-			logger.LogError("Account update failed: bad partition")
+			logger.Error("Account update failed: bad partition")
 			return
 		}
 		hosts := strings.Split(request.Header.Get("X-Account-Host"), ",")
 		devices := strings.Split(request.Header.Get("X-Account-Device"), ",")
 		if len(hosts) != len(devices) {
-			logger.LogError("Account update failed: different numbers of hosts and devices in request")
+			logger.Error("Account update failed: different numbers of hosts and devices in request")
 			return
 		}
 		for index, host := range hosts {
@@ -50,7 +51,7 @@ func (server *ContainerServer) accountUpdate(request *http.Request, vars map[str
 				common.Urlencode(vars["account"]), common.Urlencode(vars["container"]))
 			req, err := http.NewRequest("PUT", url, nil)
 			if err != nil {
-				logger.LogError("Account update failed: error creating request object")
+				logger.Error("Account update failed: error creating request object")
 				continue
 			}
 			req.Header.Add("X-Put-Timestamp", info.PutTimestamp)
@@ -64,14 +65,14 @@ func (server *ContainerServer) accountUpdate(request *http.Request, vars map[str
 			}
 			resp, err := server.updateClient.Do(req)
 			if err != nil {
-				logger.LogError("Account update failed: bad response",
+				logger.Error("Account update failed: bad response",
 					zap.String("hosts[index]", hosts[index]),
 					zap.String("devices[index]", devices[index]))
 				continue
 			}
 			defer resp.Body.Close()
 			if (resp.StatusCode / 100) != 2 {
-				logger.LogError("Account update failed: bad response",
+				logger.Error("Account update failed: bad response",
 					zap.String("hosts[index]", hosts[index]),
 					zap.String("devices[index]", devices[index]))
 			}

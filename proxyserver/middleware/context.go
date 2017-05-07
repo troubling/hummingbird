@@ -28,6 +28,7 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
+	"go.uber.org/zap"
 )
 
 var (
@@ -107,7 +108,7 @@ func (w *proxyWriter) Response() (bool, int) {
 type ProxyContext struct {
 	*ProxyContextMiddleware
 	Authorize          AuthorizeFunc
-	Logger             srv.LoggingContext
+	Logger             srv.LowLevelLogger
 	containerInfoCache map[string]*ContainerInfo
 	accountInfoCache   map[string]*AccountInfo
 	capWriter          *proxyWriter
@@ -258,11 +259,11 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 	request.Header.Set("X-Trans-Id", transId)
 	newWriter.Header().Set("X-Trans-Id", transId)
 	request.Header.Set("X-Timestamp", common.GetTimestamp())
-
+	logr := m.log.With(zap.String("txn", transId))
 	ctx := &ProxyContext{
 		ProxyContextMiddleware: m,
 		Authorize:              nil,
-		Logger:                 &srv.RequestLogger{Request: request, Logger: m.log, W: newWriter},
+		Logger:                 logr,
 		containerInfoCache:     make(map[string]*ContainerInfo),
 		accountInfoCache:       make(map[string]*AccountInfo),
 		capWriter:              newWriter,

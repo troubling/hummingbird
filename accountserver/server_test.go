@@ -43,7 +43,7 @@ func makeTestServer() (http.Handler, func(), error) {
 		hashPathPrefix:   "changeme",
 		hashPathSuffix:   "changeme",
 		logLevel:         zap.NewAtomicLevelAt(zapcore.InfoLevel),
-		logger:           test.FakeLowLevelLogger{},
+		logger:           zap.NewNop(),
 		checkMounts:      false,
 		updateClient:     http.DefaultClient,
 		accountEngine:    newLRUEngine(dir, "changeme", "changeme", 32),

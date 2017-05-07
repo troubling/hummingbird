@@ -192,7 +192,7 @@ func NewEnvironment(settings ...string) *Environment {
 		_, _, server, _, _ := objectserver.GetServer(conf, &flag.FlagSet{})
 		ts.Config.Handler = server.GetHandler(conf)
 
-		replicator, err := objectserver.NewReplicator(conf, &flag.FlagSet{})
+		replicator, _, err := objectserver.NewReplicator(conf, &flag.FlagSet{})
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -201,7 +201,7 @@ func NewEnvironment(settings ...string) *Environment {
 		trs.Config.Handler = replicator.(*objectserver.Replicator).GetHandler()
 
 		replicatorServer := &TestReplicatorWebServer{Server: trs, host: host, port: port, root: driveRoot, replicator: replicator.(*objectserver.Replicator)}
-		auditor, err := objectserver.NewAuditor(conf, &flag.FlagSet{})
+		auditor, _, err := objectserver.NewAuditor(conf, &flag.FlagSet{})
 		if err != nil {
 			log.Fatal(err)
 		}

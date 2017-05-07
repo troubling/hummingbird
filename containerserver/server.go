@@ -100,14 +100,14 @@ func (server *ContainerServer) ContainerGetHandler(writer http.ResponseWriter, r
 		srv.StandardResponse(writer, http.StatusNotFound)
 		return
 	} else if err != nil {
-		srv.GetLogger(request).LogError("Unable to get container.", zap.Error(err))
+		srv.GetLogger(request).Error("Unable to get container.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 	defer server.containerEngine.Return(db)
 	info, err := db.GetInfo()
 	if err != nil {
-		srv.GetLogger(request).LogError("Unable to get container info.", zap.Error(err))
+		srv.GetLogger(request).Error("Unable to get container info.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -133,7 +133,7 @@ func (server *ContainerServer) ContainerGetHandler(writer http.ResponseWriter, r
 	headers.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(info.StoragePolicyIndex))
 	metadata, err := db.GetMetadata()
 	if err != nil {
-		srv.GetLogger(request).LogError("Unable to get metadata.", zap.Error(err))
+		srv.GetLogger(request).Error("Unable to get metadata.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -141,7 +141,7 @@ func (server *ContainerServer) ContainerGetHandler(writer http.ResponseWriter, r
 		headers.Set(key, value)
 	}
 	if deleted, err := db.IsDeleted(); err != nil {
-		srv.GetLogger(request).LogError("Error calling IsDeleted.", zap.Error(err))
+		srv.GetLogger(request).Error("Error calling IsDeleted.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	} else if deleted {
@@ -181,7 +181,7 @@ func (server *ContainerServer) ContainerGetHandler(writer http.ResponseWriter, r
 	reverse := common.LooksTrue(request.Form.Get("reverse"))
 	objects, err := db.ListObjects(int(limit), marker, endMarker, prefix, delimiter, path, reverse, policyIndex)
 	if err != nil {
-		srv.GetLogger(request).LogError("Unable to list objects.", zap.Error(err))
+		srv.GetLogger(request).Error("Unable to list objects.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -277,13 +277,13 @@ func (server *ContainerServer) ContainerPutHandler(writer http.ResponseWriter, r
 		srv.StandardResponse(writer, http.StatusConflict)
 		return
 	} else if err != nil {
-		srv.GetLogger(request).LogError("Unable to create database.", zap.Error(err))
+		srv.GetLogger(request).Error("Unable to create database.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 	defer server.containerEngine.Return(db)
 	if info, err := db.GetInfo(); err == nil {
-		server.accountUpdate(request, vars, info, srv.GetLogger(request))
+		server.accountUpdate(writer, request, vars, info, srv.GetLogger(request))
 	}
 	if created {
 		srv.StandardResponse(writer, http.StatusCreated)
@@ -300,7 +300,7 @@ func (server *ContainerServer) ContainerDeleteHandler(writer http.ResponseWriter
 		srv.StandardResponse(writer, http.StatusNotFound)
 		return
 	} else if err != nil {
-		srv.GetLogger(request).LogError("Unable to get container.", zap.Error(err))
+		srv.GetLogger(request).Error("Unable to get container.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -312,7 +312,7 @@ func (server *ContainerServer) ContainerDeleteHandler(writer http.ResponseWriter
 	}
 	info, err := db.GetInfo()
 	if err != nil {
-		srv.GetLogger(request).LogError("Unable to get container info.", zap.Error(err))
+		srv.GetLogger(request).Error("Unable to get container info.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -321,13 +321,13 @@ func (server *ContainerServer) ContainerDeleteHandler(writer http.ResponseWriter
 		return
 	}
 	if err = db.Delete(timestamp); err != nil {
-		srv.GetLogger(request).LogError("Unable to delete database.", zap.Error(err))
+		srv.GetLogger(request).Error("Unable to delete database.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 	info, err = db.GetInfo()
 	if err == nil {
-		server.accountUpdate(request, vars, info, srv.GetLogger(request))
+		server.accountUpdate(writer, request, vars, info, srv.GetLogger(request))
 	}
 	writer.WriteHeader(http.StatusNoContent)
 	writer.Write([]byte(""))
@@ -360,13 +360,13 @@ func (server *ContainerServer) ContainerPostHandler(writer http.ResponseWriter, 
 		srv.StandardResponse(writer, http.StatusNotFound)
 		return
 	} else if err != nil {
-		srv.GetLogger(request).LogError("Unable to get container", zap.Error(err))
+		srv.GetLogger(request).Error("Unable to get container", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 	defer server.containerEngine.Return(db)
 	if deleted, err := db.IsDeleted(); err != nil {
-		srv.GetLogger(request).LogError("Error calling IsDeleted.", zap.Error(err))
+		srv.GetLogger(request).Error("Error calling IsDeleted.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	} else if deleted {
@@ -406,7 +406,7 @@ func (server *ContainerServer) ObjPutHandler(writer http.ResponseWriter, request
 	if err == ErrorNoSuchContainer {
 		if strings.HasPrefix(vars["account"], server.autoCreatePrefix) {
 			if _, db, err = server.containerEngine.Create(vars, timestamp, map[string][]string{}, policyIndex, 0); err != nil {
-				srv.GetLogger(request).LogError("Unable to auto-create container.", zap.Error(err))
+				srv.GetLogger(request).Error("Unable to auto-create container.", zap.Error(err))
 				srv.StandardResponse(writer, http.StatusInternalServerError)
 				return
 			}
@@ -415,13 +415,13 @@ func (server *ContainerServer) ObjPutHandler(writer http.ResponseWriter, request
 			return
 		}
 	} else if err != nil {
-		srv.GetLogger(request).LogError("Unable to get container.", zap.Error(err))
+		srv.GetLogger(request).Error("Unable to get container.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 	defer server.containerEngine.Return(db)
 	if err := db.PutObject(vars["obj"], timestamp, size, contentType, etag, policyIndex); err != nil {
-		srv.GetLogger(request).LogError("Error adding object to container.", zap.Error(err))
+		srv.GetLogger(request).Error("Error adding object to container.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -444,7 +444,7 @@ func (server *ContainerServer) ObjDeleteHandler(writer http.ResponseWriter, requ
 	if err == ErrorNoSuchContainer {
 		if strings.HasPrefix(vars["account"], server.autoCreatePrefix) {
 			if _, db, err = server.containerEngine.Create(vars, timestamp, map[string][]string{}, policyIndex, 0); err != nil {
-				srv.GetLogger(request).LogError("Unable to auto-create container.", zap.Error(err))
+				srv.GetLogger(request).Error("Unable to auto-create container.", zap.Error(err))
 				srv.StandardResponse(writer, http.StatusInternalServerError)
 				return
 			}
@@ -453,13 +453,13 @@ func (server *ContainerServer) ObjDeleteHandler(writer http.ResponseWriter, requ
 			return
 		}
 	} else if err != nil {
-		srv.GetLogger(request).LogError("Unable to get container.", zap.Error(err))
+		srv.GetLogger(request).Error("Unable to get container.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 	defer server.containerEngine.Return(db)
 	if err := db.DeleteObject(vars["obj"], timestamp, policyIndex); err != nil {
-		srv.GetLogger(request).LogError("Error adding object to container.", zap.Error(err))
+		srv.GetLogger(request).Error("Error adding object to container.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -500,10 +500,9 @@ func (server *ContainerServer) DiskUsageHandler(writer http.ResponseWriter, requ
 func (server *ContainerServer) LogRequest(next http.Handler) http.Handler {
 	fn := func(writer http.ResponseWriter, request *http.Request) {
 		newWriter := &srv.WebWriter{ResponseWriter: writer, Status: 500, ResponseStarted: false}
-		requestLogger := &srv.RequestLogger{Request: request, Logger: server.logger, W: newWriter}
-		defer requestLogger.LogPanics("LOGGING REQUEST")
 		start := time.Now()
-		request = srv.SetLogger(request, requestLogger)
+		logr := server.logger.With(zap.String("txn", request.Header.Get("X-Trans-Id")))
+		request = srv.SetLogger(request, logr)
 		next.ServeHTTP(newWriter, request)
 		forceAcquire := request.Header.Get("X-Force-Acquire") == "true"
 		lvl, _ := server.logLevel.MarshalText()
@@ -512,7 +511,7 @@ func (server *ContainerServer) LogRequest(next http.Handler) http.Handler {
 			if forceAcquire {
 				extraInfo = "FA"
 			}
-			server.logger.Info("Request log",
+			logr.Info("Request log",
 				zap.String("remoteAddr", request.RemoteAddr),
 				zap.String("eventTime", time.Now().Format("02/Jan/2006:15:04:05 -0700")),
 				zap.String("method", request.Method),
@@ -520,7 +519,6 @@ func (server *ContainerServer) LogRequest(next http.Handler) http.Handler {
 				zap.Int("status", newWriter.Status),
 				zap.String("contentLength", common.GetDefault(newWriter.Header(), "Content-Length", "-")),
 				zap.String("referer", common.GetDefault(request.Header, "Referer", "-")),
-				zap.String("txn", common.GetDefault(request.Header, "X-Trans-Id", "-")),
 				zap.String("userAgent", common.GetDefault(request.Header, "User-Agent", "-")),
 				zap.Float64("requestTimeSeconds", time.Since(start).Seconds()),
 				zap.String("extraInfo", extraInfo))
@@ -573,7 +571,7 @@ func (server *ContainerServer) updateDeviceLocks(seconds int64) {
 
 // GetHandler returns the server's http handler - it sets up routes and instantiates middleware.
 func (server *ContainerServer) GetHandler(config conf.Config) http.Handler {
-	commonHandlers := alice.New(server.LogRequest, middleware.ValidateRequest, server.AcquireDevice)
+	commonHandlers := alice.New(server.LogRequest, middleware.RecoverHandler, middleware.ValidateRequest, server.AcquireDevice)
 	router := srv.NewRouter()
 	router.Get("/loglevel", server.logLevel)
 	router.Put("/loglevel", server.logLevel)
