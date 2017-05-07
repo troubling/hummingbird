@@ -84,14 +84,14 @@ func (server *AccountServer) AccountGetHandler(writer http.ResponseWriter, reque
 		srv.StandardResponse(writer, http.StatusNotFound)
 		return
 	} else if err != nil {
-		srv.GetLogger(request).LogError("Unable to get account.", zap.Error(err))
+		srv.GetLogger(request).Error("Unable to get account.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 	defer server.accountEngine.Return(db)
 	info, err := db.GetInfo()
 	if err != nil {
-		srv.GetLogger(request).LogError("Unable to get account info. ", zap.Error(err))
+		srv.GetLogger(request).Error("Unable to get account info. ", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -110,7 +110,7 @@ func (server *AccountServer) AccountGetHandler(writer http.ResponseWriter, reque
 	}
 	metadata, err := db.GetMetadata()
 	if err != nil {
-		srv.GetLogger(request).LogError("Unable to get metadata.", zap.Error(err))
+		srv.GetLogger(request).Error("Unable to get metadata.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -118,7 +118,7 @@ func (server *AccountServer) AccountGetHandler(writer http.ResponseWriter, reque
 		headers.Set(key, value)
 	}
 	if deleted, err := db.IsDeleted(); err != nil {
-		srv.GetLogger(request).LogError("Error calling IsDeleted.", zap.Error(err))
+		srv.GetLogger(request).Error("Error calling IsDeleted.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	} else if deleted {
@@ -154,7 +154,7 @@ func (server *AccountServer) AccountGetHandler(writer http.ResponseWriter, reque
 	reverse := common.LooksTrue(request.Form.Get("reverse"))
 	containers, err := db.ListContainers(int(limit), marker, endMarker, prefix, delimiter, reverse)
 	if err != nil {
-		srv.GetLogger(request).LogError("Unable to list containers.", zap.Error(err))
+		srv.GetLogger(request).Error("Unable to list containers.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -229,7 +229,7 @@ func (server *AccountServer) AccountPutHandler(writer http.ResponseWriter, reque
 	}
 	created, db, err := server.accountEngine.Create(vars, timestamp, metadata)
 	if err != nil {
-		srv.GetLogger(request).LogError("Unable to create database.", zap.Error(err))
+		srv.GetLogger(request).Error("Unable to create database.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -249,7 +249,7 @@ func (server *AccountServer) AccountDeleteHandler(writer http.ResponseWriter, re
 		srv.StandardResponse(writer, http.StatusNotFound)
 		return
 	} else if err != nil {
-		srv.GetLogger(request).LogError("Unable to get account.", zap.Error(err))
+		srv.GetLogger(request).Error("Unable to get account.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -261,7 +261,7 @@ func (server *AccountServer) AccountDeleteHandler(writer http.ResponseWriter, re
 	}
 	info, err := db.GetInfo()
 	if err != nil {
-		srv.GetLogger(request).LogError("Unable to get account info.", zap.Error(err))
+		srv.GetLogger(request).Error("Unable to get account info.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -270,7 +270,7 @@ func (server *AccountServer) AccountDeleteHandler(writer http.ResponseWriter, re
 		return
 	}
 	if err = db.Delete(timestamp); err != nil {
-		srv.GetLogger(request).LogError("Unable to delete database", zap.Error(err))
+		srv.GetLogger(request).Error("Unable to delete database", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -298,13 +298,13 @@ func (server *AccountServer) AccountPostHandler(writer http.ResponseWriter, requ
 		srv.StandardResponse(writer, http.StatusNotFound)
 		return
 	} else if err != nil {
-		srv.GetLogger(request).LogError("Unable to get account.", zap.Error(err))
+		srv.GetLogger(request).Error("Unable to get account.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 	defer server.accountEngine.Return(db)
 	if deleted, err := db.IsDeleted(); err != nil {
-		srv.GetLogger(request).LogError("Error calling IsDeleted", zap.Error(err))
+		srv.GetLogger(request).Error("Error calling IsDeleted", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	} else if deleted {
@@ -347,7 +347,7 @@ func (server *AccountServer) ContainerPutHandler(writer http.ResponseWriter, req
 	if err == ErrorNoSuchAccount {
 		if strings.HasPrefix(vars["account"], server.autoCreatePrefix) {
 			if _, db, err = server.accountEngine.Create(vars, putTimestamp, map[string][]string{}); err != nil {
-				srv.GetLogger(request).LogError("Unable to auto-create account.", zap.Error(err))
+				srv.GetLogger(request).Error("Unable to auto-create account.", zap.Error(err))
 				srv.StandardResponse(writer, http.StatusInternalServerError)
 				return
 			}
@@ -356,13 +356,13 @@ func (server *AccountServer) ContainerPutHandler(writer http.ResponseWriter, req
 			return
 		}
 	} else if err != nil {
-		srv.GetLogger(request).LogError("Unable to get account.", zap.Error(err))
+		srv.GetLogger(request).Error("Unable to get account.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 	defer server.accountEngine.Return(db)
 	if err := db.PutContainer(vars["container"], putTimestamp, deleteTimestamp, objectCount, bytesUsed, int(storagePolicyIndex)); err != nil {
-		srv.GetLogger(request).LogError("Error adding object to container.", zap.Error(err))
+		srv.GetLogger(request).Error("Error adding object to container.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -396,10 +396,9 @@ func (server *AccountServer) DiskUsageHandler(writer http.ResponseWriter, reques
 func (server *AccountServer) LogRequest(next http.Handler) http.Handler {
 	fn := func(writer http.ResponseWriter, request *http.Request) {
 		newWriter := &srv.WebWriter{ResponseWriter: writer, Status: 500, ResponseStarted: false}
-		requestLogger := &srv.RequestLogger{Request: request, Logger: server.logger, W: newWriter}
-		defer requestLogger.LogPanics("LOGGING REQUEST")
 		start := time.Now()
-		request = srv.SetLogger(request, requestLogger)
+		logr := server.logger.With(zap.String("txn", request.Header.Get("X-Trans-Id")))
+		request = srv.SetLogger(request, logr)
 		next.ServeHTTP(newWriter, request)
 		forceAcquire := request.Header.Get("X-Force-Acquire") == "true"
 		lvl, _ := server.logLevel.MarshalText()
@@ -408,7 +407,7 @@ func (server *AccountServer) LogRequest(next http.Handler) http.Handler {
 			if forceAcquire {
 				extraInfo = "FA"
 			}
-			server.logger.Info("Request log",
+			logr.Info("Request log",
 				zap.String("remoteAddr", request.RemoteAddr),
 				zap.String("eventTime", time.Now().Format("02/Jan/2006:15:04:05 -0700")),
 				zap.String("method", request.Method),
@@ -416,7 +415,6 @@ func (server *AccountServer) LogRequest(next http.Handler) http.Handler {
 				zap.Int("status", newWriter.Status),
 				zap.String("contentLength", common.GetDefault(newWriter.Header(), "Content-Length", "-")),
 				zap.String("referer", common.GetDefault(request.Header, "Referer", "-")),
-				zap.String("txn", common.GetDefault(request.Header, "X-Trans-Id", "-")),
 				zap.String("userAgent", common.GetDefault(request.Header, "User-Agent", "-")),
 				zap.Float64("requestTimeSeconds", time.Since(start).Seconds()),
 				zap.String("extraInfo", extraInfo))
@@ -469,7 +467,7 @@ func (server *AccountServer) updateDeviceLocks(seconds int64) {
 
 // GetHandler returns the server's http handler - it sets up routes and instantiates middleware.
 func (server *AccountServer) GetHandler(config conf.Config) http.Handler {
-	commonHandlers := alice.New(server.LogRequest, middleware.ValidateRequest, server.AcquireDevice)
+	commonHandlers := alice.New(server.LogRequest, middleware.RecoverHandler, middleware.ValidateRequest, server.AcquireDevice)
 	router := srv.NewRouter()
 	router.Get("/loglevel", server.logLevel)
 	router.Put("/loglevel", server.logLevel)

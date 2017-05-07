@@ -24,6 +24,7 @@ import (
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
+	"go.uber.org/zap"
 )
 
 const rateBuffer = int64(5 * time.Second)
@@ -82,7 +83,7 @@ func (r *ratelimiter) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 	}
 	ctx := GetProxyContext(request)
 	if ctx == nil {
-		ctx.Logger.LogDebug("Error ratelimiter getting ctx")
+		ctx.Logger.Debug("Error ratelimiter getting ctx")
 		return
 	}
 	limit := int64(0)
@@ -107,8 +108,7 @@ func (r *ratelimiter) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 			sleep(time.Duration(sleepTime))
 		} else {
 			if ctx := GetProxyContext(request); ctx != nil {
-				ctx.Logger.LogDebug(fmt.Sprintf(
-					"Error ratelimitint getting sleep time: %v", err))
+				ctx.Logger.Debug("Ratelimiter errored while getting sleep time", zap.Error(err))
 			}
 		}
 	}

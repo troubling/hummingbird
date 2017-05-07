@@ -31,6 +31,7 @@ import (
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/pickle"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/middleware"
 	"go.uber.org/zap"
 )
 
@@ -111,7 +112,7 @@ func (server *ObjectServer) saveAsync(method, account, container, obj, localDevi
 	}
 }
 
-func (server *ObjectServer) updateContainer(metadata map[string]string, request *http.Request, vars map[string]string, logger srv.LoggingContext) {
+func (server *ObjectServer) updateContainer(metadata map[string]string, request *http.Request, vars map[string]string, logger srv.LowLevelLogger) {
 	partition := request.Header.Get("X-Container-Partition")
 	hosts := splitHeader(request.Header.Get("X-Container-Host"))
 	devices := splitHeader(request.Header.Get("X-Container-Device"))
@@ -133,7 +134,7 @@ func (server *ObjectServer) updateContainer(metadata map[string]string, request 
 	failures := 0
 	for index := range hosts {
 		if !server.sendContainerUpdate(hosts[index], devices[index], request.Method, partition, vars["account"], vars["container"], vars["obj"], requestHeaders) {
-			logger.LogError("ERROR container update failed (saving for async update later)",
+			logger.Error("ERROR container update failed (saving for async update later)",
 				zap.String("Host", hosts[index]),
 				zap.String("Device", devices[index]))
 			failures++
@@ -144,7 +145,7 @@ func (server *ObjectServer) updateContainer(metadata map[string]string, request 
 	}
 }
 
-func (server *ObjectServer) updateDeleteAt(request *http.Request, deleteAtStr string, vars map[string]string, logger srv.LoggingContext) {
+func (server *ObjectServer) updateDeleteAt(request *http.Request, deleteAtStr string, vars map[string]string, logger srv.LowLevelLogger) {
 	deleteAt, err := common.ParseDate(deleteAtStr)
 	if err != nil {
 		return
@@ -172,7 +173,7 @@ func (server *ObjectServer) updateDeleteAt(request *http.Request, deleteAtStr st
 	failures := 0
 	for index := range hosts {
 		if !server.sendContainerUpdate(hosts[index], devices[index], request.Method, partition, deleteAtAccount, container, obj, requestHeaders) {
-			logger.LogError("ERROR container update failed with (saving for async update later)",
+			logger.Error("ERROR container update failed with (saving for async update later)",
 				zap.String("Host", hosts[index]),
 				zap.String("Device", devices[index]))
 			failures++
@@ -183,8 +184,8 @@ func (server *ObjectServer) updateDeleteAt(request *http.Request, deleteAtStr st
 	}
 }
 
-func (server *ObjectServer) containerUpdates(request *http.Request, metadata map[string]string, deleteAt string, vars map[string]string, logger srv.LoggingContext) {
-	defer logger.LogPanics("PANIC WHILE UPDATING CONTAINER LISTINGS")
+func (server *ObjectServer) containerUpdates(writer http.ResponseWriter, request *http.Request, metadata map[string]string, deleteAt string, vars map[string]string, logger srv.LowLevelLogger) {
+	defer middleware.Recover(writer, request, "PANIC WHILE UPDATING CONTAINER LISTINGS")
 	if deleteAt != "" {
 		go server.updateDeleteAt(request, deleteAt, vars, logger)
 	}

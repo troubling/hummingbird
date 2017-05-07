@@ -32,7 +32,7 @@ func NewRequestLogger(config conf.Section) (func(http.Handler) http.Handler, err
 				next.ServeHTTP(writer, request)
 				ctx := GetProxyContext(request)
 				_, status := ctx.Response()
-				ctx.Logger.LogInfo("Request log",
+				ctx.Logger.Info("Request log",
 					zap.String("remoteAddr", request.RemoteAddr),
 					zap.String("eventTime", time.Now().Format("02/Jan/2006:15:04:05 -0700")),
 					zap.String("method", request.Method),
@@ -40,7 +40,6 @@ func NewRequestLogger(config conf.Section) (func(http.Handler) http.Handler, err
 					zap.Int("status", status),
 					zap.String("contentLength", common.GetDefault(writer.Header(), "Content-Length", "-")),
 					zap.String("referer", common.GetDefault(request.Header, "Referer", "-")),
-					zap.String("txn", common.GetDefault(request.Header, "X-Trans-Id", "-")),
 					zap.String("userAgent", common.GetDefault(request.Header, "User-Agent", "-")),
 					zap.Float64("requestTimeSeconds", time.Since(start).Seconds()))
 			},

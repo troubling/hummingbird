@@ -55,7 +55,7 @@ func newTestReplicatorWithFlags(settings []string, flags *flag.FlagSet) (*Replic
 		configString += fmt.Sprintf("%s=%s\n", settings[i], settings[i+1])
 	}
 	conf, _ := conf.StringConfig(configString)
-	replicator, err := NewReplicator(conf, flags)
+	replicator, _, err := NewReplicator(conf, flags)
 	if err != nil {
 		return nil, err
 	}

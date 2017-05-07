@@ -96,7 +96,7 @@ func NewReplicationManager(limitPerDisk int64, limitOverall int64) *ReplicationM
 func (r *Replicator) ProgressReportHandler(w http.ResponseWriter, req *http.Request) {
 	data, err := json.Marshal(r.getDeviceProgress())
 	if err != nil {
-		r.LogError("Error Marshaling device progress", zap.Error(err))
+		r.logger.Error("Error Marshaling device progress", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(err.Error()))
 		return
@@ -148,7 +148,7 @@ func (r *Replicator) objReplicateHandler(writer http.ResponseWriter, request *ht
 	}
 	hashes, err := GetHashes(r.deviceRoot, vars["device"], vars["partition"], recalculate, r.reclaimAge, policy, srv.GetLogger(request))
 	if err != nil {
-		srv.GetLogger(request).LogError("Unable to get hashes",
+		srv.GetLogger(request).Error("Unable to get hashes",
 			zap.String("Device", vars["device"]),
 			zap.String("Partition", vars["partition"]))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
@@ -173,11 +173,11 @@ func (r *Replicator) objRepConnHandler(writer http.ResponseWriter, request *http
 
 	writer.WriteHeader(http.StatusOK)
 	if hijacker, ok := writer.(http.Hijacker); !ok {
-		srv.GetLogger(request).LogError("[ObjRepConnHandler] Writer not a Hijacker")
+		srv.GetLogger(request).Error("[ObjRepConnHandler] Writer not a Hijacker")
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	} else if conn, rw, err = hijacker.Hijack(); err != nil {
-		srv.GetLogger(request).LogError("[ObjRepConnHandler] Hijack failed")
+		srv.GetLogger(request).Error("[ObjRepConnHandler] Hijack failed")
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -185,12 +185,12 @@ func (r *Replicator) objRepConnHandler(writer http.ResponseWriter, request *http
 
 	rc := NewIncomingRepConn(rw, conn)
 	if err := rc.RecvMessage(&brr); err != nil {
-		srv.GetLogger(request).LogError("[ObjRepConnHandler] Error receiving BeginReplicationRequest", zap.Error(err))
+		srv.GetLogger(request).Error("[ObjRepConnHandler] Error receiving BeginReplicationRequest", zap.Error(err))
 		writer.WriteHeader(http.StatusBadRequest)
 		return
 	}
 	if !r.replicationMan.Begin(brr.Device, r.replicateTimeout) {
-		srv.GetLogger(request).LogError("[ObjRepConnHandler] Timed out waiting for concurrency slot")
+		srv.GetLogger(request).Error("[ObjRepConnHandler] Timed out waiting for concurrency slot")
 		writer.WriteHeader(503)
 		return
 	}
@@ -199,13 +199,13 @@ func (r *Replicator) objRepConnHandler(writer http.ResponseWriter, request *http
 	if brr.NeedHashes {
 		hashes, err = GetHashes(r.deviceRoot, brr.Device, brr.Partition, nil, r.reclaimAge, policy, srv.GetLogger(request))
 		if err != nil {
-			srv.GetLogger(request).LogError("[ObjRepConnHandler] Error getting hashes", zap.Error(err))
+			srv.GetLogger(request).Error("[ObjRepConnHandler] Error getting hashes", zap.Error(err))
 			writer.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 	}
 	if err := rc.SendMessage(BeginReplicationResponse{Hashes: hashes}); err != nil {
-		srv.GetLogger(request).LogError("[ObjRepConnHandler] Error sending BeginReplicationResponse", zap.Error(err))
+		srv.GetLogger(request).Error("[ObjRepConnHandler] Error sending BeginReplicationResponse", zap.Error(err))
 		writer.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -270,7 +270,7 @@ func (r *Replicator) objRepConnHandler(writer http.ResponseWriter, request *http
 		if err == replicationDone {
 			return
 		} else if err != nil {
-			srv.GetLogger(request).LogError("[ObjRepConnHandler] Error replicating",
+			srv.GetLogger(request).Error("[ObjRepConnHandler] Error replicating",
 				zap.String("errType", errType),
 				zap.Error(err))
 			writer.WriteHeader(http.StatusInternalServerError)
@@ -282,14 +282,13 @@ func (r *Replicator) objRepConnHandler(writer http.ResponseWriter, request *http
 func (r *Replicator) LogRequest(next http.Handler) http.Handler {
 	fn := func(writer http.ResponseWriter, request *http.Request) {
 		newWriter := &srv.WebWriter{ResponseWriter: writer, Status: 500, ResponseStarted: false}
-		requestLogger := &srv.RequestLogger{Request: request, Logger: r.logger, W: newWriter}
-		defer requestLogger.LogPanics("LOGGING REQUEST")
 		start := time.Now()
-		request = srv.SetLogger(request, requestLogger)
+		logr := r.logger.With(zap.String("txn", request.Header.Get("X-Trans-Id")))
+		request = srv.SetLogger(request, logr)
 		next.ServeHTTP(newWriter, request)
 		lvl, _ := r.logLevel.MarshalText()
 		if (request.Method != "REPLICATE" && request.Method != "REPCONN") || strings.ToUpper(string(lvl)) == "DEBUG" {
-			r.logger.Info("Request log",
+			logr.Info("Request log",
 				zap.String("remoteAddr", request.RemoteAddr),
 				zap.String("eventTime", time.Now().Format("02/Jan/2006:15:04:05 -0700")),
 				zap.String("method", request.Method),
@@ -297,7 +296,6 @@ func (r *Replicator) LogRequest(next http.Handler) http.Handler {
 				zap.Int("status", newWriter.Status),
 				zap.String("contentLength", common.GetDefault(newWriter.Header(), "Content-Length", "-")),
 				zap.String("referer", common.GetDefault(request.Header, "Referer", "-")),
-				zap.String("txn", common.GetDefault(request.Header, "X-Trans-Id", "-")),
 				zap.String("userAgent", common.GetDefault(request.Header, "User-Agent", "-")),
 				zap.Float64("requestTimeSeconds", time.Since(start).Seconds()))
 		}
@@ -322,7 +320,7 @@ func (r *Replicator) GetHandler() http.Handler {
 func (r *Replicator) startWebServer() {
 	for {
 		if sock, err := srv.RetryListen(r.bindIp, r.port); err != nil {
-			r.LogError("Listen failed", zap.Error(err))
+			r.logger.Error("Listen failed", zap.Error(err))
 		} else {
 			http.Serve(sock, r.GetHandler())
 		}

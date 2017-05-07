@@ -56,7 +56,7 @@ func (server *AccountServer) TmpUploadHandler(writer http.ResponseWriter, reques
 	}
 	fp, err := os.Create(filename)
 	if err != nil {
-		srv.GetLogger(request).LogError("Unable to create file.",
+		srv.GetLogger(request).Error("Unable to create file.",
 			zap.String("filename", filename),
 			zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
@@ -65,7 +65,7 @@ func (server *AccountServer) TmpUploadHandler(writer http.ResponseWriter, reques
 	defer fp.Close()
 	if _, err := io.Copy(fp, request.Body); err != nil {
 		os.RemoveAll(filename)
-		srv.GetLogger(request).LogError("Error saving file contents.",
+		srv.GetLogger(request).Error("Error saving file contents.",
 			zap.String("filename", filename),
 			zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
@@ -150,7 +150,7 @@ func (server *AccountServer) AccountReplicateHandler(writer http.ResponseWriter,
 			srv.StandardResponse(writer, status)
 		}
 	default:
-		srv.GetLogger(request).LogError("Unknown replication op.", zap.String("op", op))
+		srv.GetLogger(request).Error("Unknown replication op.", zap.String("op", op))
 		srv.StandardResponse(writer, http.StatusBadRequest)
 	}
 }
@@ -172,7 +172,7 @@ func (server *AccountServer) replicateRsyncThenMerge(request *http.Request, vars
 	for {
 		records, err := localDb.ItemsSince(point, 10000)
 		if err != nil {
-			srv.GetLogger(request).LogError("Error fetching items.",
+			srv.GetLogger(request).Error("Error fetching items.",
 				zap.String("accountFile", accountFile),
 				zap.Error(err))
 			return http.StatusInternalServerError
@@ -182,14 +182,14 @@ func (server *AccountServer) replicateRsyncThenMerge(request *http.Request, vars
 		}
 		point = records[len(records)-1].Rowid
 		if err := tmpDb.MergeItems(records, ""); err != nil {
-			srv.GetLogger(request).LogError("Error merging items.",
+			srv.GetLogger(request).Error("Error merging items.",
 				zap.String("tmpAccountFile", tmpAccountFile),
 				zap.Error(err))
 			return http.StatusInternalServerError
 		}
 	}
 	if tmpDb.NewID() != nil || os.MkdirAll(filepath.Dir(accountFile), 0777) != nil || os.Rename(tmpAccountFile, accountFile) != nil {
-		srv.GetLogger(request).LogError("Error blessing new account db.",
+		srv.GetLogger(request).Error("Error blessing new account db.",
 			zap.String("accountFile", accountFile))
 		return http.StatusInternalServerError
 	}
@@ -209,7 +209,7 @@ func (server *AccountServer) replicateCompleteRsync(request *http.Request, vars 
 	}
 	defer tmpDb.Close()
 	if tmpDb.NewID() != nil || os.MkdirAll(filepath.Dir(accountFile), 0777) != nil || os.Rename(tmpAccountFile, accountFile) != nil {
-		srv.GetLogger(request).LogError("Error blessing new account db.",
+		srv.GetLogger(request).Error("Error blessing new account db.",
 			zap.String("accountFile", accountFile))
 		return http.StatusInternalServerError
 	}
@@ -223,7 +223,7 @@ func (server *AccountServer) replicateMergeItems(request *http.Request, vars map
 	}
 	defer server.accountEngine.Return(db)
 	if err := db.MergeItems(records, remoteID); err != nil {
-		srv.GetLogger(request).LogError("Error merging records.",
+		srv.GetLogger(request).Error("Error merging records.",
 			zap.String("db.RingHash", db.RingHash()),
 			zap.Error(err))
 		return http.StatusInternalServerError
@@ -238,7 +238,7 @@ func (server *AccountServer) replicateMergeSyncs(request *http.Request, vars map
 	}
 	defer server.accountEngine.Return(db)
 	if err := db.MergeSyncTable(records); err != nil {
-		srv.GetLogger(request).LogError("Error merging sync table.",
+		srv.GetLogger(request).Error("Error merging sync table.",
 			zap.String("db.RingHash", db.RingHash()),
 			zap.Error(err))
 		return http.StatusInternalServerError
@@ -254,14 +254,14 @@ func (server *AccountServer) replicateSync(request *http.Request, vars map[strin
 	defer server.accountEngine.Return(db)
 	info, err := db.SyncRemoteData(maxRow, hash, id, createdAt, putTimestamp, deleteTimestamp, metadata)
 	if err != nil {
-		srv.GetLogger(request).LogError("Error syncing remote data.",
+		srv.GetLogger(request).Error("Error syncing remote data.",
 			zap.String("vars['hash']", vars["hash"]),
 			zap.Error(err))
 		return http.StatusInternalServerError, nil
 	}
 	response, err := json.Marshal(info)
 	if err != nil {
-		srv.GetLogger(request).LogError("Error marshaling info.",
+		srv.GetLogger(request).Error("Error marshaling info.",
 			zap.String("vars['hash']", vars["hash"]),
 			zap.Error(err))
 		return http.StatusInternalServerError, nil

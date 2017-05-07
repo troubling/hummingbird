@@ -24,14 +24,14 @@ type KeyType int
 
 const logkey KeyType = iota
 
-func GetLogger(r *http.Request) LoggingContext {
+func GetLogger(r *http.Request) LowLevelLogger {
 	if rv := r.Context().Value(logkey); rv != nil {
-		return rv.(LoggingContext)
+		return rv.(LowLevelLogger)
 	}
 	return nil
 }
 
-func SetLogger(r *http.Request, l LoggingContext) *http.Request {
+func SetLogger(r *http.Request, l LowLevelLogger) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), logkey, l))
 }
 
