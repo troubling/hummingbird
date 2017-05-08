@@ -168,7 +168,7 @@ func (ctx *ProxyContext) InvalidateContainerInfo(account, container string) {
 
 func getPathParts(request *http.Request) (bool, string, string, string) {
 	parts := strings.SplitN(request.URL.Path, "/", 5)
-	apiRequest := len(parts) > 0 && parts[0] == "v1"
+	apiRequest := len(parts) > 0 && parts[1] == "v1"
 	if len(parts) == 5 {
 		return apiRequest, parts[2], parts[3], parts[4]
 	} else if len(parts) == 4 {
@@ -222,7 +222,7 @@ func (ctx *ProxyContext) GetAccountInfo(account string) *AccountInfo {
 	return ai
 }
 
-func (ctx *ProxyContext) InvalidateAccountInfo(account, container string) {
+func (ctx *ProxyContext) InvalidateAccountInfo(account string) {
 	key := fmt.Sprintf("account/%s", account)
 	delete(ctx.accountInfoCache, key)
 	ctx.Cache.Delete(key)

@@ -79,17 +79,19 @@ func (ta *tempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 	} else if strings.HasPrefix(request.URL.Path, "/v1") || strings.HasPrefix(request.URL.Path, "/V1") {
 		token := request.Header.Get("X-Auth-Token")
 		ctx := GetProxyContext(request)
-		valid, err := ctx.Cache.Get(token)
-		if err != nil {
-			srv.StandardResponse(writer, 401)
-			return
-		}
-		v, ok := valid.(bool)
-		if !ok {
-			v = false
-		}
-		ctx.Authorize = func(r *http.Request) bool {
-			return v
+		if ctx.Authorize == nil {
+			valid, err := ctx.Cache.Get(token)
+			if err != nil {
+				srv.StandardResponse(writer, 401)
+				return
+			}
+			v, ok := valid.(bool)
+			if !ok {
+				v = false
+			}
+			ctx.Authorize = func(r *http.Request) bool {
+				return v
+			}
 		}
 		ta.next.ServeHTTP(writer, request)
 	} else {
