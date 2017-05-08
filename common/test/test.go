@@ -50,20 +50,6 @@ func MakeCaptureResponse() *CaptureResponse {
 	}
 }
 
-type FakeLowLevelLogger struct{}
-
-func (FakeLowLevelLogger) Err(s string) error {
-	return nil
-}
-
-func (FakeLowLevelLogger) Info(s string) error {
-	return nil
-}
-
-func (FakeLowLevelLogger) Debug(s string) error {
-	return nil
-}
-
 // FakeRing
 type FakeRing struct {
 	// Overrides for function returns
@@ -158,13 +144,6 @@ type fakeMoreNodes struct {
 func (m *fakeMoreNodes) Next() *ring.Device {
 	return m.dev
 }
-
-type FakeLogger struct{}
-
-func (s FakeLogger) LogError(format string, args ...interface{}) {}
-func (s FakeLogger) LogInfo(format string, args ...interface{})  {}
-func (s FakeLogger) LogDebug(format string, args ...interface{}) {}
-func (s FakeLogger) LogPanics(format string)                     {}
 
 // Fake MemcacheRing
 type FakeMemcacheRing struct {
