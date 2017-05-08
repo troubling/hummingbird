@@ -17,28 +17,6 @@ import (
 	"github.com/troubling/hummingbird/common/ring"
 )
 
-func map2Headers(m map[string]string) http.Header {
-	if m == nil {
-		return nil
-	}
-	headers := make(http.Header, len(m))
-	for k, v := range m {
-		headers.Set(k, v)
-	}
-	return headers
-}
-
-func headers2Map(headers http.Header) map[string]string {
-	if headers == nil {
-		return nil
-	}
-	m := make(map[string]string, len(headers))
-	for k := range headers {
-		m[k] = headers.Get(k)
-	}
-	return m
-}
-
 func mkquery(options map[string]string) string {
 	query := ""
 	for k, v := range options {
@@ -484,6 +462,23 @@ func NewProxyDirectClient() (ProxyClient, error) {
 	return c, nil
 }
 
+func NewProxyDirectClientWithRings(accountRing ring.Ring, containerRing ring.Ring, objectRing ring.Ring) (ProxyClient, error) {
+	c := &ProxyDirectClient{}
+	c.AccountRing = accountRing
+	c.ContainerRing = containerRing
+	c.ObjectRing = objectRing
+	c.client = &http.Client{
+		Transport: &http.Transport{
+			Dial: (&net.Dialer{
+				Timeout:   10 * time.Second,
+				KeepAlive: 5 * time.Second,
+			}).Dial,
+		},
+		Timeout: 120 * time.Minute,
+	}
+	return c, nil
+}
+
 type directClient struct {
 	*ProxyDirectClient
 	account string
@@ -492,14 +487,14 @@ type directClient struct {
 var _ Client = &directClient{}
 
 func (c *directClient) PutAccount(headers map[string]string) (err error) {
-	if code := c.ProxyDirectClient.PutAccount(c.account, map2Headers(headers)); code/100 != 2 {
+	if code := c.ProxyDirectClient.PutAccount(c.account, common.Map2Headers(headers)); code/100 != 2 {
 		return HTTPError(code)
 	}
 	return nil
 }
 
 func (c *directClient) PostAccount(headers map[string]string) (err error) {
-	if code := c.ProxyDirectClient.PostAccount(c.account, map2Headers(headers)); code/100 != 2 {
+	if code := c.ProxyDirectClient.PostAccount(c.account, common.Map2Headers(headers)); code/100 != 2 {
 		return HTTPError(code)
 	}
 	return nil
@@ -516,40 +511,40 @@ func (c *directClient) GetAccount(marker string, endMarker string, limit int, pr
 	if limit != 0 {
 		options["limit"] = strconv.Itoa(limit)
 	}
-	r, h, code := c.ProxyDirectClient.GetAccount(c.account, options, map2Headers(headers))
+	r, h, code := c.ProxyDirectClient.GetAccount(c.account, options, common.Map2Headers(headers))
 	if code != 200 {
 		return nil, nil, HTTPError(code)
 	}
 	var accountListing []ContainerRecord
 	decoder := json.NewDecoder(r)
 	decoder.Decode(&accountListing)
-	return accountListing, headers2Map(h), nil
+	return accountListing, common.Headers2Map(h), nil
 }
 
 func (c *directClient) HeadAccount(headers map[string]string) (map[string]string, error) {
-	h, code := c.ProxyDirectClient.HeadAccount(c.account, map2Headers(headers))
+	h, code := c.ProxyDirectClient.HeadAccount(c.account, common.Map2Headers(headers))
 	if code/100 != 2 {
 		return nil, HTTPError(code)
 	}
-	return headers2Map(h), nil
+	return common.Headers2Map(h), nil
 }
 
 func (c *directClient) DeleteAccount(headers map[string]string) (err error) {
-	if code := c.ProxyDirectClient.DeleteAccount(c.account, map2Headers(headers)); code/100 != 2 {
+	if code := c.ProxyDirectClient.DeleteAccount(c.account, common.Map2Headers(headers)); code/100 != 2 {
 		return HTTPError(code)
 	}
 	return nil
 }
 
 func (c *directClient) PutContainer(container string, headers map[string]string) (err error) {
-	if code := c.ProxyDirectClient.PutContainer(c.account, container, map2Headers(headers)); code/100 != 2 {
+	if code := c.ProxyDirectClient.PutContainer(c.account, container, common.Map2Headers(headers)); code/100 != 2 {
 		return HTTPError(code)
 	}
 	return nil
 }
 
 func (c *directClient) PostContainer(container string, headers map[string]string) (err error) {
-	if code := c.ProxyDirectClient.PostContainer(c.account, container, map2Headers(headers)); code/100 != 2 {
+	if code := c.ProxyDirectClient.PostContainer(c.account, container, common.Map2Headers(headers)); code/100 != 2 {
 		return HTTPError(code)
 	}
 	return nil
@@ -566,7 +561,7 @@ func (c *directClient) GetContainer(container string, marker string, endMarker s
 	if limit != 0 {
 		options["limit"] = strconv.Itoa(limit)
 	}
-	r, h, code := c.ProxyDirectClient.GetContainer(c.account, container, options, map2Headers(headers))
+	r, h, code := c.ProxyDirectClient.GetContainer(c.account, container, options, common.Map2Headers(headers))
 	if code != 200 {
 		return nil, nil, HTTPError(code)
 	}
@@ -574,59 +569,59 @@ func (c *directClient) GetContainer(container string, marker string, endMarker s
 	var containerListing []ObjectRecord
 	decoder := json.NewDecoder(r)
 	decoder.Decode(&containerListing)
-	return containerListing, headers2Map(h), nil
+	return containerListing, common.Headers2Map(h), nil
 }
 
 func (c *directClient) HeadContainer(container string, headers map[string]string) (map[string]string, error) {
-	h, code := c.ProxyDirectClient.HeadContainer(c.account, container, map2Headers(headers))
+	h, code := c.ProxyDirectClient.HeadContainer(c.account, container, common.Map2Headers(headers))
 	if code/100 != 2 {
 		return nil, HTTPError(code)
 	}
-	return headers2Map(h), nil
+	return common.Headers2Map(h), nil
 }
 
 func (c *directClient) DeleteContainer(container string, headers map[string]string) (err error) {
-	if code := c.ProxyDirectClient.DeleteContainer(c.account, container, map2Headers(headers)); code/100 != 2 {
+	if code := c.ProxyDirectClient.DeleteContainer(c.account, container, common.Map2Headers(headers)); code/100 != 2 {
 		return HTTPError(code)
 	}
 	return nil
 }
 
 func (c *directClient) PutObject(container string, obj string, headers map[string]string, src io.Reader) (err error) {
-	if code := c.ProxyDirectClient.PutObject(c.account, container, obj, map2Headers(headers), src); code/100 != 2 {
+	if code := c.ProxyDirectClient.PutObject(c.account, container, obj, common.Map2Headers(headers), src); code/100 != 2 {
 		return HTTPError(code)
 	}
 	return nil
 }
 
 func (c *directClient) PostObject(container string, obj string, headers map[string]string) (err error) {
-	if code := c.ProxyDirectClient.PostObject(c.account, container, obj, map2Headers(headers)); code/100 != 2 {
+	if code := c.ProxyDirectClient.PostObject(c.account, container, obj, common.Map2Headers(headers)); code/100 != 2 {
 		return HTTPError(code)
 	}
 	return nil
 }
 
 func (c *directClient) GetObject(container string, obj string, headers map[string]string) (io.ReadCloser, map[string]string, error) {
-	r, h, code := c.ProxyDirectClient.GetObject(c.account, container, obj, map2Headers(headers))
+	r, h, code := c.ProxyDirectClient.GetObject(c.account, container, obj, common.Map2Headers(headers))
 	if code/100 != 2 {
 		if r != nil {
 			r.Close()
 		}
 		return nil, nil, HTTPError(code)
 	}
-	return r, headers2Map(h), nil
+	return r, common.Headers2Map(h), nil
 }
 
 func (c *directClient) HeadObject(container string, obj string, headers map[string]string) (map[string]string, error) {
-	h, code := c.ProxyDirectClient.HeadObject(c.account, container, obj, map2Headers(headers))
+	h, code := c.ProxyDirectClient.HeadObject(c.account, container, obj, common.Map2Headers(headers))
 	if code/100 != 2 {
 		return nil, HTTPError(code)
 	}
-	return headers2Map(h), nil
+	return common.Headers2Map(h), nil
 }
 
 func (c *directClient) DeleteObject(container string, obj string, headers map[string]string) (err error) {
-	if code := c.ProxyDirectClient.DeleteObject(c.account, container, obj, map2Headers(headers)); code/100 != 2 {
+	if code := c.ProxyDirectClient.DeleteObject(c.account, container, obj, common.Map2Headers(headers)); code/100 != 2 {
 		return HTTPError(code)
 	}
 	return nil

@@ -421,3 +421,25 @@ func CollectRuntimeMetrics(statsdHost string, statsdPort, statsdPause int64, pre
 	}
 
 }
+
+func Map2Headers(m map[string]string) http.Header {
+	if m == nil {
+		return nil
+	}
+	headers := make(http.Header, len(m))
+	for k, v := range m {
+		headers.Set(k, v)
+	}
+	return headers
+}
+
+func Headers2Map(headers http.Header) map[string]string {
+	if headers == nil {
+		return nil
+	}
+	m := make(map[string]string, len(headers))
+	for k := range headers {
+		m[k] = headers.Get(k)
+	}
+	return m
+}

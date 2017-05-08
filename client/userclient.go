@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/troubling/hummingbird/common"
 )
 
 // userClient is a Client to be used by end-users.  It knows how to authenticate with auth v1 and v2.
@@ -104,7 +106,7 @@ func (c *userClient) GetAccount(marker string, endMarker string, limit int, pref
 	if err := json.Unmarshal(body, &accountListing); err != nil {
 		return nil, nil, err
 	}
-	return accountListing, headers2Map(resp.Header), nil
+	return accountListing, common.Headers2Map(resp.Header), nil
 }
 
 func (c *userClient) HeadAccount(headers map[string]string) (map[string]string, error) {
@@ -117,7 +119,7 @@ func (c *userClient) HeadAccount(headers map[string]string) (map[string]string, 
 		return nil, err
 	}
 	resp.Body.Close()
-	return headers2Map(resp.Header), nil
+	return common.Headers2Map(resp.Header), nil
 }
 
 func (c *userClient) DeleteAccount(headers map[string]string) (err error) {
@@ -156,7 +158,7 @@ func (c *userClient) GetContainer(container string, marker string, endMarker str
 	if err := json.Unmarshal(body, &containerListing); err != nil {
 		return nil, nil, err
 	}
-	return containerListing, headers2Map(resp.Header), nil
+	return containerListing, common.Headers2Map(resp.Header), nil
 }
 
 func (c *userClient) HeadContainer(container string, headers map[string]string) (map[string]string, error) {
@@ -169,7 +171,7 @@ func (c *userClient) HeadContainer(container string, headers map[string]string) 
 		return nil, err
 	}
 	resp.Body.Close()
-	return headers2Map(resp.Header), nil
+	return common.Headers2Map(resp.Header), nil
 }
 
 func (c *userClient) DeleteContainer(container string, headers map[string]string) (err error) {
@@ -193,7 +195,7 @@ func (c *userClient) GetObject(container string, obj string, headers map[string]
 	if err != nil {
 		return nil, nil, err
 	}
-	return resp.Body, headers2Map(resp.Header), nil
+	return resp.Body, common.Headers2Map(resp.Header), nil
 }
 
 func (c *userClient) HeadObject(container string, obj string, headers map[string]string) (map[string]string, error) {
@@ -206,7 +208,7 @@ func (c *userClient) HeadObject(container string, obj string, headers map[string
 		return nil, err
 	}
 	resp.Body.Close()
-	return headers2Map(resp.Header), nil
+	return common.Headers2Map(resp.Header), nil
 }
 
 func (c *userClient) DeleteObject(container string, obj string, headers map[string]string) (err error) {
