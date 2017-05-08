@@ -518,8 +518,8 @@ func TestAcquireDevice(t *testing.T) {
 	}()
 	//sending good read to 1
 	sr1.readChan <- 0
-	//sending sleep to 1
-	sr1.readChan <- 1
+	//sending sleep to 2, let #1 win the race
+	sr2.readChan <- 1
 	//sending good read to 2
 	sr2.readChan <- 0
 	//sending EOF to 2
@@ -572,8 +572,8 @@ func TestAccountAcquireDevice(t *testing.T) {
 	}()
 	//sending good read to 1
 	sr1.readChan <- 0
-	//sending sleep to 1
-	sr1.readChan <- 1
+	//sending sleep to 2, let #1 win the race
+	sr2.readChan <- 1
 	//sending good read to 2
 	sr2.readChan <- 0
 	//sending EOF to 2
