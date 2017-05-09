@@ -116,6 +116,13 @@ func StandardResponse(w http.ResponseWriter, statusCode int) {
 	w.Write([]byte(body))
 }
 
+func SimpleErrorResponse(w http.ResponseWriter, statusCode int, body string) {
+	w.Header().Set("Content-Type", "text/html")
+	w.Header().Set("Content-Length", strconv.FormatInt(int64(len(body)), 10))
+	w.WriteHeader(statusCode)
+	w.Write([]byte(body))
+}
+
 func CustomErrorResponse(w http.ResponseWriter, statusCode int, vars map[string]string) {
 	body := ""
 	switch statusCode {
