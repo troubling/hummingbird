@@ -211,6 +211,12 @@ func RunBench(args []string) {
 			work[i] = objects[i].Delete
 		}
 		DoJobs("DELETE", work, concurrency)
+		for i := 0; i < numContainers; i++ {
+			if err := cli.DeleteContainer(fmt.Sprintf("%d-%s", i, salt), nil); err != nil {
+				fmt.Println("Error deleting container:", err)
+				os.Exit(1)
+			}
+		}
 	}
 }
 
