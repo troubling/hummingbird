@@ -27,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/troubling/hummingbird/common"
@@ -34,6 +35,7 @@ import (
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
+	"go.uber.org/zap"
 )
 
 var (
@@ -224,19 +226,29 @@ func (rd *replicationDevice) replicateDatabaseToDevice(dev *ring.Device, c Repli
 	rd.i.incrementStat(strategy)
 	switch strategy {
 	case "empty", "hashmatch", "no_change":
-		rd.r.LogDebug("Not replicating anything (%s): %s", strategy, c.RingHash())
+		rd.r.logger.Debug("Not replicating anything.",
+			zap.String("strategy", strategy),
+			zap.String("RingHash", c.RingHash()))
 	case "complete_rsync", "rsync_then_merge":
-		rd.r.LogDebug("Replicating %s to %s/%s via %s", c.RingHash(), dev.ReplicationIp, dev.Device, strategy)
+		rd.r.logger.Debug("Replicating ringhash",
+			zap.String("RingHash", c.RingHash()),
+			zap.String("ReplicationIp", dev.ReplicationIp),
+			zap.String("Device", dev.Device),
+			zap.String("strategy", strategy))
 		return rd.i.rsync(dev, c, part, strategy)
 	case "diff":
-		rd.r.LogDebug("Replicating %s to %s/%s via %s", c.RingHash(), dev.ReplicationIp, dev.Device, strategy)
+		rd.r.logger.Debug("Replicating ringhash",
+			zap.String("RingHash", c.RingHash()),
+			zap.String("ReplicationIp", dev.ReplicationIp),
+			zap.String("Device", dev.Device),
+			zap.String("strategy", strategy))
 		return rd.i.usync(dev, c, part, info.ID, remoteInfo.Point)
 	}
 	return nil
 }
 
 func (rd *replicationDevice) replicateDatabase(dbFile string) error {
-	rd.r.LogDebug("Replicating database: %s", filepath.Base(dbFile))
+	rd.r.logger.Debug("Replicating database.", zap.String("dbFile", filepath.Base(dbFile)))
 	parts := filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(dbFile))))
 	part, err := strconv.ParseUint(parts, 10, 64)
 	if err != nil {
@@ -258,15 +270,23 @@ func (rd *replicationDevice) replicateDatabase(dbFile string) error {
 	for i := 0; i < len(devices); i++ {
 		if err := rd.i.replicateDatabaseToDevice(devices[i], c, part); err == nil {
 			rd.i.incrementStat("success")
-			rd.r.LogDebug("Succeeded replicating database %s to %s/%s", dbFile, devices[i].ReplicationIp, devices[i].Device)
+			rd.r.logger.Debug("Succeeded replicating database.",
+				zap.String("dbFile", dbFile),
+				zap.String("ReplicationIp", devices[i].ReplicationIp),
+				zap.String("Device", devices[i].Device))
 			successes++
 		} else {
 			rd.i.incrementStat("failure")
-			rd.r.LogError("Error replicating database %s to %s/%s: %v", dbFile, devices[i].ReplicationIp, devices[i].Device, err)
+			rd.r.logger.Error("Error replicating database.",
+				zap.String("dbFile", dbFile),
+				zap.String("ReplicationIp", devices[i].ReplicationIp),
+				zap.String("Device", devices[i].Device),
+				zap.Error(err))
 			if err == errDeviceNotMounted && !handoff {
 				next := moreNodes.Next()
 				if next == nil {
-					rd.r.LogError("Ran out of handoffs to talk to: %s", dbFile)
+					rd.r.logger.Error("Ran out of handoffs to talk to.",
+						zap.String("dbFile", dbFile))
 				} else {
 					devices = append(devices, moreNodes.Next())
 				}
@@ -285,19 +305,25 @@ func (rd *replicationDevice) findContainerDbs(devicePath string, results chan st
 	containersDir := filepath.Join(devicePath, "containers")
 	partitions, err := filepath.Glob(filepath.Join(containersDir, "[0-9]*"))
 	if err != nil {
-		rd.r.LogError("Error getting partitions in %s: %v", containersDir, err)
+		rd.r.logger.Error("Error getting partitions.",
+			zap.String("containersDir", containersDir),
+			zap.Error(err))
 		return
 	}
 	for _, part := range partitions {
 		suffixes, err := filepath.Glob(filepath.Join(part, "[a-f0-9][a-f0-9][a-f0-9]"))
 		if err != nil {
-			rd.r.LogError("Error getting suffixes in %s: %v", part, err)
+			rd.r.logger.Error("Error getting suffixes.",
+				zap.String("part", part),
+				zap.Error(err))
 			return
 		}
 		for _, suff := range suffixes {
 			hashes, err := filepath.Glob(filepath.Join(suff, "????????????????????????????????"))
 			if err != nil {
-				rd.r.LogError("Error getting hashes in %s: %v", suff, err)
+				rd.r.logger.Error("Error getting hashes",
+					zap.String("suff", suff),
+					zap.Error(err))
 				return
 			}
 			for _, hash := range hashes {
@@ -315,16 +341,19 @@ func (rd *replicationDevice) findContainerDbs(devicePath string, results chan st
 }
 
 func (rd *replicationDevice) replicate() {
-	rd.r.LogInfo("Beginning replication for device %s", rd.dev.Device)
+	rd.r.logger.Info("Beginning replication for device.",
+		zap.String("device", rd.dev.Device))
 	rd.r.startRun <- rd.dev.Device
 	devicePath := filepath.Join(rd.r.deviceRoot, rd.dev.Device)
 	stat, err := os.Stat(devicePath)
 	if err != nil || !stat.IsDir() {
-		rd.r.LogError("Device doesn't exist: %s", devicePath)
+		rd.r.logger.Error("Device doesn't exist.",
+			zap.String("devicePath", devicePath))
 		return
 	}
 	if mount, err := fs.IsMount(devicePath); rd.r.checkMounts && (err != nil || !mount) {
-		rd.r.LogError("Device not mounted: %s", devicePath)
+		rd.r.logger.Error("Device not mounted.",
+			zap.String("devicePath", devicePath))
 		return
 	}
 	results := make(chan string, 100)
@@ -336,7 +365,9 @@ func (rd *replicationDevice) replicate() {
 		case rd.r.concurrencySem <- struct{}{}:
 			rd.r.checkin <- rd.dev.Device
 			if err := rd.i.replicateDatabase(dbFile); err != nil {
-				rd.r.LogError("Error replicating database file %s: %v", dbFile, err)
+				rd.r.logger.Error("Error replicating database file.",
+					zap.String("dbFile", dbFile),
+					zap.Error(err))
 			}
 			<-rd.r.concurrencySem
 		}
@@ -406,7 +437,8 @@ func (r *Replicator) verifyDevices() {
 	}
 	ringDevices, err := r.Ring.LocalDevices(r.serverPort)
 	if err != nil {
-		r.LogError("Error getting local devices from ring: %v", err)
+		r.logger.Error("Error getting local devices from ring.",
+			zap.Error(err))
 		return
 	}
 	// look for devices that aren't running but should be
@@ -448,11 +480,18 @@ func (r *Replicator) reportStats() {
 		if runningTime > 0 {
 			rate = float64(aggStats["attempted"]) / runningTime
 		}
-		r.LogInfo("Attempted to replicate %d dbs in %.5f seconds (%.5f/s)", aggStats["attempted"], runningTime, rate)
-		r.LogInfo("Removed %d dbs", aggStats["remove"])
-		r.LogInfo("%d successes, %d failures", aggStats["success"], aggStats["failure"])
+		r.logger.Info("Attempted to replicate dbs",
+			zap.Int64("aggStats['attempted']", aggStats["attempted"]),
+			zap.Float64("runningTime", runningTime),
+			zap.Float64("rate", rate))
+
+		r.logger.Info("Removed dbs",
+			zap.Int64("aggStats['remove']", aggStats["remove"]))
+		r.logger.Info("Sucess & Failure",
+			zap.Int64("success", aggStats["success"]),
+			zap.Int64("failure", aggStats["failure"]))
 	} else {
-		r.LogInfo("No devices replicating.")
+		r.logger.Info("No devices replicating.")
 	}
 }
 
@@ -496,7 +535,8 @@ func (r *Replicator) Run() {
 	done := make(chan struct{})
 	devices, err := r.Ring.LocalDevices(r.serverPort)
 	if err != nil {
-		r.LogError("Error getting local devices from ring: %v", err)
+		r.logger.Error("Error getting local devices from ring.",
+			zap.Error(err))
 		return
 	}
 	for _, dev := range devices {
@@ -522,38 +562,30 @@ func (r *Replicator) Run() {
 	r.reportStats()
 }
 
-// LogDebug formats and logs debug messages to the underlying logger.
-func (r *Replicator) LogDebug(format string, args ...interface{}) {
-	r.logger.Debug(fmt.Sprintf(format, args...))
-}
-
-// LogInfo formats and  logs info messages to the underlying logger.
-func (r *Replicator) LogInfo(format string, args ...interface{}) {
-	r.logger.Info(fmt.Sprintf(format, args...))
-}
-
-// LogError formats and logs info messages to the underlying logger.
-func (r *Replicator) LogError(format string, args ...interface{}) {
-	r.logger.Err(fmt.Sprintf(format, args...))
-}
-
 // GetReplicator uses the config settings and command-line flags to configure and return a replicator daemon struct.
-func GetReplicator(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, error) {
+func GetReplicator(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv.LowLevelLogger, error) {
 	if !serverconf.HasSection("container-replicator") {
-		return nil, fmt.Errorf("Unable to find container-replicator config section")
+		return nil, nil, fmt.Errorf("Unable to find container-replicator config section")
 	}
 	hashPathPrefix, hashPathSuffix, err := GetHashPrefixAndSuffix()
 	if err != nil {
-		return nil, fmt.Errorf("Unable to get hash prefix and suffix")
+		return nil, nil, fmt.Errorf("Unable to get hash prefix and suffix")
 	}
 	ring, err := GetRing("container", hashPathPrefix, hashPathSuffix, 0)
 	if err != nil {
-		return nil, fmt.Errorf("Error loading container ring")
+		return nil, nil, fmt.Errorf("Error loading container ring")
 	}
 	concurrency := int(serverconf.GetInt("container-replicator", "concurrency", 4))
+
+	logLevelString := serverconf.GetDefault("container-replicator", "log_level", "INFO")
+	logLevel := zap.NewAtomicLevel()
+	logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
+
+	logPath := serverconf.GetDefault("container-replicator", "log_path", "/var/log/swift/containerreplicator.log")
+
 	var logger srv.LowLevelLogger
-	if logger, err = srv.SetupLogger(serverconf, flags, "app:container-server", "container-server"); err != nil {
-		return nil, fmt.Errorf("Error setting up logger: %v", err)
+	if logger, err = srv.SetupLogger("container-replicator", &logLevel, flags, logPath); err != nil {
+		return nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 	return &Replicator{
 		runningDevices: make(map[string]*replicationDevice),
@@ -574,5 +606,5 @@ func GetReplicator(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, err
 			Timeout:   time.Minute * 15,
 			Transport: &http.Transport{Dial: (&net.Dialer{Timeout: time.Second}).Dial},
 		},
-	}, nil
+	}, logger, nil
 }

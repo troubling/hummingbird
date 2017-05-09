@@ -25,6 +25,7 @@ import (
 
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/srv"
+	"go.uber.org/zap"
 )
 
 func isOkayFilename(s string) bool {
@@ -55,14 +56,18 @@ func (server *ContainerServer) ContainerTmpUploadHandler(writer http.ResponseWri
 	}
 	fp, err := os.Create(filename)
 	if err != nil {
-		srv.GetLogger(request).LogError("Unable to create file %s: %v", filename, err)
+		srv.GetLogger(request).Error("Unable to create file.",
+			zap.String("filename", filename),
+			zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 	defer fp.Close()
 	if _, err := io.Copy(fp, request.Body); err != nil {
 		os.RemoveAll(filename)
-		srv.GetLogger(request).LogError("Error saving file contents %s: %v", filename, err)
+		srv.GetLogger(request).Error("Error saving file contents.",
+			zap.String("filename", filename),
+			zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 	} else {
 		srv.StandardResponse(writer, http.StatusCreated)
@@ -145,7 +150,7 @@ func (server *ContainerServer) ContainerReplicateHandler(writer http.ResponseWri
 			srv.StandardResponse(writer, status)
 		}
 	default:
-		srv.GetLogger(request).LogError("Unknown replication op: %s", op)
+		srv.GetLogger(request).Error("Unknown replication op.", zap.String("op", op))
 		srv.StandardResponse(writer, http.StatusBadRequest)
 	}
 }
@@ -167,7 +172,9 @@ func (server *ContainerServer) replicateRsyncThenMerge(request *http.Request, va
 	for {
 		records, err := localDb.ItemsSince(point, 10000)
 		if err != nil {
-			srv.GetLogger(request).LogError("Error fetching items %s: %v", containerFile, err)
+			srv.GetLogger(request).Error("Error fetching items.",
+				zap.String("containerFile", containerFile),
+				zap.Error(err))
 			return http.StatusInternalServerError
 		}
 		if len(records) == 0 {
@@ -175,12 +182,15 @@ func (server *ContainerServer) replicateRsyncThenMerge(request *http.Request, va
 		}
 		point = records[len(records)-1].Rowid
 		if err := tmpDb.MergeItems(records, ""); err != nil {
-			srv.GetLogger(request).LogError("Error merging items to %s: %v", tmpContainerFile, err)
+			srv.GetLogger(request).Error("Error merging items.",
+				zap.String("tmpContainerFile", tmpContainerFile),
+				zap.Error(err))
 			return http.StatusInternalServerError
 		}
 	}
 	if tmpDb.NewID() != nil || os.MkdirAll(filepath.Dir(containerFile), 0777) != nil || os.Rename(tmpContainerFile, containerFile) != nil {
-		srv.GetLogger(request).LogError("Error blessing new container db %s", containerFile)
+		srv.GetLogger(request).Error("Error blessing new container db",
+			zap.String("containerFile", containerFile))
 		return http.StatusInternalServerError
 	}
 	server.containerEngine.Invalidate(localDb)
@@ -199,7 +209,8 @@ func (server *ContainerServer) replicateCompleteRsync(request *http.Request, var
 	}
 	defer tmpDb.Close()
 	if tmpDb.NewID() != nil || os.MkdirAll(filepath.Dir(containerFile), 0777) != nil || os.Rename(tmpContainerFile, containerFile) != nil {
-		srv.GetLogger(request).LogError("Error blessing new container db %s", containerFile)
+		srv.GetLogger(request).Error("Error blessing new container db",
+			zap.String("containerFile", containerFile))
 		return http.StatusInternalServerError
 	}
 	return http.StatusNoContent
@@ -212,7 +223,9 @@ func (server *ContainerServer) replicateMergeItems(request *http.Request, vars m
 	}
 	defer server.containerEngine.Return(db)
 	if err := db.MergeItems(records, remoteID); err != nil {
-		srv.GetLogger(request).LogError("Error merging records with %s: %v", db.RingHash(), err)
+		srv.GetLogger(request).Error("Error merging records",
+			zap.String("RingHash", db.RingHash()),
+			zap.Error(err))
 		return http.StatusInternalServerError
 	}
 	return http.StatusAccepted
@@ -225,7 +238,9 @@ func (server *ContainerServer) replicateMergeSyncs(request *http.Request, vars m
 	}
 	defer server.containerEngine.Return(db)
 	if err := db.MergeSyncTable(records); err != nil {
-		srv.GetLogger(request).LogError("Error merging sync table with %s: %v", db.RingHash(), err)
+		srv.GetLogger(request).Error("Error merging sync table.",
+			zap.String("RingHash", db.RingHash()),
+			zap.Error(err))
 		return http.StatusInternalServerError
 	}
 	return http.StatusAccepted
@@ -239,12 +254,16 @@ func (server *ContainerServer) replicateSync(request *http.Request, vars map[str
 	defer server.containerEngine.Return(db)
 	info, err := db.SyncRemoteData(maxRow, hash, id, createdAt, putTimestamp, deleteTimestamp, metadata)
 	if err != nil {
-		srv.GetLogger(request).LogError("Error syncing remote data with %s: %v", vars["hash"], err)
+		srv.GetLogger(request).Error("Error syncing remote data.",
+			zap.String("vars['hash']", vars["hash"]),
+			zap.Error(err))
 		return http.StatusInternalServerError, nil
 	}
 	response, err := json.Marshal(info)
 	if err != nil {
-		srv.GetLogger(request).LogError("Error marshaling info from %s: %v", vars["hash"], err)
+		srv.GetLogger(request).Error("Error marshaling info.",
+			zap.String("vars['hash']", vars["hash"]),
+			zap.Error(err))
 		return http.StatusInternalServerError, nil
 	}
 	return http.StatusOK, response

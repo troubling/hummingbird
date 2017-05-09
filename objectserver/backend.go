@@ -34,6 +34,7 @@ import (
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/pickle"
 	"github.com/troubling/hummingbird/common/srv"
+	"go.uber.org/zap"
 )
 
 const METADATA_CHUNK_SIZE = 65536
@@ -260,7 +261,7 @@ func RecalculateSuffixHash(suffixDir string, reclaimAge int64) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func GetHashes(driveRoot string, device string, partition string, recalculate []string, reclaimAge int64, policy int, logger srv.LoggingContext) (map[string]string, error) {
+func GetHashes(driveRoot string, device string, partition string, recalculate []string, reclaimAge int64, policy int, logger srv.LowLevelLogger) (map[string]string, error) {
 	partitionDir := filepath.Join(driveRoot, device, PolicyDir(policy), partition)
 	pklFile := filepath.Join(partitionDir, "hashes.pkl")
 	invalidFile := filepath.Join(partitionDir, "hashes.invalid")
@@ -324,7 +325,10 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 			case PathNotDirError:
 				delete(hashes, suffix)
 			default:
-				logger.LogError("Error hashing suffix: %s/%s (%v)", partitionDir, suffix, err)
+				logger.Error("Error hashing suffix",
+					zap.String("partitionDir", partitionDir),
+					zap.String("zapsuffix", suffix),
+					zap.Error(err))
 			}
 		}
 	}
@@ -345,7 +349,7 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 				os.Truncate(invalidFile, 0)
 				return hashes, nil
 			}
-			logger.LogError("Made recursive call to GetHashes: %s", partitionDir)
+			logger.Error("Made recursive call to GetHashes.", zap.String("partitionDir", partitionDir))
 			partitionLock.Close()
 			return GetHashes(driveRoot, device, partition, recalculate, reclaimAge, policy, logger)
 		}

@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+
 	"github.com/troubling/hummingbird/common/test"
 )
 
@@ -55,7 +57,8 @@ func TestAccountUpdate(t *testing.T) {
 	request.Header.Set("X-Trans-Id", "atxid")
 	request.Header.Set("X-Account-Override-Deleted", "no")
 	vars := map[string]string{"account": "a", "container": "c"}
-	server.accountUpdate(request, vars, info, test.FakeLogger{})
+	writer := test.MakeCaptureResponse()
+	server.accountUpdate(writer, request, vars, info, zap.NewNop())
 }
 
 func TestAccountUpdateBadHeaders(t *testing.T) {
@@ -81,7 +84,8 @@ func TestAccountUpdateBadHeaders(t *testing.T) {
 	request.Header.Set("X-Account-Device", "adevice,anotherdevice")
 	request.Header.Set("X-Trans-Id", "atxid")
 	vars := map[string]string{"account": "a", "container": "c"}
-	server.accountUpdate(request, vars, info, test.FakeLogger{})
+	writer := test.MakeCaptureResponse()
+	server.accountUpdate(writer, request, vars, info, zap.NewNop())
 	require.False(t, called)
 }
 
@@ -112,6 +116,7 @@ func TestAccountUpdateTimeout(t *testing.T) {
 	}(waitForAccountUpdate)
 	waitForAccountUpdate = time.Millisecond
 	start := time.Now()
-	server.accountUpdate(request, vars, info, test.FakeLogger{})
+	writer := test.MakeCaptureResponse()
+	server.accountUpdate(writer, request, vars, info, zap.NewNop())
 	require.True(t, time.Since(start) < time.Second)
 }
