@@ -427,7 +427,9 @@ func (c *ProxyDirectClient) DeleteObject(account string, container string, obj s
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
-		req.Header.Set("Content-Type", "application/octet-stream")
+		if req.Header.Get("Content-Type") == "" {
+			req.Header.Set("Content-Type", "application/octet-stream")
+		}
 		req.Header.Set("X-Container-Partition", strconv.FormatUint(containerPartition, 10))
 		req.Header.Set("X-Container-Host", fmt.Sprintf("%s:%d", containerDevices[i].Ip, containerDevices[i].Port))
 		req.Header.Set("X-Container-Device", containerDevices[i].Device)
