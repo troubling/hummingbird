@@ -68,6 +68,7 @@ var saveHeaders = map[string]bool{
 	"X-Container-Sync-Key": true,
 	"X-Container-Sync-To":  true,
 	"X-Versions-Location":  true,
+	"X-History-Location":   true,
 }
 
 func formatTimestamp(ts string) string {
@@ -263,14 +264,10 @@ func (server *ContainerServer) ContainerPutHandler(writer http.ResponseWriter, r
 		defaultPolicyIndex = server.defaultPolicy
 	}
 	metadata := make(map[string][]string)
-	for key, values := range request.Header {
-		_, inSaveHeaders := saveHeaders[key]
-		if !(strings.HasPrefix(key, "X-Container-Meta-") || strings.HasPrefix(key, "X-Container-Sysmeta-") || inSaveHeaders) {
-			continue
-		} else if len(values) == 0 || values[0] == "" {
-			continue
+	for key := range request.Header {
+		if strings.HasPrefix(key, "X-Container-Meta-") || strings.HasPrefix(key, "X-Container-Sysmeta-") || saveHeaders[key] {
+			metadata[key] = []string{request.Header.Get(key), timestamp}
 		}
-		metadata[key] = []string{request.Header.Get(key), timestamp}
 	}
 	created, db, err := server.containerEngine.Create(vars, timestamp, metadata, policyIndex, defaultPolicyIndex)
 	if err == ErrorPolicyConflict {
@@ -349,11 +346,9 @@ func (server *ContainerServer) ContainerPostHandler(writer http.ResponseWriter, 
 	}
 	updates := make(map[string][]string)
 	for key := range request.Header {
-		_, inSaveHeaders := saveHeaders[key]
-		if !(strings.HasPrefix(key, "X-Container-Meta-") || strings.HasPrefix(key, "X-Container-Sysmeta") || inSaveHeaders) {
-			continue
+		if strings.HasPrefix(key, "X-Container-Meta-") || strings.HasPrefix(key, "X-Container-Sysmeta") || saveHeaders[key] {
+			updates[key] = []string{request.Header.Get(key), timestamp}
 		}
-		updates[key] = []string{request.Header.Get(key), timestamp}
 	}
 	db, err := server.containerEngine.Get(vars)
 	if err == ErrorNoSuchContainer {
