@@ -148,7 +148,6 @@ func (server *ObjectServer) ObjGetHandler(writer http.ResponseWriter, request *h
 		lastModifiedHeader = lastModified.Truncate(time.Second).Add(time.Second)
 	}
 	headers.Set("Last-Modified", lastModifiedHeader.Format(time.RFC1123))
-	//	headers.Set("ETag", "\""+etag+"\"")
 	headers.Set("ETag", etag)
 	xTimestamp, err := common.GetEpochFromTimestamp(metadata["X-Timestamp"])
 	if err != nil {
@@ -325,7 +324,6 @@ func (server *ObjectServer) ObjPutHandler(writer http.ResponseWriter, request *h
 	}
 	requestEtag := strings.ToLower(request.Header.Get("ETag"))
 	if requestEtag != "" && requestEtag != metadata["ETag"] {
-		server.logger.Info(fmt.Sprintf("Etag mismatch, size: %v, request: %s, metadata: %s", totalSize, requestEtag, metadata["ETag"]))
 		http.Error(writer, "Unprocessable Entity", 422)
 		return
 	}
