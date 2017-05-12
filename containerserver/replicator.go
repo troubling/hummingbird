@@ -260,6 +260,7 @@ func (rd *replicationDevice) replicateDatabase(dbFile string) error {
 	if err != nil {
 		return err
 	}
+	defer c.Close()
 	if err := c.CleanupTombstones(rd.r.reclaimAge); err != nil {
 		return err
 	}
