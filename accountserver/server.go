@@ -222,8 +222,8 @@ func (server *AccountServer) AccountPutHandler(writer http.ResponseWriter, reque
 		return
 	}
 	metadata := make(map[string][]string)
-	for key, values := range request.Header {
-		if (strings.HasPrefix(key, "X-Account-Meta-") || strings.HasPrefix(key, "X-Account-Sysmeta-")) && len(values) > 0 || values[0] != "" {
+	for key := range request.Header {
+		if strings.HasPrefix(key, "X-Account-Meta-") || strings.HasPrefix(key, "X-Account-Sysmeta-") {
 			metadata[key] = []string{request.Header.Get(key), timestamp}
 		}
 	}
