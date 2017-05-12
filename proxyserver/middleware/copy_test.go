@@ -11,12 +11,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
-	"github.com/troubling/hummingbird/common/test"
+	"go.uber.org/zap"
 )
 
 func NewFakeProxyContext() *ProxyContext {
 	return &ProxyContext{
-		Logger: test.FakeLogger{},
+		Logger: zap.NewNop(),
 	}
 }
 

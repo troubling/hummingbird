@@ -26,6 +26,7 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/srv"
+	"go.uber.org/zap"
 )
 
 type CopyWriter struct {
@@ -147,9 +148,8 @@ type PipeResponseWriter struct {
 func (w *PipeResponseWriter) Write(stuff []byte) (int, error) {
 	written, err := w.w.Write(stuff)
 	if err != nil {
-		w.ctx.Logger.LogError("PipeResponseWriter Write err: %v", err)
+		w.ctx.Logger.Error("PipeResponseWriter Write() error", zap.Error(err))
 	}
-	w.ctx.Logger.LogError("PipeResponseWriter written: %v", written)
 	return written, err
 }
 
@@ -158,13 +158,11 @@ func (w *PipeResponseWriter) Header() http.Header {
 }
 
 func (w *PipeResponseWriter) WriteHeader(status int) {
-	w.ctx.Logger.LogError("PipeResponseWriter write header: %v", status)
 	w.status = status
 	w.done <- true
 }
 
 func (w *PipeResponseWriter) Close() {
-	w.ctx.Logger.LogError("PipeResponseWriter Close()")
 	w.w.Close()
 }
 
@@ -182,7 +180,7 @@ func (c *copyMiddleware) getSourceObject(object string, request *http.Request) (
 	ctx := GetProxyContext(request)
 	subRequest, err := ctx.NewSubRequest(request, "GET", object, nil)
 	if err != nil {
-		ctx.Logger.LogError("getSourceObject err: %s", err)
+		ctx.Logger.Error("getSourceObject GET error", zap.Error(err))
 		return nil, nil, 400
 	}
 
@@ -316,7 +314,7 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 	srcPath := fmt.Sprintf("/v1/%s/%s/%s", srcAccountName, srcContainer, srcObject)
 
 	if writer.origReqMethod != "POST" {
-		writer.ctx.Logger.LogInfo("Copying object from %s to %s", srcPath, request.URL.Path)
+		writer.ctx.Logger.Info(fmt.Sprintf("Copying object from %s to %s", srcPath, request.URL.Path))
 	}
 
 	srcBody, srcHeader, srcStatus := c.getSourceObject(common.Urlencode(srcPath), request)
@@ -420,10 +418,6 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 		for _, v1 := range v {
 			writer.Header().Add(k, v1)
 		}
-	}
-
-	for k, v := range request.Header {
-		writer.ctx.Logger.LogInfo("Header: %s=%s", k, v)
 	}
 
 	c.next.ServeHTTP(writer, request)

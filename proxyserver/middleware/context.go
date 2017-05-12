@@ -126,7 +126,7 @@ func (ctx *ProxyContext) NewSubRequest(request *http.Request, method string, url
 	subRequest, err := http.NewRequest(method, url, body)
 	if err != nil {
 		ctx = GetProxyContext(request)
-		ctx.Logger.LogInfo("Couldnt create http.Request: %+v", err)
+		ctx.Logger.Error("Couldn't create http.Request", zap.Error(err))
 		return nil, err
 	}
 	copyKeys := []string{"X-Auth-Token", "X-Trans-Id"}
