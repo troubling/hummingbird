@@ -429,7 +429,9 @@ func (oc *standardObjectClient) putObject(obj string, headers http.Header, src i
 			req.Header.Set(key, headers.Get(key))
 		}
 		// req.ContentLength = request.ContentLength // TODO
-		req.Header.Set("Content-Type", "application/octet-stream")
+		if req.Header.Get("Content-Type") == "" {
+			req.Header.Set("Content-Type", "application/octet-stream")
+		}
 		req.Header.Set("X-Container-Partition", strconv.FormatUint(containerPartition, 10))
 		req.Header.Set("X-Container-Host", fmt.Sprintf("%s:%d", containerDevices[i].Ip, containerDevices[i].Port))
 		req.Header.Set("X-Container-Device", containerDevices[i].Device)
@@ -459,7 +461,9 @@ func (oc *standardObjectClient) postObject(obj string, headers http.Header) int 
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
-		req.Header.Set("Content-Type", "application/octet-stream")
+		if req.Header.Get("Content-Type") == "" {
+			req.Header.Set("Content-Type", "application/octet-stream")
+		}
 		req.Header.Set("X-Container-Partition", strconv.FormatUint(containerPartition, 10))
 		req.Header.Set("X-Container-Host", fmt.Sprintf("%s:%d", containerDevices[i].Ip, containerDevices[i].Port))
 		req.Header.Set("X-Container-Device", containerDevices[i].Device)
@@ -551,7 +555,9 @@ func (oc *standardObjectClient) deleteObject(obj string, headers http.Header) in
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
-		req.Header.Set("Content-Type", "application/octet-stream")
+		if req.Header.Get("Content-Type") == "" {
+			req.Header.Set("Content-Type", "application/octet-stream")
+		}
 		req.Header.Set("X-Container-Partition", strconv.FormatUint(containerPartition, 10))
 		req.Header.Set("X-Container-Host", fmt.Sprintf("%s:%d", containerDevices[i].Ip, containerDevices[i].Port))
 		req.Header.Set("X-Container-Device", containerDevices[i].Device)
