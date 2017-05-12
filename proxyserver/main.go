@@ -21,7 +21,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
@@ -32,7 +31,6 @@ import (
 )
 
 type ProxyServer struct {
-	C        client.ProxyClient
 	logger   srv.LowLevelLogger
 	logLevel zap.AtomicLevel
 	mc       ring.MemcacheRing
@@ -84,7 +82,7 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 		{middleware.NewTempAuth, "filter:tempauth"},
 		{middleware.NewRatelimiter, "filter:ratelimit"},
 	}
-	pipeline := alice.New(middleware.NewContext(server.mc, server.C, server.logger))
+	pipeline := alice.New(middleware.NewContext(server.mc, server.logger))
 	for _, m := range middlewares {
 		mid, err := m.construct(config.GetSection(m.section))
 		if err != nil {
@@ -99,10 +97,6 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 func GetServer(serverconf conf.Config, flags *flag.FlagSet) (string, int, srv.Server, srv.LowLevelLogger, error) {
 	var err error
 	server := &ProxyServer{}
-	server.C, err = client.NewProxyDirectClient()
-	if err != nil {
-		return "", 0, nil, nil, err
-	}
 	server.mc, err = ring.NewMemcacheRingFromConfig(serverconf)
 	if err != nil {
 		return "", 0, nil, nil, err

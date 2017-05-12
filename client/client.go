@@ -63,6 +63,7 @@ type ProxyClient interface {
 	PutObject(account string, container string, obj string, headers http.Header, src io.Reader) int
 	PostObject(account string, container string, obj string, headers http.Header) int
 	GetObject(account string, container string, obj string, headers http.Header) (io.ReadCloser, http.Header, int)
+	GrepObject(account string, container string, obj string, search string) (io.ReadCloser, http.Header, int)
 	HeadObject(account string, container string, obj string, headers http.Header) (http.Header, int)
 	DeleteObject(account string, container string, obj string, headers http.Header) int
 }
