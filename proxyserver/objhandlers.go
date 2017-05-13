@@ -121,5 +121,7 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 		return
 	}
 	request.Header.Set("X-Timestamp", common.GetTimestamp())
-	srv.StandardResponse(writer, server.C.PutObject(vars["account"], vars["container"], vars["obj"], request.Header, request.Body))
+	h, code := server.C.PutObject(vars["account"], vars["container"], vars["obj"], request.Header, request.Body)
+	writer.Header().Set("Etag", h.Get("Etag"))
+	srv.StandardResponse(writer, code)
 }

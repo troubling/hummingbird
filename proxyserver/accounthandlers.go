@@ -41,6 +41,7 @@ func (server *ProxyServer) AccountGetHandler(writer http.ResponseWriter, request
 		"end_marker": request.FormValue("end_marker"),
 		"prefix":     request.FormValue("prefix"),
 		"delimiter":  request.FormValue("delimiter"),
+		"reverse":    request.FormValue("reverse"),
 	}
 	r, headers, code := server.C.GetAccount(vars["account"], options, request.Header)
 	for k := range headers {

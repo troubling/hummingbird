@@ -40,7 +40,8 @@ type Object struct {
 }
 
 func (obj *Object) Put() bool {
-	return obj.c.PutObject(obj.container, obj.name, nil, bytes.NewReader(obj.data)) == nil
+	_, err := obj.c.PutObject(obj.container, obj.name, nil, bytes.NewReader(obj.data))
+	return err == nil
 }
 
 func (obj *Object) Get() bool {

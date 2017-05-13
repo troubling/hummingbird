@@ -101,6 +101,24 @@ func TestContainerListings(t *testing.T) {
 	require.Equal(t, "b", records[0].(*ContainerListingRecord).Name)
 }
 
+func TestContainerDelimiter(t *testing.T) {
+	db, _, cleanup, err := createTestDatabase("100000000.00000")
+	require.Nil(t, err)
+	defer cleanup()
+	require.Nil(t, mergeItemsByName(db, []string{"a", "a-b", "a-c"}))
+	records, err := db.ListContainers(10000, "", "", "", "-", false)
+	require.Nil(t, err)
+	require.Equal(t, 2, len(records))
+	require.Equal(t, "a", records[0].(*ContainerListingRecord).Name)
+	require.Equal(t, "a-", records[1].(*SubdirListingRecord).Name)
+
+	records, err = db.ListContainers(10000, "", "", "", "-", true)
+	require.Nil(t, err)
+	require.Equal(t, 2, len(records))
+	require.Equal(t, "a-", records[0].(*SubdirListingRecord).Name)
+	require.Equal(t, "a", records[1].(*ContainerListingRecord).Name)
+}
+
 func TestNewID(t *testing.T) {
 	db, _, cleanup, err := createTestDatabase("200000000.00000")
 	require.Nil(t, err)
