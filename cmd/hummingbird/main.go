@@ -371,13 +371,13 @@ func main() {
 		containerFlags.Parse(flag.Args()[1:])
 		srv.RunServers(containerserver.GetServer, containerFlags)
 	case "container-replicator":
-		containerFlags.Parse(flag.Args()[1:])
+		containerReplicatorFlags.Parse(flag.Args()[1:])
 		srv.RunDaemon(containerserver.GetReplicator, containerReplicatorFlags)
 	case "account":
 		accountFlags.Parse(flag.Args()[1:])
 		srv.RunServers(accountserver.GetServer, accountFlags)
 	case "account-replicator":
-		accountFlags.Parse(flag.Args()[1:])
+		accountReplicatorFlags.Parse(flag.Args()[1:])
 		srv.RunDaemon(accountserver.GetReplicator, accountReplicatorFlags)
 	case "object":
 		objectFlags.Parse(flag.Args()[1:])
