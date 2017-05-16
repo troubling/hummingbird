@@ -14,7 +14,7 @@ func TestContainerInfoSourceNil(t *testing.T) {
 
 type testContainerInfoSource int
 
-func (t *testContainerInfoSource) GetContainerInfo(account, container string) ContainerInfo {
+func (t *testContainerInfoSource) GetContainerInfo(account, container string) *ContainerInfo {
 	return nil
 }
 
