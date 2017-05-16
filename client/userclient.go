@@ -134,12 +134,12 @@ func (c *userClient) PostContainer(container string, headers map[string]string) 
 	return c.doRequest("POST", "/"+container, nil, headers)
 }
 
-func (c *userClient) GetContainer(container string, marker string, endMarker string, limit int, prefix string, delimiter string, headers map[string]string) ([]ObjectRecord, map[string]string, error) {
+func (c *userClient) GetContainer(container string, marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ObjectRecord, map[string]string, error) {
 	limitStr := ""
 	if limit > 0 {
 		limitStr = strconv.Itoa(limit)
 	}
-	path := "/" + container + mkquery(map[string]string{"marker": marker, "end_marker": endMarker, "prefix": prefix, "delimiter": delimiter, "limit": limitStr})
+	path := "/" + container + mkquery(map[string]string{"marker": marker, "end_marker": endMarker, "prefix": prefix, "delimiter": delimiter, "limit": limitStr, "reverse": reverse})
 	req, err := c.authedRequest("GET", path, nil, headers)
 	if err != nil {
 		return nil, nil, err

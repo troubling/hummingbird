@@ -45,6 +45,7 @@ func (server *ProxyServer) ContainerGetHandler(writer http.ResponseWriter, reque
 		"end_marker": request.FormValue("end_marker"),
 		"prefix":     request.FormValue("prefix"),
 		"delimiter":  request.FormValue("delimiter"),
+		"reverse":    request.FormValue("reverse"),
 	}
 	r, headers, code := server.C.GetContainer(vars["account"], vars["container"], options, request.Header)
 	for k := range headers {

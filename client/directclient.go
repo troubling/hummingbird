@@ -598,13 +598,14 @@ func (c *directClient) PostContainer(container string, headers map[string]string
 	return nil
 }
 
-func (c *directClient) GetContainer(container string, marker string, endMarker string, limit int, prefix string, delimiter string, headers map[string]string) ([]ObjectRecord, map[string]string, error) {
+func (c *directClient) GetContainer(container string, marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ObjectRecord, map[string]string, error) {
 	options := map[string]string{
 		"format":     "json",
 		"marker":     marker,
 		"end_marker": endMarker,
 		"prefix":     prefix,
 		"delimiter":  delimiter,
+		"reverse":    reverse,
 	}
 	if limit != 0 {
 		options["limit"] = strconv.Itoa(limit)

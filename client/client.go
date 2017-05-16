@@ -38,7 +38,7 @@ type Client interface {
 	DeleteAccount(headers map[string]string) (err error)
 	PutContainer(container string, headers map[string]string) (err error)
 	PostContainer(container string, headers map[string]string) (err error)
-	GetContainer(container string, marker string, endMarker string, limit int, prefix string, delimiter string, headers map[string]string) ([]ObjectRecord, map[string]string, error)
+	GetContainer(container string, marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ObjectRecord, map[string]string, error)
 	HeadContainer(container string, headers map[string]string) (map[string]string, error)
 	DeleteContainer(container string, headers map[string]string) (err error)
 	PutObject(container string, obj string, headers map[string]string, src io.Reader) (map[string]string, error)
