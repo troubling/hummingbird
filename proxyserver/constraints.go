@@ -41,7 +41,7 @@ const (
 func CheckMetadata(req *http.Request, targetType string) (int, string) {
 	metaCount := 0
 	metaSize := 0
-	metaPrefix := fmt.Sprintf("X-%s-Meta", targetType)
+	metaPrefix := fmt.Sprintf("X-%s-Meta-", targetType)
 	for key := range req.Header {
 		if len(key) > MAX_HEADER_SIZE {
 			return http.StatusBadRequest, fmt.Sprintf("Header value too long: %s", key[:MAX_META_NAME_LENGTH])
