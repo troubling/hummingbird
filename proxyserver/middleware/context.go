@@ -65,34 +65,6 @@ type AccountInfo struct {
 	SysMetadata    map[string]string
 }
 
-type containerInfo struct {
-	objectCount        int64
-	objectBytes        int64
-	metadata           map[string]string
-	sysMetadata        map[string]string
-	storagePolicyIndex int
-}
-
-func (ci *containerInfo) ObjectCount() int64 {
-	return ci.objectCount
-}
-
-func (ci *containerInfo) ObjectBytes() int64 {
-	return ci.objectBytes
-}
-
-func (ci *containerInfo) Metadata() map[string]string {
-	return ci.metadata
-}
-
-func (ci *containerInfo) SysMetadata() map[string]string {
-	return ci.sysMetadata
-}
-
-func (ci *containerInfo) StoragePolicyIndex() int {
-	return ci.storagePolicyIndex
-}
-
 type AuthorizeFunc func(r *http.Request) bool
 
 type ProxyContextMiddleware struct {
@@ -130,7 +102,7 @@ type ProxyContext struct {
 	C                  client.ProxyClient
 	Authorize          AuthorizeFunc
 	Logger             srv.LowLevelLogger
-	containerInfoCache map[string]*containerInfo
+	containerInfoCache map[string]*client.ContainerInfo
 	accountInfoCache   map[string]*AccountInfo
 	capWriter          *proxyWriter
 }
@@ -146,7 +118,7 @@ func (ctx *ProxyContext) Response() (bool, int) {
 	return ctx.capWriter.Response()
 }
 
-func (ctx *ProxyContext) GetContainerInfo(account, container string) client.ContainerInfo {
+func (ctx *ProxyContext) GetContainerInfo(account, container string) *client.ContainerInfo {
 	var err error
 	key := fmt.Sprintf("container/%s/%s", account, container)
 	ci := ctx.containerInfoCache[key]
@@ -160,24 +132,24 @@ func (ctx *ProxyContext) GetContainerInfo(account, container string) client.Cont
 		if code/100 != 2 {
 			return nil
 		}
-		ci = &containerInfo{
-			metadata:    make(map[string]string),
-			sysMetadata: make(map[string]string),
+		ci = &client.ContainerInfo{
+			Metadata:    make(map[string]string),
+			SysMetadata: make(map[string]string),
 		}
-		if ci.objectCount, err = strconv.ParseInt(headers.Get("X-Container-Object-Count"), 10, 64); err != nil {
+		if ci.ObjectCount, err = strconv.ParseInt(headers.Get("X-Container-Object-Count"), 10, 64); err != nil {
 			return nil
 		}
-		if ci.objectBytes, err = strconv.ParseInt(headers.Get("X-Container-Bytes-Used"), 10, 64); err != nil {
+		if ci.ObjectBytes, err = strconv.ParseInt(headers.Get("X-Container-Bytes-Used"), 10, 64); err != nil {
 			return nil
 		}
-		if ci.storagePolicyIndex, err = strconv.Atoi(headers.Get("X-Backend-Storage-Policy-Index")); err != nil {
+		if ci.StoragePolicyIndex, err = strconv.Atoi(headers.Get("X-Backend-Storage-Policy-Index")); err != nil {
 			return nil
 		}
 		for k := range headers {
 			if strings.HasPrefix(k, "X-Container-Meta-") {
-				ci.metadata[k[17:]] = headers.Get(k)
+				ci.Metadata[k[17:]] = headers.Get(k)
 			} else if strings.HasPrefix(k, "X-Container-Sysmeta-") {
-				ci.sysMetadata[k[20:]] = headers.Get(k)
+				ci.SysMetadata[k[20:]] = headers.Get(k)
 			}
 		}
 		ctx.Cache.Set(key, ci, 30)
@@ -288,7 +260,7 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 		ProxyContextMiddleware: m,
 		Authorize:              nil,
 		Logger:                 logr,
-		containerInfoCache:     make(map[string]*containerInfo),
+		containerInfoCache:     make(map[string]*client.ContainerInfo),
 		accountInfoCache:       make(map[string]*AccountInfo),
 		capWriter:              newWriter,
 	}

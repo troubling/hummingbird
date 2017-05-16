@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -37,19 +38,23 @@ type ProxyDirectClient struct {
 	ContainerRing       ring.Ring
 }
 
-type ContainerInfo interface {
-	ObjectCount() int64
-	ObjectBytes() int64
-	Metadata() map[string]string
-	SysMetadata() map[string]string
-	StoragePolicyIndex() int
+// ContainerInfo is persisted in memcache via JSON; so this needs to continue to have public fields.
+type ContainerInfo struct {
+	ObjectCount        int64
+	ObjectBytes        int64
+	Metadata           map[string]string
+	SysMetadata        map[string]string
+	StoragePolicyIndex int
 }
 
 type ContainerInfoSource interface {
-	GetContainerInfo(account, container string) ContainerInfo
+	GetContainerInfo(account, container string) *ContainerInfo
 }
 
 func NewProxyDirectClient(cis ContainerInfoSource) (ProxyClient, error) {
+	if cis == nil {
+		return nil, errors.New("nil ContainerInfoSource")
+	}
 	c := &ProxyDirectClient{containerInfoSource: cis}
 	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
 	if err != nil {
@@ -376,7 +381,7 @@ func (c *ProxyDirectClient) objectClient(account string, container string) (prox
 	if ci == nil {
 		return nil, 500
 	}
-	return newStandardObjectClient(c, account, container, ci.StoragePolicyIndex())
+	return newStandardObjectClient(c, account, container, ci.StoragePolicyIndex)
 }
 
 type proxyObjectClient interface {

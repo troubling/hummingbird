@@ -189,7 +189,7 @@ func (a *Auditor) auditPartition(partitionDir string) {
 	}
 	for _, suffix := range suffixes {
 		suffixDir := filepath.Join(partitionDir, suffix)
-		if suffix == ".lock" || suffix == "hashes.pkl" {
+		if suffix == ".lock" || suffix == "hashes.pkl" || suffix == "hashes.invalid" {
 			continue
 		}
 		_, hexErr := strconv.ParseInt(suffix, 16, 64)
