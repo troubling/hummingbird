@@ -44,18 +44,15 @@ type QuorumResponseEntry struct {
 
 func (c *ProxyDirectClient) quorumResponse(reqs ...*http.Request) (http.Header, int) {
 	// this is based on swift's best_response function.
-	// statusCodes := make(chan int)
 	responses := make(chan *QuorumResponseEntry)
 	cancel := make(chan struct{})
 	defer close(cancel)
 	for _, req := range reqs {
 		go func(req *http.Request) {
 			entry := &QuorumResponseEntry{StatusCode: 500}
-			//status := 500
 			if resp, err := c.client.Do(req); err == nil {
 				entry.StatusCode = resp.StatusCode
 				entry.Headers = resp.Header
-				// status = resp.StatusCode
 				resp.Body.Close()
 			}
 			select {
@@ -66,14 +63,11 @@ func (c *ProxyDirectClient) quorumResponse(reqs ...*http.Request) (http.Header, 
 	}
 	quorum := int(math.Ceil(float64(len(reqs)) / 2.0))
 	responseClasses := []int{0, 0, 0, 0, 0, 0}
-	// for status := range statusCodes {
 	for response := range responses {
-		// class := status / 100
 		class := response.StatusCode / 100
 		if class <= 5 {
 			responseClasses[class]++
 			if responseClasses[class] >= quorum {
-				// return status
 				return response.Headers, response.StatusCode
 			}
 		}
