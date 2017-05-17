@@ -40,7 +40,7 @@ func (server *ProxyServer) ObjectGetHandler(writer http.ResponseWriter, request 
 		srv.StandardResponse(writer, 401)
 		return
 	}
-	r, headers, code := server.C.GetObject(vars["account"], vars["container"], vars["obj"], request.Header)
+	r, headers, code := ctx.C.GetObject(vars["account"], vars["container"], vars["obj"], request.Header)
 	for k := range headers {
 		writer.Header().Set(k, headers.Get(k))
 	}
@@ -66,7 +66,7 @@ func (server *ProxyServer) ObjectHeadHandler(writer http.ResponseWriter, request
 		srv.StandardResponse(writer, 401)
 		return
 	}
-	headers, code := server.C.HeadObject(vars["account"], vars["container"], vars["obj"], request.Header)
+	headers, code := ctx.C.HeadObject(vars["account"], vars["container"], vars["obj"], request.Header)
 	for k := range headers {
 		writer.Header().Set(k, headers.Get(k))
 	}
@@ -89,7 +89,7 @@ func (server *ProxyServer) ObjectDeleteHandler(writer http.ResponseWriter, reque
 		return
 	}
 	request.Header.Set("X-Timestamp", common.GetTimestamp())
-	srv.StandardResponse(writer, server.C.DeleteObject(vars["account"], vars["container"], vars["obj"], request.Header))
+	srv.StandardResponse(writer, ctx.C.DeleteObject(vars["account"], vars["container"], vars["obj"], request.Header))
 }
 
 func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request *http.Request) {
@@ -121,5 +121,5 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 		return
 	}
 	request.Header.Set("X-Timestamp", common.GetTimestamp())
-	srv.StandardResponse(writer, server.C.PutObject(vars["account"], vars["container"], vars["obj"], request.Header, request.Body))
+	srv.StandardResponse(writer, ctx.C.PutObject(vars["account"], vars["container"], vars["obj"], request.Header, request.Body))
 }

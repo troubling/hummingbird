@@ -767,7 +767,7 @@ func (db *sqliteAccount) flushAlreadyLocked() error {
 		}
 		record, ok := r.([]interface{})
 		if !ok || len(record) < 7 {
-			return fmt.Errorf("Invalid commit pending record")
+			return fmt.Errorf("Invalid commit pending record [0] %#v", record)
 		}
 		casts := make([]bool, 7)
 		var deleted, spi int64
@@ -775,15 +775,15 @@ func (db *sqliteAccount) flushAlreadyLocked() error {
 		rec.Name, casts[0] = record[0].(string)
 		rec.PutTimestamp, casts[1] = record[1].(string)
 		rec.DeleteTimestamp, casts[2] = record[2].(string)
-		rec.ObjectCount, casts[3] = record[3].(int64)
-		rec.BytesUsed, casts[4] = record[4].(int64)
+		rec.ObjectCount, casts[3] = int64MaybeStringified(record[3])
+		rec.BytesUsed, casts[4] = int64MaybeStringified(record[4])
 		deleted, casts[5] = record[5].(int64)
 		rec.Deleted = int(deleted)
-		spi, casts[6] = record[6].(int64)
+		spi, casts[6] = int64MaybeStringified(record[6])
 		rec.StoragePolicyIndex = int(spi)
 		for i := 0; i < 7; i++ {
 			if !casts[i] {
-				return fmt.Errorf("Invalid commit pending record")
+				return fmt.Errorf("Invalid commit pending record [1] %#v %d", record, i)
 			}
 		}
 		records = append(records, rec)
@@ -793,6 +793,17 @@ func (db *sqliteAccount) flushAlreadyLocked() error {
 		err = os.Truncate(db.accountFile+".pending", 0)
 	}
 	return err
+}
+
+func int64MaybeStringified(i interface{}) (int64, bool) {
+	if a, ok := i.(int64); ok {
+		return a, true
+	} else if b, ok := i.(string); !ok {
+		return 0, false
+	} else {
+		c, err := strconv.ParseInt(b, 10, 64)
+		return c, err == nil
+	}
 }
 
 func (db *sqliteAccount) flush() error {

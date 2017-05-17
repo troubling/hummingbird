@@ -979,12 +979,17 @@ func TestCancelStalledDevices(t *testing.T) {
 
 func TestVerifyDevices(t *testing.T) {
 	oldGetRing := GetRing
+	oldLoadPolicies := conf.LoadPolicies
 	defer func() {
 		GetRing = oldGetRing
+		conf.LoadPolicies = oldLoadPolicies
 	}()
 
 	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
 		return &test.FakeRing{MockLocalDevices: []*ring.Device{{Device: "sda"}}}, nil
+	}
+	conf.LoadPolicies = func() conf.PolicyList {
+		return conf.PolicyList(map[int]*conf.Policy{0: {Index: 0, Type: "replication", Name: "gold", Aliases: []string{}, Default: true, Deprecated: false, Config: map[string]string{"policy_type": "replication", "default": "yes", "name": "gold"}}})
 	}
 	oldNewReplicationDevice := newReplicationDevice
 	defer func() {

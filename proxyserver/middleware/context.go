@@ -65,18 +65,10 @@ type AccountInfo struct {
 	SysMetadata    map[string]string
 }
 
-type ContainerInfo struct {
-	ObjectCount int64
-	ObjectBytes int64
-	Metadata    map[string]string
-	SysMetadata map[string]string
-}
-
 type AuthorizeFunc func(r *http.Request) bool
 
 type ProxyContextMiddleware struct {
 	next  http.Handler
-	c     client.ProxyClient
 	log   srv.LowLevelLogger
 	Cache ring.MemcacheRing
 }
@@ -107,9 +99,10 @@ func (w *proxyWriter) Response() (bool, int) {
 
 type ProxyContext struct {
 	*ProxyContextMiddleware
+	C                  client.ProxyClient
 	Authorize          AuthorizeFunc
 	Logger             srv.LowLevelLogger
-	containerInfoCache map[string]*ContainerInfo
+	containerInfoCache map[string]*client.ContainerInfo
 	accountInfoCache   map[string]*AccountInfo
 	capWriter          *proxyWriter
 }
@@ -125,7 +118,7 @@ func (ctx *ProxyContext) Response() (bool, int) {
 	return ctx.capWriter.Response()
 }
 
-func (ctx *ProxyContext) GetContainerInfo(account, container string) *ContainerInfo {
+func (ctx *ProxyContext) GetContainerInfo(account, container string) *client.ContainerInfo {
 	var err error
 	key := fmt.Sprintf("container/%s/%s", account, container)
 	ci := ctx.containerInfoCache[key]
@@ -135,11 +128,11 @@ func (ctx *ProxyContext) GetContainerInfo(account, container string) *ContainerI
 		}
 	}
 	if ci == nil {
-		headers, code := ctx.c.HeadContainer(account, container, nil)
+		headers, code := ctx.C.HeadContainer(account, container, nil)
 		if code/100 != 2 {
 			return nil
 		}
-		ci = &ContainerInfo{
+		ci = &client.ContainerInfo{
 			Metadata:    make(map[string]string),
 			SysMetadata: make(map[string]string),
 		}
@@ -147,6 +140,9 @@ func (ctx *ProxyContext) GetContainerInfo(account, container string) *ContainerI
 			return nil
 		}
 		if ci.ObjectBytes, err = strconv.ParseInt(headers.Get("X-Container-Bytes-Used"), 10, 64); err != nil {
+			return nil
+		}
+		if ci.StoragePolicyIndex, err = strconv.Atoi(headers.Get("X-Backend-Storage-Policy-Index")); err != nil {
 			return nil
 		}
 		for k := range headers {
@@ -190,10 +186,10 @@ func (ctx *ProxyContext) GetAccountInfo(account string) *AccountInfo {
 		}
 	}
 	if ai == nil {
-		headers, code := ctx.c.HeadAccount(account, nil)
+		headers, code := ctx.C.HeadAccount(account, nil)
 		if code == 404 && autoCreateAccounts {
-			ctx.c.PutAccount(account, http.Header{"X-Timestamp": []string{common.GetTimestamp()}})
-			headers, code = ctx.c.HeadAccount(account, nil)
+			ctx.C.PutAccount(account, http.Header{"X-Timestamp": []string{common.GetTimestamp()}})
+			headers, code = ctx.C.HeadAccount(account, nil)
 		}
 		if code/100 != 2 {
 			return nil
@@ -264,9 +260,15 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 		ProxyContextMiddleware: m,
 		Authorize:              nil,
 		Logger:                 logr,
-		containerInfoCache:     make(map[string]*ContainerInfo),
+		containerInfoCache:     make(map[string]*client.ContainerInfo),
 		accountInfoCache:       make(map[string]*AccountInfo),
 		capWriter:              newWriter,
+	}
+	var err error
+	ctx.C, err = client.NewProxyDirectClient(ctx)
+	if err != nil {
+		srv.StandardResponse(writer, 500)
+		return
 	}
 	// we'll almost certainly need the AccountInfo and ContainerInfo for the current path, so pre-fetch them in parallel.
 	apiRequest, account, container, _ := getPathParts(request)
@@ -278,7 +280,7 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 				hdr := http.Header{
 					"X-Timestamp": []string{common.GetTimestamp()},
 				}
-				m.c.PutAccount(account, hdr) // Auto-create the account if we can't get its info
+				ctx.C.PutAccount(account, hdr) // Auto-create the account if we can't get its info
 			}
 			wg.Done()
 		}()
@@ -295,11 +297,10 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 	m.next.ServeHTTP(newWriter, request)
 }
 
-func NewContext(mc ring.MemcacheRing, c client.ProxyClient, log srv.LowLevelLogger) func(http.Handler) http.Handler {
+func NewContext(mc ring.MemcacheRing, log srv.LowLevelLogger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return &ProxyContextMiddleware{
 			Cache: mc,
-			c:     c,
 			log:   log,
 			next:  next,
 		}

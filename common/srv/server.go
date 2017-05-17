@@ -183,6 +183,7 @@ func SetupLogger(prefix string, atomicLevel *zap.AtomicLevel, flags *flag.FlagSe
 		return nil, fmt.Errorf("Unable to create logger: %v", err)
 	}
 	logger := baseLogger.With(zap.String("name", prefix))
+	zap.ReplaceGlobals(logger)
 	return logger, nil
 }
 
