@@ -234,6 +234,17 @@ func (c *ProxyDirectClient) PutContainer(account string, container string, heade
 	partition := c.ContainerRing.GetPartition(account, container, "")
 	accountPartition := c.AccountRing.GetPartition(account, "", "")
 	accountDevices := c.AccountRing.GetNodes(accountPartition)
+	policyList := conf.LoadPolicies()
+	policyIndex := -1
+	policyDefault := policyList.Default()
+	policyName := headers.Get("X-Storage-Policy")
+	if policyName != "" {
+		policy := policyList.ByName(policyName)
+		if policy == nil || policy.Deprecated {
+			return 400
+		}
+		policyIndex = policy.Index
+	}
 	reqs := make([]*http.Request, 0)
 	for i, device := range c.ContainerRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", device.Ip, device.Port, device.Device, partition,
@@ -245,6 +256,8 @@ func (c *ProxyDirectClient) PutContainer(account string, container string, heade
 		req.Header.Set("X-Account-Partition", strconv.FormatUint(accountPartition, 10))
 		req.Header.Set("X-Account-Host", fmt.Sprintf("%s:%d", accountDevices[i].Ip, accountDevices[i].Port))
 		req.Header.Set("X-Account-Device", accountDevices[i].Device)
+		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(policyIndex))
+		req.Header.Set("X-Backend-Storage-Policy-Default", strconv.Itoa(policyDefault))
 		reqs = append(reqs, req)
 	}
 	return c.quorumResponse(reqs...)
