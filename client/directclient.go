@@ -63,14 +63,34 @@ func (c *ProxyDirectClient) quorumResponse(reqs ...*http.Request) (http.Header, 
 	}
 	quorum := int(math.Ceil(float64(len(reqs)) / 2.0))
 	responseClasses := []int{0, 0, 0, 0, 0, 0}
+	responseCount := 0
+	var chosenResponse *QuorumResponseEntry
 	for response := range responses {
+		responseCount++
 		class := response.StatusCode / 100
 		if class <= 5 {
 			responseClasses[class]++
 			if responseClasses[class] >= quorum {
-				return response.Headers, response.StatusCode
+				chosenResponse = response
+				break
 			}
 		}
+	}
+	// give any pending requests *some* chance to finish
+	if responseCount < len(reqs) {
+		timeout := time.After(200 * time.Millisecond)
+		select {
+		case <-responses:
+			responseCount++
+			if responseCount == len(reqs) {
+				break
+			}
+		case <-timeout:
+			break
+		}
+	}
+	if chosenResponse != nil {
+		return chosenResponse.Headers, chosenResponse.StatusCode
 	}
 	return nil, 503
 }
