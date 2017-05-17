@@ -94,6 +94,12 @@ func (server *ProxyServer) ContainerPutHandler(writer http.ResponseWriter, reque
 		srv.StandardResponse(writer, 401)
 		return
 	}
+	if status, str := CheckContainerPut(request, vars["container"]); status != http.StatusOK {
+		writer.Header().Set("Content-Type", "text/plain")
+		writer.WriteHeader(status)
+		writer.Write([]byte(str))
+		return
+	}
 	defer ctx.InvalidateContainerInfo(vars["account"], vars["container"])
 	request.Header.Set("X-Timestamp", common.GetTimestamp())
 	srv.StandardResponse(writer, server.C.PutContainer(vars["account"], vars["container"], request.Header))
