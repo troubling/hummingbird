@@ -41,8 +41,22 @@ func (p PolicyList) Default() int {
 	return 0
 }
 
+func (p PolicyList) ByName(name string) *Policy {
+	for _, v := range p {
+		if v.Name == name {
+			return v
+		}
+	}
+	return nil
+}
+
+var cachedPolicyList PolicyList
+
 // LoadPolicies loads policies, probably from /etc/swift/swift.conf
 func normalLoadPolicies() PolicyList {
+	if cachedPolicyList != nil {
+		return cachedPolicyList
+	}
 	policies := map[int]*Policy{0: {
 		Index:      0,
 		Type:       "replication",
@@ -87,7 +101,8 @@ func normalLoadPolicies() PolicyList {
 	if !defaultFound {
 		policies[0].Default = true
 	}
-	return PolicyList(policies)
+	cachedPolicyList = PolicyList(policies)
+	return cachedPolicyList
 }
 
 type loadPoliciesFunc func() PolicyList
