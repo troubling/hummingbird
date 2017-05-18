@@ -109,3 +109,10 @@ func CheckObjPut(req *http.Request, objectName string) (int, string) {
 
 	return CheckMetadata(req, "Object")
 }
+
+func CheckContainerPut(req *http.Request, containerName string) (int, string) {
+	if len(containerName) > MAX_CONTAINER_NAME_LENGTH {
+		return http.StatusBadRequest, fmt.Sprintf("Container name length of %d longer than %d", len(containerName), MAX_CONTAINER_NAME_LENGTH)
+	}
+	return http.StatusOK, ""
+}

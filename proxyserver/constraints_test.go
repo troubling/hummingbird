@@ -154,3 +154,11 @@ func TestTooMuchMeta(t *testing.T) {
 	status, _ := CheckMetadata(req, "Object")
 	require.Equal(t, status, http.StatusBadRequest)
 }
+
+func TestContainerNameTooLong(t *testing.T) {
+	req, err := http.NewRequest("PUT", "/v1/a/c", nil)
+	require.Nil(t, err)
+	req.ContentLength = 1
+	status, _ := CheckContainerPut(req, strings.Repeat("o", MAX_CONTAINER_NAME_LENGTH+1))
+	require.Equal(t, status, http.StatusBadRequest)
+}
