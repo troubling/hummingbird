@@ -37,36 +37,42 @@ type ProxyDirectClient struct {
 	ObjectRing    ring.Ring
 }
 
-func (c *ProxyDirectClient) quorumResponse(reqs ...*http.Request) int {
+type QuorumResponseEntry struct {
+	StatusCode int
+	Headers    http.Header
+}
+
+func (c *ProxyDirectClient) quorumResponse(reqs ...*http.Request) (http.Header, int) {
 	// this is based on swift's best_response function.
-	statusCodes := make(chan int)
+	responses := make(chan *QuorumResponseEntry)
 	cancel := make(chan struct{})
 	defer close(cancel)
 	for _, req := range reqs {
 		go func(req *http.Request) {
-			status := 500
+			entry := &QuorumResponseEntry{StatusCode: 500}
 			if resp, err := c.client.Do(req); err == nil {
-				status = resp.StatusCode
+				entry.StatusCode = resp.StatusCode
+				entry.Headers = resp.Header
 				resp.Body.Close()
 			}
 			select {
-			case statusCodes <- status:
+			case responses <- entry:
 			case <-cancel:
 			}
 		}(req)
 	}
 	quorum := int(math.Ceil(float64(len(reqs)) / 2.0))
 	responseClasses := []int{0, 0, 0, 0, 0, 0}
-	for status := range statusCodes {
-		class := status / 100
+	for response := range responses {
+		class := response.StatusCode / 100
 		if class <= 5 {
 			responseClasses[class]++
 			if responseClasses[class] >= quorum {
-				return status
+				return response.Headers, response.StatusCode
 			}
 		}
 	}
-	return 503
+	return nil, 503
 }
 
 func (c *ProxyDirectClient) firstResponse(reqs ...*http.Request) (resp *http.Response) {
@@ -113,7 +119,8 @@ func (c *ProxyDirectClient) PutAccount(account string, headers http.Header) int 
 		}
 		reqs = append(reqs, req)
 	}
-	return c.quorumResponse(reqs...)
+	headers, statusCode := c.quorumResponse(reqs...)
+	return statusCode
 }
 
 func (c *ProxyDirectClient) PostAccount(account string, headers http.Header) int {
@@ -127,7 +134,8 @@ func (c *ProxyDirectClient) PostAccount(account string, headers http.Header) int
 		}
 		reqs = append(reqs, req)
 	}
-	return c.quorumResponse(reqs...)
+	headers, statusCode := c.quorumResponse(reqs...)
+	return statusCode
 }
 
 func (c *ProxyDirectClient) GetAccount(account string, options map[string]string, headers http.Header) (io.ReadCloser, http.Header, int) {
@@ -184,7 +192,8 @@ func (c *ProxyDirectClient) DeleteAccount(account string, headers http.Header) i
 		}
 		reqs = append(reqs, req)
 	}
-	return c.quorumResponse(reqs...)
+	headers, statusCode := c.quorumResponse(reqs...)
+	return statusCode
 }
 
 func (c *ProxyDirectClient) PutContainer(account string, container string, headers http.Header) int {
@@ -204,7 +213,8 @@ func (c *ProxyDirectClient) PutContainer(account string, container string, heade
 		req.Header.Set("X-Account-Device", accountDevices[i].Device)
 		reqs = append(reqs, req)
 	}
-	return c.quorumResponse(reqs...)
+	headers, statusCode := c.quorumResponse(reqs...)
+	return statusCode
 }
 
 func (c *ProxyDirectClient) PostContainer(account string, container string, headers http.Header) int {
@@ -219,7 +229,8 @@ func (c *ProxyDirectClient) PostContainer(account string, container string, head
 		}
 		reqs = append(reqs, req)
 	}
-	return c.quorumResponse(reqs...)
+	headers, statusCode := c.quorumResponse(reqs...)
+	return statusCode
 }
 
 func (c *ProxyDirectClient) GetContainer(account string, container string, options map[string]string, headers http.Header) (io.ReadCloser, http.Header, int) {
@@ -282,10 +293,11 @@ func (c *ProxyDirectClient) DeleteContainer(account string, container string, he
 		req.Header.Set("X-Account-Device", accountDevices[i].Device)
 		reqs = append(reqs, req)
 	}
-	return c.quorumResponse(reqs...)
+	headers, statusCode := c.quorumResponse(reqs...)
+	return statusCode
 }
 
-func (c *ProxyDirectClient) PutObject(account string, container string, obj string, headers http.Header, src io.Reader) int {
+func (c *ProxyDirectClient) PutObject(account string, container string, obj string, headers http.Header, src io.Reader) (http.Header, int) {
 	partition := c.ObjectRing.GetPartition(account, container, obj)
 	containerPartition := c.ContainerRing.GetPartition(account, container, "")
 	containerDevices := c.ContainerRing.GetNodes(containerPartition)
@@ -345,7 +357,8 @@ func (c *ProxyDirectClient) PostObject(account string, container string, obj str
 		req.Header.Set("X-Container-Device", containerDevices[i].Device)
 		reqs = append(reqs, req)
 	}
-	return c.quorumResponse(reqs...)
+	headers, statusCode := c.quorumResponse(reqs...)
+	return statusCode
 }
 
 func (c *ProxyDirectClient) GetObject(account string, container string, obj string, headers http.Header) (io.ReadCloser, http.Header, int) {
@@ -435,7 +448,8 @@ func (c *ProxyDirectClient) DeleteObject(account string, container string, obj s
 		req.Header.Set("X-Container-Device", containerDevices[i].Device)
 		reqs = append(reqs, req)
 	}
-	return c.quorumResponse(reqs...)
+	headers, statusCode := c.quorumResponse(reqs...)
+	return statusCode
 }
 
 func NewProxyDirectClient() (ProxyClient, error) {
@@ -506,13 +520,14 @@ func (c *directClient) PostAccount(headers map[string]string) (err error) {
 	return nil
 }
 
-func (c *directClient) GetAccount(marker string, endMarker string, limit int, prefix string, delimiter string, headers map[string]string) ([]ContainerRecord, map[string]string, error) {
+func (c *directClient) GetAccount(marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ContainerRecord, map[string]string, error) {
 	options := map[string]string{
 		"format":     "json",
 		"marker":     marker,
 		"end_marker": endMarker,
 		"prefix":     prefix,
 		"delimiter":  delimiter,
+		"reverse":    reverse,
 	}
 	if limit != 0 {
 		options["limit"] = strconv.Itoa(limit)
@@ -593,11 +608,12 @@ func (c *directClient) DeleteContainer(container string, headers map[string]stri
 	return nil
 }
 
-func (c *directClient) PutObject(container string, obj string, headers map[string]string, src io.Reader) (err error) {
-	if code := c.ProxyDirectClient.PutObject(c.account, container, obj, common.Map2Headers(headers), src); code/100 != 2 {
-		return HTTPError(code)
+func (c *directClient) PutObject(container string, obj string, headers map[string]string, src io.Reader) (map[string]string, error) {
+	h, code := c.ProxyDirectClient.PutObject(c.account, container, obj, common.Map2Headers(headers), src)
+	if code/100 != 2 {
+		return nil, HTTPError(code)
 	}
-	return nil
+	return common.Headers2Map(h), nil
 }
 
 func (c *directClient) PostObject(container string, obj string, headers map[string]string) (err error) {

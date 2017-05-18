@@ -33,7 +33,7 @@ type ObjectRecord struct {
 type Client interface {
 	PutAccount(headers map[string]string) (err error)
 	PostAccount(headers map[string]string) (err error)
-	GetAccount(marker string, endMarker string, limit int, prefix string, delimiter string, headers map[string]string) ([]ContainerRecord, map[string]string, error)
+	GetAccount(marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ContainerRecord, map[string]string, error)
 	HeadAccount(headers map[string]string) (map[string]string, error)
 	DeleteAccount(headers map[string]string) (err error)
 	PutContainer(container string, headers map[string]string) (err error)
@@ -41,7 +41,7 @@ type Client interface {
 	GetContainer(container string, marker string, endMarker string, limit int, prefix string, delimiter string, headers map[string]string) ([]ObjectRecord, map[string]string, error)
 	HeadContainer(container string, headers map[string]string) (map[string]string, error)
 	DeleteContainer(container string, headers map[string]string) (err error)
-	PutObject(container string, obj string, headers map[string]string, src io.Reader) (err error)
+	PutObject(container string, obj string, headers map[string]string, src io.Reader) (map[string]string, error)
 	PostObject(container string, obj string, headers map[string]string) (err error)
 	GetObject(container string, obj string, headers map[string]string) (io.ReadCloser, map[string]string, error)
 	HeadObject(container string, obj string, headers map[string]string) (map[string]string, error)
@@ -60,7 +60,7 @@ type ProxyClient interface {
 	GetContainer(account string, container string, options map[string]string, headers http.Header) (io.ReadCloser, http.Header, int)
 	HeadContainer(account string, container string, headers http.Header) (http.Header, int)
 	DeleteContainer(account string, container string, headers http.Header) int
-	PutObject(account string, container string, obj string, headers http.Header, src io.Reader) int
+	PutObject(account string, container string, obj string, headers http.Header, src io.Reader) (http.Header, int)
 	PostObject(account string, container string, obj string, headers http.Header) int
 	GetObject(account string, container string, obj string, headers http.Header) (io.ReadCloser, http.Header, int)
 	HeadObject(account string, container string, obj string, headers http.Header) (http.Header, int)

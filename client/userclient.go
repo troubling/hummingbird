@@ -82,12 +82,12 @@ func (c *userClient) PostAccount(headers map[string]string) (err error) {
 	return c.doRequest("POST", "", nil, headers)
 }
 
-func (c *userClient) GetAccount(marker string, endMarker string, limit int, prefix string, delimiter string, headers map[string]string) ([]ContainerRecord, map[string]string, error) {
+func (c *userClient) GetAccount(marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ContainerRecord, map[string]string, error) {
 	limitStr := ""
 	if limit > 0 {
 		limitStr = strconv.Itoa(limit)
 	}
-	path := mkquery(map[string]string{"marker": marker, "end_marker": endMarker, "prefix": prefix, "delimiter": delimiter, "limit": limitStr})
+	path := mkquery(map[string]string{"marker": marker, "end_marker": endMarker, "prefix": prefix, "delimiter": delimiter, "limit": limitStr, "reverse": reverse})
 	req, err := c.authedRequest("GET", path, nil, headers)
 	if err != nil {
 		return nil, nil, err
@@ -178,8 +178,17 @@ func (c *userClient) DeleteContainer(container string, headers map[string]string
 	return c.doRequest("DELETE", "/"+container, nil, headers)
 }
 
-func (c *userClient) PutObject(container string, obj string, headers map[string]string, src io.Reader) (err error) {
-	return c.doRequest("PUT", "/"+container+"/"+obj, src, headers)
+func (c *userClient) PutObject(container string, obj string, headers map[string]string, src io.Reader) (map[string]string, error) {
+	req, err := c.authedRequest("PUT", "/"+container+"/"+obj, src, headers)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.do(req)
+	if err != nil {
+		return nil, err
+	}
+	resp.Body.Close()
+	return common.Headers2Map(resp.Header), nil
 }
 
 func (c *userClient) PostObject(container string, obj string, headers map[string]string) (err error) {
