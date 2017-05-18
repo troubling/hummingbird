@@ -328,7 +328,12 @@ func (c *ProxyDirectClient) PutObject(account string, container string, obj stri
 		reqs = append(reqs, req)
 	}
 	go func() {
-		mw := io.MultiWriter(writers[0], writers[1], writers[2])
+		// TODO: Need to change up this code because MultiWriter will stop everything on any error.
+		ws := make([]io.Writer, len(writers))
+		for i, w := range writers {
+			ws[i] = w
+		}
+		mw := io.MultiWriter(ws...)
 		io.Copy(mw, src)
 		for _, writer := range writers {
 			writer.Close()
