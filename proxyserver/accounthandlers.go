@@ -43,7 +43,7 @@ func (server *ProxyServer) AccountGetHandler(writer http.ResponseWriter, request
 		"delimiter":  request.FormValue("delimiter"),
 		"reverse":    request.FormValue("reverse"),
 	}
-	r, headers, code := server.C.GetAccount(vars["account"], options, request.Header)
+	r, headers, code := ctx.C.GetAccount(vars["account"], options, request.Header)
 	for k := range headers {
 		writer.Header().Set(k, headers.Get(k))
 	}
@@ -65,7 +65,7 @@ func (server *ProxyServer) AccountHeadHandler(writer http.ResponseWriter, reques
 		srv.StandardResponse(writer, 401)
 		return
 	}
-	headers, code := server.C.HeadAccount(vars["account"], request.Header)
+	headers, code := ctx.C.HeadAccount(vars["account"], request.Header)
 	for k := range headers {
 		writer.Header().Set(k, headers.Get(k))
 	}
@@ -85,7 +85,7 @@ func (server *ProxyServer) AccountPutHandler(writer http.ResponseWriter, request
 	}
 	defer ctx.InvalidateAccountInfo(vars["account"])
 	request.Header.Set("X-Timestamp", common.GetTimestamp())
-	srv.StandardResponse(writer, server.C.PutAccount(vars["account"], request.Header))
+	srv.StandardResponse(writer, ctx.C.PutAccount(vars["account"], request.Header))
 }
 
 func (server *ProxyServer) AccountDeleteHandler(writer http.ResponseWriter, request *http.Request) {
@@ -101,5 +101,5 @@ func (server *ProxyServer) AccountDeleteHandler(writer http.ResponseWriter, requ
 	}
 	defer ctx.InvalidateAccountInfo(vars["account"])
 	request.Header.Set("X-Timestamp", common.GetTimestamp())
-	srv.StandardResponse(writer, server.C.DeleteAccount(vars["account"], request.Header))
+	srv.StandardResponse(writer, ctx.C.DeleteAccount(vars["account"], request.Header))
 }
