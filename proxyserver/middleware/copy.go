@@ -122,8 +122,7 @@ func getSrcContainerObjectName(request *http.Request) (string, string, error) {
 func getHeaderContainerObjectName(request *http.Request, header string) (string, string, error) {
 	path, err := url.QueryUnescape(request.Header.Get(header))
 	if err != nil {
-		msg := fmt.Sprintf("Invalid %s", header)
-		return "", "", errors.New(msg)
+		return "", "", errors.New(fmt.Sprintf("Invalid %s", header))
 	}
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
@@ -131,8 +130,7 @@ func getHeaderContainerObjectName(request *http.Request, header string) (string,
 
 	parts := strings.SplitN(path, "/", 3)
 	if len(parts) != 3 {
-		msg := fmt.Sprintf("Invalid %s", header)
-		return "", "", errors.New(msg)
+		return "", "", errors.New(fmt.Sprintf("Invalid %s", header))
 	}
 	return parts[1], parts[2], nil
 }
@@ -292,10 +290,6 @@ func CopyItemsExclude(dest, src http.Header, exclude []string) {
 			}
 		}
 	}
-}
-
-func TrimEtag(etag string) string {
-	return strings.Trim(etag, "\"")
 }
 
 func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
