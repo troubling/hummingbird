@@ -491,7 +491,7 @@ func (slo *staticLargeObject) handleSloPut(writer http.ResponseWriter, request *
 			subManifest, err := slo.buildManifest(subWriter, request, newPath)
 			if err != nil {
 				errs = append(errs,
-					fmt.Sprintf("could not build submanifest response on segment: %s", err, newPath))
+					fmt.Sprintf("could not build submanifest response on segment: %s (%s)", newPath, err))
 				continue
 			}
 			subSize := int64(0)
