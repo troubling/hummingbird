@@ -79,16 +79,14 @@ func (c *ProxyDirectClient) quorumResponse(reqs ...*http.Request) (http.Header, 
 		}
 	}
 	// give any pending requests *some* chance to finish
-	if responseCount < len(reqs) {
-		timeout := time.After(PostQuorumTimeoutMs * time.Millisecond)
+	timeout := time.After(PostQuorumTimeoutMs * time.Millisecond)
+waiting:
+	for responseCount < len(reqs) {
 		select {
 		case <-responses:
 			responseCount++
-			if responseCount == len(reqs) {
-				break
-			}
 		case <-timeout:
-			break
+			break waiting
 		}
 	}
 	if chosenResponse != nil {
