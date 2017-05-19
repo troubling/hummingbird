@@ -41,3 +41,6 @@ script:
   - hummingbird start container
   - hummingbird start account
   - PATH=$PATH:~/swift-venv/bin nosetests -e test_unicode_metadata ~/swift/test/functional
+  - PATH=$PATH:~/swift-venv/bin swift-init stop proxy
+  - hummingbird start proxy
+  - PATH=$PATH:~/swift-venv/bin nosetests -e test_unicode_metadata ~/swift/test/functional || true
