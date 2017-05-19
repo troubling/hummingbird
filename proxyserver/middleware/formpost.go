@@ -183,7 +183,7 @@ func formpost(next http.Handler) http.Handler {
 			if fn := p.FileName(); fn == "" {
 				data, err := ioutil.ReadAll(&io.LimitedReader{R: p, N: 8192})
 				if err != nil {
-					formpostRespond(writer, 400, "error yo", attrs["redirect"])
+					formpostRespond(writer, 400, "error reading form value", attrs["redirect"])
 					return
 				}
 				if len(attrs) > 64 {
