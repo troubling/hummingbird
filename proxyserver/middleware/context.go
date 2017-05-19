@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -227,6 +228,23 @@ func (ctx *ProxyContext) InvalidateAccountInfo(account string) {
 	key := fmt.Sprintf("account/%s", account)
 	delete(ctx.accountInfoCache, key)
 	ctx.Cache.Delete(key)
+}
+
+func (ctx *ProxyContext) Subrequest(method, path string, body io.Reader, writer http.ResponseWriter) (*http.Request, error) {
+	req, err := http.NewRequest(method, path, body)
+	if err != nil {
+		return nil, err
+	}
+	newctx := &ProxyContext{
+		ProxyContextMiddleware: ctx.ProxyContextMiddleware,
+		Authorize:              ctx.Authorize,
+		Logger:                 ctx.Logger,
+		containerInfoCache:     ctx.containerInfoCache,
+		accountInfoCache:       ctx.accountInfoCache,
+		capWriter:              &proxyWriter{ResponseWriter: writer, Status: 501},
+	}
+	newctx.capWriter.Header().Set("X-Trans-Id", ctx.capWriter.Header().Get("X-Trans-Id"))
+	return req.WithContext(context.WithValue(req.Context(), "proxycontext", newctx)), nil
 }
 
 func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
