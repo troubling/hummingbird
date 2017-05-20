@@ -37,16 +37,16 @@ script:
   - test -z "$(find . -name '*.go' | xargs gofmt -l -s)" || (echo "You need to run 'make fmt'"; exit 1)
   - go vet github.com/troubling/hummingbird/...
   - go test github.com/troubling/hummingbird/...
-  - for package in `go list github.com/troubling/hummingbird/...`; do go test -coverprofile=/tmp/coverage.out $package; go tool cover -html=/tmp/coverage.out -o "/tmp/output/$(echo $package | sed 's|/|_|g').html"; done
+  - for package in `go list github.com/troubling/hummingbird/...`; do go test -coverprofile=/tmp/coverage.out $package; go tool cover -html=/tmp/coverage.out -o "/tmp/output/coverage_$(echo $package | sed 's|/|_|g').html"; done
   - PATH=$PATH:~/swift-venv/bin swift-init start proxy
   - hummingbird start object
   - hummingbird start container
   - hummingbird start account
-  - PATH=$PATH:~/swift-venv/bin nosetests -e test_unicode_metadata --with-html --html-file=/tmp/output/swiftproxy.html ~/swift/test/functional
+  - PATH=$PATH:~/swift-venv/bin nosetests -e test_unicode_metadata --with-html --html-file=/tmp/output/functional_swiftproxy.html ~/swift/test/functional
   - PATH=$PATH:~/swift-venv/bin swift-init stop proxy
   - hummingbird start proxy
-  - PATH=$PATH:~/swift-venv/bin nosetests -e test_unicode_metadata --with-html --html-file=/tmp/output/hbproxy.html ~/swift/test/functional || true
-  - echo "<html><body><h1>Files</h1><ul>$(for file in `find /tmp/output -type f -printf "%f\n"`; do echo "<li><a href='$file'>$file</a></li>"; done)</ul></body></html>" > /tmp/output/index.html
+  - PATH=$PATH:~/swift-venv/bin nosetests -e test_unicode_metadata --with-html --html-file=/tmp/output/functional_hbproxy.html ~/swift/test/functional || true
+  - echo "<html><body><h1>Files</h1><ul>$(for file in `find /tmp/output -type f -printf "%f\n" | sort`; do echo "<li><a href='$file'>$file</a></li>"; done)</ul></body></html>" > /tmp/output/index.html
 
 deploy:
   skip_cleanup: true
