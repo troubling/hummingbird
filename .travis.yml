@@ -8,6 +8,7 @@ go:
   - master
 
 install:
+  - mkdir -p /tmp/output
   - make get
   - make all
   - sudo make install
@@ -20,7 +21,7 @@ install:
   - sudo chown -R "${USER}" /etc/swift /etc/hummingbird /srv/* /var/cache/swift* /var/run/swift /var/run/hummingbird /var/log/swift
   - git clone --depth 1 'https://github.com/openstack/swift.git' ~/swift
   - virtualenv ~/swift-venv
-  - ~/swift-venv/bin/pip install -U pip setuptools python-subunit
+  - ~/swift-venv/bin/pip install -U pip setuptools python-subunit nose-htmloutput
   - ~/swift-venv/bin/pip install -r ~/swift/requirements.txt
   - ~/swift-venv/bin/pip install -r ~/swift/test-requirements.txt
   - cd ~/swift; ~/swift-venv/bin/python setup.py install
@@ -36,11 +37,20 @@ script:
   - test -z "$(find . -name '*.go' | xargs gofmt -l -s)" || (echo "You need to run 'make fmt'"; exit 1)
   - go vet github.com/troubling/hummingbird/...
   - go test github.com/troubling/hummingbird/...
+  - for package in `go list github.com/troubling/hummingbird/...`; do go test -coverprofile=/tmp/coverage.out $package; go tool cover -html=/tmp/coverage.out -o "/tmp/output/$(echo $package | sed 's|/|_|g').html"; done
   - PATH=$PATH:~/swift-venv/bin swift-init start proxy
   - hummingbird start object
   - hummingbird start container
   - hummingbird start account
-  - PATH=$PATH:~/swift-venv/bin nosetests -e test_unicode_metadata ~/swift/test/functional
+  - PATH=$PATH:~/swift-venv/bin nosetests -e test_unicode_metadata --with-html --html-file=/tmp/output/swiftproxy.html ~/swift/test/functional
   - PATH=$PATH:~/swift-venv/bin swift-init stop proxy
   - hummingbird start proxy
-  - PATH=$PATH:~/swift-venv/bin nosetests -e test_unicode_metadata ~/swift/test/functional || true
+  - PATH=$PATH:~/swift-venv/bin nosetests -e test_unicode_metadata --with-html --html-file=/tmp/output/hbproxy.html ~/swift/test/functional || true
+
+deploy:
+  skip_cleanup: true
+  provider: pages
+  github_token: $GITHUB_TOKEN
+  local_dir: /tmp/output
+  on:
+    branch: master
