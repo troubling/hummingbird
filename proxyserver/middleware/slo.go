@@ -580,6 +580,41 @@ func (slo *staticLargeObject) handleSloPut(writer http.ResponseWriter, request *
 	return
 }
 
+func (slo *staticLargeObject) deleteAllSegments(sw *sloWriter, request *http.Request, manifest []sloItem, count int) {
+	if count > 10 {
+		// TODO: do what here?
+		return
+	}
+	pathMap, err := common.ParseProxyPath(request.URL.Path)
+	if err != nil || pathMap["account"] == "" {
+		fmt.Println(fmt.Sprintf(
+			"invalid origReq path: %s", request.URL.Path))
+		return
+	}
+	for _, si := range manifest {
+		container, object, err := splitSloPath(si.Name)
+		if err != nil {
+			return
+		}
+		newPath := fmt.Sprintf("/v1/%s/%s/%s", pathMap["account"], container, object)
+		if si.SubSlo {
+			subManifest, err := slo.buildManifest(sw, request, newPath)
+			if err != nil {
+				return // TODO what do i do about errors here?
+			}
+			slo.deleteAllSegments(sw, request, subManifest, count+1)
+		}
+		subRequest, err := buildSubRequest("DELETE", request, newPath)
+		if err != nil {
+			fmt.Println(fmt.Sprintf("error building subrequest: %s", err))
+			return
+		}
+		sw := &sloWriter{ResponseWriter: sw.ResponseWriter,
+			Status: 500, allowWrite: true} // TODO i think i can reuse this
+		slo.next.ServeHTTP(sw, subRequest)
+	}
+}
+
 func (slo *staticLargeObject) handleSloDelete(writer http.ResponseWriter, request *http.Request) {
 	pathMap, err := common.ParseProxyPath(request.URL.Path)
 	if err != nil || pathMap["object"] == "" {
@@ -589,11 +624,10 @@ func (slo *staticLargeObject) handleSloDelete(writer http.ResponseWriter, reques
 	}
 	sw := &sloWriter{ResponseWriter: writer, Status: 500}
 	manifest, err := slo.buildManifest(sw, request, request.URL.Path)
-	totalSize := int64(0)
-	for _, si := range manifest {
-		segLen, _ := si.segLenHash()
-		totalSize += segLen
-	}
+	dw := &sloWriter{ResponseWriter: writer, Status: 500, allowWriteHeader: true, allowWrite: true}
+	slo.deleteAllSegments(dw, request, manifest, 0)
+	slo.next.ServeHTTP(writer, request)
+	return
 }
 
 func updateEtagIsAt(request *http.Request, etagLoc string) {
