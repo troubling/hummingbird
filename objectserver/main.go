@@ -148,7 +148,7 @@ func (server *ObjectServer) ObjGetHandler(writer http.ResponseWriter, request *h
 		lastModifiedHeader = lastModified.Truncate(time.Second).Add(time.Second)
 	}
 	headers.Set("Last-Modified", lastModifiedHeader.Format(time.RFC1123))
-	headers.Set("ETag", etag)
+	headers.Set("ETag", "\""+etag+"\"")
 	xTimestamp, err := common.GetEpochFromTimestamp(metadata["X-Timestamp"])
 	if err != nil {
 		srv.GetLogger(request).Error("Error getting the epoch time from x-timestamp", zap.Error(err))
