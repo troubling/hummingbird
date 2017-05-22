@@ -73,6 +73,7 @@ type ProxyContextMiddleware struct {
 	log        srv.LowLevelLogger
 	Cache      ring.MemcacheRing
 	policyList conf.PolicyList
+	httpClient *http.Client
 }
 
 type proxyWriter struct {
@@ -107,6 +108,7 @@ type ProxyContext struct {
 	containerInfoCache map[string]*client.ContainerInfo
 	accountInfoCache   map[string]*AccountInfo
 	capWriter          *proxyWriter
+	httpClient         *http.Client
 }
 
 func GetProxyContext(r *http.Request) *ProxyContext {
@@ -170,6 +172,10 @@ func (ctx *ProxyContext) GetContainerInfo(account, container string) *client.Con
 		ctx.Cache.Set(key, ci, 30)
 	}
 	return ci
+}
+
+func (ctx *ProxyContext) HTTPClient() *http.Client {
+	return ctx.httpClient
 }
 
 func (ctx *ProxyContext) InvalidateContainerInfo(account, container string) {
@@ -278,6 +284,7 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 		containerInfoCache:     make(map[string]*client.ContainerInfo),
 		accountInfoCache:       make(map[string]*AccountInfo),
 		capWriter:              newWriter,
+		httpClient:             m.httpClient,
 	}
 	var err error
 	ctx.C, err = client.NewProxyDirectClient(ctx)
@@ -312,13 +319,14 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 	m.next.ServeHTTP(newWriter, request)
 }
 
-func NewContext(mc ring.MemcacheRing, log srv.LowLevelLogger, policyList conf.PolicyList) func(http.Handler) http.Handler {
+func NewContext(mc ring.MemcacheRing, log srv.LowLevelLogger, policyList conf.PolicyList, httpClient *http.Client) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return &ProxyContextMiddleware{
 			Cache:      mc,
 			log:        log,
 			next:       next,
 			policyList: policyList,
+			httpClient: httpClient,
 		}
 	}
 }

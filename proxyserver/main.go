@@ -18,8 +18,10 @@ package proxyserver
 import (
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
@@ -83,7 +85,15 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 		{middleware.NewTempAuth, "filter:tempauth"},
 		{middleware.NewRatelimiter, "filter:ratelimit"},
 	}
-	pipeline := alice.New(middleware.NewContext(server.mc, server.logger, server.policyList))
+	pipeline := alice.New(middleware.NewContext(server.mc, server.logger, server.policyList, &http.Client{
+		Transport: &http.Transport{
+			Dial: (&net.Dialer{
+				Timeout:   10 * time.Second,
+				KeepAlive: 5 * time.Second,
+			}).Dial,
+		},
+		Timeout: 120 * time.Minute,
+	}))
 	for _, m := range middlewares {
 		mid, err := m.construct(config.GetSection(m.section))
 		if err != nil {

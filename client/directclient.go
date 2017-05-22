@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -51,6 +50,7 @@ type ClientInfoSource interface {
 	GetContainerInfo(account, container string) *ContainerInfo
 	DefaultPolicyIndex() int
 	PolicyByName(name string) *conf.Policy
+	HTTPClient() *http.Client
 }
 
 func NewProxyDirectClient(cis ClientInfoSource) (ProxyClient, error) {
@@ -70,15 +70,7 @@ func NewProxyDirectClient(cis ClientInfoSource) (ProxyClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.client = &http.Client{
-		Transport: &http.Transport{
-			Dial: (&net.Dialer{
-				Timeout:   10 * time.Second,
-				KeepAlive: 5 * time.Second,
-			}).Dial,
-		},
-		Timeout: 120 * time.Minute,
-	}
+	c.client = cis.HTTPClient()
 	return c, nil
 }
 

@@ -2,6 +2,7 @@ package client
 
 import (
 	"github.com/troubling/hummingbird/common/conf"
+	"net/http"
 	"testing"
 )
 
@@ -26,6 +27,10 @@ func (t *testClientInfoSource) DefaultPolicyIndex() int {
 }
 
 func (t *testClientInfoSource) PolicyByName(name string) *conf.Policy {
+	return nil
+}
+
+func (t *testClientInfoSource) HTTPClient() *http.Client {
 	return nil
 }
 
