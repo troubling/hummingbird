@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/troubling/hummingbird/client"
 )
 
 func makeFormpostRequest(t *testing.T, body, boundary string, next http.Handler) *httptest.ResponseRecorder {
@@ -41,7 +42,7 @@ func makeFormpostRequest(t *testing.T, body, boundary string, next http.Handler)
 	newr.Header.Set("Content-Type", "multipart/form-data; boundary="+boundary)
 	neww := httptest.NewRecorder()
 	ctx := &ProxyContext{
-		containerInfoCache: map[string]*ContainerInfo{
+		containerInfoCache: map[string]*client.ContainerInfo{
 			"container/AUTH_test/container": {Metadata: map[string]string{"Temp-Url-Key": "mykey"}},
 		},
 		accountInfoCache: map[string]*AccountInfo{
@@ -150,7 +151,7 @@ func TestFpLimitReader(t *testing.T) {
 // func authorizeFormpost(ctx *ProxyContext, account, container, path string, attrs map[string]string) int {
 func TestAuthenticateFormpost(t *testing.T) {
 	ctx := &ProxyContext{
-		containerInfoCache: map[string]*ContainerInfo{
+		containerInfoCache: map[string]*client.ContainerInfo{
 			"container/a/c": {Metadata: map[string]string{
 				"Temp-Url-Key":   "containerkey",
 				"Temp-Url-Key-2": "containerkey2",
