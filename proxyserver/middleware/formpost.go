@@ -142,10 +142,7 @@ func formpost(next http.Handler) http.Handler {
 		}
 
 		contentType, params, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
-		if err != nil {
-			srv.StandardResponse(writer, 400)
-			return
-		} else if contentType != "multipart/form-data" || params["boundary"] == "" {
+		if err != nil || contentType != "multipart/form-data" || params["boundary"] == "" {
 			next.ServeHTTP(writer, request)
 			return
 		}
