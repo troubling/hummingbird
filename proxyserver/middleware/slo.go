@@ -36,10 +36,10 @@ import (
 	"github.com/troubling/hummingbird/common/srv"
 )
 
-var MaxManifestSize = 1024 * 1024 * 2 // TODO add a check for this
-var MaxManifestLen = 1000
+var maxManifestSize = 1024 * 1024 * 2 // TODO add a check for this
+var maxManifestLen = 1000
 
-type staticLargeObject struct {
+type sloMiddleware struct {
 	next http.Handler
 }
 
@@ -107,11 +107,10 @@ func (sw *sloWriter) WriteUpstreamHeader() {
 	if sw.isSlo {
 		sw.Header().Set("X-Static-Large-Object", "True")
 	}
-
 	sw.ResponseWriter.WriteHeader(sw.Status)
 	sw.Header().Set("X-Static-Large-Object", "")
-
 }
+
 func (sw *sloWriter) WriteHeader(status int) {
 	sw.Status = status
 	cLen, _ := strconv.Atoi(sw.Header().Get("Content-Length"))
@@ -121,6 +120,7 @@ func (sw *sloWriter) WriteHeader(status int) {
 	sw.ContentType = sw.Header().Get("Content-Type")
 	sw.LastModified = sw.Header().Get("Last-Modified")
 	sw.manifestBytes = bytes.NewBuffer(make([]byte, 0))
+	fmt.Println("n writeheder: ", sw.Header().Get("X-Static-Large-Object"))
 	if isSlo := sw.Header().Get("X-Static-Large-Object"); isSlo == "True" {
 		sw.isSlo = true
 		sw.Header().Set("X-Static-Large-Object", "")
@@ -132,9 +132,11 @@ func (sw *sloWriter) WriteHeader(status int) {
 
 func (sw *sloWriter) Write(b []byte) (int, error) {
 	if sw.isSlo {
+		fmt.Println("write bytes to man: ", b)
 		sw.manifestBytes.Write(b)
 		return len(b), nil
 	}
+	fmt.Println("not writing bytes to man!!!!!")
 	if sw.allowWrite {
 		return sw.ResponseWriter.Write(b)
 	}
@@ -160,7 +162,7 @@ func buildSubRequest(
 	return subRequest, nil
 }
 
-func (slo *staticLargeObject) needToRefetchManifest(sw *sloWriter, request *http.Request) bool {
+func (slo *sloMiddleware) needToRefetchManifest(sw *sloWriter, request *http.Request) bool {
 	if request.Method == "HEAD" {
 		return true
 	}
@@ -182,7 +184,7 @@ func (slo *staticLargeObject) needToRefetchManifest(sw *sloWriter, request *http
 	return false
 }
 
-func (slo *staticLargeObject) feedOutSegments(sw *sloWriter, request *http.Request, manifest []sloItem, reqRange common.HttpRange, count int) {
+func (slo *sloMiddleware) feedOutSegments(sw *sloWriter, request *http.Request, manifest []sloItem, reqRange common.HttpRange, count int) {
 	if count > 10 {
 		// TODO: do what here?
 		return
@@ -225,6 +227,7 @@ func (slo *staticLargeObject) feedOutSegments(sw *sloWriter, request *http.Reque
 		newPath := fmt.Sprintf("/v1/%s/%s/%s", pathMap["account"], container, object)
 		if !si.SubSlo {
 
+			fmt.Println("send req to: ", newPath)
 			subRequest, err := buildSubRequest("GET", request, newPath)
 			if err != nil {
 				fmt.Println(fmt.Sprintf("error building subrequest: %s", err))
@@ -234,6 +237,7 @@ func (slo *staticLargeObject) feedOutSegments(sw *sloWriter, request *http.Reque
 			subRequest.Header.Set("Range", rangeHeader)
 			sw := &sloWriter{ResponseWriter: sw.ResponseWriter,
 				Status: 500, allowWrite: true} // TODO i think i can reuse this
+			fmt.Println("bout to call seg next")
 			slo.next.ServeHTTP(sw, subRequest)
 		} else {
 			subManifest, err := slo.buildManifest(sw, request, newPath)
@@ -260,7 +264,7 @@ func parseSloContentType(contentType string) (string, int64, error) {
 	return contentType, int64(0), errors.New("Not a valid slo content-type")
 }
 
-func (slo *staticLargeObject) buildManifest(sw *sloWriter, request *http.Request, manPath string) (manifest []sloItem, err error) {
+func (slo *sloMiddleware) buildManifest(sw *sloWriter, request *http.Request, manPath string) (manifest []sloItem, err error) {
 
 	var manifestBytes []byte
 	subRequest, err := buildSubRequest("GET", request, manPath)
@@ -268,10 +272,12 @@ func (slo *staticLargeObject) buildManifest(sw *sloWriter, request *http.Request
 		return manifest, err
 	}
 	swRefetch := &sloWriter{ResponseWriter: sw.ResponseWriter, Status: 500}
+	fmt.Println("999999999999")
 	slo.next.ServeHTTP(swRefetch, subRequest)
 	if swRefetch.manifestBytes != nil {
 		manifestBytes = swRefetch.manifestBytes.Bytes()
 	}
+	fmt.Println("999999999999 :", manifestBytes, request.URL.Path)
 	err = json.Unmarshal(manifestBytes, &manifest)
 	return manifest, err
 }
@@ -294,7 +300,7 @@ func convertManifest(manifestBytes []byte) ([]byte, error) {
 	return []byte(newBody), nil
 }
 
-func (slo *staticLargeObject) handleSloGet(sw *sloWriter, request *http.Request) {
+func (slo *sloMiddleware) handleSloGet(sw *sloWriter, request *http.Request) {
 	// next has already been called and this is an SLO
 	//TODO: what does comment at slo.py#624 mean?
 	contentType, _, _ := parseSloContentType(sw.Header().Get("Content-Type"))
@@ -341,6 +347,7 @@ func (slo *staticLargeObject) handleSloGet(sw *sloWriter, request *http.Request)
 	var manifest []sloItem
 	var err error
 	manifestBytes := sw.manifestBytes.Bytes()
+	fmt.Println("ccccccccccC")
 	if slo.needToRefetchManifest(sw, request) {
 		manifest, err = slo.buildManifest(sw, request, request.URL.Path)
 	} else {
@@ -384,7 +391,7 @@ func (slo *staticLargeObject) handleSloGet(sw *sloWriter, request *http.Request)
 	slo.feedOutSegments(sw, request, manifest, reqRange, 0)
 }
 
-func (slo *staticLargeObject) parsePutManifest(body io.ReadCloser) (manifest []sloPutManifest, errs []string) {
+func (slo *sloMiddleware) parsePutManifest(body io.ReadCloser) (manifest []sloPutManifest, errs []string) {
 	dec := json.NewDecoder(body)
 	if _, err := dec.Token(); err != nil {
 		errs = append(errs, "Invalid manifest json- not a list.")
@@ -418,7 +425,7 @@ func (slo *staticLargeObject) parsePutManifest(body io.ReadCloser) (manifest []s
 			}
 		}
 		manifest = append(manifest, manItem)
-		if len(manifest) > MaxManifestLen {
+		if len(manifest) > maxManifestLen {
 			errs = append(errs, "Invalid manifest json- too many segments")
 			break
 		}
@@ -431,7 +438,7 @@ func (slo *staticLargeObject) parsePutManifest(body io.ReadCloser) (manifest []s
 
 }
 
-func (slo *staticLargeObject) handleSloPut(writer http.ResponseWriter, request *http.Request) {
+func (slo *sloMiddleware) handleSloPut(writer http.ResponseWriter, request *http.Request) {
 	pathMap, err := common.ParseProxyPath(request.URL.Path)
 	if err != nil || pathMap["object"] == "" {
 		srv.SimpleErrorResponse(writer, 400, fmt.Sprintf(
@@ -580,7 +587,7 @@ func (slo *staticLargeObject) handleSloPut(writer http.ResponseWriter, request *
 	return
 }
 
-func (slo *staticLargeObject) deleteAllSegments(sw *sloWriter, request *http.Request, manifest []sloItem, count int) {
+func (slo *sloMiddleware) deleteAllSegments(sw *sloWriter, request *http.Request, manifest []sloItem, count int) {
 	if count > 10 {
 		// TODO: do what here?
 		return
@@ -615,7 +622,7 @@ func (slo *staticLargeObject) deleteAllSegments(sw *sloWriter, request *http.Req
 	}
 }
 
-func (slo *staticLargeObject) handleSloDelete(writer http.ResponseWriter, request *http.Request) {
+func (slo *sloMiddleware) handleSloDelete(writer http.ResponseWriter, request *http.Request) {
 	pathMap, err := common.ParseProxyPath(request.URL.Path)
 	if err != nil || pathMap["object"] == "" {
 		srv.SimpleErrorResponse(writer, 400, fmt.Sprintf(
@@ -623,7 +630,15 @@ func (slo *staticLargeObject) handleSloDelete(writer http.ResponseWriter, reques
 		return
 	}
 	sw := &sloWriter{ResponseWriter: writer, Status: 500}
+	fmt.Println("delete builder: ", request.URL.Path)
 	manifest, err := slo.buildManifest(sw, request, request.URL.Path)
+	if err != nil {
+		srv.SimpleErrorResponse(writer, 400, fmt.Sprintf(
+			"invalid manifest json: %s", err))
+		return
+
+	}
+	fmt.Println("delete builder manifest: ", manifest, err)
 	dw := &sloWriter{ResponseWriter: writer, Status: 500, allowWriteHeader: true, allowWrite: true}
 	slo.deleteAllSegments(dw, request, manifest, 0)
 	slo.next.ServeHTTP(writer, request)
@@ -640,7 +655,8 @@ func updateEtagIsAt(request *http.Request, etagLoc string) {
 	request.Header.Set("X-Backend-Etag-Is-At", curHeader)
 }
 
-func (slo *staticLargeObject) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+func (slo *sloMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	fmt.Println("0000")
 	if request.Method == "PUT" && request.URL.Query().Get("multipart-manifest") == "put" {
 		slo.handleSloPut(writer, request)
 		return
@@ -655,7 +671,9 @@ func (slo *staticLargeObject) ServeHTTP(writer http.ResponseWriter, request *htt
 	}
 
 	sw := &sloWriter{ResponseWriter: writer, Status: 500, allowWriteHeader: true, allowWrite: true}
+	fmt.Println("bout to call next")
 	slo.next.ServeHTTP(sw, request)
+	fmt.Println("isa slo: ", sw.isSlo)
 
 	if sw.isSlo && (request.Method == "GET" || request.Method == "HEAD") {
 		slo.handleSloGet(sw, request)
@@ -665,6 +683,6 @@ func (slo *staticLargeObject) ServeHTTP(writer http.ResponseWriter, request *htt
 func NewSlo(config conf.Section) (func(http.Handler) http.Handler, error) {
 	RegisterInfo("slo", map[string]interface{}{"max_manifest_segments": 1000, "max_manifest_size": 2097152, "min_segment_size": 1048576})
 	return func(next http.Handler) http.Handler {
-		return &staticLargeObject{next: next}
+		return &sloMiddleware{next: next}
 	}, nil
 }
