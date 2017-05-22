@@ -17,6 +17,8 @@ import (
 	"github.com/troubling/hummingbird/common/ring"
 )
 
+const PostQuorumTimeoutMs = 50
+
 func mkquery(options map[string]string) string {
 	query := ""
 	for k, v := range options {
@@ -100,14 +102,32 @@ func (c *ProxyDirectClient) quorumResponse(reqs ...*http.Request) (http.Header, 
 	}
 	quorum := int(math.Ceil(float64(len(reqs)) / 2.0))
 	responseClasses := []int{0, 0, 0, 0, 0, 0}
+	responseCount := 0
+	var chosenResponse *QuorumResponseEntry
 	for response := range responses {
+		responseCount++
 		class := response.StatusCode / 100
 		if class <= 5 {
 			responseClasses[class]++
 			if responseClasses[class] >= quorum {
-				return response.Headers, response.StatusCode
+				chosenResponse = response
+				break
 			}
 		}
+	}
+	// give any pending requests *some* chance to finish
+	timeout := time.After(PostQuorumTimeoutMs * time.Millisecond)
+waiting:
+	for responseCount < len(reqs) {
+		select {
+		case <-responses:
+			responseCount++
+		case <-timeout:
+			break waiting
+		}
+	}
+	if chosenResponse != nil {
+		return chosenResponse.Headers, chosenResponse.StatusCode
 	}
 	return nil, 503
 }

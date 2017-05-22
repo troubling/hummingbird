@@ -243,3 +243,34 @@ func TestCreateExisting(t *testing.T) {
 		"X-Account-Meta-Whatever": {"something", "200000002.00000"},
 	})
 }
+
+func TestInt64MaybeStringified(t *testing.T) {
+	i, ok := int64MaybeStringified(nil)
+	if ok {
+		t.Fatal(i, ok)
+	}
+	i, ok = int64MaybeStringified(int64(0))
+	if !ok || i != 0 {
+		t.Fatal(i, ok)
+	}
+	i, ok = int64MaybeStringified(int64(1234))
+	if !ok || i != 1234 {
+		t.Fatal(i, ok)
+	}
+	i, ok = int64MaybeStringified("")
+	if ok {
+		t.Fatal(i, ok)
+	}
+	i, ok = int64MaybeStringified("0")
+	if !ok || i != 0 {
+		t.Fatal(i, ok)
+	}
+	i, ok = int64MaybeStringified("1234")
+	if !ok || i != 1234 {
+		t.Fatal(i, ok)
+	}
+	i, ok = int64MaybeStringified("garbage")
+	if ok {
+		t.Fatal(i, ok)
+	}
+}

@@ -81,6 +81,7 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 		{middleware.NewCatchError, "filter:catch_errors"},
 		{middleware.NewHealthcheck, "filter:healthcheck"},
 		{middleware.NewRequestLogger, "filter:proxy-logging"},
+		{middleware.NewFormPost, "filter:formpost"},
 		{middleware.NewTempURL, "filter:tempurl"},
 		{middleware.NewTempAuth, "filter:tempauth"},
 		{middleware.NewRatelimiter, "filter:ratelimit"},
