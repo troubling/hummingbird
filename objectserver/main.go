@@ -322,7 +322,7 @@ func (server *ObjectServer) ObjPutHandler(writer http.ResponseWriter, request *h
 			metadata[key] = request.Header.Get(key)
 		}
 	}
-	requestEtag := strings.ToLower(request.Header.Get("ETag"))
+	requestEtag := strings.Trim(strings.ToLower(request.Header.Get("ETag")), "\"")
 	if requestEtag != "" && requestEtag != metadata["ETag"] {
 		http.Error(writer, "Unprocessable Entity", 422)
 		return

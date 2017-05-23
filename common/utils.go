@@ -443,3 +443,13 @@ func Headers2Map(headers http.Header) map[string]string {
 	}
 	return m
 }
+
+func CheckNameFormat(req *http.Request, name string, target string) (string, error) {
+	if name == "" {
+		return "", errors.New(fmt.Sprintf("%s name cannot be empty", target))
+	}
+	if strings.Contains(name, "/") {
+		return "", errors.New(fmt.Sprintf("%s name cannot contain slashes", target))
+	}
+	return name, nil
+}

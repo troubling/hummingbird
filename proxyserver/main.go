@@ -85,9 +85,11 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 		{middleware.NewTempURL, "filter:tempurl"},
 		{middleware.NewTempAuth, "filter:tempauth"},
 		{middleware.NewRatelimiter, "filter:ratelimit"},
+		{middleware.NewCopyMiddleware, "filter:copy"},
 	}
 	pipeline := alice.New(middleware.NewContext(server.mc, server.logger, server.policyList, &http.Client{
 		Transport: &http.Transport{
+			DisableCompression: true,
 			Dial: (&net.Dialer{
 				Timeout:   10 * time.Second,
 				KeepAlive: 5 * time.Second,
