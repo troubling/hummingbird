@@ -56,41 +56,6 @@ type copyMiddleware struct {
 	postAsCopy bool
 }
 
-func (c *copyMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
-	apiReq, account, container, object := getPathParts(request)
-	if !apiReq || account == "" || container == "" || object == "" {
-		c.next.ServeHTTP(writer, request)
-		return
-	}
-	ctx := GetProxyContext(request)
-	if ctx == nil {
-		srv.StandardResponse(writer, 500)
-		return
-	}
-
-	cw := &CopyWriter{
-		w:             writer,
-		ctx:           ctx,
-		accountName:   account,
-		containerName: container,
-		objectName:    object,
-	}
-
-	if request.Method == "PUT" && request.Header.Get("X-Copy-From") != "" {
-		c.handlePut(cw, request)
-		return
-	} else if request.Method == "COPY" {
-		cw.origReqMethod = "COPY"
-		c.handleCopy(cw, request)
-		return
-	} else if request.Method == "POST" && c.postAsCopy {
-		cw.origReqMethod = "POST"
-		c.handlePostAsCopy(cw, request)
-		return
-	}
-	c.next.ServeHTTP(cw, request)
-}
-
 func (cw *CopyWriter) getSrcAccountName(request *http.Request) string {
 	copyFromAccount := request.Header.Get("X-Copy-From-Account")
 	name, err := common.CheckNameFormat(request, copyFromAccount, "Account")
@@ -109,14 +74,6 @@ func (cw *CopyWriter) getDestAccountName(request *http.Request) string {
 		request.Header.Del("Destination-Account")
 	}
 	return cw.accountName
-}
-
-func getDestContainerObjectName(request *http.Request) (string, string, error) {
-	return getHeaderContainerObjectName(request, "Destination")
-}
-
-func getSrcContainerObjectName(request *http.Request) (string, string, error) {
-	return getHeaderContainerObjectName(request, "X-Copy-From")
 }
 
 func getHeaderContainerObjectName(request *http.Request, header string) (string, string, error) {
@@ -221,7 +178,7 @@ func (c *copyMiddleware) handleCopy(writer *CopyWriter, request *http.Request) {
 		srv.StandardResponse(writer, 412)
 	}
 	destAccount := writer.getDestAccountName(request)
-	destContainer, destObject, err := getDestContainerObjectName(request)
+	destContainer, destObject, err := getHeaderContainerObjectName(request, "Destination")
 	if err != nil {
 		srv.StandardResponse(writer, 412)
 		return
@@ -299,7 +256,7 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 	}
 
 	srcAccountName := writer.getSrcAccountName(request)
-	srcContainer, srcObject, err := getSrcContainerObjectName(request)
+	srcContainer, srcObject, err := getHeaderContainerObjectName(request, "X-Copy-From")
 	if err != nil {
 		srv.StandardResponse(writer, 412)
 		return
@@ -415,6 +372,41 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 	}
 
 	c.next.ServeHTTP(writer, request)
+}
+
+func (c *copyMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	apiReq, account, container, object := getPathParts(request)
+	if !apiReq || account == "" || container == "" || object == "" {
+		c.next.ServeHTTP(writer, request)
+		return
+	}
+	ctx := GetProxyContext(request)
+	if ctx == nil {
+		srv.StandardResponse(writer, 500)
+		return
+	}
+
+	cw := &CopyWriter{
+		w:             writer,
+		ctx:           ctx,
+		accountName:   account,
+		containerName: container,
+		objectName:    object,
+	}
+
+	if request.Method == "PUT" && request.Header.Get("X-Copy-From") != "" {
+		c.handlePut(cw, request)
+		return
+	} else if request.Method == "COPY" {
+		cw.origReqMethod = "COPY"
+		c.handleCopy(cw, request)
+		return
+	} else if request.Method == "POST" && c.postAsCopy {
+		cw.origReqMethod = "POST"
+		c.handlePostAsCopy(cw, request)
+		return
+	}
+	c.next.ServeHTTP(cw, request)
 }
 
 func NewCopyMiddleware(config conf.Section) (func(http.Handler) http.Handler, error) {
