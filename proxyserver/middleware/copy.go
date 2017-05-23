@@ -31,7 +31,7 @@ import (
 
 type CopyWriter struct {
 	w             http.ResponseWriter
-	ctx           *ProxyContext
+	Logger        srv.LowLevelLogger
 	accountName   string
 	containerName string
 	objectName    string
@@ -97,13 +97,13 @@ type PipeResponseWriter struct {
 	status int
 	header http.Header
 	done   chan bool
-	ctx    *ProxyContext
+	Logger srv.LowLevelLogger
 }
 
 func (w *PipeResponseWriter) Write(stuff []byte) (int, error) {
 	written, err := w.w.Write(stuff)
 	if err != nil {
-		w.ctx.Logger.Error("PipeResponseWriter Write() error", zap.Error(err))
+		w.Logger.Error("PipeResponseWriter Write() error", zap.Error(err))
 	}
 	return written, err
 }
@@ -121,13 +121,13 @@ func (w *PipeResponseWriter) Close() {
 	w.w.Close()
 }
 
-func NewPipeResponseWriter(writer *io.PipeWriter, done chan bool, ctx *ProxyContext) *PipeResponseWriter {
+func NewPipeResponseWriter(writer *io.PipeWriter, done chan bool, logger srv.LowLevelLogger) *PipeResponseWriter {
 	header := make(map[string][]string)
 	return &PipeResponseWriter{
 		w:      writer,
 		header: header,
 		done:   done,
-		ctx:    ctx,
+		Logger: logger,
 	}
 }
 
@@ -141,7 +141,7 @@ func (c *copyMiddleware) getSourceObject(object string, request *http.Request) (
 
 	pipeReader, pipeWriter := io.Pipe()
 	done := make(chan bool)
-	writer := NewPipeResponseWriter(pipeWriter, done, ctx)
+	writer := NewPipeResponseWriter(pipeWriter, done, ctx.Logger)
 	go func() {
 		c.next.ServeHTTP(writer, subRequest)
 		writer.Close()
@@ -204,7 +204,7 @@ func RemoveItemsWithPrefix(header http.Header, prefix string) {
 	}
 }
 
-func CopyItemsWithPrefix(dest, src http.Header, prefix string) {
+func copyItemsWithPrefix(dest, src http.Header, prefix string) {
 	for k, v := range src {
 		if strings.HasPrefix(k, prefix) {
 			dest.Del(k)
@@ -215,7 +215,7 @@ func CopyItemsWithPrefix(dest, src http.Header, prefix string) {
 	}
 }
 
-func CopyItems(dest, src http.Header) {
+func copyItems(dest, src http.Header) {
 	for k, v := range src {
 		dest.Del(k)
 		for _, v1 := range v {
@@ -224,23 +224,25 @@ func CopyItems(dest, src http.Header) {
 	}
 }
 
-func CopyMetaItems(dest, src http.Header) {
-	CopyItemsWithPrefix(dest, src, "X-Object-Meta-")
-	CopyItemsWithPrefix(dest, src, "X-Object-Sysmeta-")
-	CopyItemsWithPrefix(dest, src, "X-Object-Transient-Sysmeta-")
+func copyMetaItems(dest, src http.Header) {
+	copyItemsWithPrefix(dest, src, "X-Object-Meta-")
+	copyItemsWithPrefix(dest, src, "X-Object-Sysmeta-")
+	copyItemsWithPrefix(dest, src, "X-Object-Transient-Sysmeta-")
 	dest.Set("X-Delete-At", src.Get("X-Delete-At"))
 }
 
-func CopyItemsExclude(dest, src http.Header, exclude []string) {
-	for k, v := range src {
-		excluded := false
-		for _, ex := range exclude {
-			if k == ex {
-				excluded = true
-				break
-			}
+func excludeContains(exclude []string, k string) bool {
+	for _, ex := range exclude {
+		if k == ex {
+			return true
 		}
-		if !excluded {
+	}
+	return false
+}
+
+func copyItemsExclude(dest, src http.Header, exclude []string) {
+	for k, v := range src {
+		if !excludeContains(exclude, k) {
 			dest.Del(k)
 			for _, v1 := range v {
 				dest.Add(k, v1)
@@ -265,7 +267,7 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 	srcPath := fmt.Sprintf("/v1/%s/%s/%s", srcAccountName, srcContainer, srcObject)
 
 	if writer.origReqMethod != "POST" {
-		writer.ctx.Logger.Info(fmt.Sprintf("Copying object from %s to %s", srcPath, request.URL.Path))
+		writer.Logger.Info(fmt.Sprintf("Copying object from %s to %s", srcPath, request.URL.Path))
 	}
 
 	srcBody, srcHeader, srcStatus := c.getSourceObject(common.Urlencode(srcPath), request)
@@ -285,25 +287,25 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 	}
 
 	origHeader := make(map[string][]string)
-	CopyItems(origHeader, request.Header)
+	copyItems(origHeader, request.Header)
 	if writer.postAsCopy {
 		// Post-as-copy: ignore new sysmeta, copy existing sysmeta
 		RemoveItemsWithPrefix(request.Header, "X-Object-Sysmeta-")
-		CopyItemsWithPrefix(request.Header, srcHeader, "X-Object-Sysmeta-")
+		copyItemsWithPrefix(request.Header, srcHeader, "X-Object-Sysmeta-")
 	} else if common.LooksTrue(request.Header.Get("X-Fresh-Metadata")) {
 		// # x-fresh-metadata only applies to copy, not post-as-copy: ignore
 		// existing user metadata, update existing sysmeta with new
-		CopyItemsWithPrefix(request.Header, srcHeader, "X-Object-Sysmeta-")
-		CopyItemsWithPrefix(request.Header, origHeader, "X-Object-Sysmeta-")
+		copyItemsWithPrefix(request.Header, srcHeader, "X-Object-Sysmeta-")
+		copyItemsWithPrefix(request.Header, origHeader, "X-Object-Sysmeta-")
 	} else {
 		// First copy existing sysmeta, user meta and other headers from the
 		// source to the request, apart from headers that are conditionally
 		// copied below and timestamps.
 		exclude := []string{"X-Static-Large-Object", "X-Object-Manifest",
 			"Etag", "Content-Type", "X-Timestamp", "X-Backend-Timestamp"}
-		CopyItemsExclude(request.Header, srcHeader, exclude)
+		copyItemsExclude(request.Header, srcHeader, exclude)
 		// now update with original req headers
-		CopyItems(request.Header, origHeader)
+		copyItems(request.Header, origHeader)
 	}
 
 	values, err := url.ParseQuery(request.URL.RawQuery)
@@ -363,7 +365,7 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 		respHeader.Set("Last-Modified", srcHeader.Get("Last-Modified"))
 	}
 
-	CopyMetaItems(respHeader, request.Header)
+	copyMetaItems(respHeader, request.Header)
 
 	for k, v := range respHeader {
 		for _, v1 := range v {
@@ -388,7 +390,7 @@ func (c *copyMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Req
 
 	cw := &CopyWriter{
 		w:             writer,
-		ctx:           ctx,
+		Logger:        ctx.Logger,
 		accountName:   account,
 		containerName: container,
 		objectName:    object,
