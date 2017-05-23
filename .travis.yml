@@ -32,12 +32,14 @@ install:
   - sed -i "s/eventlet_debug = true/object_post_as_copy = true/" /etc/swift/proxy-server.conf
   - printf "[swift-hash]\nswift_hash_path_prefix = changeme\nswift_hash_path_suffix = changeme\n" > /etc/swift/swift.conf
   - PATH=$PATH:~/swift-venv/bin remakerings
+  - go get github.com/haya14busa/goverage
 
 script:
   - test -z "$(find . -name '*.go' | xargs gofmt -l -s)" || (echo "You need to run 'make fmt'"; exit 1)
   - go vet github.com/troubling/hummingbird/...
   - go test github.com/troubling/hummingbird/...
-  - for package in `go list github.com/troubling/hummingbird/...`; do go test -coverprofile=/tmp/coverage.out $package; go tool cover -html=/tmp/coverage.out -o "/tmp/output/coverage_$(echo $package | sed 's|/|_|g').html"; done
+  - goverage -coverprofile=/tmp/coverage.out github.com/troubling/hummingbird/...
+  - go tool cover -html=/tmp/coverage.out -o "/tmp/output/coverage.html"
   - PATH=$PATH:~/swift-venv/bin swift-init start proxy
   - hummingbird start object
   - hummingbird start container
