@@ -34,7 +34,7 @@ import (
 
 const ONE_WEEK = 604800
 
-type httpRange struct {
+type HttpRange struct {
 	Start, End int64
 }
 
@@ -80,6 +80,9 @@ func Urlencode(str string) string {
 }
 
 func ParseDate(date string) (time.Time, error) {
+	if date == "" {
+		return time.Now(), errors.New("invalid time")
+	}
 	if timestamp, err := strconv.ParseFloat(date, 64); err == nil {
 		nans := int64((timestamp - float64(int64(timestamp))) * 1.0e9)
 		return time.Unix(int64(timestamp), nans).In(GMT), nil
@@ -146,7 +149,7 @@ func HeaderGetDefault(h http.Header, key string, dfl string) string {
 	return val
 }
 
-func ParseRange(rangeHeader string, fileSize int64) (reqRanges []httpRange, err error) {
+func ParseRange(rangeHeader string, fileSize int64) (reqRanges []HttpRange, err error) {
 	rangeHeader = strings.Replace(strings.ToLower(rangeHeader), " ", "", -1)
 	if !strings.HasPrefix(rangeHeader, "bytes=") {
 		return nil, nil
@@ -179,21 +182,21 @@ func ParseRange(rangeHeader string, fileSize int64) (reqRanges []httpRange, err 
 			if end == 0 {
 				continue
 			} else if end > fileSize {
-				reqRanges = append(reqRanges, httpRange{0, fileSize})
+				reqRanges = append(reqRanges, HttpRange{0, fileSize})
 			} else {
-				reqRanges = append(reqRanges, httpRange{fileSize - end, fileSize})
+				reqRanges = append(reqRanges, HttpRange{fileSize - end, fileSize})
 			}
 		} else if startend[1] == "" {
 			if start < fileSize {
-				reqRanges = append(reqRanges, httpRange{start, fileSize})
+				reqRanges = append(reqRanges, HttpRange{start, fileSize})
 			} else {
 				continue
 			}
 		} else if start < fileSize {
 			if end+1 < fileSize {
-				reqRanges = append(reqRanges, httpRange{start, end + 1})
+				reqRanges = append(reqRanges, HttpRange{start, end + 1})
 			} else {
-				reqRanges = append(reqRanges, httpRange{start, fileSize})
+				reqRanges = append(reqRanges, HttpRange{start, fileSize})
 			}
 		}
 	}
