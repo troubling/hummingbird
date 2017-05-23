@@ -118,6 +118,17 @@ func TestCopy(t *testing.T) {
 	passthrough = NewPassthroughFunc(t, Simple200GetResponseFunc, Simple200PutResponseFunc)
 	handler = c(passthrough)
 
+	// 412, bad Destination
+	rr = httptest.NewRecorder()
+	req, _ = http.NewRequest("COPY", "/v1/a/c/o", nil)
+	ctx = NewFakeProxyContext()
+	req.Header.Set("Destination", common.Urlencode("//o2"))
+	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", ctx))
+
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, 412, rr.Code)
+
 	// 200, specifying Destination
 	rr = httptest.NewRecorder()
 	req, _ = http.NewRequest("COPY", "/v1/a/c/o", nil)

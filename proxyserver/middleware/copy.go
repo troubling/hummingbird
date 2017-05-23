@@ -89,7 +89,11 @@ func getHeaderContainerObjectName(request *http.Request, header string) (string,
 	if len(parts) != 3 {
 		return "", "", errors.New(fmt.Sprintf("Invalid %s", header))
 	}
-	return parts[1], parts[2], nil
+	name, name_err := common.CheckNameFormat(request, parts[1], "Account")
+	if name_err != nil {
+		return "", "", errors.New(fmt.Sprintf("Invalid %s", header))
+	}
+	return name, parts[2], nil
 }
 
 type PipeResponseWriter struct {
