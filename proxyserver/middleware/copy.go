@@ -91,8 +91,7 @@ func getHeaderContainerObjectName(request *http.Request, header string) (string,
 	}
 	name, name_err := common.CheckNameFormat(request, parts[1], "Account")
 	if name_err != nil {
-		msg := fmt.Sprintf("Invalid %s", header)
-		return "", "", errors.New(msg)
+		return "", "", errors.New(fmt.Sprintf("Invalid %s", header))
 	}
 	return name, parts[2], nil
 }
