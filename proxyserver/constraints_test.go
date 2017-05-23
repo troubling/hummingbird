@@ -114,7 +114,7 @@ func TestTooBigHeader(t *testing.T) {
 func TestUnnamedMeta(t *testing.T) {
 	req, err := http.NewRequest("PUT", "/v1/a/c/o", nil)
 	require.Nil(t, err)
-	req.Header.Set("X-Object-Meta", "X")
+	req.Header.Set("X-Object-Meta-", "X")
 	status, _ := CheckMetadata(req, "Object")
 	require.Equal(t, status, http.StatusBadRequest)
 }
