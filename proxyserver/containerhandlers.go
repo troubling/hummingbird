@@ -47,7 +47,7 @@ func (server *ProxyServer) ContainerGetHandler(writer http.ResponseWriter, reque
 		"delimiter":  request.FormValue("delimiter"),
 		"reverse":    request.FormValue("reverse"),
 	}
-	r, headers, code := server.C.GetContainer(vars["account"], vars["container"], options, request.Header)
+	r, headers, code := ctx.C.GetContainer(vars["account"], vars["container"], options, request.Header)
 	for k := range headers {
 		writer.Header().Set(k, headers.Get(k))
 	}
@@ -73,7 +73,7 @@ func (server *ProxyServer) ContainerHeadHandler(writer http.ResponseWriter, requ
 		srv.StandardResponse(writer, 401)
 		return
 	}
-	headers, code := server.C.HeadContainer(vars["account"], vars["container"], request.Header)
+	headers, code := ctx.C.HeadContainer(vars["account"], vars["container"], request.Header)
 	for k := range headers {
 		writer.Header().Set(k, headers.Get(k))
 	}
@@ -103,7 +103,7 @@ func (server *ProxyServer) ContainerPutHandler(writer http.ResponseWriter, reque
 	}
 	defer ctx.InvalidateContainerInfo(vars["account"], vars["container"])
 	request.Header.Set("X-Timestamp", common.GetTimestamp())
-	srv.StandardResponse(writer, server.C.PutContainer(vars["account"], vars["container"], request.Header))
+	srv.StandardResponse(writer, ctx.C.PutContainer(vars["account"], vars["container"], request.Header))
 }
 
 func (server *ProxyServer) ContainerDeleteHandler(writer http.ResponseWriter, request *http.Request) {
@@ -123,5 +123,5 @@ func (server *ProxyServer) ContainerDeleteHandler(writer http.ResponseWriter, re
 	}
 	defer ctx.InvalidateContainerInfo(vars["account"], vars["container"])
 	request.Header.Set("X-Timestamp", common.GetTimestamp())
-	srv.StandardResponse(writer, server.C.DeleteContainer(vars["account"], vars["container"], request.Header))
+	srv.StandardResponse(writer, ctx.C.DeleteContainer(vars["account"], vars["container"], request.Header))
 }
