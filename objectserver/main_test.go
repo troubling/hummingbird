@@ -268,11 +268,13 @@ func TestCorrectEtag(t *testing.T) {
 	assert.Nil(t, err)
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("Content-Length", "26")
-	req.Header.Set("ETag", "437bba8e0bf58337674f4539e75186ac")
+	etag := "437bba8e0bf58337674f4539e75186ac"
+	req.Header.Set("ETag", etag)
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	resp, err := http.DefaultClient.Do(req)
 	assert.Nil(t, err)
 	assert.Equal(t, 201, resp.StatusCode)
+	assert.Equal(t, etag, resp.Header.Get("Etag"))
 }
 
 func TestUppercaseEtag(t *testing.T) {
@@ -290,6 +292,7 @@ func TestUppercaseEtag(t *testing.T) {
 	resp, err := http.DefaultClient.Do(req)
 	assert.Nil(t, err)
 	assert.Equal(t, 201, resp.StatusCode)
+	assert.Equal(t, "437bba8e0bf58337674f4539e75186ac", resp.Header.Get("Etag"))
 }
 
 type shortReader struct{}

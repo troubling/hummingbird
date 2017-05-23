@@ -17,6 +17,7 @@ package common
 
 import (
 	"bytes"
+	"net/http"
 	"testing"
 	"time"
 
@@ -264,4 +265,36 @@ func TestParseProxyPath(t *testing.T) {
 	res, err = ParseProxyPath("/v//c")
 	assert.Equal(t, len(res), 0)
 	assert.NotEqual(t, err, nil)
+}
+
+func TestCheckNameFormat(t *testing.T) {
+	req, err := http.NewRequest("PUT", "/v1/a/c/o", nil)
+	s := "asdf"
+	target := "ignored"
+
+	checked, err := CheckNameFormat(req, s, target)
+	require.Nil(t, err)
+	require.Equal(t, checked, s)
+}
+
+func TestNoNameSlashes(t *testing.T) {
+	req, err := http.NewRequest("PUT", "/v1/a/c/o", nil)
+	s := "as/df"
+	target := "ignored"
+
+	checked, err := CheckNameFormat(req, s, target)
+	require.NotNil(t, err)
+	require.Equal(t, err.Error(), "ignored name cannot contain slashes")
+	require.Equal(t, checked, "")
+}
+
+func TestNoEmptyName(t *testing.T) {
+	req, err := http.NewRequest("PUT", "/v1/a/c/o", nil)
+	s := ""
+	target := "ignored"
+
+	checked, err := CheckNameFormat(req, s, target)
+	require.NotNil(t, err)
+	require.Contains(t, err.Error(), "ignored name cannot be empty")
+	require.Equal(t, checked, "")
 }

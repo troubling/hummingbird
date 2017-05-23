@@ -230,6 +230,21 @@ func (ctx *ProxyContext) InvalidateAccountInfo(account string) {
 	ctx.Cache.Delete(key)
 }
 
+func (ctx *ProxyContext) NewSubRequest(request *http.Request, method string, url string, body io.Reader) (*http.Request, error) {
+	subRequest, err := http.NewRequest(method, url, body)
+	if err != nil {
+		ctx = GetProxyContext(request)
+		ctx.Logger.Error("Couldn't create http.Request", zap.Error(err))
+		return nil, err
+	}
+	copyKeys := []string{"X-Auth-Token", "X-Trans-Id"}
+	for _, key := range copyKeys {
+		subRequest.Header.Set(key, request.Header.Get(key))
+	}
+	subRequest = subRequest.WithContext(context.WithValue(subRequest.Context(), "proxycontext", ctx))
+	return subRequest, nil
+}
+
 func (ctx *ProxyContext) Subrequest(method, path string, body io.Reader, writer http.ResponseWriter) (*http.Request, error) {
 	req, err := http.NewRequest(method, path, body)
 	if err != nil {
