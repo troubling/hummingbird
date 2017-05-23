@@ -120,7 +120,6 @@ func (sw *sloWriter) WriteHeader(status int) {
 	sw.ContentType = sw.Header().Get("Content-Type")
 	sw.LastModified = sw.Header().Get("Last-Modified")
 	sw.manifestBytes = bytes.NewBuffer(make([]byte, 0))
-	fmt.Println("n writeheder: ", sw.Header().Get("X-Static-Large-Object"))
 	if isSlo := sw.Header().Get("X-Static-Large-Object"); isSlo == "True" {
 		sw.isSlo = true
 		sw.Header().Set("X-Static-Large-Object", "")
@@ -132,11 +131,9 @@ func (sw *sloWriter) WriteHeader(status int) {
 
 func (sw *sloWriter) Write(b []byte) (int, error) {
 	if sw.isSlo {
-		fmt.Println("write bytes to man: ", b)
 		sw.manifestBytes.Write(b)
 		return len(b), nil
 	}
-	fmt.Println("not writing bytes to man!!!!!")
 	if sw.allowWrite {
 		return sw.ResponseWriter.Write(b)
 	}
@@ -227,7 +224,6 @@ func (slo *sloMiddleware) feedOutSegments(sw *sloWriter, request *http.Request, 
 		newPath := fmt.Sprintf("/v1/%s/%s/%s", pathMap["account"], container, object)
 		if !si.SubSlo {
 
-			fmt.Println("send req to: ", newPath)
 			subRequest, err := buildSubRequest("GET", request, newPath)
 			if err != nil {
 				fmt.Println(fmt.Sprintf("error building subrequest: %s", err))
@@ -237,8 +233,11 @@ func (slo *sloMiddleware) feedOutSegments(sw *sloWriter, request *http.Request, 
 			subRequest.Header.Set("Range", rangeHeader)
 			sw := &sloWriter{ResponseWriter: sw.ResponseWriter,
 				Status: 500, allowWrite: true} // TODO i think i can reuse this
-			fmt.Println("bout to call seg next")
 			slo.next.ServeHTTP(sw, subRequest)
+			if sw.Status/100 != 2 {
+
+				fmt.Println("Segment not found: %s", newPath)
+			}
 		} else {
 			subManifest, err := slo.buildManifest(sw, request, newPath)
 			if err != nil {
@@ -272,12 +271,10 @@ func (slo *sloMiddleware) buildManifest(sw *sloWriter, request *http.Request, ma
 		return manifest, err
 	}
 	swRefetch := &sloWriter{ResponseWriter: sw.ResponseWriter, Status: 500}
-	fmt.Println("999999999999")
 	slo.next.ServeHTTP(swRefetch, subRequest)
 	if swRefetch.manifestBytes != nil {
 		manifestBytes = swRefetch.manifestBytes.Bytes()
 	}
-	fmt.Println("999999999999 :", manifestBytes, request.URL.Path)
 	err = json.Unmarshal(manifestBytes, &manifest)
 	return manifest, err
 }
@@ -347,7 +344,6 @@ func (slo *sloMiddleware) handleSloGet(sw *sloWriter, request *http.Request) {
 	var manifest []sloItem
 	var err error
 	manifestBytes := sw.manifestBytes.Bytes()
-	fmt.Println("ccccccccccC")
 	if slo.needToRefetchManifest(sw, request) {
 		manifest, err = slo.buildManifest(sw, request, request.URL.Path)
 	} else {
@@ -587,39 +583,40 @@ func (slo *sloMiddleware) handleSloPut(writer http.ResponseWriter, request *http
 	return
 }
 
-func (slo *sloMiddleware) deleteAllSegments(sw *sloWriter, request *http.Request, manifest []sloItem, count int) {
+func (slo *sloMiddleware) deleteAllSegments(sw *sloWriter, request *http.Request, manifest []sloItem, count int) error {
 	if count > 10 {
-		// TODO: do what here?
-		return
+		return errors.New("Max recusion depth exceeded on delete")
 	}
 	pathMap, err := common.ParseProxyPath(request.URL.Path)
 	if err != nil || pathMap["account"] == "" {
-		fmt.Println(fmt.Sprintf(
-			"invalid origReq path: %s", request.URL.Path))
-		return
+		return errors.New(fmt.Sprintf(
+			"invalid path to slo delete: %s", request.URL.Path))
 	}
 	for _, si := range manifest {
 		container, object, err := splitSloPath(si.Name)
 		if err != nil {
-			return
+			return errors.New(fmt.Sprintf("invalid slo item: %s", si.Name))
 		}
 		newPath := fmt.Sprintf("/v1/%s/%s/%s", pathMap["account"], container, object)
 		if si.SubSlo {
 			subManifest, err := slo.buildManifest(sw, request, newPath)
 			if err != nil {
-				return // TODO what do i do about errors here?
+				return errors.New(fmt.Sprintf("invalid sub-slo manifest: %s", newPath))
 			}
-			slo.deleteAllSegments(sw, request, subManifest, count+1)
+			if err = slo.deleteAllSegments(
+				sw, request, subManifest, count+1); err != nil {
+				return err
+			}
 		}
 		subRequest, err := buildSubRequest("DELETE", request, newPath)
 		if err != nil {
-			fmt.Println(fmt.Sprintf("error building subrequest: %s", err))
-			return
+			return errors.New(fmt.Sprintf("error building subrequest: %s", err))
 		}
 		sw := &sloWriter{ResponseWriter: sw.ResponseWriter,
 			Status: 500, allowWrite: true} // TODO i think i can reuse this
 		slo.next.ServeHTTP(sw, subRequest)
 	}
+	return nil
 }
 
 func (slo *sloMiddleware) handleSloDelete(writer http.ResponseWriter, request *http.Request) {
@@ -630,7 +627,6 @@ func (slo *sloMiddleware) handleSloDelete(writer http.ResponseWriter, request *h
 		return
 	}
 	sw := &sloWriter{ResponseWriter: writer, Status: 500}
-	fmt.Println("delete builder: ", request.URL.Path)
 	manifest, err := slo.buildManifest(sw, request, request.URL.Path)
 	if err != nil {
 		srv.SimpleErrorResponse(writer, 400, fmt.Sprintf(
@@ -638,9 +634,11 @@ func (slo *sloMiddleware) handleSloDelete(writer http.ResponseWriter, request *h
 		return
 
 	}
-	fmt.Println("delete builder manifest: ", manifest, err)
 	dw := &sloWriter{ResponseWriter: writer, Status: 500, allowWriteHeader: true, allowWrite: true}
-	slo.deleteAllSegments(dw, request, manifest, 0)
+	if err = slo.deleteAllSegments(dw, request, manifest, 0); err != nil {
+		srv.SimpleErrorResponse(writer, 400, fmt.Sprintf(
+			"error deleting slo: %s", err))
+	}
 	slo.next.ServeHTTP(writer, request)
 	return
 }
@@ -656,7 +654,6 @@ func updateEtagIsAt(request *http.Request, etagLoc string) {
 }
 
 func (slo *sloMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
-	fmt.Println("0000")
 	if request.Method == "PUT" && request.URL.Query().Get("multipart-manifest") == "put" {
 		slo.handleSloPut(writer, request)
 		return
@@ -671,9 +668,7 @@ func (slo *sloMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Re
 	}
 
 	sw := &sloWriter{ResponseWriter: writer, Status: 500, allowWriteHeader: true, allowWrite: true}
-	fmt.Println("bout to call next")
 	slo.next.ServeHTTP(sw, request)
-	fmt.Println("isa slo: ", sw.isSlo)
 
 	if sw.isSlo && (request.Method == "GET" || request.Method == "HEAD") {
 		slo.handleSloGet(sw, request)
