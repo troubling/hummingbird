@@ -17,7 +17,6 @@ package middleware
 
 import (
 	"bytes"
-	"context"
 	"crypto/md5"
 	"encoding/json"
 	"errors"
@@ -30,6 +29,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"go.uber.org/zap"
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
@@ -140,25 +141,6 @@ func (sw *sloWriter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-func buildSubRequest(
-	method string, origRequest *http.Request, newPath string) (*http.Request, error) {
-	// Later this should move into the context stuff- maybe
-	subRequest, err := http.NewRequest(method, newPath, http.NoBody)
-	if err != nil {
-		return nil, err
-	}
-
-	ctx := GetProxyContext(origRequest)
-	subRequest = subRequest.WithContext(context.WithValue(subRequest.Context(), "proxycontext", ctx))
-
-	hdrsToTransfer := []string{"X-Auth-Token", "Origin", "Host", "Access-Control-Request-Method", "Referer", "User-Agent", "X-Trans-Id", "If-None-Match"}
-
-	for _, h := range hdrsToTransfer {
-		subRequest.Header.Set(h, origRequest.Header.Get(h))
-	}
-	return subRequest, nil
-}
-
 func (slo *sloMiddleware) needToRefetchManifest(sw *sloWriter, request *http.Request) bool {
 	if request.Method == "HEAD" {
 		return true
@@ -182,14 +164,16 @@ func (slo *sloMiddleware) needToRefetchManifest(sw *sloWriter, request *http.Req
 }
 
 func (slo *sloMiddleware) feedOutSegments(sw *sloWriter, request *http.Request, manifest []sloItem, reqRange common.HttpRange, count int) {
+	ctx := GetProxyContext(request)
 	if count > 10 {
-		// TODO: do what here?
+		ctx.Logger.Error(fmt.Sprintf("max recursion depth: %s", request.URL.Path),
+			zap.String("MaxDepth", "10"))
 		return
 	}
 	pathMap, err := common.ParseProxyPath(request.URL.Path)
 	if err != nil || pathMap["account"] == "" {
-		fmt.Println(fmt.Sprintf(
-			"invalid origReq path: %s", request.URL.Path))
+		ctx.Logger.Error(fmt.Sprintf("invalid origReq path: %s", request.URL.Path),
+			zap.Error(err))
 		return
 	}
 	for _, si := range manifest {
@@ -224,9 +208,10 @@ func (slo *sloMiddleware) feedOutSegments(sw *sloWriter, request *http.Request, 
 		newPath := fmt.Sprintf("/v1/%s/%s/%s", pathMap["account"], container, object)
 		if !si.SubSlo {
 
-			subRequest, err := buildSubRequest("GET", request, newPath)
+			subRequest, err := ctx.NewSubRequest(request, "GET", newPath, http.NoBody)
 			if err != nil {
-				fmt.Println(fmt.Sprintf("error building subrequest: %s", err))
+				ctx.Logger.Error(fmt.Sprintf("error building subrequest: %s", err),
+					zap.Error(err))
 				return
 			}
 			rangeHeader := fmt.Sprintf("bytes=%d-%d", subReqStart, subReqEnd-1)
@@ -235,13 +220,16 @@ func (slo *sloMiddleware) feedOutSegments(sw *sloWriter, request *http.Request, 
 				Status: 500, allowWrite: true} // TODO i think i can reuse this
 			slo.next.ServeHTTP(sw, subRequest)
 			if sw.Status/100 != 2 {
-
-				fmt.Println("Segment not found: %s", newPath)
+				ctx.Logger.Debug(fmt.Sprintf("segment not found: %s", newPath),
+					zap.String("Segment404", "404"))
+				break
 			}
 		} else {
 			subManifest, err := slo.buildManifest(sw, request, newPath)
 			if err != nil {
-				return // TODO what do i do about errors here?
+				ctx.Logger.Error(fmt.Sprintf("error building submanifest: %s", err),
+					zap.Error(err))
+				return
 			}
 			subRange := common.HttpRange{Start: subReqStart, End: subReqEnd}
 			slo.feedOutSegments(sw, request, subManifest, subRange, count+1)
@@ -265,8 +253,9 @@ func parseSloContentType(contentType string) (string, int64, error) {
 
 func (slo *sloMiddleware) buildManifest(sw *sloWriter, request *http.Request, manPath string) (manifest []sloItem, err error) {
 
+	ctx := GetProxyContext(request)
 	var manifestBytes []byte
-	subRequest, err := buildSubRequest("GET", request, manPath)
+	subRequest, err := ctx.NewSubRequest(request, "GET", manPath, http.NoBody)
 	if err != nil {
 		return manifest, err
 	}
@@ -309,7 +298,7 @@ func (slo *sloMiddleware) handleSloGet(sw *sloWriter, request *http.Request) {
 		if request.URL.Query().Get("format") == "raw" {
 			manifestBytes, err = convertManifest(manifestBytes)
 			if err != nil {
-				srv.SimpleErrorResponse(sw.ResponseWriter, 400, "invalid slo manist")
+				srv.SimpleErrorResponse(sw.ResponseWriter, 400, "invalid slo manifest")
 				return
 			}
 		} else {
@@ -350,7 +339,7 @@ func (slo *sloMiddleware) handleSloGet(sw *sloWriter, request *http.Request) {
 		err = json.Unmarshal(manifestBytes, &manifest)
 	}
 	if err != nil {
-		fmt.Println("invalid manifest: ", err)
+		srv.SimpleErrorResponse(sw.ResponseWriter, 400, "invalid slo manifest")
 	}
 	if sloEtag == "" || savedContentLength == "" {
 		sloEtagGen := md5.New()
@@ -451,7 +440,6 @@ func (slo *sloMiddleware) handleSloPut(writer http.ResponseWriter, request *http
 			"Multipart Manifest PUTs cannot be COPY requests")
 		return
 	}
-	// TODO switch out errors with errs
 	manifest, errs := slo.parsePutManifest(request.Body)
 	if len(errs) > 0 {
 		srv.SimpleErrorResponse(writer, 400, strings.Join(errs, "\n"))
@@ -461,6 +449,7 @@ func (slo *sloMiddleware) handleSloPut(writer http.ResponseWriter, request *http
 	i := 0
 	totalSize := int64(0)
 	sloEtag := md5.New()
+	ctx := GetProxyContext(request)
 	for _, spm := range manifest {
 		spmContainer, spmObject, err := splitSloPath(spm.Path)
 		if err != nil {
@@ -475,10 +464,10 @@ func (slo *sloMiddleware) handleSloPut(writer http.ResponseWriter, request *http
 		}
 
 		newPath := fmt.Sprintf("/v1/%s/%s/%s", pathMap["account"], spmContainer, spmObject)
-		//TODO:  do i need to get rid of content-length here from request??
-		subRequest, err := buildSubRequest("HEAD", request, newPath)
+		subRequest, err := ctx.NewSubRequest(request, "HEAD", newPath, http.NoBody)
 		if err != nil {
-			fmt.Println("error in buildSubRequest: ", err)
+			srv.SimpleErrorResponse(writer, 400, fmt.Sprintf("error in NewSubRequest: %s", err))
+			return
 		}
 		pw := &sloWriter{ResponseWriter: writer, Status: 500}
 		slo.next.ServeHTTP(pw, subRequest)
@@ -592,6 +581,7 @@ func (slo *sloMiddleware) deleteAllSegments(sw *sloWriter, request *http.Request
 		return errors.New(fmt.Sprintf(
 			"invalid path to slo delete: %s", request.URL.Path))
 	}
+	ctx := GetProxyContext(request)
 	for _, si := range manifest {
 		container, object, err := splitSloPath(si.Name)
 		if err != nil {
@@ -608,7 +598,7 @@ func (slo *sloMiddleware) deleteAllSegments(sw *sloWriter, request *http.Request
 				return err
 			}
 		}
-		subRequest, err := buildSubRequest("DELETE", request, newPath)
+		subRequest, err := ctx.NewSubRequest(request, "DELETE", newPath, http.NoBody)
 		if err != nil {
 			return errors.New(fmt.Sprintf("error building subrequest: %s", err))
 		}
