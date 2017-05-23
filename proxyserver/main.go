@@ -85,6 +85,7 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 		{middleware.NewTempAuth, "filter:tempauth"},
 		{middleware.NewRatelimiter, "filter:ratelimit"},
 		{middleware.NewCopyMiddleware, "filter:copy"},
+		{middleware.NewSlo, "filter:slo"},
 	}
 	pipeline := alice.New(middleware.NewContext(server.mc, server.C, server.logger))
 	for _, m := range middlewares {
