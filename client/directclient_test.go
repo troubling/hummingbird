@@ -8,11 +8,18 @@ import (
 
 func TestClientInfoSourceNil(t *testing.T) {
 	c, err := NewProxyDirectClient(nil)
-	if c != nil {
-		t.Fatal("should have resulted in an error")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err == nil {
-		t.Fatal("should have resulted in an error")
+	p, ok := c.(*ProxyDirectClient)
+	if !ok {
+		t.Fatal("")
+	}
+	if p.clientInfoSource == nil {
+		t.Fatal("")
+	}
+	if _, ok := p.clientInfoSource.(*standaloneClientInfoSource); !ok {
+		t.Fatal("")
 	}
 }
 

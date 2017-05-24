@@ -2,10 +2,10 @@ package client
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -55,11 +55,87 @@ type ClientInfoSource interface {
 	HTTPClient() *http.Client
 }
 
-func NewProxyDirectClient(cis ClientInfoSource) (ProxyClient, error) {
-	if cis == nil {
-		return nil, errors.New("nil ClientInfoSource")
+type standaloneClientInfoSource struct {
+	proxyClient        ProxyClient
+	containerInfoCache map[string]*ContainerInfo
+	policyList         conf.PolicyList
+	httpClient         *http.Client
+}
+
+func (cis *standaloneClientInfoSource) GetContainerInfo(account, container string) *ContainerInfo {
+	var err error
+	key := fmt.Sprintf("container/%s/%s", account, container)
+	ci := cis.containerInfoCache[key]
+	if ci == nil {
+		headers, code := cis.proxyClient.HeadContainer(account, container, nil)
+		if code/100 != 2 {
+			return nil
+		}
+		ci = &ContainerInfo{
+			Metadata:    make(map[string]string),
+			SysMetadata: make(map[string]string),
+		}
+		if ci.ObjectCount, err = strconv.ParseInt(headers.Get("X-Container-Object-Count"), 10, 64); err != nil {
+			return nil
+		}
+		if ci.ObjectBytes, err = strconv.ParseInt(headers.Get("X-Container-Bytes-Used"), 10, 64); err != nil {
+			return nil
+		}
+		if ci.StoragePolicyIndex, err = strconv.Atoi(headers.Get("X-Backend-Storage-Policy-Index")); err != nil {
+			return nil
+		}
+		for k := range headers {
+			if strings.HasPrefix(k, "X-Container-Meta-") {
+				ci.Metadata[k[17:]] = headers.Get(k)
+			} else if strings.HasPrefix(k, "X-Container-Sysmeta-") {
+				ci.SysMetadata[k[20:]] = headers.Get(k)
+			}
+		}
 	}
-	c := &ProxyDirectClient{clientInfoSource: cis}
+	return ci
+}
+
+func (cis *standaloneClientInfoSource) DefaultPolicyIndex() int {
+	if cis.policyList == nil {
+		cis.policyList = conf.LoadPolicies()
+	}
+	return cis.policyList.Default()
+}
+
+func (cis *standaloneClientInfoSource) PolicyByName(name string) *conf.Policy {
+	if cis.policyList == nil {
+		cis.policyList = conf.LoadPolicies()
+	}
+	for _, v := range cis.policyList {
+		if v.Name == name {
+			return v
+		}
+	}
+	return nil
+}
+
+func (cis *standaloneClientInfoSource) HTTPClient() *http.Client {
+	if cis.httpClient == nil {
+		cis.httpClient = &http.Client{
+			Transport: &http.Transport{
+				DisableCompression: true,
+				Dial: (&net.Dialer{
+					Timeout:   10 * time.Second,
+					KeepAlive: 5 * time.Second,
+				}).Dial,
+			},
+			Timeout: 120 * time.Minute,
+		}
+	}
+	return cis.httpClient
+}
+
+func NewProxyDirectClient(cis ClientInfoSource) (ProxyClient, error) {
+	c := &ProxyDirectClient{}
+	if cis == nil {
+		cis = &standaloneClientInfoSource{proxyClient: c}
+	}
+	c.clientInfoSource = cis
 	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
 	if err != nil {
 		return nil, err
@@ -267,6 +343,9 @@ func (c *ProxyDirectClient) PutContainer(account string, container string, heade
 		}
 		policyIndex = policy.Index
 	}
+	if policyIndex < 0 {
+		policyIndex = policyDefault
+	}
 	reqs := make([]*http.Request, 0)
 	for i, device := range c.ContainerRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", device.Ip, device.Port, device.Device, partition,
@@ -422,6 +501,14 @@ func (c *ProxyDirectClient) objectClient(account string, container string) (prox
 	return newStandardObjectClient(c, account, container, ci.StoragePolicyIndex)
 }
 
+func (c *ProxyDirectClient) ObjectRingFor(account string, container string) (ring.Ring, int) {
+	oc, status := c.objectClient(account, container)
+	if oc != nil && status == 200 {
+		return oc.ring(), status
+	}
+	return nil, status
+}
+
 type proxyObjectClient interface {
 	putObject(obj string, headers http.Header, src io.Reader) (http.Header, int)
 	postObject(obj string, headers http.Header) int
@@ -429,6 +516,7 @@ type proxyObjectClient interface {
 	grepObject(obj string, search string) (io.ReadCloser, http.Header, int)
 	headObject(obj string, headers http.Header) (http.Header, int)
 	deleteObject(obj string, headers http.Header) int
+	ring() ring.Ring
 }
 
 type standardObjectClient struct {
@@ -448,7 +536,7 @@ func newStandardObjectClient(proxyDirectClient *ProxyDirectClient, account strin
 	if err != nil {
 		return nil, 500
 	}
-	return &standardObjectClient{proxyDirectClient: proxyDirectClient, account: account, container: container, policy: policy, objectRing: objectRing}, 0
+	return &standardObjectClient{proxyDirectClient: proxyDirectClient, account: account, container: container, policy: policy, objectRing: objectRing}, 200
 }
 
 func (oc *standardObjectClient) putObject(obj string, headers http.Header, src io.Reader) (http.Header, int) {
@@ -615,6 +703,10 @@ func (oc *standardObjectClient) deleteObject(obj string, headers http.Header) in
 	}
 	headers, statusCode := oc.proxyDirectClient.quorumResponse(reqs...)
 	return statusCode
+}
+
+func (oc *standardObjectClient) ring() ring.Ring {
+	return oc.objectRing
 }
 
 type directClient struct {
