@@ -50,6 +50,7 @@ const (
 )
 
 var infoCacheTimeout = time.Second * 10
+var policyStatsCacheTimeout = time.Second * 10
 
 func chexor(old, name, timestamp string) string {
 	oldDigest, err := hex.DecodeString(old)
@@ -94,6 +95,7 @@ type sqliteAccount struct {
 	accountFile         string
 	hasDeletedNameIndex bool
 	infoCache           atomic.Value
+	policyStatsCache    atomic.Value
 	ringhash            string
 }
 
@@ -151,8 +153,36 @@ func (db *sqliteAccount) GetInfo() (*AccountInfo, error) {
 	return info, nil
 }
 
+func (db *sqliteAccount) PolicyStats() ([]*PolicyStat, error) {
+	if err := db.connect(); err != nil {
+		return nil, err
+	}
+	if err := db.flush(); err != nil {
+		return nil, err
+	}
+	if ps, ok := db.policyStatsCache.Load().(*policyStats); ok && !ps.invalid && time.Since(ps.updated) < policyStatsCacheTimeout {
+		return ps.list, nil
+	}
+	ps := &policyStats{updated: time.Now()}
+	rows, err := db.Query(`SELECT storage_policy_index, container_count, object_count, bytes_used FROM policy_stat`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		e := &PolicyStat{}
+		if err := rows.Scan(&e.StoragePolicyIndex, &e.ContainerCount, &e.ObjectCount, &e.BytesUsed); err != nil {
+			return nil, err
+		}
+		ps.list = append(ps.list, e)
+	}
+	db.policyStatsCache.Store(ps)
+	return ps.list, nil
+}
+
 func (db *sqliteAccount) invalidateCache() {
 	db.infoCache.Store(&AccountInfo{invalid: true})
+	db.policyStatsCache.Store(&policyStats{invalid: true})
 }
 
 // IsDeleted returns true if the account is deleted - if its delete timestamp is later than its put timestamp.
