@@ -197,6 +197,7 @@ func (c *proxyClient) PutContainer(account string, container string, headers htt
 	return c.pdc.PutContainer(account, container, headers)
 }
 func (c *proxyClient) PostContainer(account string, container string, headers http.Header) int {
+	defer c.invalidateContainerInfo(account, container)
 	return c.pdc.PostContainer(account, container, headers)
 }
 func (c *proxyClient) GetContainer(account string, container string, options map[string]string, headers http.Header) (io.ReadCloser, http.Header, int) {

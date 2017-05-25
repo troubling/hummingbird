@@ -101,7 +101,6 @@ func (server *ProxyServer) ContainerPostHandler(writer http.ResponseWriter, requ
 		writer.Write([]byte(str))
 		return
 	}
-	defer ctx.InvalidateContainerInfo(vars["account"], vars["container"])
 	request.Header.Set("X-Timestamp", common.GetTimestamp())
 	srv.StandardResponse(writer, ctx.C.PostContainer(vars["account"], vars["container"], request.Header))
 }
