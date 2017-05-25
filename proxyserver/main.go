@@ -59,8 +59,8 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 	router.Put("/v1/:account/:container/", http.HandlerFunc(server.ContainerPutHandler))
 	router.Delete("/v1/:account/:container", http.HandlerFunc(server.ContainerDeleteHandler))
 	router.Delete("/v1/:account/:container/", http.HandlerFunc(server.ContainerDeleteHandler))
-	router.Post("/v1/:account/:container", http.HandlerFunc(server.ContainerPutHandler))
-	router.Post("/v1/:account/:container/", http.HandlerFunc(server.ContainerPutHandler))
+	router.Post("/v1/:account/:container", http.HandlerFunc(server.ContainerPostHandler))
+	router.Post("/v1/:account/:container/", http.HandlerFunc(server.ContainerPostHandler))
 
 	router.Get("/v1/:account", http.HandlerFunc(server.AccountGetHandler))
 	router.Get("/v1/:account/", http.HandlerFunc(server.AccountGetHandler))
@@ -70,8 +70,8 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 	router.Put("/v1/:account/", http.HandlerFunc(server.AccountPutHandler))
 	router.Delete("/v1/:account", http.HandlerFunc(server.AccountDeleteHandler))
 	router.Delete("/v1/:account/", http.HandlerFunc(server.AccountDeleteHandler))
-	router.Post("/v1/:account", http.HandlerFunc(server.AccountPutHandler))
-	router.Post("/v1/:account/", http.HandlerFunc(server.AccountPutHandler))
+	router.Post("/v1/:account", http.HandlerFunc(server.AccountPostHandler))
+	router.Post("/v1/:account/", http.HandlerFunc(server.AccountPostHandler))
 
 	// TODO: make this all dynamical and stuff
 	middlewares := []struct {
