@@ -491,7 +491,7 @@ func (c *ProxyDirectClient) DeleteContainer(account string, container string, he
 
 func (c *ProxyDirectClient) PutObject(account string, container string, obj string, headers http.Header, src io.Reader, mc ring.MemcacheRing, lc map[string]*ContainerInfo) (http.Header, int) {
 	oc, status := c.objectClient(account, container, mc, lc)
-	if status != 0 {
+	if status != 200 {
 		return nil, status
 	}
 	return oc.putObject(obj, headers, src)
@@ -499,7 +499,7 @@ func (c *ProxyDirectClient) PutObject(account string, container string, obj stri
 
 func (c *ProxyDirectClient) PostObject(account string, container string, obj string, headers http.Header, mc ring.MemcacheRing, lc map[string]*ContainerInfo) int {
 	oc, status := c.objectClient(account, container, mc, lc)
-	if status != 0 {
+	if status != 200 {
 		return status
 	}
 	return oc.postObject(obj, headers)
@@ -507,7 +507,7 @@ func (c *ProxyDirectClient) PostObject(account string, container string, obj str
 
 func (c *ProxyDirectClient) GetObject(account string, container string, obj string, headers http.Header, mc ring.MemcacheRing, lc map[string]*ContainerInfo) (io.ReadCloser, http.Header, int) {
 	oc, status := c.objectClient(account, container, mc, lc)
-	if status != 0 {
+	if status != 200 {
 		return nil, nil, status
 	}
 	return oc.getObject(obj, headers)
@@ -515,7 +515,7 @@ func (c *ProxyDirectClient) GetObject(account string, container string, obj stri
 
 func (c *ProxyDirectClient) GrepObject(account string, container string, obj string, search string, mc ring.MemcacheRing, lc map[string]*ContainerInfo) (io.ReadCloser, http.Header, int) {
 	oc, status := c.objectClient(account, container, mc, lc)
-	if status != 0 {
+	if status != 200 {
 		return nil, nil, status
 	}
 	return oc.grepObject(obj, search)
@@ -523,7 +523,7 @@ func (c *ProxyDirectClient) GrepObject(account string, container string, obj str
 
 func (c *ProxyDirectClient) HeadObject(account string, container string, obj string, headers http.Header, mc ring.MemcacheRing, lc map[string]*ContainerInfo) (http.Header, int) {
 	oc, status := c.objectClient(account, container, mc, lc)
-	if status != 0 {
+	if status != 200 {
 		return nil, status
 	}
 	return oc.headObject(obj, headers)
@@ -531,7 +531,7 @@ func (c *ProxyDirectClient) HeadObject(account string, container string, obj str
 
 func (c *ProxyDirectClient) DeleteObject(account string, container string, obj string, headers http.Header, mc ring.MemcacheRing, lc map[string]*ContainerInfo) int {
 	oc, status := c.objectClient(account, container, mc, lc)
-	if status != 0 {
+	if status != 200 {
 		return status
 	}
 	return oc.deleteObject(obj, headers)
