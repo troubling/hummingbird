@@ -57,6 +57,7 @@ func TestLengthOnCopyFrom(t *testing.T) {
 func TestNameTooLong(t *testing.T) {
 	req, err := http.NewRequest("PUT", "/v1/a/c/o", nil)
 	require.Nil(t, err)
+	req.ContentLength = 1
 	status, _ := CheckObjPut(req, strings.Repeat("o", MAX_OBJECT_NAME_LENGTH+1))
 	require.Equal(t, status, http.StatusBadRequest)
 }
@@ -68,6 +69,15 @@ func TestNoContentType(t *testing.T) {
 	req.Header.Set("Content-Type", "")
 	status, _ := CheckObjPut(req, "o")
 	require.Equal(t, status, http.StatusBadRequest)
+}
+
+func TestNoContentLength(t *testing.T) {
+	req, err := http.NewRequest("PUT", "/v1/a/c/o", nil)
+	require.Nil(t, err)
+	req.ContentLength = 0
+	req.Header.Set("Content-Length", "")
+	status, _ := CheckObjPut(req, "o")
+	require.Equal(t, status, http.StatusLengthRequired)
 }
 
 func TestBadXDeleteAt(t *testing.T) {

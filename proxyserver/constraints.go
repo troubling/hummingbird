@@ -73,11 +73,10 @@ func CheckMetadata(req *http.Request, targetType string) (int, string) {
 }
 
 func CheckObjPut(req *http.Request, objectName string) (int, string) {
-	if req.ContentLength >= 0 {
-		if req.ContentLength > MAX_FILE_SIZE {
-			return http.StatusRequestEntityTooLarge, "Your request is too large."
-		}
-	} else if req.Header.Get("Transfer-Encoding") != "chunked" {
+	if req.ContentLength > MAX_FILE_SIZE {
+		return http.StatusRequestEntityTooLarge, "Your request is too large."
+	}
+	if req.ContentLength <= 0 && req.Header.Get("Content-Length") == "" && req.Header.Get("Transfer-Encoding") != "chunked" {
 		return http.StatusLengthRequired, "Missing Content-Length header."
 	}
 	if req.Header.Get("X-Copy-From") != "" && req.ContentLength != 0 {
