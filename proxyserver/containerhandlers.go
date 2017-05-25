@@ -80,6 +80,32 @@ func (server *ProxyServer) ContainerHeadHandler(writer http.ResponseWriter, requ
 	writer.WriteHeader(code)
 }
 
+func (server *ProxyServer) ContainerPostHandler(writer http.ResponseWriter, request *http.Request) {
+	vars := srv.GetVars(request)
+	ctx := middleware.GetProxyContext(request)
+	if ctx == nil {
+		srv.StandardResponse(writer, 500)
+		return
+	}
+	if ctx.GetAccountInfo(vars["account"]) == nil {
+		srv.StandardResponse(writer, 404)
+		return
+	}
+	if ctx.Authorize != nil && !ctx.Authorize(request) {
+		srv.StandardResponse(writer, 401)
+		return
+	}
+	if status, str := CheckContainerPut(request, vars["container"]); status != http.StatusOK {
+		writer.Header().Set("Content-Type", "text/plain")
+		writer.WriteHeader(status)
+		writer.Write([]byte(str))
+		return
+	}
+	defer ctx.InvalidateContainerInfo(vars["account"], vars["container"])
+	request.Header.Set("X-Timestamp", common.GetTimestamp())
+	srv.StandardResponse(writer, ctx.C.PostContainer(vars["account"], vars["container"], request.Header))
+}
+
 func (server *ProxyServer) ContainerPutHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
 	ctx := middleware.GetProxyContext(request)
