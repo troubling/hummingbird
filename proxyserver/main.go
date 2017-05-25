@@ -18,11 +18,10 @@ package proxyserver
 import (
 	"flag"
 	"fmt"
-	"net"
 	"net/http"
 	"strings"
-	"time"
 
+	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
@@ -33,10 +32,10 @@ import (
 )
 
 type ProxyServer struct {
-	logger     srv.LowLevelLogger
-	logLevel   zap.AtomicLevel
-	mc         ring.MemcacheRing
-	policyList conf.PolicyList
+	logger            srv.LowLevelLogger
+	logLevel          zap.AtomicLevel
+	mc                ring.MemcacheRing
+	proxyDirectClient *client.ProxyDirectClient
 }
 
 func (server *ProxyServer) Finalize() {
@@ -87,16 +86,7 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 		{middleware.NewRatelimiter, "filter:ratelimit"},
 		{middleware.NewCopyMiddleware, "filter:copy"},
 	}
-	pipeline := alice.New(middleware.NewContext(server.mc, server.logger, server.policyList, &http.Client{
-		Transport: &http.Transport{
-			DisableCompression: true,
-			Dial: (&net.Dialer{
-				Timeout:   10 * time.Second,
-				KeepAlive: 5 * time.Second,
-			}).Dial,
-		},
-		Timeout: 120 * time.Minute,
-	}))
+	pipeline := alice.New(middleware.NewContext(server.mc, server.logger, server.proxyDirectClient))
 	for _, m := range middlewares {
 		mid, err := m.construct(config.GetSection(m.section))
 		if err != nil {
@@ -110,7 +100,7 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 
 func GetServer(serverconf conf.Config, flags *flag.FlagSet) (string, int, srv.Server, srv.LowLevelLogger, error) {
 	var err error
-	server := &ProxyServer{policyList: conf.LoadPolicies()}
+	server := &ProxyServer{}
 	server.mc, err = ring.NewMemcacheRingFromConfig(serverconf)
 	if err != nil {
 		return "", 0, nil, nil, err
@@ -127,6 +117,9 @@ func GetServer(serverconf conf.Config, flags *flag.FlagSet) (string, int, srv.Se
 	if server.logger, err = srv.SetupLogger("proxy-server", &server.logLevel, flags, logPath); err != nil {
 		return "", 0, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
-
+	server.proxyDirectClient, err = client.NewProxyDirectClient(conf.LoadPolicies())
+	if err != nil {
+		return "", 0, nil, nil, fmt.Errorf("Error setting up proxyDirectClient: %v", err)
+	}
 	return bindIP, int(bindPort), server, server.logger, nil
 }

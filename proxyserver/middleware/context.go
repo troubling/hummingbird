@@ -27,7 +27,6 @@ import (
 
 	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
-	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
 	"go.uber.org/zap"
@@ -70,11 +69,10 @@ type AccountInfo struct {
 type AuthorizeFunc func(r *http.Request) bool
 
 type ProxyContextMiddleware struct {
-	next       http.Handler
-	log        srv.LowLevelLogger
-	Cache      ring.MemcacheRing
-	policyList conf.PolicyList
-	httpClient *http.Client
+	next              http.Handler
+	log               srv.LowLevelLogger
+	Cache             ring.MemcacheRing
+	proxyDirectClient *client.ProxyDirectClient
 }
 
 type proxyWriter struct {
@@ -103,13 +101,11 @@ func (w *proxyWriter) Response() (bool, int) {
 
 type ProxyContext struct {
 	*ProxyContextMiddleware
-	C                  client.ProxyClient
-	Authorize          AuthorizeFunc
-	Logger             srv.LowLevelLogger
-	containerInfoCache map[string]*client.ContainerInfo
-	accountInfoCache   map[string]*AccountInfo
-	capWriter          *proxyWriter
-	httpClient         *http.Client
+	C                client.ProxyClient
+	Authorize        AuthorizeFunc
+	Logger           srv.LowLevelLogger
+	accountInfoCache map[string]*AccountInfo
+	capWriter        *proxyWriter
 }
 
 func GetProxyContext(r *http.Request) *ProxyContext {
@@ -121,68 +117,6 @@ func GetProxyContext(r *http.Request) *ProxyContext {
 
 func (ctx *ProxyContext) Response() (bool, int) {
 	return ctx.capWriter.Response()
-}
-
-func (ctx *ProxyContext) DefaultPolicyIndex() int {
-	return ctx.policyList.Default()
-}
-
-func (ctx *ProxyContext) PolicyByName(name string) *conf.Policy {
-	for _, v := range ctx.policyList {
-		if v.Name == name {
-			return v
-		}
-	}
-	return nil
-}
-
-func (ctx *ProxyContext) GetContainerInfo(account, container string) *client.ContainerInfo {
-	var err error
-	key := fmt.Sprintf("container/%s/%s", account, container)
-	ci := ctx.containerInfoCache[key]
-	if ci == nil {
-		if err := ctx.Cache.GetStructured(key, &ci); err != nil {
-			ci = nil
-		}
-	}
-	if ci == nil {
-		headers, code := ctx.C.HeadContainer(account, container, nil)
-		if code/100 != 2 {
-			return nil
-		}
-		ci = &client.ContainerInfo{
-			Metadata:    make(map[string]string),
-			SysMetadata: make(map[string]string),
-		}
-		if ci.ObjectCount, err = strconv.ParseInt(headers.Get("X-Container-Object-Count"), 10, 64); err != nil {
-			return nil
-		}
-		if ci.ObjectBytes, err = strconv.ParseInt(headers.Get("X-Container-Bytes-Used"), 10, 64); err != nil {
-			return nil
-		}
-		if ci.StoragePolicyIndex, err = strconv.Atoi(headers.Get("X-Backend-Storage-Policy-Index")); err != nil {
-			return nil
-		}
-		for k := range headers {
-			if strings.HasPrefix(k, "X-Container-Meta-") {
-				ci.Metadata[k[17:]] = headers.Get(k)
-			} else if strings.HasPrefix(k, "X-Container-Sysmeta-") {
-				ci.SysMetadata[k[20:]] = headers.Get(k)
-			}
-		}
-		ctx.Cache.Set(key, ci, 30)
-	}
-	return ci
-}
-
-func (ctx *ProxyContext) HTTPClient() *http.Client {
-	return ctx.httpClient
-}
-
-func (ctx *ProxyContext) InvalidateContainerInfo(account, container string) {
-	key := fmt.Sprintf("container/%s/%s", account, container)
-	delete(ctx.containerInfoCache, key)
-	ctx.Cache.Delete(key)
 }
 
 func getPathParts(request *http.Request) (bool, string, string, string) {
@@ -271,7 +205,6 @@ func (ctx *ProxyContext) Subrequest(method, path string, body io.Reader, writer 
 		ProxyContextMiddleware: ctx.ProxyContextMiddleware,
 		Authorize:              ctx.Authorize,
 		Logger:                 ctx.Logger,
-		containerInfoCache:     ctx.containerInfoCache,
 		accountInfoCache:       ctx.accountInfoCache,
 		capWriter:              &proxyWriter{ResponseWriter: writer, Status: 501},
 	}
@@ -314,16 +247,9 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 		ProxyContextMiddleware: m,
 		Authorize:              nil,
 		Logger:                 logr,
-		containerInfoCache:     make(map[string]*client.ContainerInfo),
 		accountInfoCache:       make(map[string]*AccountInfo),
 		capWriter:              newWriter,
-		httpClient:             m.httpClient,
-	}
-	var err error
-	ctx.C, err = client.NewProxyDirectClient(ctx)
-	if err != nil {
-		srv.StandardResponse(writer, 500)
-		return
+		C:                      client.NewProxyClient(m.proxyDirectClient, m.Cache, make(map[string]*client.ContainerInfo)),
 	}
 	// we'll almost certainly need the AccountInfo and ContainerInfo for the current path, so pre-fetch them in parallel.
 	apiRequest, account, container, _ := getPathParts(request)
@@ -342,7 +268,7 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 		if container != "" {
 			wg.Add(1)
 			go func() {
-				ctx.GetContainerInfo(account, container)
+				ctx.C.GetContainerInfo(account, container)
 				wg.Done()
 			}()
 		}
@@ -352,14 +278,13 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 	m.next.ServeHTTP(newWriter, request)
 }
 
-func NewContext(mc ring.MemcacheRing, log srv.LowLevelLogger, policyList conf.PolicyList, httpClient *http.Client) func(http.Handler) http.Handler {
+func NewContext(mc ring.MemcacheRing, log srv.LowLevelLogger, proxyDirectClient *client.ProxyDirectClient) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return &ProxyContextMiddleware{
-			Cache:      mc,
-			log:        log,
-			next:       next,
-			policyList: policyList,
-			httpClient: httpClient,
+			Cache:             mc,
+			log:               log,
+			next:              next,
+			proxyDirectClient: proxyDirectClient,
 		}
 	}
 }

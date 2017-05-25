@@ -101,7 +101,6 @@ func (server *ProxyServer) ContainerPutHandler(writer http.ResponseWriter, reque
 		writer.Write([]byte(str))
 		return
 	}
-	defer ctx.InvalidateContainerInfo(vars["account"], vars["container"])
 	request.Header.Set("X-Timestamp", common.GetTimestamp())
 	srv.StandardResponse(writer, ctx.C.PutContainer(vars["account"], vars["container"], request.Header))
 }
@@ -121,7 +120,6 @@ func (server *ProxyServer) ContainerDeleteHandler(writer http.ResponseWriter, re
 		srv.StandardResponse(writer, 401)
 		return
 	}
-	defer ctx.InvalidateContainerInfo(vars["account"], vars["container"])
 	request.Header.Set("X-Timestamp", common.GetTimestamp())
 	srv.StandardResponse(writer, ctx.C.DeleteContainer(vars["account"], vars["container"], request.Header))
 }
