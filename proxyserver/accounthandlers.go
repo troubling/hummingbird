@@ -72,6 +72,22 @@ func (server *ProxyServer) AccountHeadHandler(writer http.ResponseWriter, reques
 	writer.WriteHeader(code)
 }
 
+func (server *ProxyServer) AccountPostHandler(writer http.ResponseWriter, request *http.Request) {
+	vars := srv.GetVars(request)
+	ctx := middleware.GetProxyContext(request)
+	if ctx == nil {
+		srv.StandardResponse(writer, 500)
+		return
+	}
+	if ctx.Authorize != nil && !ctx.Authorize(request) {
+		srv.StandardResponse(writer, 401)
+		return
+	}
+	defer ctx.InvalidateAccountInfo(vars["account"])
+	request.Header.Set("X-Timestamp", common.GetTimestamp())
+	srv.StandardResponse(writer, ctx.C.PostAccount(vars["account"], request.Header))
+}
+
 func (server *ProxyServer) AccountPutHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
 	ctx := middleware.GetProxyContext(request)

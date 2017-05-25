@@ -142,6 +142,10 @@ func (c *copyMiddleware) getSourceObject(object string, request *http.Request) (
 		ctx.Logger.Error("getSourceObject GET error", zap.Error(err))
 		return nil, nil, 400
 	}
+	copyItems(subRequest.Header, request.Header)
+	// FIXME. Are we going to do X-Newest?
+	subRequest.Header.Set("X-Newest", "true")
+	subRequest.Header.Del("X-Backend-Storage-Policy-Index")
 
 	pipeReader, pipeWriter := io.Pipe()
 	done := make(chan bool)
