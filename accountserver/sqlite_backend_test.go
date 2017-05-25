@@ -274,3 +274,98 @@ func TestInt64MaybeStringified(t *testing.T) {
 		t.Fatal(i, ok)
 	}
 }
+
+func TestPolicyStats(t *testing.T) {
+	db, _, cleanup, err := createTestDatabase("100000000.00000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if err = db.MergeItems([]*ContainerRecord{&ContainerRecord{Name: "a", PutTimestamp: common.GetTimestamp(), ObjectCount: 123, BytesUsed: 456, StoragePolicyIndex: 1}}, ""); err != nil {
+		t.Fatal(err)
+	}
+	polstats, err := db.PolicyStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(polstats) != 1 {
+		t.Fatal(len(polstats))
+	}
+	polstat := polstats[0]
+	if polstat.StoragePolicyIndex != 1 {
+		t.Fatal(polstat.StoragePolicyIndex)
+	}
+	if polstat.ContainerCount != 1 {
+		t.Fatal(polstat.ContainerCount)
+	}
+	if polstat.ObjectCount != 123 {
+		t.Fatal(polstat.ObjectCount)
+	}
+	if polstat.BytesUsed != 456 {
+		t.Fatal(polstat.BytesUsed)
+	}
+	if err = db.MergeItems([]*ContainerRecord{&ContainerRecord{Name: "b", PutTimestamp: common.GetTimestamp(), ObjectCount: 789, BytesUsed: 1234, StoragePolicyIndex: 1}}, ""); err != nil {
+		t.Fatal(err)
+	}
+	db.invalidateCache()
+	polstats, err = db.PolicyStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(polstats) != 1 {
+		t.Fatal(len(polstats))
+	}
+	polstat = polstats[0]
+	if polstat.StoragePolicyIndex != 1 {
+		t.Fatal(polstat.StoragePolicyIndex)
+	}
+	if polstat.ContainerCount != 2 {
+		t.Fatal(polstat.ContainerCount)
+	}
+	if polstat.ObjectCount != 912 {
+		t.Fatal(polstat.ObjectCount)
+	}
+	if polstat.BytesUsed != 1690 {
+		t.Fatal(polstat.BytesUsed)
+	}
+	if err = db.MergeItems([]*ContainerRecord{&ContainerRecord{Name: "c", PutTimestamp: common.GetTimestamp(), ObjectCount: 5678, BytesUsed: 9012, StoragePolicyIndex: 2}}, ""); err != nil {
+		t.Fatal(err)
+	}
+	db.invalidateCache()
+	polstats, err = db.PolicyStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(polstats) != 2 {
+		t.Fatal(len(polstats))
+	}
+	polstat1 := polstats[0]
+	polstat2 := polstats[1]
+	if polstat1.StoragePolicyIndex != 1 {
+		polstat1, polstat2 = polstat2, polstat1
+	}
+	if polstat1.StoragePolicyIndex != 1 {
+		t.Fatal(polstat1.StoragePolicyIndex)
+	}
+	if polstat1.ContainerCount != 2 {
+		t.Fatal(polstat1.ContainerCount)
+	}
+	if polstat1.ObjectCount != 912 {
+		t.Fatal(polstat1.ObjectCount)
+	}
+	if polstat1.BytesUsed != 1690 {
+		t.Fatal(polstat1.BytesUsed)
+	}
+	if polstat2.StoragePolicyIndex != 2 {
+		t.Fatal(polstat2.StoragePolicyIndex)
+	}
+	if polstat2.ContainerCount != 1 {
+		t.Fatal(polstat2.ContainerCount)
+	}
+	if polstat2.ObjectCount != 5678 {
+		t.Fatal(polstat2.ObjectCount)
+	}
+	if polstat2.BytesUsed != 9012 {
+		t.Fatal(polstat2.BytesUsed)
+	}
+}

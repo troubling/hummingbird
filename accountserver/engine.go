@@ -57,6 +57,19 @@ type AccountInfo struct {
 	Point int64 `json:"point"`
 }
 
+type PolicyStat struct {
+	StoragePolicyIndex int
+	ContainerCount     int64
+	ObjectCount        int64
+	BytesUsed          int64
+}
+
+type policyStats struct {
+	list    []*PolicyStat
+	invalid bool
+	updated time.Time
+}
+
 // ContainerListingRecord is the struct used for serializing objects in json and xml account listings.
 type ContainerListingRecord struct {
 	XMLName      xml.Name `xml:"container" json:"-"`
