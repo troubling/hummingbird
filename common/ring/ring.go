@@ -28,6 +28,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -323,14 +324,22 @@ func (m *hashMoreNodes) Next() *Device {
 	return nil
 }
 
+var loadedRingsLock sync.Mutex
+var loadedRings map[string]*hashRing = make(map[string]*hashRing)
+
 func LoadRing(path string, prefix string, suffix string) (Ring, error) {
-	ring := &hashRing{prefix: prefix, suffix: suffix, path: path, mtime: time.Unix(0, 0)}
-	if err := ring.reload(); err == nil {
+	loadedRingsLock.Lock()
+	defer loadedRingsLock.Unlock()
+	ring := loadedRings[path]
+	if ring == nil {
+		ring = &hashRing{prefix: prefix, suffix: suffix, path: path, mtime: time.Unix(0, 0)}
+		if err := ring.reload(); err != nil {
+			return nil, err
+		}
 		go ring.reloader()
-		return ring, nil
-	} else {
-		return nil, err
+		loadedRings[path] = ring
 	}
+	return ring, nil
 }
 
 // GetRing returns the current ring given the ring_type ("account", "container", "object"),
