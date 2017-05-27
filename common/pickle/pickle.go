@@ -57,9 +57,15 @@ func pickleint(val int64, buf *bytes.Buffer, scratch []byte) {
 	}
 }
 
-func pickleobj(o interface{}, buf *bytes.Buffer, scratch []byte) {
+func pickleobj(o interface{}, buf *bytes.Buffer, scratch []byte) error {
 	v := reflect.ValueOf(o)
 	switch v.Kind() {
+	case reflect.Ptr, reflect.Interface:
+		if v.IsNil() {
+			buf.WriteByte('N') // NONE
+		} else {
+			return pickleobj(v.Elem().Interface(), buf, scratch)
+		}
 	case reflect.Invalid:
 		buf.WriteByte('N') // NONE
 	case reflect.Bool:
@@ -82,7 +88,9 @@ func pickleobj(o interface{}, buf *bytes.Buffer, scratch []byte) {
 	case reflect.Slice, reflect.Array:
 		buf.WriteByte('(') // MARK
 		for i := 0; i < v.Len(); i++ {
-			pickleobj(v.Index(i).Interface(), buf, scratch)
+			if err := pickleobj(v.Index(i).Interface(), buf, scratch); err != nil {
+				return err
+			}
 		}
 		buf.WriteByte('l') // LIST
 	case reflect.Map:
@@ -98,17 +106,27 @@ func pickleobj(o interface{}, buf *bytes.Buffer, scratch []byte) {
 		case map[string]interface{}:
 			for k, v := range o {
 				picklestring(k, buf, scratch)
-				pickleobj(v, buf, scratch)
+				if err := pickleobj(v, buf, scratch); err != nil {
+					return err
+				}
 			}
 		case map[interface{}]interface{}:
 			for k, v := range o {
-				pickleobj(k, buf, scratch)
-				pickleobj(v, buf, scratch)
+				if err := pickleobj(k, buf, scratch); err != nil {
+					return err
+				}
+				if err := pickleobj(v, buf, scratch); err != nil {
+					return err
+				}
 			}
 		default:
 			for _, k := range v.MapKeys() {
-				pickleobj(k.Interface(), buf, scratch)
-				pickleobj(v.MapIndex(k).Interface(), buf, scratch)
+				if err := pickleobj(k.Interface(), buf, scratch); err != nil {
+					return err
+				}
+				if err := pickleobj(v.MapIndex(k).Interface(), buf, scratch); err != nil {
+					return err
+				}
 			}
 		}
 		buf.WriteByte('d') // DICT
@@ -117,27 +135,41 @@ func pickleobj(o interface{}, buf *bytes.Buffer, scratch []byte) {
 		case PickleTuple:
 			buf.WriteByte('(') // MARK
 			for _, to := range []interface{}{o.A, o.B, o.C, o.D}[:o.Len] {
-				pickleobj(to, buf, scratch)
+				if err := pickleobj(to, buf, scratch); err != nil {
+					return err
+				}
 			}
 			buf.WriteByte('l') // TUPLE
 		case PickleArray:
 			buf.WriteString("carray\narray\n")
 			buf.WriteByte('(') // MARK
-			pickleobj(o.Type, buf, scratch)
-			pickleobj(o.Data, buf, scratch)
+			if err := pickleobj(o.Type, buf, scratch); err != nil {
+				return err
+			}
+			if err := pickleobj(o.Data, buf, scratch); err != nil {
+				return err
+			}
 			buf.WriteByte('l') // TUPLE
 			buf.WriteByte('R') // REDUCE
 		default: // why not serialize arbitrary structs as dicts while we're here
 			buf.WriteByte('(') // MARK
-			for i := 0; i < v.NumField(); i++ {
-				picklestring(v.Type().Field(i).Name, buf, scratch)
-				pickleobj(v.Field(i).Interface(), buf, scratch)
+			for i := 0; i < v.Type().NumField(); i++ {
+				field := v.Type().Field(i)
+				if tag := field.Tag.Get("pickle"); tag != "" {
+					picklestring(tag, buf, scratch)
+				} else {
+					picklestring(v.Type().Field(i).Name, buf, scratch)
+				}
+				if err := pickleobj(v.Field(i).Interface(), buf, scratch); err != nil {
+					return err
+				}
 			}
 			buf.WriteByte('d') // DICT
 		}
 	default:
-		panic(fmt.Sprintf("Unknown object type in pickle: %v", v))
+		return fmt.Errorf("Unknown object type in pickle: %v", v)
 	}
+	return nil
 }
 
 func PickleDumps(o interface{}) []byte {
@@ -145,7 +177,21 @@ func PickleDumps(o interface{}) []byte {
 	buf.WriteByte('\x80') // PROTO
 	buf.WriteByte(2)      // Protocol 2
 	scratch := make([]byte, 10)
-	pickleobj(o, buf, scratch)
+	if err := pickleobj(o, buf, scratch); err != nil {
+		panic(err.Error())
+	}
 	buf.WriteByte('.')
 	return buf.Bytes()
+}
+
+func Marshal(v interface{}) ([]byte, error) {
+	buf := &bytes.Buffer{}
+	buf.WriteByte('\x80') // PROTO
+	buf.WriteByte(2)      // Protocol 2
+	scratch := make([]byte, 10)
+	if err := pickleobj(v, buf, scratch); err != nil {
+		return nil, err
+	}
+	buf.WriteByte('.')
+	return buf.Bytes(), nil
 }
