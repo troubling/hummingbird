@@ -85,7 +85,7 @@ func (w *proxyWriter) WriteHeader(status int) {
 	// strip out any bad headers before calling real WriteHeader
 	for k := range w.Header() {
 		for _, ex := range excludeHeaders {
-			if strings.HasPrefix(k, ex) || k == "X-Timestamp" {
+			if strings.HasPrefix(k, ex) {
 				delete(w.Header(), k)
 			}
 		}
