@@ -269,7 +269,7 @@ func PostAsCopyPutResponseFunc(t *testing.T, w http.ResponseWriter, r *http.Requ
 	}
 	body := "stuff"
 	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-	w.WriteHeader(200)
+	w.WriteHeader(201)
 	w.Write([]byte(body))
 }
 
@@ -293,8 +293,6 @@ func TestPostAsCopy(t *testing.T) {
 
 	handler.ServeHTTP(rr, req)
 
-	require.Equal(t, 200, rr.Code)
+	require.Equal(t, 202, rr.Code)
 	require.Equal(t, "stuff", rr.Body.String())
-	require.Equal(t, "c/o", rr.Header().Get("X-Copied-From"))
-	require.Equal(t, "a", rr.Header().Get("X-Copied-From-Account"))
 }

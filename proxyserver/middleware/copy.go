@@ -48,7 +48,11 @@ func (cw *CopyWriter) Header() http.Header {
 }
 
 func (cw *CopyWriter) WriteHeader(status int) {
-	cw.w.WriteHeader(status)
+	if cw.postAsCopy && status == http.StatusCreated {
+		cw.w.WriteHeader(http.StatusAccepted)
+	} else {
+		cw.w.WriteHeader(status)
+	}
 }
 
 type copyMiddleware struct {
@@ -375,9 +379,11 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 
 	copyMetaItems(respHeader, request.Header)
 
-	for k, v := range respHeader {
-		for _, v1 := range v {
-			writer.Header().Add(k, v1)
+	if !writer.postAsCopy {
+		for k, v := range respHeader {
+			for _, v1 := range v {
+				writer.Header().Add(k, v1)
+			}
 		}
 	}
 
