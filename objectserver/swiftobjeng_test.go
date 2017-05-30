@@ -18,7 +18,7 @@ func TestSwiftObjectRoundtrip(t *testing.T) {
 	defer os.RemoveAll(driveRoot)
 
 	vars := map[string]string{"device": "sda", "account": "a", "container": "c", "object": "o", "partition": "1"}
-	swcon := &SwiftObjectFactory{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
+	swcon := &SwiftEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	swo, err := swcon.New(vars, false, &wg)
@@ -51,7 +51,7 @@ func TestSwiftObjectFailAuditContentLengthWrong(t *testing.T) {
 	}()
 
 	vars := map[string]string{"device": "sda", "account": "a", "container": "c", "object": "o", "partition": "1"}
-	swcon := &SwiftObjectFactory{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
+	swcon := &SwiftEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
 	swo, err := swcon.New(vars, false, &wg)
 	require.Nil(t, err)
 	defer swo.Close()
@@ -74,7 +74,7 @@ func TestSwiftObjectFailAuditBadContentLength(t *testing.T) {
 	}()
 
 	vars := map[string]string{"device": "sda", "account": "a", "container": "c", "object": "o", "partition": "1"}
-	swcon := &SwiftObjectFactory{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
+	swcon := &SwiftEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
 	swo, err := swcon.New(vars, false, &wg)
 	require.Nil(t, err)
 	defer swo.Close()
@@ -97,7 +97,7 @@ func TestSwiftObjectQuarantine(t *testing.T) {
 	}()
 
 	vars := map[string]string{"device": "sda", "account": "a", "container": "c", "object": "o", "partition": "3"}
-	swcon := &SwiftObjectFactory{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
+	swcon := &SwiftEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
 	swo, err := swcon.New(vars, false, &wg)
 	require.Nil(t, err)
 	defer swo.Close()
@@ -119,7 +119,7 @@ func TestSwiftObjectMultiCopy(t *testing.T) {
 	}()
 
 	vars := map[string]string{"device": "sda", "account": "a", "container": "c", "object": "o", "partition": "1"}
-	swcon := &SwiftObjectFactory{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
+	swcon := &SwiftEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
 	swo, err := swcon.New(vars, false, &wg)
 	require.Nil(t, err)
 	defer swo.Close()
@@ -149,7 +149,7 @@ func TestSwiftObjectDelete(t *testing.T) {
 	}()
 
 	vars := map[string]string{"device": "sda", "account": "a", "container": "c", "object": "o", "partition": "1"}
-	swcon := &SwiftObjectFactory{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
+	swcon := &SwiftEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
 	swo, err := swcon.New(vars, false, &wg)
 	require.Nil(t, err)
 	defer swo.Close()

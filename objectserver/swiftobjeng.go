@@ -168,7 +168,7 @@ func (o *SwiftObject) Close() error {
 	return nil
 }
 
-type SwiftObjectFactory struct {
+type SwiftEngine struct {
 	driveRoot      string
 	hashPathPrefix string
 	hashPathSuffix string
@@ -178,7 +178,7 @@ type SwiftObjectFactory struct {
 }
 
 // New returns an instance of SwiftObject with the given parameters. Metadata is read in and if needData is true, the file is opened.  AsyncWG is a waitgroup if the object spawns any async operations
-func (f *SwiftObjectFactory) New(vars map[string]string, needData bool, asyncWG *sync.WaitGroup) (Object, error) {
+func (f *SwiftEngine) New(vars map[string]string, needData bool, asyncWG *sync.WaitGroup) (Object, error) {
 	var err error
 	sor := &SwiftObject{reclaimAge: f.reclaimAge, reserve: f.reserve, asyncWG: asyncWG}
 	sor.hashDir = ObjHashDir(vars, f.driveRoot, f.hashPathPrefix, f.hashPathSuffix, f.policy)
@@ -221,7 +221,7 @@ func (f *SwiftObjectFactory) New(vars map[string]string, needData bool, asyncWG 
 
 var replicationDone = fmt.Errorf("Replication done")
 
-// SwiftEngineConstructor creates a SwiftObjectFactory given the object server configs.
+// SwiftEngineConstructor creates a SwiftEngine given the object server configs.
 func SwiftEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.FlagSet) (ObjectEngine, error) {
 	driveRoot := config.GetDefault("app:object-server", "devices", "/srv/node")
 	reserve := config.GetInt("app:object-server", "fallocate_reserve", 0)
@@ -230,7 +230,7 @@ func SwiftEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag
 		return nil, errors.New("Unable to load hashpath prefix and suffix")
 	}
 	reclaimAge := int64(config.GetInt("app:object-server", "reclaim_age", int64(common.ONE_WEEK)))
-	return &SwiftObjectFactory{
+	return &SwiftEngine{
 		driveRoot:      driveRoot,
 		hashPathPrefix: hashPathPrefix,
 		hashPathSuffix: hashPathSuffix,
@@ -246,4 +246,4 @@ func init() {
 // make sure these things satisfy interfaces at compile time
 var _ ObjectEngineConstructor = SwiftEngineConstructor
 var _ Object = &SwiftObject{}
-var _ ObjectEngine = &SwiftObjectFactory{}
+var _ ObjectEngine = &SwiftEngine{}
