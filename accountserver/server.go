@@ -52,6 +52,7 @@ type AccountServer struct {
 	accountEngine    AccountEngine
 	updateClient     *http.Client
 	autoCreatePrefix string
+	policyList       conf.PolicyList
 }
 
 func formatTimestamp(ts string) (string, error) {
@@ -133,6 +134,23 @@ func (server *AccountServer) AccountGetHandler(writer http.ResponseWriter, reque
 		}
 		if ts, err := formatTimestamp(info.PutTimestamp); err == nil {
 			headers.Set("X-Put-Timestamp", ts)
+		}
+	}
+	if policyStats, err := db.PolicyStats(); err != nil {
+		srv.GetLogger(request).Error("Error calling PolicyStats.", zap.Error(err))
+		srv.StandardResponse(writer, http.StatusInternalServerError)
+		return
+	} else {
+		for _, policyStat := range policyStats {
+			var prefix string
+			if policy := server.policyList[policyStat.StoragePolicyIndex]; policy != nil {
+				prefix = fmt.Sprintf("X-Account-Storage-Policy-%s-", policy.Name)
+			} else {
+				prefix = fmt.Sprintf("X-Account-Storage-Policy-%d-", policyStat.StoragePolicyIndex)
+			}
+			headers.Set(prefix+"Container-Count", fmt.Sprintf("%d", policyStat.ContainerCount))
+			headers.Set(prefix+"Object-Count", fmt.Sprintf("%d", policyStat.ContainerCount))
+			headers.Set(prefix+"Bytes-Used", fmt.Sprintf("%d", policyStat.BytesUsed))
 		}
 	}
 	if request.Method == "HEAD" {
@@ -493,7 +511,7 @@ func (server *AccountServer) GetHandler(config conf.Config) http.Handler {
 
 // GetServer parses configs and command-line flags, returning a configured server object and the ip and port it should bind on.
 func GetServer(serverconf conf.Config, flags *flag.FlagSet) (bindIP string, bindPort int, serv srv.Server, logger srv.LowLevelLogger, err error) {
-	server := &AccountServer{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: ""}
+	server := &AccountServer{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: "", policyList: conf.LoadPolicies()}
 	server.hashPathPrefix, server.hashPathSuffix, err = GetHashPrefixAndSuffix()
 	if err != nil {
 		return "", 0, nil, nil, err

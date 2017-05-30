@@ -60,6 +60,7 @@ type ContainerServer struct {
 	autoCreatePrefix string
 	syncRealms       conf.SyncRealmList
 	defaultPolicy    int
+	policyList       conf.PolicyList
 }
 
 var saveHeaders = map[string]bool{
@@ -132,6 +133,9 @@ func (server *ContainerServer) ContainerGetHandler(writer http.ResponseWriter, r
 		headers.Set("X-Backend-Status-Changed-At", ts)
 	}
 	headers.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(info.StoragePolicyIndex))
+	if policy := server.policyList[info.StoragePolicyIndex]; policy != nil {
+		headers.Set("X-Storage-Policy", policy.Name)
+	}
 	metadata, err := db.GetMetadata()
 	if err != nil {
 		srv.GetLogger(request).Error("Unable to get metadata.", zap.Error(err))
@@ -594,7 +598,7 @@ func (server *ContainerServer) GetHandler(config conf.Config) http.Handler {
 
 // GetServer parses configs and command-line flags, returning a configured server object and the ip and port it should bind on.
 func GetServer(serverconf conf.Config, flags *flag.FlagSet) (bindIP string, bindPort int, serv srv.Server, logger srv.LowLevelLogger, err error) {
-	server := &ContainerServer{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: ""}
+	server := &ContainerServer{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: "", policyList: conf.LoadPolicies()}
 	server.syncRealms = GetSyncRealms()
 	server.hashPathPrefix, server.hashPathSuffix, err = GetHashPrefixAndSuffix()
 	if err != nil {
