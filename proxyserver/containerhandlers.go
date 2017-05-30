@@ -58,6 +58,14 @@ func (server *ProxyServer) ContainerGetHandler(writer http.ResponseWriter, reque
 		}
 	}
 	r, headers, code := ctx.C.GetContainer(vars["account"], vars["container"], options, request.Header)
+	ctx.ACL = headers.Get("X-Container-Read")
+	if ctx.Authorize != nil && !ctx.Authorize(request) {
+		if ctx.RemoteUser != "" {
+			srv.StandardResponse(writer, 403)
+		}
+		srv.StandardResponse(writer, 401)
+		return
+	}
 	for k := range headers {
 		writer.Header().Set(k, headers.Get(k))
 	}
@@ -79,11 +87,15 @@ func (server *ProxyServer) ContainerHeadHandler(writer http.ResponseWriter, requ
 		srv.StandardResponse(writer, 404)
 		return
 	}
+	headers, code := ctx.C.HeadContainer(vars["account"], vars["container"], request.Header)
+	ctx.ACL = headers.Get("X-Container-Read")
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
+		if ctx.RemoteUser != "" {
+			srv.StandardResponse(writer, 403)
+		}
 		srv.StandardResponse(writer, 401)
 		return
 	}
-	headers, code := ctx.C.HeadContainer(vars["account"], vars["container"], request.Header)
 	for k := range headers {
 		writer.Header().Set(k, headers.Get(k))
 	}
@@ -101,7 +113,14 @@ func (server *ProxyServer) ContainerPostHandler(writer http.ResponseWriter, requ
 		srv.StandardResponse(writer, 404)
 		return
 	}
+	if err := cleanACLs(request); err != nil {
+		srv.SimpleErrorResponse(writer, 400, err.Error())
+		return
+	}
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
+		if ctx.RemoteUser != "" {
+			srv.StandardResponse(writer, 403)
+		}
 		srv.StandardResponse(writer, 401)
 		return
 	}
@@ -125,7 +144,14 @@ func (server *ProxyServer) ContainerPutHandler(writer http.ResponseWriter, reque
 		srv.StandardResponse(writer, 404)
 		return
 	}
+	if err := cleanACLs(request); err != nil {
+		srv.SimpleErrorResponse(writer, 400, err.Error())
+		return
+	}
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
+		if ctx.RemoteUser != "" {
+			srv.StandardResponse(writer, 403)
+		}
 		srv.StandardResponse(writer, 401)
 		return
 	}
@@ -150,8 +176,24 @@ func (server *ProxyServer) ContainerDeleteHandler(writer http.ResponseWriter, re
 		return
 	}
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
+		if ctx.RemoteUser != "" {
+			srv.StandardResponse(writer, 403)
+		}
 		srv.StandardResponse(writer, 401)
 		return
 	}
 	srv.StandardResponse(writer, ctx.C.DeleteContainer(vars["account"], vars["container"], request.Header))
+}
+
+func cleanACLs(r *http.Request) error {
+	for _, header := range []string{"X-Container-Read", "X-Container-Write"} {
+		if r.Header.Get(header) != "" {
+			cleanedValue, err := middleware.CleanACL(header, r.Header.Get(header))
+			if err != nil {
+				return err
+			}
+			r.Header.Set(header, cleanedValue)
+		}
+	}
+	return nil
 }

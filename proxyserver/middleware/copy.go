@@ -147,6 +147,8 @@ func (c *copyMiddleware) getSourceObject(object string, request *http.Request) (
 	done := make(chan bool)
 	writer := NewPipeResponseWriter(pipeWriter, done, ctx.Logger)
 	go func() {
+		ctx.Authorize = nil
+		ctx.AuthorizeOverride = true
 		ctx.Subrequest(writer, subRequest, "copy")
 		writer.Close()
 	}()

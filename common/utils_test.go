@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"net/http"
 	"strings"
+	"reflect"
 	"testing"
 	"time"
 
@@ -298,4 +299,27 @@ func TestParseContentTypeForSlo(t *testing.T) {
 	ct, size, err = ParseContentTypeForSlo("text/html;swift_bytes=moo", int64(12))
 	require.Equal(t, ct, "")
 	require.NotNil(t, err)
+}
+
+func TestSliceFromCSV(t *testing.T) {
+	var tests = []struct {
+		s        string   // input
+		expected []string // expected result
+	}{
+		{"", []string{}},
+		{"fdfd", []string{"fdfd"}},
+		{"fd,fd", []string{"fd", "fd"}},
+		{"fd,   fd", []string{"fd", "fd"}},
+		{" fd  , fd ", []string{"fd", "fd"}},
+		{"fd fd", []string{"fd fd"}},
+		{"fd,fd, fdf", []string{"fd", "fd", "fdf"}},
+		{"fd,,fd", []string{"fd", "fd"}},
+	}
+
+	for _, tt := range tests {
+		actual := SliceFromCSV(tt.s)
+		if !reflect.DeepEqual(actual, tt.expected) {
+			t.Errorf("SliceFromCSV(%v): expected %v, actual %v", tt.s, tt.expected, actual)
+		}
+	}
 }

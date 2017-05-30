@@ -438,6 +438,12 @@ func (c *ProxyDirectClient) GetContainerInfo(account string, container string, m
 				ci.Metadata[k[17:]] = headers.Get(k)
 			} else if strings.HasPrefix(k, "X-Container-Sysmeta-") {
 				ci.SysMetadata[k[20:]] = headers.Get(k)
+			} else if k == "X-Container-Read" {
+				ci.ReadACL = headers.Get(k)
+			} else if k == "X-Container-Write" {
+				ci.WriteACL = headers.Get(k)
+			} else if k == "X-Container-Sync-Key" {
+				ci.SyncKey = headers.Get(k)
 			}
 		}
 		if mc != nil {

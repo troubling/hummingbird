@@ -19,6 +19,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	_ "net/http/pprof"
 	"strings"
 
 	"github.com/troubling/hummingbird/client"
@@ -72,20 +73,46 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 	router.Post("/v1/:account", http.HandlerFunc(server.AccountPostHandler))
 	router.Post("/v1/:account/", http.HandlerFunc(server.AccountPostHandler))
 
-	// TODO: make this all dynamical and stuff
-	middlewares := []struct {
+	router.Get("/debug/pprof/:parm", http.DefaultServeMux)
+	router.Post("/debug/pprof/:parm", http.DefaultServeMux)
+
+	tempAuth := config.GetBool("proxy-server", "tempauth_enabled", true)
+	var middlewares []struct {
 		construct func(config conf.Section) (func(http.Handler) http.Handler, error)
 		section   string
-	}{
-		{middleware.NewCatchError, "filter:catch_errors"},
-		{middleware.NewHealthcheck, "filter:healthcheck"},
-		{middleware.NewRequestLogger, "filter:proxy-logging"},
-		{middleware.NewFormPost, "filter:formpost"},
-		{middleware.NewTempURL, "filter:tempurl"},
-		{middleware.NewTempAuth, "filter:tempauth"},
-		{middleware.NewRatelimiter, "filter:ratelimit"},
-		{middleware.NewCopyMiddleware, "filter:copy"},
-		{middleware.NewXlo, "filter:slo"},
+	}
+	// TODO: make this all dynamical and stuff
+	if tempAuth {
+		middlewares = []struct {
+			construct func(config conf.Section) (func(http.Handler) http.Handler, error)
+			section   string
+		}{
+			{middleware.NewCatchError, "filter:catch_errors"},
+			{middleware.NewHealthcheck, "filter:healthcheck"},
+			{middleware.NewRequestLogger, "filter:proxy-logging"},
+			{middleware.NewFormPost, "filter:formpost"},
+			{middleware.NewTempURL, "filter:tempurl"},
+			{middleware.NewTempAuth, "filter:tempauth"},
+			{middleware.NewRatelimiter, "filter:ratelimit"},
+			{middleware.NewCopyMiddleware, "filter:copy"},
+			{middleware.NewXlo, "fliter:slo"},
+		}
+	} else {
+		middlewares = []struct {
+			construct func(config conf.Section) (func(http.Handler) http.Handler, error)
+			section   string
+		}{
+			{middleware.NewCatchError, "filter:catch_errors"},
+			{middleware.NewHealthcheck, "filter:healthcheck"},
+			{middleware.NewRequestLogger, "filter:proxy-logging"},
+			{middleware.NewFormPost, "filter:formpost"},
+			{middleware.NewTempURL, "filter:tempurl"},
+			{middleware.NewAuthToken, "filter:authtoken"},
+			{middleware.NewKeystoneAuth, "filter:keystoneauth"},
+			{middleware.NewRatelimiter, "filter:ratelimit"},
+			{middleware.NewCopyMiddleware, "filter:copy"},
+			{middleware.NewXlo, "filter:slo"},
+		}
 	}
 	pipeline := alice.New(middleware.NewContext(server.mc, server.logger, server.proxyDirectClient))
 	for _, m := range middlewares {

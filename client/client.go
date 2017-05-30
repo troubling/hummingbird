@@ -73,6 +73,9 @@ type ProxyClient interface {
 
 // ContainerInfo is persisted in memcache via JSON; so this needs to continue to have public fields.
 type ContainerInfo struct {
+	ReadACL            string
+	WriteACL           string
+	SyncKey            string
 	ObjectCount        int64
 	ObjectBytes        int64
 	Metadata           map[string]string

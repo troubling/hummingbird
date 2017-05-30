@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"testing"
 
@@ -150,5 +151,92 @@ func TestGetHashPrefixAndSuffix(t *testing.T) {
 
 	if suffix == "" {
 		t.Error("Error prefix and suffix not being set")
+	}
+}
+
+func TestReadResellerOptions(t *testing.T) {
+	defaultRules := map[string][]string{"operator_roles": {"admin", "swiftoperator"},
+		"service_roles": {}}
+	var tests = []struct {
+		s        string   // input
+		prefixes []string // expected result
+		options  map[string]map[string][]string
+	}{
+		{"[filter:keystoneauth]\n",
+			[]string{"AUTH_"},
+			map[string]map[string][]string{"AUTH_": defaultRules}},
+		{"[filter:keystoneauth]\nreseller_prefix=AUTH\noperator_roles=admin, swiftoperator\n",
+			[]string{"AUTH_"},
+			map[string]map[string][]string{"AUTH_": defaultRules}},
+		{"[filter:keystoneauth]\nreseller_prefix=\n",
+			[]string{""},
+			map[string]map[string][]string{"": defaultRules}},
+		{"[filter:keystoneauth]\nreseller_prefix=\n''operator_roles=role1,role2",
+			[]string{""},
+			map[string]map[string][]string{"": {"operator_roles": {"role1", "role2"},
+				"service_roles": {}}}},
+		{"[filter:keystoneauth]\nreseller_prefix= '' , '' \n",
+			[]string{""},
+			map[string]map[string][]string{"": defaultRules}},
+		{"[filter:keystoneauth]\nreseller_prefix=_,_\n",
+			[]string{"_"},
+			map[string]map[string][]string{"_": defaultRules}},
+		{"[filter:keystoneauth]\nreseller_prefix=AUTH, PRE2, AUTH, PRE2\n",
+			[]string{"AUTH_", "PRE2_"},
+			map[string]map[string][]string{"AUTH_": defaultRules, "PRE2_": defaultRules}},
+		{"[filter:keystoneauth]\nreseller_prefix=AUTH, PRE2, AUTH, PRE2\n",
+			[]string{"AUTH_", "PRE2_"},
+			map[string]map[string][]string{"AUTH_": defaultRules, "PRE2_": defaultRules}},
+		{"[filter:keystoneauth]\nreseller_prefix= , , , \n",
+			[]string{""},
+			map[string]map[string][]string{"": defaultRules}},
+		{"[filter:keystoneauth]\nreseller_prefix= PRE1, PRE2\n" +
+			"PRE1_operator_roles= role1, role2\n" +
+			"PRE1_service_roles= role3, role4\n" +
+			"PRE2_operator_roles=role5\n" +
+			"PRE2_service_roles=role6\n",
+			[]string{"PRE1_", "PRE2_"},
+			map[string]map[string][]string{"PRE1_": {"operator_roles": {"role1", "role2"},
+				"service_roles": {"role3", "role4"}},
+				"PRE2_": {"operator_roles": {"role5"},
+					"service_roles": {"role6"}}}},
+		{"[filter:keystoneauth]\nreseller_prefix= AUTH ,'', PRE2\n" +
+			"operator_roles= role1, role2\n" +
+			"service_roles= role3, role4\n" +
+			"PRE2_operator_roles=role5\n" +
+			"PRE2_service_roles=role6\n",
+			[]string{"AUTH_", "", "PRE2_"},
+			map[string]map[string][]string{"AUTH_": {"operator_roles": {"role1", "role2"},
+				"service_roles": {"role3", "role4"}},
+				"": {"operator_roles": {"role1", "role2"},
+					"service_roles": {"role3", "role4"}},
+				"PRE2_": {"operator_roles": {"role5"},
+					"service_roles": {"role6"}}}},
+		{"[filter:keystoneauth]\nreseller_prefix=AUTH ,, PRE2\n" +
+			"''operator_roles=role1, role2\n" +
+			"''service_roles=role3, role4\n" +
+			"PRE2_operator_roles=role5\n" +
+			"PRE2_service_roles=role6\n",
+			[]string{"AUTH_", "PRE2_"},
+			map[string]map[string][]string{"AUTH_": {"operator_roles": {"admin", "swiftoperator"},
+				"service_roles": {}},
+				"PRE2_": {"operator_roles": {"role5"},
+					"service_roles": {"role6"}}}},
+	}
+	for _, tt := range tests {
+		tempFile, err := ioutil.TempFile("", "INI")
+		require.Nil(t, err)
+		defer os.RemoveAll(tempFile.Name())
+		tempFile.WriteString(tt.s)
+		conf, err := LoadConfig(tempFile.Name())
+		assert.Nil(t, err)
+		confSec := conf.GetSection("filter:keystoneauth")
+		prefixes, options := ReadResellerOptions(confSec, defaultRules)
+		if !reflect.DeepEqual(prefixes, tt.prefixes) {
+			t.Errorf("ReadResellerOptions: expected prefixes %v, actual prefixes %v", tt.prefixes, prefixes)
+		}
+		if !reflect.DeepEqual(options, tt.options) {
+			t.Errorf("ReadResellerOptions: expected options %v, actual options %v", tt.options, options)
+		}
 	}
 }
