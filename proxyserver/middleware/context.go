@@ -88,8 +88,10 @@ type ProxyContext struct {
 
 func GetProxyContext(r *http.Request) *ProxyContext {
 	if rv := r.Context().Value("proxycontext"); rv != nil {
+		fmt.Println("asdfasdf")
 		return rv.(*ProxyContext)
 	}
+	fmt.Println("rrrrrrrr")
 	return nil
 }
 

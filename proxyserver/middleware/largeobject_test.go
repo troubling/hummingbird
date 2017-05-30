@@ -17,6 +17,7 @@ package middleware
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
@@ -38,6 +39,8 @@ var superManifest = `[
 {"hash":"250cf8b51c773f3f8dc8b4be867a9a02","last_modified":"2017-05-22T17:24:04.00000","bytes":3,"name":"/hat/b","content_type":"application/octet-stream"},
 {"hash":"68053af2923e00204c3ca7c6a3150cf7","last_modified":"2017-05-22T17:24:04.00000","bytes":3,"name":"hat/c","content_type":"application/octet-stream"}]`
 
+var simpleDloManifest = `[{"hash":"202cb962ac59075b964b07152d234b70","last_modified":"2017-05-22T17:24:03.00000","bytes":3,"name":"dlo-a","content_type":"application/octet-stream"},{"hash":"250cf8b51c773f3f8dc8b4be867a9a02","last_modified":"2017-05-22T17:24:04.00000","bytes":3,"name":"dlo-b","content_type":"application/octet-stream"},{"hash":"68053af2923e00204c3ca7c6a3150cf7","last_modified":"2017-05-22T17:24:04.00000","bytes":3,"name":"dlo-c","content_type":"application/octet-stream"}]`
+
 func TestGetRegular(t *testing.T) {
 	next := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method == "GET" {
@@ -45,7 +48,7 @@ func TestGetRegular(t *testing.T) {
 			writer.Write([]byte("not a slo"))
 		}
 	})
-	sm := sloMiddleware{next: next}
+	sm := loMiddleware{next: next}
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "v/a/c/o", nil)
 	require.Nil(t, err)
@@ -67,7 +70,7 @@ func TestGetMultipartManifest(t *testing.T) {
 			writer.Write([]byte(simpleManifest))
 		}
 	})
-	sm := sloMiddleware{next: next}
+	sm := loMiddleware{next: next}
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "/v/a/c/o?multipart-manifest=get", nil)
 	require.Nil(t, err)
@@ -77,7 +80,7 @@ func TestGetMultipartManifest(t *testing.T) {
 	body, _ := ioutil.ReadAll(resp.Body)
 
 	require.Equal(t, resp.Header.Get("Content-Type"), "application/json; charset=utf-8")
-	var manifest []sloItem
+	var manifest []segItem
 	err = json.Unmarshal(body, &manifest)
 	require.Nil(t, err)
 	require.Equal(t, 3, len(manifest))
@@ -126,7 +129,7 @@ func TestGetSlo(t *testing.T) {
 			}
 		}
 	})
-	sm := sloMiddleware{next: next}
+	sm := loMiddleware{next: next}
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "/v1/a/c/o", nil)
 	require.Nil(t, err)
@@ -170,7 +173,7 @@ func TestGetSloRangeRequest(t *testing.T) {
 			}
 		}
 	})
-	sm := sloMiddleware{next: next}
+	sm := loMiddleware{next: next}
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "/v1/a/c/o", nil)
 	require.Nil(t, err)
@@ -219,7 +222,7 @@ func TestGetRangedSlo(t *testing.T) {
 			}
 		}
 	})
-	sm := sloMiddleware{next: next}
+	sm := loMiddleware{next: next}
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "/v1/a/c/o", nil)
 	require.Nil(t, err)
@@ -278,7 +281,7 @@ func TestGetSuperSlo(t *testing.T) {
 			}
 		}
 	})
-	sm := sloMiddleware{next: next}
+	sm := loMiddleware{next: next}
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "/v1/a/c/o", nil)
 	require.Nil(t, err)
@@ -326,7 +329,7 @@ func TestPutSlo(t *testing.T) {
 			}
 		}
 	})
-	sm := sloMiddleware{next: next}
+	sm := loMiddleware{next: next}
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("PUT", "/v1/a/c/o?multipart-manifest=put", bytes.NewBuffer([]byte(simplePutManifest)))
 	req.Header.Set("Content-Type", "app/html")
@@ -380,7 +383,7 @@ func TestDeleteSlo(t *testing.T) {
 			}
 		}
 	})
-	sm := sloMiddleware{next: next}
+	sm := loMiddleware{next: next}
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("DELETE", "/v1/a/c/o?multipart-manifest=delete", nil)
 	req.Header.Set("Content-Length", "0")
@@ -395,4 +398,54 @@ func TestDeleteSlo(t *testing.T) {
 	require.Equal(t, "/v1/a/hat/b", paths[2])
 	require.Equal(t, "/v1/a/hat/c", paths[3])
 	require.Equal(t, "/v1/a/c/o", paths[4])
+}
+
+func TestGetDlo(t *testing.T) {
+	next := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method == "GET" {
+			switch request.URL.Path {
+			case "/v1/a/c/o":
+				writer.Header().Set("X-Object-Manifest", "hat/dlo-")
+				writer.Header().Set("Content-Type", "app/html")
+				writer.Header().Set("Content-Length", "3")
+				writer.WriteHeader(200)
+				writer.Write([]byte("man"))
+			case "/v1/a/hat":
+				writer.Header().Set("Content-Type", "application/json")
+				require.Equal(t, request.URL.Query().Get("prefix"), "dlo-")
+				writer.WriteHeader(200)
+				writer.Write([]byte(simpleDloManifest))
+			case "/v1/a/hat/dlo-a":
+				writer.Header().Set("Content-Type", "octet")
+				writer.Header().Set("Etag", "\"202cb962ac59075b964b07152d234b70\"")
+				writer.WriteHeader(200)
+				writer.Write([]byte("123"))
+			case "/v1/a/hat/dlo-b":
+				writer.Header().Set("Content-Type", "octet")
+				writer.Header().Set("Etag", "\"250cf8b51c773f3f8dc8b4be867a9a02\"")
+				writer.WriteHeader(200)
+				writer.Write([]byte("456"))
+			case "/v1/a/hat/dlo-c":
+				writer.Header().Set("Content-Type", "octet")
+				writer.Header().Set("Etag", "\"68053af2923e00204c3ca7c6a3150cf7\"")
+				writer.WriteHeader(200)
+				writer.Write([]byte("789"))
+			}
+		}
+	})
+	sm := loMiddleware{next: next}
+	w := httptest.NewRecorder()
+
+	fakeContext := NewFakeProxyContext()
+
+	req, err := http.NewRequest("GET", "/v1/a/c/o", nil)
+	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", fakeContext))
+	require.Nil(t, err)
+
+	sm.ServeHTTP(w, req)
+	resp := w.Result()
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	require.Equal(t, resp.Header.Get("Content-Type"), "app/html")
+	require.Equal(t, "123456789", string(body))
 }
