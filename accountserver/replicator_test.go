@@ -160,6 +160,9 @@ type fakeDatabase struct{}
 func (f fakeDatabase) GetInfo() (*AccountInfo, error) {
 	return nil, errors.New("")
 }
+func (f fakeDatabase) PolicyStats() ([]*PolicyStat, error) {
+	return nil, errors.New("")
+}
 func (f fakeDatabase) IsDeleted() (bool, error) {
 	return false, errors.New("")
 }

@@ -108,6 +108,8 @@ type SyncRecord struct {
 type Account interface {
 	// GetInfo returns the AccountInfo struct for the account.
 	GetInfo() (*AccountInfo, error)
+	// PolicyStats returns the metrics for various policies in use by the account.
+	PolicyStats() ([]*PolicyStat, error)
 	// IsDeleted returns true if the account has been deleted.
 	IsDeleted() (bool, error)
 	// Delete deletes the account.
