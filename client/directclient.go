@@ -154,7 +154,7 @@ func (c *ProxyDirectClient) firstResponse(reqs ...*http.Request) (resp *http.Res
 
 		select {
 		case resp = <-success:
-			if resp != nil && resp.StatusCode/100 == 2 {
+			if resp != nil && (resp.StatusCode/100 == 2 || resp.StatusCode == 304) {
 				return resp
 			}
 		case <-time.After(time.Second):
