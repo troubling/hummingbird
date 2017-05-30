@@ -32,7 +32,7 @@ func (server *ProxyServer) ObjectGetHandler(writer http.ResponseWriter, request 
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	if ctx.GetContainerInfo(vars["account"], vars["container"]) == nil {
+	if ctx.C.GetContainerInfo(vars["account"], vars["container"]) == nil {
 		srv.StandardResponse(writer, 404)
 		return
 	}
@@ -58,7 +58,7 @@ func (server *ProxyServer) ObjectHeadHandler(writer http.ResponseWriter, request
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	if ctx.GetContainerInfo(vars["account"], vars["container"]) == nil {
+	if ctx.C.GetContainerInfo(vars["account"], vars["container"]) == nil {
 		srv.StandardResponse(writer, 404)
 		return
 	}
@@ -80,7 +80,7 @@ func (server *ProxyServer) ObjectDeleteHandler(writer http.ResponseWriter, reque
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	if ctx.GetContainerInfo(vars["account"], vars["container"]) == nil {
+	if ctx.C.GetContainerInfo(vars["account"], vars["container"]) == nil {
 		srv.StandardResponse(writer, 404)
 		return
 	}
@@ -99,7 +99,7 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	if ctx.GetContainerInfo(vars["account"], vars["container"]) == nil {
+	if ctx.C.GetContainerInfo(vars["account"], vars["container"]) == nil {
 		srv.StandardResponse(writer, 404)
 		return
 	}

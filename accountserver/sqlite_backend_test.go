@@ -281,7 +281,7 @@ func TestPolicyStats(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cleanup()
-	if err = db.MergeItems([]*ContainerRecord{&ContainerRecord{Name: "a", PutTimestamp: common.GetTimestamp(), ObjectCount: 123, BytesUsed: 456, StoragePolicyIndex: 1}}, ""); err != nil {
+	if err = db.MergeItems([]*ContainerRecord{{Name: "a", PutTimestamp: common.GetTimestamp(), ObjectCount: 123, BytesUsed: 456, StoragePolicyIndex: 1}}, ""); err != nil {
 		t.Fatal(err)
 	}
 	polstats, err := db.PolicyStats()
@@ -304,7 +304,7 @@ func TestPolicyStats(t *testing.T) {
 	if polstat.BytesUsed != 456 {
 		t.Fatal(polstat.BytesUsed)
 	}
-	if err = db.MergeItems([]*ContainerRecord{&ContainerRecord{Name: "b", PutTimestamp: common.GetTimestamp(), ObjectCount: 789, BytesUsed: 1234, StoragePolicyIndex: 1}}, ""); err != nil {
+	if err = db.MergeItems([]*ContainerRecord{{Name: "b", PutTimestamp: common.GetTimestamp(), ObjectCount: 789, BytesUsed: 1234, StoragePolicyIndex: 1}}, ""); err != nil {
 		t.Fatal(err)
 	}
 	db.invalidateCache()
@@ -328,7 +328,7 @@ func TestPolicyStats(t *testing.T) {
 	if polstat.BytesUsed != 1690 {
 		t.Fatal(polstat.BytesUsed)
 	}
-	if err = db.MergeItems([]*ContainerRecord{&ContainerRecord{Name: "c", PutTimestamp: common.GetTimestamp(), ObjectCount: 5678, BytesUsed: 9012, StoragePolicyIndex: 2}}, ""); err != nil {
+	if err = db.MergeItems([]*ContainerRecord{{Name: "c", PutTimestamp: common.GetTimestamp(), ObjectCount: 5678, BytesUsed: 9012, StoragePolicyIndex: 2}}, ""); err != nil {
 		t.Fatal(err)
 	}
 	db.invalidateCache()

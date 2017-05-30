@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/troubling/hummingbird/common/ring"
 )
 
 // HTTPError represents a non-200 HTTP response code.
@@ -58,6 +60,7 @@ type ProxyClient interface {
 	PutContainer(account string, container string, headers http.Header) int
 	PostContainer(account string, container string, headers http.Header) int
 	GetContainer(account string, container string, options map[string]string, headers http.Header) (io.ReadCloser, http.Header, int)
+	GetContainerInfo(account string, container string) *ContainerInfo
 	HeadContainer(account string, container string, headers http.Header) (http.Header, int)
 	DeleteContainer(account string, container string, headers http.Header) int
 	PutObject(account string, container string, obj string, headers http.Header, src io.Reader) (http.Header, int)
@@ -65,4 +68,14 @@ type ProxyClient interface {
 	GetObject(account string, container string, obj string, headers http.Header) (io.ReadCloser, http.Header, int)
 	HeadObject(account string, container string, obj string, headers http.Header) (http.Header, int)
 	DeleteObject(account string, container string, obj string, headers http.Header) int
+	ObjectRingFor(account string, container string) (ring.Ring, int)
+}
+
+// ContainerInfo is persisted in memcache via JSON; so this needs to continue to have public fields.
+type ContainerInfo struct {
+	ObjectCount        int64
+	ObjectBytes        int64
+	Metadata           map[string]string
+	SysMetadata        map[string]string
+	StoragePolicyIndex int
 }
