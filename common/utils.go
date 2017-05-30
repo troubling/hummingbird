@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"mime"
 	"net/http"
 	"runtime"
 	"strconv"
@@ -450,4 +451,23 @@ func CheckNameFormat(req *http.Request, name string, target string) (string, err
 		return "", errors.New(fmt.Sprintf("%s name cannot contain slashes", target))
 	}
 	return name, nil
+}
+
+func ParseContentTypeForSlo(contentType string, listedSize int64) (string, int64, error) {
+	// somewhat dirty check to see if we need to parse the content-type
+	if strings.Contains(contentType, ";") && strings.Contains(contentType, "swift_bytes") {
+		contentTypeCleaned, params, err := mime.ParseMediaType(contentType)
+		if err != nil {
+			return "", 0, err
+		}
+		if v, ok := params["swift_bytes"]; ok {
+			sloSize, err := strconv.ParseInt(v, 0, 64)
+			if err != nil {
+				return "", 0, err
+			}
+			delete(params, "swift_bytes")
+			return mime.FormatMediaType(contentTypeCleaned, params), sloSize, nil
+		}
+	}
+	return contentType, listedSize, nil
 }

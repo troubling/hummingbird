@@ -18,6 +18,7 @@ package common
 import (
 	"bytes"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -280,4 +281,21 @@ func TestNoEmptyName(t *testing.T) {
 	require.NotNil(t, err)
 	require.Contains(t, err.Error(), "ignored name cannot be empty")
 	require.Equal(t, checked, "")
+}
+
+func TestParseContentTypeForSlo(t *testing.T) {
+	ct, size, err := ParseContentTypeForSlo("text/html", int64(12))
+	require.Equal(t, ct, "text/html")
+	require.Equal(t, size, int64(12))
+	require.Nil(t, err)
+
+	ct, size, err = ParseContentTypeForSlo("text/html;swift_bytes=36", int64(12))
+	require.Equal(t, ct, "text/html")
+	require.Equal(t, size, int64(36))
+	require.False(t, strings.Contains(ct, ";"))
+	require.Nil(t, err)
+
+	ct, size, err = ParseContentTypeForSlo("text/html;swift_bytes=moo", int64(12))
+	require.Equal(t, ct, "")
+	require.NotNil(t, err)
 }

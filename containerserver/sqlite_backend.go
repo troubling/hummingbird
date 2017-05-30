@@ -26,7 +26,6 @@ import (
 	"io"
 	"io/ioutil"
 	"math"
-	"mime"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -329,24 +328,9 @@ func updateRecord(rec *ObjectListingRecord) error {
 	whole, nans := math.Modf(f)
 	rec.LastModified = time.Unix(int64(whole), int64(nans*1.0e9)).Format("2006-01-02T15:04:05.000000")
 
-	// somewhat dirty check to see if we need to parse the content-type
-	if strings.Contains(rec.ContentType, ";") && strings.Contains(rec.ContentType, "swift_bytes") {
-		contentType, params, err := mime.ParseMediaType(rec.ContentType)
-		if err != nil {
-			return err
-		}
-		for k, v := range params {
-			if k == "swift_bytes" {
-				if rec.Size, err = strconv.ParseInt(v, 0, 64); err != nil {
-					return err
-				}
-				delete(params, k)
-			}
-		}
-		rec.ContentType = mime.FormatMediaType(contentType, params)
-	}
-
-	return nil
+	rec.ContentType, rec.Size, err = common.ParseContentTypeForSlo(
+		rec.ContentType, rec.Size)
+	return err
 }
 
 // ListObjects implements object listings.  Path is a string pointer because behavior is different for empty and missing path query parameters.

@@ -102,6 +102,7 @@ type sloWriter struct {
 	isDlo            bool
 	dloHeader        string
 	cacheBytes       bool
+	throwAwayHeader  bool
 	Error            error
 	manifestBytes    *bytes.Buffer
 	allowWriteHeader bool
@@ -119,7 +120,10 @@ func (sw *sloWriter) WriteUpstreamHeader() {
 
 func (sw *sloWriter) WriteHeader(status int) {
 	sw.Status = status
-	cLen, _ := strconv.Atoi(sw.Header().Get("Content-Length"))
+	if sw.throwAwayHeader { // DLO segments cannot be sub-DLOs. just treat as bytes
+		return
+	}
+	cLen, _ := strconv.ParseInt(sw.Header().Get("Content-Length"), 10, 64)
 	sw.ContentLength = int64(cLen)
 	sw.ContentRange = sw.Header().Get("Content-Range")
 	sw.Etag = strings.Trim(sw.Header().Get("Etag"), "\"")
@@ -129,6 +133,7 @@ func (sw *sloWriter) WriteHeader(status int) {
 	if theDlo := sw.Header().Get("X-Object-Manifest"); theDlo != "" && sw.xloFuncName != "get" {
 		sw.isDlo = true
 		sw.dloHeader = theDlo
+		sw.allowWrite = false // because DLO manifests can be segments- do not write out bytes yet
 	}
 	if isSlo := sw.Header().Get("X-Static-Large-Object"); isSlo == "True" {
 		sw.isSlo = true
@@ -165,8 +170,8 @@ func (slo *sloMiddleware) needToRefetchManifest(sw *sloWriter, request *http.Req
 		if res == nil || len(res) != 4 {
 			return true
 		}
-		end, _ := strconv.Atoi(res[2])
-		length, _ := strconv.Atoi(res[3])
+		end, _ := strconv.ParseInt(res[2], 10, 64)
+		length, _ := strconv.ParseInt(res[3], 10, 64)
 		got_everything := (res[1] == "0" && end == length-1)
 		return !got_everything
 	}
@@ -199,7 +204,6 @@ func (slo *sloMiddleware) feedOutSegments(sw *sloWriter, request *http.Request, 
 				return
 			}
 			continue
-			fmt.Println("444")
 		}
 		if reqRange.End < 0 {
 			fmt.Println("555")
@@ -236,7 +240,7 @@ func (slo *sloMiddleware) feedOutSegments(sw *sloWriter, request *http.Request, 
 			rangeHeader := fmt.Sprintf("bytes=%d-%d", subReqStart, subReqEnd-1)
 			subRequest.Header.Set("Range", rangeHeader)
 			sw := &sloWriter{ResponseWriter: sw.ResponseWriter,
-				Status: 500, allowWrite: true} // TODO i think i can reuse this
+				Status: 500, allowWrite: true, throwAwayHeader: true} // TODO i think i can reuse this
 			slo.next.ServeHTTP(sw, subRequest)
 			if sw.Status/100 != 2 {
 				ctx.Logger.Debug(fmt.Sprintf("segment not found: %s", newPath),
@@ -256,18 +260,6 @@ func (slo *sloMiddleware) feedOutSegments(sw *sloWriter, request *http.Request, 
 		reqRange.Start -= segLen
 		reqRange.End -= segLen
 	}
-}
-
-func parseSloContentType(contentType string) (string, int64, error) {
-	trailerIndex := strings.LastIndex(contentType, ";swift_bytes=")
-	if trailerIndex >= 0 {
-		actualContentType := contentType[:trailerIndex]
-		actualContentLength, err := strconv.Atoi(contentType[trailerIndex+13:])
-		if err == nil {
-			return actualContentType, int64(actualContentLength), nil
-		}
-	}
-	return contentType, int64(0), errors.New("Not a valid slo content-type")
 }
 
 func (slo *sloMiddleware) buildSloManifest(sw *sloWriter, request *http.Request, manPath string) (manifest []sloItem, err error) {
@@ -383,7 +375,7 @@ func (slo *sloMiddleware) handleDloGet(sw *sloWriter, request *http.Request) {
 	fmt.Println("bbbbbbbbbbbbbbbb")
 	container, prefix, err := splitSloPath(sw.dloHeader)
 	if err != nil {
-		fmt.Println("11111111111111: %s", err)
+		fmt.Println("11111111111111: ", err)
 		srv.SimpleErrorResponse(sw.ResponseWriter, 400, "invalid dlo manifest path")
 		return
 	}
@@ -402,7 +394,7 @@ func (slo *sloMiddleware) handleDloGet(sw *sloWriter, request *http.Request) {
 func (slo *sloMiddleware) handleSloGet(sw *sloWriter, request *http.Request) {
 	// next has already been called and this is an SLO
 	//TODO: what does comment at slo.py#624 mean?
-	contentType, _, _ := parseSloContentType(sw.Header().Get("Content-Type"))
+	contentType, _, _ := common.ParseContentTypeForSlo(sw.Header().Get("Content-Type"), 0)
 	sw.Header().Set("Content-Type", contentType)
 
 	if sw.xloFuncName == "get" {
@@ -601,7 +593,7 @@ func (slo *sloMiddleware) handleSloPut(writer http.ResponseWriter, request *http
 		}
 		lastModDate, _ := common.ParseDate(pw.LastModified)
 
-		contentType, _, _ := parseSloContentType(pw.ContentType)
+		contentType, _, _ := common.ParseContentTypeForSlo(pw.ContentType, 0)
 		newSi := sloItem{Name: spm.Path, Bytes: contentLength,
 			Hash: segEtag, Range: parsedRange, SubSlo: pw.isSlo,
 			ContentType:  contentType,
