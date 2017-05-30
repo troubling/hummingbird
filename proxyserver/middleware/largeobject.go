@@ -426,7 +426,6 @@ func (slo *loMiddleware) handleSloGet(sw *segWriter, request *http.Request) {
 	if err != nil {
 		srv.SimpleErrorResponse(sw.ResponseWriter, 400, "invalid slo manifest")
 	}
-	//////////////////////
 	slo.xloByteFeeder(sw, request, sloEtag, savedContentLength, manifest)
 }
 
