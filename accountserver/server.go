@@ -137,7 +137,7 @@ func (server *AccountServer) AccountGetHandler(writer http.ResponseWriter, reque
 		}
 	}
 	if policyStats, err := db.PolicyStats(); err != nil {
-		srv.GetLogger(request).Error("Error calling IsDeleted.", zap.Error(err))
+		srv.GetLogger(request).Error("Error calling PolicyStats.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	} else {
