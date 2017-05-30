@@ -89,7 +89,7 @@ func authenticateFormpost(ctx *ProxyContext, account, container, path string, at
 			return FP_SCOPE_ACCOUNT
 		} else if key, ok := ai.Metadata["Temp-Url-Key-2"]; ok && checkhmac([]byte(key)) {
 			return FP_SCOPE_ACCOUNT
-		} else if ci := ctx.GetContainerInfo(account, container); ci != nil {
+		} else if ci := ctx.C.GetContainerInfo(account, container); ci != nil {
 			if key, ok := ci.Metadata["Temp-Url-Key"]; ok && checkhmac([]byte(key)) {
 				return FP_SCOPE_CONTAINER
 			} else if key, ok := ci.Metadata["Temp-Url-Key-2"]; ok && checkhmac([]byte(key)) {
