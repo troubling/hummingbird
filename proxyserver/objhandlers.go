@@ -99,6 +99,11 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 		srv.StandardResponse(writer, 500)
 		return
 	}
+	if !(request.Header.Get("If-None-Match") == "" ||
+		request.Header.Get("If-None-Match") == "*") {
+		srv.SimpleErrorResponse(writer, 400, "If-None-Match only supports *")
+		return
+	}
 	if ctx.C.GetContainerInfo(vars["account"], vars["container"]) == nil {
 		srv.StandardResponse(writer, 404)
 		return

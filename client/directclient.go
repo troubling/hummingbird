@@ -146,7 +146,11 @@ func (c *ProxyDirectClient) firstResponse(reqs ...*http.Request) (resp *http.Res
 
 		select {
 		case resp = <-success:
-			if resp != nil && resp.StatusCode/100 == 2 {
+			if resp != nil && (resp.StatusCode/100 == 2 || resp.StatusCode == 412 || resp.StatusCode == 304 || resp.StatusCode == 416) {
+				resp.Header.Set("Accept-Ranges", "bytes")
+				if etag := resp.Header.Get("Etag"); etag != "" {
+					resp.Header.Set("Etag", strings.Trim(etag, "\""))
+				}
 				return resp
 			}
 		case <-time.After(time.Second):
