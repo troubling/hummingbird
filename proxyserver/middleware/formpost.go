@@ -16,7 +16,6 @@
 package middleware
 
 import (
-	"bytes"
 	"crypto/hmac"
 	"crypto/sha1"
 	"encoding/hex"
@@ -166,8 +165,7 @@ func formpost(next http.Handler) http.Handler {
 			"max_file_count": "0",
 			"expires":        "0",
 		}
-		dat, err := ioutil.ReadAll(request.Body)
-		mr := multipart.NewReader(bytes.NewBuffer(dat), params["boundary"])
+		mr := multipart.NewReader(request.Body, params["boundary"])
 		var maxFileCount, fileCount, maxFileSize int64
 		for {
 			p, err := mr.NextPart()
