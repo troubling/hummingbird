@@ -48,7 +48,7 @@ func TestGetRegular(t *testing.T) {
 			writer.Write([]byte("not a slo"))
 		}
 	})
-	sm := loMiddleware{next: next}
+	sm := xloMiddleware{next: next}
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "v/a/c/o", nil)
 	require.Nil(t, err)
@@ -70,7 +70,7 @@ func TestGetMultipartManifest(t *testing.T) {
 			writer.Write([]byte(simpleManifest))
 		}
 	})
-	sm := loMiddleware{next: next}
+	sm := xloMiddleware{next: next}
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "/v/a/c/o?multipart-manifest=get", nil)
 	require.Nil(t, err)
@@ -129,7 +129,7 @@ func TestGetSlo(t *testing.T) {
 			}
 		}
 	})
-	sm := loMiddleware{next: next}
+	sm := xloMiddleware{next: next}
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "/v1/a/c/o", nil)
 	require.Nil(t, err)
@@ -173,7 +173,7 @@ func TestGetSloRangeRequest(t *testing.T) {
 			}
 		}
 	})
-	sm := loMiddleware{next: next}
+	sm := xloMiddleware{next: next}
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "/v1/a/c/o", nil)
 	require.Nil(t, err)
@@ -222,7 +222,7 @@ func TestGetRangedSlo(t *testing.T) {
 			}
 		}
 	})
-	sm := loMiddleware{next: next}
+	sm := xloMiddleware{next: next}
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "/v1/a/c/o", nil)
 	require.Nil(t, err)
@@ -281,7 +281,7 @@ func TestGetSuperSlo(t *testing.T) {
 			}
 		}
 	})
-	sm := loMiddleware{next: next}
+	sm := xloMiddleware{next: next}
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "/v1/a/c/o", nil)
 	require.Nil(t, err)
@@ -329,7 +329,7 @@ func TestPutSlo(t *testing.T) {
 			}
 		}
 	})
-	sm := loMiddleware{next: next}
+	sm := xloMiddleware{next: next}
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("PUT", "/v1/a/c/o?multipart-manifest=put", bytes.NewBuffer([]byte(simplePutManifest)))
 	req.Header.Set("Content-Type", "app/html")
@@ -383,7 +383,7 @@ func TestDeleteSlo(t *testing.T) {
 			}
 		}
 	})
-	sm := loMiddleware{next: next}
+	sm := xloMiddleware{next: next}
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("DELETE", "/v1/a/c/o?multipart-manifest=delete", nil)
 	req.Header.Set("Content-Length", "0")
@@ -433,7 +433,7 @@ func TestGetDlo(t *testing.T) {
 			}
 		}
 	})
-	sm := loMiddleware{next: next}
+	sm := xloMiddleware{next: next}
 	w := httptest.NewRecorder()
 
 	fakeContext := NewFakeProxyContext()
