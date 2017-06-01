@@ -139,6 +139,13 @@ func GetTimestamp() string {
 	return CanonicalTimestamp(float64(time.Now().UnixNano()) / 1000000000.0)
 }
 
+func GetLastModifiedHeader(lastModified time.Time) string {
+	if lastModified.Nanosecond() > 0 { // for some reason, Last-Modified is ceil(X-Timestamp)
+		lastModified = lastModified.Truncate(time.Second).Add(time.Second)
+	}
+	return lastModified.Format("Mon, 02 Jan 2006 15:04:05 GMT")
+}
+
 func GetTransactionId() string {
 	return fmt.Sprintf("%x", time.Now().UnixNano())
 }
