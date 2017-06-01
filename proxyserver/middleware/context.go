@@ -19,7 +19,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -75,37 +74,16 @@ type ProxyContextMiddleware struct {
 	proxyDirectClient *client.ProxyDirectClient
 }
 
-type proxyWriter struct {
-	http.ResponseWriter
-	Status          int
-	ResponseStarted bool
-}
-
-func (w *proxyWriter) WriteHeader(status int) {
-	// strip out any bad headers before calling real WriteHeader
-	for k := range w.Header() {
-		for _, ex := range excludeHeaders {
-			if strings.HasPrefix(k, ex) {
-				delete(w.Header(), k)
-			}
-		}
-	}
-	w.Status = status
-	w.ResponseStarted = true
-	w.ResponseWriter.WriteHeader(status)
-}
-
-func (w *proxyWriter) Response() (bool, int) {
-	return w.ResponseStarted, w.Status
-}
-
 type ProxyContext struct {
 	*ProxyContextMiddleware
 	C                client.ProxyClient
 	Authorize        AuthorizeFunc
 	Logger           srv.LowLevelLogger
+	TxId             string
+	responseSent     bool
+	status           int
 	accountInfoCache map[string]*AccountInfo
-	capWriter        *proxyWriter
+	depth            int
 }
 
 func GetProxyContext(r *http.Request) *ProxyContext {
@@ -116,7 +94,7 @@ func GetProxyContext(r *http.Request) *ProxyContext {
 }
 
 func (ctx *ProxyContext) Response() (bool, int) {
-	return ctx.capWriter.Response()
+	return ctx.responseSent, ctx.status
 }
 
 func getPathParts(request *http.Request) (bool, string, string, string) {
@@ -181,35 +159,28 @@ func (ctx *ProxyContext) InvalidateAccountInfo(account string) {
 	ctx.Cache.Delete(key)
 }
 
-func (ctx *ProxyContext) NewSubRequest(request *http.Request, method string, url string, body io.Reader) (*http.Request, error) {
-	subRequest, err := http.NewRequest(method, url, body)
-	if err != nil {
-		ctx = GetProxyContext(request)
-		ctx.Logger.Error("Couldn't create http.Request", zap.Error(err))
-		return nil, err
-	}
-	copyKeys := []string{"X-Auth-Token", "X-Trans-Id"}
-	for _, key := range copyKeys {
-		subRequest.Header.Set(key, request.Header.Get(key))
-	}
-	subRequest = subRequest.WithContext(context.WithValue(subRequest.Context(), "proxycontext", ctx))
-	return subRequest, nil
-}
-
-func (ctx *ProxyContext) Subrequest(method, path string, body io.Reader, writer http.ResponseWriter) (*http.Request, error) {
-	req, err := http.NewRequest(method, path, body)
-	if err != nil {
-		return nil, err
-	}
+func (ctx *ProxyContext) Subrequest(writer http.ResponseWriter, req *http.Request, source string) {
 	newctx := &ProxyContext{
 		ProxyContextMiddleware: ctx.ProxyContextMiddleware,
 		Authorize:              ctx.Authorize,
-		Logger:                 ctx.Logger,
+		Logger:                 ctx.Logger.With(zap.String("src", source)),
+		C:                      ctx.C,
+		TxId:                   ctx.TxId,
 		accountInfoCache:       ctx.accountInfoCache,
-		capWriter:              &proxyWriter{ResponseWriter: writer, Status: 501},
+		responseSent:           false,
+		status:                 500,
+		depth:                  ctx.depth + 1,
 	}
-	newctx.capWriter.Header().Set("X-Trans-Id", ctx.capWriter.Header().Get("X-Trans-Id"))
-	return req.WithContext(context.WithValue(req.Context(), "proxycontext", newctx)), nil
+	// TODO: check depth
+	newWriter := srv.NewCustomWriter(writer, func(w http.ResponseWriter, status int) int {
+		newctx.responseSent = true
+		newctx.status = status
+		return status
+	})
+	req.Header.Set("X-Trans-Id", ctx.TxId)
+	newWriter.Header().Set("X-Trans-Id", ctx.TxId)
+	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", newctx))
+	ctx.next.ServeHTTP(writer, req)
 }
 
 func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -237,18 +208,20 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 		}
 	}
 
-	newWriter := &proxyWriter{ResponseWriter: writer, Status: 501, ResponseStarted: false}
 	transId := common.GetTransactionId()
 	request.Header.Set("X-Trans-Id", transId)
-	newWriter.Header().Set("X-Trans-Id", transId)
+	writer.Header().Set("X-Trans-Id", transId)
+	writer.Header().Set("X-Openstack-Request-Id", transId)
 	request.Header.Set("X-Timestamp", common.GetTimestamp())
 	logr := m.log.With(zap.String("txn", transId))
 	ctx := &ProxyContext{
 		ProxyContextMiddleware: m,
 		Authorize:              nil,
 		Logger:                 logr,
+		TxId:                   transId,
+		responseSent:           false,
+		status:                 500,
 		accountInfoCache:       make(map[string]*AccountInfo),
-		capWriter:              newWriter,
 		C:                      client.NewProxyClient(m.proxyDirectClient, m.Cache, make(map[string]*client.ContainerInfo)),
 	}
 	// we'll almost certainly need the AccountInfo and ContainerInfo for the current path, so pre-fetch them in parallel.
@@ -257,23 +230,36 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 		wg := &sync.WaitGroup{}
 		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			if ctx.GetAccountInfo(account) == nil {
 				hdr := http.Header{
 					"X-Timestamp": []string{common.GetTimestamp()},
 				}
 				ctx.C.PutAccount(account, hdr) // Auto-create the account if we can't get its info
 			}
-			wg.Done()
 		}()
 		if container != "" {
 			wg.Add(1)
 			go func() {
+				defer wg.Done()
 				ctx.C.GetContainerInfo(account, container)
-				wg.Done()
 			}()
 		}
 		wg.Wait()
 	}
+	newWriter := srv.NewCustomWriter(writer, func(w http.ResponseWriter, status int) int {
+		// strip out any bad headers before calling real WriteHeader
+		for k := range w.Header() {
+			for _, ex := range excludeHeaders {
+				if strings.HasPrefix(k, ex) {
+					delete(w.Header(), k)
+				}
+			}
+		}
+		ctx.responseSent = true
+		ctx.status = status
+		return status
+	})
 	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", ctx))
 	m.next.ServeHTTP(newWriter, request)
 }

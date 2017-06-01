@@ -30,7 +30,7 @@ func Recover(w http.ResponseWriter, r *http.Request, msg string) {
 		if ctx := GetProxyContext(r); ctx != nil {
 			ctx.Logger.Error(msg, zap.Any("err", err), zap.String("txn", transactionId))
 			// if we haven't set a status code yet, we can send a 500 response.
-			if started, _ := ctx.capWriter.Response(); !started {
+			if started, _ := ctx.Response(); !started {
 				srv.StandardResponse(w, http.StatusInternalServerError)
 			}
 		}

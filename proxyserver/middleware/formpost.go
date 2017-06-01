@@ -226,7 +226,7 @@ func formpost(next http.Handler) http.Handler {
 				path += fn
 				neww := httptest.NewRecorder()
 				flr := &fpLimitReader{Reader: p, l: maxFileSize}
-				newreq, err := ctx.Subrequest("PUT", path, flr, neww)
+				newreq, err := http.NewRequest("PUT", path, flr)
 				if err != nil {
 					formpostRespond(writer, 500, "internal server error", attrs["redirect"])
 					return
@@ -238,7 +238,7 @@ func formpost(next http.Handler) http.Handler {
 				} else {
 					newreq.Header.Set("Content-Type", "application/octet-stream")
 				}
-				next.ServeHTTP(neww, newreq)
+				ctx.Subrequest(neww, newreq, "formpost")
 				if flr.overRead() {
 					formpostRespond(writer, 400, "max_file_size exceeded", attrs["redirect"])
 					return
