@@ -23,8 +23,7 @@ import (
 
 func ValidateRequest(next http.Handler) http.Handler {
 	fn := func(writer http.ResponseWriter, request *http.Request) {
-		if !srv.ValidateRequest(request) {
-			srv.StandardResponse(writer, 400)
+		if !srv.ValidateRequest(writer, request) {
 			return
 		}
 		next.ServeHTTP(writer, request)
