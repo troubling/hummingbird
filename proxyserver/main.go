@@ -123,7 +123,8 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 			{middleware.NewRatelimiter, "filter:ratelimit"},
 			{middleware.NewStaticWeb, "filter:staticweb"},
 			{middleware.NewCopyMiddleware, "filter:copy"},
-			{middleware.NewXlo, "filter:slo"},
+			{middleware.NewVersionedWrites, "filter:versioned_writes"},
+			{middleware.NewXlo, "fliter:slo"},
 		}
 	} else {
 		middlewares = []struct {
@@ -142,6 +143,7 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 			{middleware.NewRatelimiter, "filter:ratelimit"},
 			{middleware.NewStaticWeb, "filter:staticweb"},
 			{middleware.NewCopyMiddleware, "filter:copy"},
+			{middleware.NewVersionedWrites, "filter:versioned_writes"},
 			{middleware.NewXlo, "filter:slo"},
 		}
 	}
