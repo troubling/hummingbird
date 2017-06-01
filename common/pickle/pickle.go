@@ -152,6 +152,19 @@ func pickleobj(o interface{}, buf *bytes.Buffer, scratch []byte) error {
 			buf.WriteByte('l') // TUPLE
 			buf.WriteByte('R') // REDUCE
 		default: // why not serialize arbitrary structs as dicts while we're here
+			if v.NumField() == 2 && v.Type().Field(0).Name == "ArrayType" {
+				buf.WriteString("carray\narray\n")
+				buf.WriteByte('(') // MARK
+				if err := pickleobj(v.Field(0).Interface(), buf, scratch); err != nil {
+					return err
+				}
+				if err := pickleobj(v.Field(1).Interface(), buf, scratch); err != nil {
+					return err
+				}
+				buf.WriteByte('l') // TUPLE
+				buf.WriteByte('R') // REDUCE
+				return nil
+			}
 			buf.WriteByte('(') // MARK
 			for i := 0; i < v.Type().NumField(); i++ {
 				field := v.Type().Field(i)

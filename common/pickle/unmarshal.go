@@ -54,8 +54,11 @@ func unpack(src reflect.Value, dst reflect.Value) error {
 			dst.SetMapIndex(nk.Elem(), nv.Elem())
 		}
 	case reflect.Struct:
-		if src.Kind() != reflect.Map {
-			return errors.New("Unable to assign struct from non-map")
+		if src.Type() == reflect.TypeOf(PickleArray{}) && dst.NumField() == 2 && dst.Type().Field(0).Name == "ArrayType" {
+			if err := unpack(src.Field(0), dst.Field(0)); err != nil {
+				return err
+			}
+			return unpack(src.Field(1), dst.Field(1))
 		}
 		for _, k := range src.MapKeys() {
 			for k.Kind() == reflect.Ptr || k.Kind() == reflect.Interface {

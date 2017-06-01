@@ -185,21 +185,27 @@ func TestUnmarshalRingBuilder(t *testing.T) {
 		Id              int64   `pickle:"id"`
 	}
 	type RingBuilder struct {
-		LastPartGatherStart int64                         `pickle:"_last_part_gather_start"`
-		LastPartMovesEpoch  int64                         `pickle:"_last_part_moves_epoch"`
-		PartPower           int64                         `pickle:"part_power"`
-		DevsChanged         bool                          `pickle:"devs_changed"`
-		Replicas            float64                       `pickle:"replicas"`
-		MinPartHours        int64                         `pickle:"min_part_hours"`
-		Parts               int64                         `pickle:"parts"`
-		Overload            float64                       `pickle:"overload"`
-		Dispersion          float64                       `pickle:"dispersion"`
-		Version             int64                         `pickle:"version"`
-		Devices             []RingBuilderDevice           `pickle:"devs"`
-		RemoveDevs          []interface{}                 `pickle:"_remove_devs"`
-		LastPartMoves       PickleArray                   `pickle:"_last_part_moves"`
-		Replica2Part2Dev    []PickleArray                 `pickle:"_replica2part2dev"`
-		DispersionGraph     map[PickleTuple][]interface{} `pickle:"_dispersion_graph"`
+		LastPartGatherStart int64               `pickle:"_last_part_gather_start"`
+		LastPartMovesEpoch  int64               `pickle:"_last_part_moves_epoch"`
+		PartPower           int64               `pickle:"part_power"`
+		DevsChanged         bool                `pickle:"devs_changed"`
+		Replicas            float64             `pickle:"replicas"`
+		MinPartHours        int64               `pickle:"min_part_hours"`
+		Parts               int64               `pickle:"parts"`
+		Overload            float64             `pickle:"overload"`
+		Dispersion          float64             `pickle:"dispersion"`
+		Version             int64               `pickle:"version"`
+		Devices             []RingBuilderDevice `pickle:"devs"`
+		RemoveDevs          []interface{}       `pickle:"_remove_devs"`
+		LastPartMoves       struct {
+			ArrayType string // should be "B"
+			Data      []uint8
+		} `pickle:"_last_part_moves"`
+		Replica2Part2Dev []struct {
+			ArrayType string // should be "H"
+			Data      []uint
+		} `pickle:"_replica2part2dev"`
+		DispersionGraph map[PickleTuple][]interface{} `pickle:"_dispersion_graph"`
 	}
 	var dst RingBuilder
 	require.Nil(t, Unmarshal(data, &dst))
