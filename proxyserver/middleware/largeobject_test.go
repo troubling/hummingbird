@@ -133,6 +133,8 @@ func TestGetSlo(t *testing.T) {
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "/v1/a/c/o", nil)
 	require.Nil(t, err)
+	fakeContext := NewFakeProxyContext(next)
+	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", fakeContext))
 
 	sm.ServeHTTP(w, req)
 	resp := w.Result()
@@ -178,6 +180,8 @@ func TestGetSloRangeRequest(t *testing.T) {
 	req, err := http.NewRequest("GET", "/v1/a/c/o", nil)
 	require.Nil(t, err)
 	req.Header.Set("Range", "bytes=4-7")
+	fakeContext := NewFakeProxyContext(next)
+	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", fakeContext))
 
 	sm.ServeHTTP(w, req)
 	resp := w.Result()
@@ -226,6 +230,8 @@ func TestGetRangedSlo(t *testing.T) {
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "/v1/a/c/o", nil)
 	require.Nil(t, err)
+	fakeContext := NewFakeProxyContext(next)
+	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", fakeContext))
 
 	sm.ServeHTTP(w, req)
 	resp := w.Result()
@@ -285,6 +291,8 @@ func TestGetSuperSlo(t *testing.T) {
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "/v1/a/c/o", nil)
 	require.Nil(t, err)
+	fakeContext := NewFakeProxyContext(next)
+	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", fakeContext))
 
 	sm.ServeHTTP(w, req)
 	resp := w.Result()
@@ -335,6 +343,8 @@ func TestPutSlo(t *testing.T) {
 	req.Header.Set("Content-Type", "app/html")
 	req.Header.Set("Content-Length", strconv.Itoa(len(simplePutManifest)))
 	require.Nil(t, err)
+	fakeContext := NewFakeProxyContext(next)
+	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", fakeContext))
 
 	sm.ServeHTTP(w, req)
 	resp := w.Result()
@@ -388,6 +398,8 @@ func TestDeleteSlo(t *testing.T) {
 	req, err := http.NewRequest("DELETE", "/v1/a/c/o?multipart-manifest=delete", nil)
 	req.Header.Set("Content-Length", "0")
 	require.Nil(t, err)
+	fakeContext := NewFakeProxyContext(next)
+	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", fakeContext))
 
 	sm.ServeHTTP(w, req)
 	resp := w.Result()
@@ -436,9 +448,8 @@ func TestGetDlo(t *testing.T) {
 	sm := xloMiddleware{next: next}
 	w := httptest.NewRecorder()
 
-	fakeContext := NewFakeProxyContext()
-
 	req, err := http.NewRequest("GET", "/v1/a/c/o", nil)
+	fakeContext := NewFakeProxyContext(next)
 	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", fakeContext))
 	require.Nil(t, err)
 
