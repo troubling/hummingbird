@@ -143,11 +143,7 @@ func (server *ObjectServer) ObjGetHandler(writer http.ResponseWriter, request *h
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
-	lastModifiedHeader := lastModified
-	if lastModified.Nanosecond() > 0 { // for some reason, Last-Modified is ceil(X-Timestamp)
-		lastModifiedHeader = lastModified.Truncate(time.Second).Add(time.Second)
-	}
-	headers.Set("Last-Modified", lastModifiedHeader.Format(time.RFC1123))
+	headers.Set("Last-Modified", common.GetLastModifiedHeader(lastModified))
 	headers.Set("ETag", "\""+etag+"\"")
 	xTimestamp, err := common.GetEpochFromTimestamp(metadata["X-Timestamp"])
 	if err != nil {

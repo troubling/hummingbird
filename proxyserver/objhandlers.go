@@ -19,6 +19,7 @@ import (
 	"mime"
 	"net/http"
 	"path/filepath"
+	"time"
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/srv"
@@ -125,8 +126,10 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 		writer.Write([]byte(str))
 		return
 	}
-	request.Header.Set("X-Timestamp", common.GetTimestamp())
+	now := time.Now()
+	request.Header.Set("X-Timestamp", common.CanonicalTimestamp(float64(now.UnixNano())/1000000000.0))
 	h, code := ctx.C.PutObject(vars["account"], vars["container"], vars["obj"], request.Header, request.Body)
 	writer.Header().Set("Etag", h.Get("Etag"))
+	writer.Header().Set("Last-Modified", common.GetLastModifiedHeader(now))
 	srv.StandardResponse(writer, code)
 }
