@@ -80,6 +80,20 @@ var responseBodies = map[int]string{
 	504: fmt.Sprintf(responseTemplate, "Gateway Timeout", "A timeout has occurred speaking to a backend server."),
 }
 
+type customWriter struct {
+	http.ResponseWriter
+	f func(w http.ResponseWriter, status int) int
+}
+
+func (w *customWriter) WriteHeader(status int) {
+	w.ResponseWriter.WriteHeader(w.f(w, status))
+}
+
+// NewCustomWriter creates an http.ResponseWriter wrapper that calls your function on WriteHeader.
+func NewCustomWriter(w http.ResponseWriter, f func(w http.ResponseWriter, status int) int) http.ResponseWriter {
+	return &customWriter{ResponseWriter: w, f: f}
+}
+
 // ResponseWriter that saves its status - used for logging.
 
 type WebWriter struct {

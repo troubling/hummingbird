@@ -14,17 +14,16 @@ import (
 	"go.uber.org/zap"
 )
 
-func NewFakeProxyContext() *ProxyContext {
+func NewFakeProxyContext(next http.Handler) *ProxyContext {
 	return &ProxyContext{
+		ProxyContextMiddleware: &ProxyContextMiddleware{
+			next: next,
+		},
 		Logger: zap.NewNop(),
 	}
 }
 
 func TestGetSourceObject(t *testing.T) {
-	fakeContext := NewFakeProxyContext()
-	dummy, err := http.NewRequest("GET", "/someurl", nil)
-	dummy = dummy.WithContext(context.WithValue(dummy.Context(), "proxycontext", fakeContext))
-	require.Nil(t, err)
 	passthrough := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Hi", "There")
 		w.Header().Set("X-Hi", "There")
@@ -32,6 +31,10 @@ func TestGetSourceObject(t *testing.T) {
 		w.WriteHeader(200)
 		w.Write([]byte("stuff"))
 	})
+	fakeContext := NewFakeProxyContext(passthrough)
+	dummy, err := http.NewRequest("GET", "/someurl", nil)
+	dummy = dummy.WithContext(context.WithValue(dummy.Context(), "proxycontext", fakeContext))
+	require.Nil(t, err)
 
 	c := &copyMiddleware{
 		next: passthrough,
@@ -60,7 +63,7 @@ func TestPut(t *testing.T) {
 	req, _ := http.NewRequest("PUT", "/v1/a/c/o2", nil)
 	req.Header.Set("X-Copy-From", "c/o")
 
-	ctx := NewFakeProxyContext()
+	ctx := NewFakeProxyContext(handler)
 	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", ctx))
 
 	handler.ServeHTTP(rr, req)
@@ -87,7 +90,7 @@ func TestPutAllNewMeta(t *testing.T) {
 	req.Header.Set("Content-Type", "NewObjectContentType")
 	req.Header.Set("X-Object-Metadata-Foo", "NewObjectMetadataFoo")
 
-	ctx := NewFakeProxyContext()
+	ctx := NewFakeProxyContext(handler)
 	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", ctx))
 
 	handler.ServeHTTP(rr, req)
@@ -109,7 +112,7 @@ func TestCopy(t *testing.T) {
 	// 412, no Destination
 	rr := httptest.NewRecorder()
 	req, _ := http.NewRequest("COPY", "/v1/a/c/o", nil)
-	ctx := NewFakeProxyContext()
+	ctx := NewFakeProxyContext(handler)
 	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", ctx))
 	handler.ServeHTTP(rr, req)
 
@@ -121,7 +124,7 @@ func TestCopy(t *testing.T) {
 	// 412, bad Destination
 	rr = httptest.NewRecorder()
 	req, _ = http.NewRequest("COPY", "/v1/a/c/o", nil)
-	ctx = NewFakeProxyContext()
+	ctx = NewFakeProxyContext(handler)
 	req.Header.Set("Destination", common.Urlencode("//o2"))
 	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", ctx))
 
@@ -132,7 +135,7 @@ func TestCopy(t *testing.T) {
 	// 200, specifying Destination
 	rr = httptest.NewRecorder()
 	req, _ = http.NewRequest("COPY", "/v1/a/c/o", nil)
-	ctx = NewFakeProxyContext()
+	ctx = NewFakeProxyContext(handler)
 	req.Header.Set("Destination", common.Urlencode("c/o2"))
 	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", ctx))
 
@@ -153,7 +156,7 @@ func TestCopy(t *testing.T) {
 	// 200, specifying Destination and Destination-Account
 	rr = httptest.NewRecorder()
 	req, _ = http.NewRequest("COPY", "/v1/a/c/o", nil)
-	ctx = NewFakeProxyContext()
+	ctx = NewFakeProxyContext(handler)
 	req.Header.Set("Destination", common.Urlencode("c/o2"))
 	req.Header.Set("Destination-Account", common.Urlencode("a2"))
 	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", ctx))
@@ -288,7 +291,7 @@ func TestPostAsCopy(t *testing.T) {
 	rr := httptest.NewRecorder()
 	req, _ := http.NewRequest("POST", "/v1/a/c/o", nil)
 
-	ctx := NewFakeProxyContext()
+	ctx := NewFakeProxyContext(handler)
 	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", ctx))
 
 	handler.ServeHTTP(rr, req)

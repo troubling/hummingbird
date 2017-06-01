@@ -31,6 +31,8 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/stretchr/testify/require"
 	"github.com/troubling/hummingbird/client"
 )
@@ -42,12 +44,15 @@ func makeFormpostRequest(t *testing.T, body, boundary string, next http.Handler)
 	newr.Header.Set("Content-Type", "multipart/form-data; boundary="+boundary)
 	neww := httptest.NewRecorder()
 	ctx := &ProxyContext{
+		Logger: zap.NewNop(),
 		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
 			"container/AUTH_test/container": {Metadata: map[string]string{"Temp-Url-Key": "mykey"}},
 		}),
 		accountInfoCache: map[string]*AccountInfo{
 			"account/AUTH_test": {Metadata: map[string]string{"Temp-Url-Key": "mykey"}}},
-		capWriter: &proxyWriter{ResponseWriter: neww, Status: 501},
+		ProxyContextMiddleware: &ProxyContextMiddleware{
+			next: next,
+		},
 	}
 	newr = newr.WithContext(context.WithValue(newr.Context(), "proxycontext", ctx))
 	formpost(next).ServeHTTP(neww, newr)
@@ -151,6 +156,7 @@ func TestFpLimitReader(t *testing.T) {
 // func authorizeFormpost(ctx *ProxyContext, account, container, path string, attrs map[string]string) int {
 func TestAuthenticateFormpost(t *testing.T) {
 	ctx := &ProxyContext{
+		Logger: zap.NewNop(),
 		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
 			"container/a/c": {Metadata: map[string]string{
 				"Temp-Url-Key":   "containerkey",

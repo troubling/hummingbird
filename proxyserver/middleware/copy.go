@@ -30,7 +30,7 @@ import (
 )
 
 type CopyWriter struct {
-	w             http.ResponseWriter
+	http.ResponseWriter
 	Logger        srv.LowLevelLogger
 	accountName   string
 	containerName string
@@ -39,19 +39,11 @@ type CopyWriter struct {
 	postAsCopy    bool
 }
 
-func (cw *CopyWriter) Write(stuff []byte) (int, error) {
-	return cw.w.Write(stuff)
-}
-
-func (cw *CopyWriter) Header() http.Header {
-	return cw.w.Header()
-}
-
 func (cw *CopyWriter) WriteHeader(status int) {
 	if cw.postAsCopy && status == http.StatusCreated {
-		cw.w.WriteHeader(http.StatusAccepted)
+		cw.ResponseWriter.WriteHeader(http.StatusAccepted)
 	} else {
-		cw.w.WriteHeader(status)
+		cw.ResponseWriter.WriteHeader(status)
 	}
 }
 
@@ -141,7 +133,7 @@ func NewPipeResponseWriter(writer *io.PipeWriter, done chan bool, logger srv.Low
 
 func (c *copyMiddleware) getSourceObject(object string, request *http.Request) (io.ReadCloser, http.Header, int) {
 	ctx := GetProxyContext(request)
-	subRequest, err := ctx.NewSubRequest(request, "GET", object, nil)
+	subRequest, err := http.NewRequest("GET", object, nil)
 	if err != nil {
 		ctx.Logger.Error("getSourceObject GET error", zap.Error(err))
 		return nil, nil, 400
@@ -155,7 +147,7 @@ func (c *copyMiddleware) getSourceObject(object string, request *http.Request) (
 	done := make(chan bool)
 	writer := NewPipeResponseWriter(pipeWriter, done, ctx.Logger)
 	go func() {
-		c.next.ServeHTTP(writer, subRequest)
+		ctx.Subrequest(writer, subRequest, "copy")
 		writer.Close()
 	}()
 	<-done
@@ -403,11 +395,11 @@ func (c *copyMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Req
 	}
 
 	cw := &CopyWriter{
-		w:             writer,
-		Logger:        ctx.Logger,
-		accountName:   account,
-		containerName: container,
-		objectName:    object,
+		ResponseWriter: writer,
+		Logger:         ctx.Logger,
+		accountName:    account,
+		containerName:  container,
+		objectName:     object,
 	}
 
 	if request.Method == "PUT" && request.Header.Get("X-Copy-From") != "" {
@@ -422,7 +414,7 @@ func (c *copyMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Req
 		c.handlePostAsCopy(cw, request)
 		return
 	}
-	c.next.ServeHTTP(cw, request)
+	c.next.ServeHTTP(writer, request)
 }
 
 func NewCopyMiddleware(config conf.Section) (func(http.Handler) http.Handler, error) {
