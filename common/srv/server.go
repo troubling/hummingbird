@@ -148,8 +148,17 @@ type WebWriterInterface interface {
 	Response() (bool, int)
 }
 
-func ValidateRequest(r *http.Request) bool {
-	return utf8.ValidString(r.URL.Path) && utf8.ValidString(r.Header.Get("Content-Type"))
+func ValidateRequest(w http.ResponseWriter, r *http.Request) bool {
+	// if invalid request will right own response and return false, otherwise true
+	if !utf8.ValidString(r.URL.Path) {
+		SimpleErrorResponse(w, 412, "Invalid UTF8 or contains NULL")
+		return false
+	}
+	if !utf8.ValidString(r.Header.Get("Content-Type")) {
+		SimpleErrorResponse(w, 400, "Invalid UTF8 or contains NULL")
+		return false
+	}
+	return true
 }
 
 type LowLevelLogger interface {

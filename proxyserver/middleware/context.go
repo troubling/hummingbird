@@ -213,8 +213,7 @@ func (ctx *ProxyContext) Subrequest(method, path string, body io.Reader, writer 
 }
 
 func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
-	if !srv.ValidateRequest(request) {
-		srv.StandardResponse(writer, 400)
+	if !srv.ValidateRequest(writer, request) {
 		return
 	}
 
