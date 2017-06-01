@@ -114,7 +114,7 @@ func (sw *segWriter) WriteUpstreamHeader() {
 		sw.Header().Set("X-Static-Large-Object", "True")
 	}
 	sw.ResponseWriter.WriteHeader(sw.Status)
-	sw.Header().Set("X-Static-Large-Object", "")
+	sw.Header().Del("X-Static-Large-Object")
 }
 
 func (sw *segWriter) WriteHeader(status int) {
@@ -122,8 +122,7 @@ func (sw *segWriter) WriteHeader(status int) {
 	if sw.throwAwayHeader { // DLO segments cannot be sub-DLOs. just treat as bytes
 		return
 	}
-	cLen, _ := strconv.ParseInt(sw.Header().Get("Content-Length"), 10, 64)
-	sw.ContentLength = int64(cLen)
+	sw.ContentLength, _ = strconv.ParseInt(sw.Header().Get("Content-Length"), 10, 64)
 	sw.ContentRange = sw.Header().Get("Content-Range")
 	sw.Etag = strings.Trim(sw.Header().Get("Etag"), "\"")
 	sw.ContentType = sw.Header().Get("Content-Type")
@@ -137,7 +136,7 @@ func (sw *segWriter) WriteHeader(status int) {
 	if isSlo := sw.Header().Get("X-Static-Large-Object"); isSlo == "True" {
 		sw.isSlo = true
 		sw.cacheBytes = true
-		sw.Header().Set("X-Static-Large-Object", "")
+		sw.Header().Del("X-Static-Large-Object")
 	}
 	if !sw.isSlo && !sw.isDlo && sw.allowWriteHeader {
 		sw.ResponseWriter.WriteHeader(status)
