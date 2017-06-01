@@ -178,6 +178,7 @@ func (ctx *ProxyContext) Subrequest(writer http.ResponseWriter, req *http.Reques
 		return status
 	})
 	req.Header.Set("X-Trans-Id", ctx.TxId)
+	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	newWriter.Header().Set("X-Trans-Id", ctx.TxId)
 	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", newctx))
 	ctx.next.ServeHTTP(writer, req)

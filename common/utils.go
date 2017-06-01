@@ -38,7 +38,7 @@ type httpRange struct {
 	Start, End int64
 }
 
-var GMT *time.Location
+var GMT = time.FixedZone("GMT", 0)
 
 var urlSafeMap = [256]bool{'A': true, 'B': true, 'C': true, 'D': true, 'E': true, 'F': true,
 	'G': true, 'H': true, 'I': true, 'J': true, 'K': true, 'L': true, 'M': true, 'N': true,
@@ -80,12 +80,9 @@ func Urlencode(str string) string {
 }
 
 func ParseDate(date string) (time.Time, error) {
-	if GMT == nil {
-		var err error
-		GMT, err = time.LoadLocation("GMT")
-		if err != nil {
-			return time.Now(), err
-		}
+	if timestamp, err := strconv.ParseFloat(date, 64); err == nil {
+		nans := int64((timestamp - float64(int64(timestamp))) * 1.0e9)
+		return time.Unix(int64(timestamp), nans).In(GMT), nil
 	}
 	if ius, err := time.ParseInLocation(time.RFC1123, date, GMT); err == nil {
 		return ius, nil
@@ -99,23 +96,14 @@ func ParseDate(date string) (time.Time, error) {
 	if ius, err := time.ParseInLocation(time.RFC850, date, GMT); err == nil {
 		return ius, nil
 	}
-	if strings.Contains(date, "_") {
-		all_date_parts := strings.Split(date, "_")
-		date = all_date_parts[0]
+	if ius, err := time.ParseInLocation(time.RFC3339, date, GMT); err == nil {
+		return ius, nil
 	}
-	if timestamp, err := strconv.ParseFloat(date, 64); err == nil {
-		nans := int64((timestamp - float64(int64(timestamp))) * 1.0e9)
-		return time.Unix(int64(timestamp), nans).In(GMT), nil
+	if strings.Contains(date, "_") {
+		allDateParts := strings.Split(date, "_")
+		return ParseDate(allDateParts[0])
 	}
 	return time.Now(), errors.New("invalid time")
-}
-
-func FormatTimestamp(timestamp string) (string, error) {
-	parsed, err := ParseDate(timestamp)
-	if err != nil {
-		return "", err
-	}
-	return parsed.Format("2006-01-02T15:04:05.999999"), nil
 }
 
 func CanonicalTimestamp(t float64) string {
@@ -139,11 +127,11 @@ func GetTimestamp() string {
 	return CanonicalTimestamp(float64(time.Now().UnixNano()) / 1000000000.0)
 }
 
-func GetLastModifiedHeader(lastModified time.Time) string {
+func FormatLastModified(lastModified time.Time) string {
 	if lastModified.Nanosecond() > 0 { // for some reason, Last-Modified is ceil(X-Timestamp)
 		lastModified = lastModified.Truncate(time.Second).Add(time.Second)
 	}
-	return lastModified.Format("Mon, 02 Jan 2006 15:04:05 GMT")
+	return lastModified.In(GMT).Format(time.RFC1123)
 }
 
 func GetTransactionId() string {

@@ -181,23 +181,6 @@ func TestGetEpochFromTimestamp_invalidTimestamp(t *testing.T) {
 	assert.Equal(t, err.Error(), "Could not parse float from 'invalidTimestamp'.")
 }
 
-func TestParseTimestamp(t *testing.T) {
-	tests := []string{
-		"2006-01-02 15:04:05",
-		"Mon, 02 Jan 2006 15:04:05 MST",
-	}
-
-	for _, timestamp := range tests {
-		timeResult, err := FormatTimestamp(timestamp)
-		if err != nil {
-			assert.Equal(t, err.Error(), "invalid time")
-			assert.Empty(t, timeResult)
-		} else {
-			assert.Equal(t, "2006-01-02T15:04:05", timeResult)
-		}
-	}
-}
-
 func TestLooksTrue(t *testing.T) {
 	tests := []string{
 		"true ", "true", "t", "yes", "y", "1", "on",

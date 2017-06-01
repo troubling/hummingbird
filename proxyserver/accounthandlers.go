@@ -84,7 +84,6 @@ func (server *ProxyServer) AccountPostHandler(writer http.ResponseWriter, reques
 		return
 	}
 	defer ctx.InvalidateAccountInfo(vars["account"])
-	request.Header.Set("X-Timestamp", common.GetTimestamp())
 	srv.StandardResponse(writer, ctx.C.PostAccount(vars["account"], request.Header))
 }
 
@@ -100,7 +99,6 @@ func (server *ProxyServer) AccountPutHandler(writer http.ResponseWriter, request
 		return
 	}
 	defer ctx.InvalidateAccountInfo(vars["account"])
-	request.Header.Set("X-Timestamp", common.GetTimestamp())
 	srv.StandardResponse(writer, ctx.C.PutAccount(vars["account"], request.Header))
 }
 
@@ -116,6 +114,5 @@ func (server *ProxyServer) AccountDeleteHandler(writer http.ResponseWriter, requ
 		return
 	}
 	defer ctx.InvalidateAccountInfo(vars["account"])
-	request.Header.Set("X-Timestamp", common.GetTimestamp())
 	srv.StandardResponse(writer, ctx.C.DeleteAccount(vars["account"], request.Header))
 }

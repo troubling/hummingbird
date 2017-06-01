@@ -101,7 +101,6 @@ func (server *ProxyServer) ContainerPostHandler(writer http.ResponseWriter, requ
 		writer.Write([]byte(str))
 		return
 	}
-	request.Header.Set("X-Timestamp", common.GetTimestamp())
 	srv.StandardResponse(writer, ctx.C.PostContainer(vars["account"], vars["container"], request.Header))
 }
 
@@ -126,7 +125,6 @@ func (server *ProxyServer) ContainerPutHandler(writer http.ResponseWriter, reque
 		writer.Write([]byte(str))
 		return
 	}
-	request.Header.Set("X-Timestamp", common.GetTimestamp())
 	srv.StandardResponse(writer, ctx.C.PutContainer(vars["account"], vars["container"], request.Header))
 }
 
@@ -145,6 +143,5 @@ func (server *ProxyServer) ContainerDeleteHandler(writer http.ResponseWriter, re
 		srv.StandardResponse(writer, 401)
 		return
 	}
-	request.Header.Set("X-Timestamp", common.GetTimestamp())
 	srv.StandardResponse(writer, ctx.C.DeleteContainer(vars["account"], vars["container"], request.Header))
 }
