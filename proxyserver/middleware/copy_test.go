@@ -23,34 +23,6 @@ func NewFakeProxyContext(next http.Handler) *ProxyContext {
 	}
 }
 
-func TestGetSourceObject(t *testing.T) {
-	passthrough := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Hi", "There")
-		w.Header().Set("X-Hi", "There")
-		w.Header().Set("Content-Length", "5")
-		w.WriteHeader(200)
-		w.Write([]byte("stuff"))
-	})
-	fakeContext := NewFakeProxyContext(passthrough)
-	dummy, err := http.NewRequest("GET", "/someurl", nil)
-	dummy = dummy.WithContext(context.WithValue(dummy.Context(), "proxycontext", fakeContext))
-	require.Nil(t, err)
-
-	c := &copyMiddleware{
-		next: passthrough,
-	}
-
-	body, header, code := c.getSourceObject("/ver/a/c/o", dummy, false)
-	require.Equal(t, 200, code)
-	buf := make([]byte, 1024)
-	num, err := body.Read(buf)
-	require.Nil(t, err)
-	require.Equal(t, 5, num)
-	require.Equal(t, "stuff", string(buf[:5]))
-	require.NotNil(t, header)
-	require.NotNil(t, body)
-}
-
 func TestPut(t *testing.T) {
 	section := conf.Section{}
 	c, err := NewCopyMiddleware(section)
