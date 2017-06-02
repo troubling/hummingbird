@@ -163,11 +163,17 @@ func (ctx *ProxyContext) InvalidateAccountInfo(account string) {
 	ctx.Cache.Delete(key)
 }
 
-func (ctx *ProxyContext) Subrequest(writer http.ResponseWriter, req *http.Request, source string) {
+func (ctx *ProxyContext) Subrequest(writer http.ResponseWriter, req *http.Request, source string, skipAuth bool) {
+	authorize := ctx.Authorize
+	authorizeOverride := ctx.AuthorizeOverride
+	if skipAuth {
+		authorize = nil
+		authorizeOverride = true
+	}
 	newctx := &ProxyContext{
 		ProxyContextMiddleware: ctx.ProxyContextMiddleware,
-		Authorize:              ctx.Authorize,
-		AuthorizeOverride:      ctx.AuthorizeOverride,
+		Authorize:              authorize,
+		AuthorizeOverride:      authorizeOverride,
 		Logger:                 ctx.Logger.With(zap.String("src", source)),
 		C:                      ctx.C,
 		TxId:                   ctx.TxId,
