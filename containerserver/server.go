@@ -115,7 +115,7 @@ func (server *ContainerServer) ContainerGetHandler(writer http.ResponseWriter, r
 	}
 	headers := writer.Header()
 	if lastModified, err := common.ParseDate(info.PutTimestamp); err == nil {
-		headers.Set("Last-Modified", common.GetLastModifiedHeader(lastModified))
+		headers.Set("Last-Modified", common.FormatLastModified(lastModified))
 	}
 	if ts, err := common.GetEpochFromTimestamp(info.CreatedAt); err == nil {
 		headers.Set("X-Backend-Timestamp", ts)

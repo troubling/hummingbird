@@ -19,7 +19,6 @@ import (
 	"mime"
 	"net/http"
 	"path/filepath"
-	"time"
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/srv"
@@ -89,7 +88,6 @@ func (server *ProxyServer) ObjectDeleteHandler(writer http.ResponseWriter, reque
 		srv.StandardResponse(writer, 401)
 		return
 	}
-	request.Header.Set("X-Timestamp", common.GetTimestamp())
 	srv.StandardResponse(writer, ctx.C.DeleteObject(vars["account"], vars["container"], vars["obj"], request.Header))
 }
 
@@ -126,10 +124,10 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 		writer.Write([]byte(str))
 		return
 	}
-	now := time.Now()
-	request.Header.Set("X-Timestamp", common.CanonicalTimestamp(float64(now.UnixNano())/1000000000.0))
 	h, code := ctx.C.PutObject(vars["account"], vars["container"], vars["obj"], request.Header, request.Body)
 	writer.Header().Set("Etag", h.Get("Etag"))
-	writer.Header().Set("Last-Modified", common.GetLastModifiedHeader(now))
+	if modified, err := common.ParseDate(request.Header.Get("X-Timestamp")); err == nil {
+		writer.Header().Set("Last-Modified", common.FormatLastModified(modified))
+	}
 	srv.StandardResponse(writer, code)
 }

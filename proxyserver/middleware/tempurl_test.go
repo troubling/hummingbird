@@ -25,6 +25,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/troubling/hummingbird/client"
+	"github.com/troubling/hummingbird/common"
 )
 
 func TestDispositionFormat(t *testing.T) {
@@ -33,15 +34,15 @@ func TestDispositionFormat(t *testing.T) {
 }
 
 func TestParseExpires(t *testing.T) {
-	d, err := parseExpires("1493708668")
+	d, err := common.ParseDate("1493708668")
 	require.Nil(t, err)
 	require.EqualValues(t, 1493708668, d.Unix())
 
-	d, err = parseExpires("2017-05-02T07:04:28Z")
+	d, err = common.ParseDate("2017-05-02T07:04:28Z")
 	require.Nil(t, err)
 	require.EqualValues(t, 1493708668, d.Unix())
 
-	d, err = parseExpires("FAIL")
+	d, err = common.ParseDate("FAIL")
 	require.NotNil(t, err)
 }
 

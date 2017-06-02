@@ -65,7 +65,7 @@ func (o *fpLimitReader) Read(p []byte) (int, error) {
 }
 
 func authenticateFormpost(ctx *ProxyContext, account, container, path string, attrs map[string]string) int {
-	if expires, err := parseExpires(attrs["expires"]); err != nil {
+	if expires, err := common.ParseDate(attrs["expires"]); err != nil {
 		return FP_ERROR
 	} else if time.Now().After(expires) {
 		return FP_EXPIRED

@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -74,16 +73,6 @@ func (w *tuWriter) WriteHeader(status int) {
 	w.ResponseWriter.WriteHeader(status)
 }
 
-func parseExpires(s string) (expires time.Time, err error) {
-	if timestamp, err := strconv.ParseInt(s, 10, 64); err == nil {
-		return time.Unix(timestamp, 0).In(time.UTC), nil
-	} else if expires, err = time.ParseInLocation(time.RFC3339, s, time.UTC); err == nil {
-		return expires, nil
-	} else {
-		return expires, err
-	}
-}
-
 func checkhmac(key, sig []byte, method, path string, expires time.Time) bool {
 	if method == "HEAD" {
 		for _, meth := range []string{"HEAD", "GET", "POST", "PUT"} {
@@ -125,7 +114,7 @@ func tempurl(next http.Handler) http.Handler {
 			return
 		}
 
-		expires, err := parseExpires(exps)
+		expires, err := common.ParseDate(exps)
 		if err != nil || time.Now().After(expires) {
 			srv.StandardResponse(writer, 401)
 			return
