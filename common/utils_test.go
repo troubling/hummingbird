@@ -18,6 +18,7 @@ package common
 import (
 	"bytes"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,7 +32,7 @@ func TestParseRange(t *testing.T) {
 		fileSize    int64
 		rangeHeader string
 		exError     string
-		exRanges    []httpRange
+		exRanges    []HttpRange
 	}{
 		{12345, "bytes=12346-123457", "Unsatisfiable range", nil},
 		{12345, "bytes=12346-", "Unsatisfiable range", nil},
@@ -41,25 +42,25 @@ func TestParseRange(t *testing.T) {
 		{12345, "bytes=-", "", nil},
 		{12345, "bytes=-cv", "", nil},
 		{12345, "bytes=cv-", "", nil},
-		{12345, "bytes=-12346", "", []httpRange{{0, 12345}}},
-		{12345, "bytes=-12345", "", []httpRange{{0, 12345}}},
-		{12345, "bytes=-12344", "", []httpRange{{1, 12345}}},
-		{12345, "bytes=12344-", "", []httpRange{{12344, 12345}}},
+		{12345, "bytes=-12346", "", []HttpRange{{0, 12345}}},
+		{12345, "bytes=-12345", "", []HttpRange{{0, 12345}}},
+		{12345, "bytes=-12344", "", []HttpRange{{1, 12345}}},
+		{12345, "bytes=12344-", "", []HttpRange{{12344, 12345}}},
 		{12345, "bytes=12344-cv", "", nil},
 		{12345, "bytes=13-12", "", nil},
 		{12345, "bytes=cv-12345", "", nil},
-		{12345, "bytes=12342-12343", "", []httpRange{{12342, 12344}}},
-		{12345, "bytes=12342-12344", "", []httpRange{{12342, 12345}}},
-		{12345, "bytes=12342-12345", "", []httpRange{{12342, 12345}}},
-		{12345, "bytes=0-1,2-3", "", []httpRange{{0, 2}, {2, 4}}},
+		{12345, "bytes=12342-12343", "", []HttpRange{{12342, 12344}}},
+		{12345, "bytes=12342-12344", "", []HttpRange{{12342, 12345}}},
+		{12345, "bytes=12342-12345", "", []HttpRange{{12342, 12345}}},
+		{12345, "bytes=0-1,2-3", "", []HttpRange{{0, 2}, {2, 4}}},
 		{12345, "bytes=0-1,x-x", "", nil},
 		{12345, "bytes=0-1,x-x,2-3", "", nil},
 		{12345, "bytes=0-1,x-", "", nil},
-		{12345, "bytes=0-1,2-3,4-5", "", []httpRange{{0, 2}, {2, 4}, {4, 6}}},
-		{10000, "bytes=0-99,200-299,10000-10099", "", []httpRange{{0, 100}, {200, 300}}},
+		{12345, "bytes=0-1,2-3,4-5", "", []HttpRange{{0, 2}, {2, 4}, {4, 6}}},
+		{10000, "bytes=0-99,200-299,10000-10099", "", []HttpRange{{0, 100}, {200, 300}}},
 		{10000, "bytes=-0", "Unsatisfiable range", nil},
 		{10000, "bytes=-0", "Unsatisfiable range", nil},
-		{10000, "bytes=0-1,-0", "", []httpRange{{0, 2}}},
+		{10000, "bytes=0-1,-0", "", []HttpRange{{0, 2}}},
 		{0, "bytes=-0", "Unsatisfiable range", nil},
 		{0, "bytes=0-", "Unsatisfiable range", nil},
 		{0, "bytes=0-1", "Unsatisfiable range", nil},
@@ -280,4 +281,21 @@ func TestNoEmptyName(t *testing.T) {
 	require.NotNil(t, err)
 	require.Contains(t, err.Error(), "ignored name cannot be empty")
 	require.Equal(t, checked, "")
+}
+
+func TestParseContentTypeForSlo(t *testing.T) {
+	ct, size, err := ParseContentTypeForSlo("text/html", int64(12))
+	require.Equal(t, ct, "text/html")
+	require.Equal(t, size, int64(12))
+	require.Nil(t, err)
+
+	ct, size, err = ParseContentTypeForSlo("text/html;swift_bytes=36", int64(12))
+	require.Equal(t, ct, "text/html")
+	require.Equal(t, size, int64(36))
+	require.False(t, strings.Contains(ct, ";"))
+	require.Nil(t, err)
+
+	ct, size, err = ParseContentTypeForSlo("text/html;swift_bytes=moo", int64(12))
+	require.Equal(t, ct, "")
+	require.NotNil(t, err)
 }
