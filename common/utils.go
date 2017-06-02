@@ -485,3 +485,13 @@ func StringInSlice(s string, slice []string) bool {
 	}
 	return false
 }
+
+func IsOriginAllowed(allowedOriginHeader, requestOrigin string) bool {
+	allowOrigins := strings.Split(allowedOriginHeader, " ")
+	for _, o := range allowOrigins {
+		if o == "*" || o == requestOrigin {
+			return true
+		}
+	}
+	return false
+}

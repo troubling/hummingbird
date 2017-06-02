@@ -191,10 +191,16 @@ func (mr *FakeMemcacheRing) SetMulti(serverKey string, values map[string]interfa
 	return nil
 }
 
-type MockResponseWriter struct{}
+type MockResponseWriter struct {
+	SaveHeader *http.Header
+	StatusMap  map[string]int
+}
 
 func (m MockResponseWriter) Header() (h http.Header) {
-	return http.Header{}
+	if m.SaveHeader == nil {
+		return http.Header{}
+	}
+	return *m.SaveHeader
 }
 
 func (m MockResponseWriter) Write(p []byte) (n int, err error) {
@@ -205,4 +211,8 @@ func (m MockResponseWriter) WriteString(s string) (n int, err error) {
 	return len(s), nil
 }
 
-func (m MockResponseWriter) WriteHeader(int) {}
+func (m MockResponseWriter) WriteHeader(s int) {
+	if m.StatusMap != nil {
+		m.StatusMap["S"] = s
+	}
+}

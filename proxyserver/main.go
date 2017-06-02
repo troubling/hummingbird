@@ -50,6 +50,7 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 	router.Head("/v1/:account/:container/*obj", http.HandlerFunc(server.ObjectHeadHandler))
 	router.Put("/v1/:account/:container/*obj", http.HandlerFunc(server.ObjectPutHandler))
 	router.Delete("/v1/:account/:container/*obj", http.HandlerFunc(server.ObjectDeleteHandler))
+	router.Options("/v1/:account/:container/*obj", http.HandlerFunc(server.OptionsHandler))
 
 	router.Get("/v1/:account/:container", http.HandlerFunc(server.ContainerGetHandler))
 	router.Get("/v1/:account/:container/", http.HandlerFunc(server.ContainerGetHandler))
@@ -61,6 +62,8 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 	router.Delete("/v1/:account/:container/", http.HandlerFunc(server.ContainerDeleteHandler))
 	router.Post("/v1/:account/:container", http.HandlerFunc(server.ContainerPostHandler))
 	router.Post("/v1/:account/:container/", http.HandlerFunc(server.ContainerPostHandler))
+	router.Options("/v1/:account/:container", http.HandlerFunc(server.OptionsHandler))
+	router.Options("/v1/:account/:container/", http.HandlerFunc(server.OptionsHandler))
 
 	router.Get("/v1/:account", http.HandlerFunc(server.AccountGetHandler))
 	router.Get("/v1/:account/", http.HandlerFunc(server.AccountGetHandler))
@@ -72,6 +75,8 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 	router.Delete("/v1/:account/", http.HandlerFunc(server.AccountDeleteHandler))
 	router.Post("/v1/:account", http.HandlerFunc(server.AccountPostHandler))
 	router.Post("/v1/:account/", http.HandlerFunc(server.AccountPostHandler))
+	router.Options("/v1/:account", http.HandlerFunc(server.OptionsHandler))
+	router.Options("/v1/:account/", http.HandlerFunc(server.OptionsHandler))
 
 	tempAuth := config.GetBool("proxy-server", "tempauth_enabled", true)
 	var middlewares []struct {
