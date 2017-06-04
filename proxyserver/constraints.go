@@ -43,13 +43,17 @@ func CheckMetadata(req *http.Request, targetType string) (int, string) {
 	metaSize := 0
 	metaPrefix := fmt.Sprintf("X-%s-Meta-", targetType)
 	for key := range req.Header {
-		if len(key) > MAX_HEADER_SIZE {
-			return http.StatusBadRequest, fmt.Sprintf("Header value too long: %s", key[:MAX_META_NAME_LENGTH])
+		value := req.Header.Get(key)
+		if len(value) > MAX_HEADER_SIZE {
+			errStr := fmt.Sprintf("Header value too long: %s", key)
+			if len(key) > MAX_META_NAME_LENGTH {
+				errStr = fmt.Sprintf("Header value too long: %s", key[:MAX_META_NAME_LENGTH])
+			}
+			return http.StatusBadRequest, errStr
 		}
 		if !strings.HasPrefix(key, metaPrefix) {
 			continue
 		}
-		value := req.Header.Get(key)
 		key = key[len(metaPrefix):]
 		metaCount += 1
 		metaSize += len(key) + len(value)
