@@ -83,6 +83,12 @@ func (server *ProxyServer) AccountPostHandler(writer http.ResponseWriter, reques
 		srv.StandardResponse(writer, 401)
 		return
 	}
+	if status, str := CheckMetadata(request, "Account"); status != http.StatusOK {
+		writer.Header().Set("Content-Type", "text/plain")
+		writer.WriteHeader(status)
+		writer.Write([]byte(str))
+		return
+	}
 	defer ctx.InvalidateAccountInfo(vars["account"])
 	srv.StandardResponse(writer, ctx.C.PostAccount(vars["account"], request.Header))
 }
@@ -96,6 +102,12 @@ func (server *ProxyServer) AccountPutHandler(writer http.ResponseWriter, request
 	}
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
 		srv.StandardResponse(writer, 401)
+		return
+	}
+	if status, str := CheckMetadata(request, "Account"); status != http.StatusOK {
+		writer.Header().Set("Content-Type", "text/plain")
+		writer.WriteHeader(status)
+		writer.Write([]byte(str))
 		return
 	}
 	defer ctx.InvalidateAccountInfo(vars["account"])

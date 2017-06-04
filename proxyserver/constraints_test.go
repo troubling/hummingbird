@@ -116,7 +116,7 @@ func TestBadXDeleteAfter(t *testing.T) {
 func TestTooBigHeader(t *testing.T) {
 	req, err := http.NewRequest("PUT", "/v1/a/c/o", nil)
 	require.Nil(t, err)
-	req.Header.Set(strings.Repeat("X", MAX_HEADER_SIZE+1), "X")
+	req.Header.Set("X", strings.Repeat("X", MAX_HEADER_SIZE+1))
 	status, _ := CheckMetadata(req, "Object")
 	require.Equal(t, status, http.StatusBadRequest)
 }
