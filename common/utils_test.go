@@ -18,8 +18,8 @@ package common
 import (
 	"bytes"
 	"net/http"
-	"strings"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 

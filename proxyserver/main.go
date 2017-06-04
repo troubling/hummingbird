@@ -19,7 +19,6 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
-	_ "net/http/pprof"
 	"strings"
 
 	"github.com/troubling/hummingbird/client"
@@ -72,9 +71,6 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 	router.Delete("/v1/:account/", http.HandlerFunc(server.AccountDeleteHandler))
 	router.Post("/v1/:account", http.HandlerFunc(server.AccountPostHandler))
 	router.Post("/v1/:account/", http.HandlerFunc(server.AccountPostHandler))
-
-	router.Get("/debug/pprof/:parm", http.DefaultServeMux)
-	router.Post("/debug/pprof/:parm", http.DefaultServeMux)
 
 	tempAuth := config.GetBool("proxy-server", "tempauth_enabled", true)
 	var middlewares []struct {

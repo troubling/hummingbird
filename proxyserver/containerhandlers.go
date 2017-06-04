@@ -45,10 +45,6 @@ func (server *ProxyServer) ContainerGetHandler(writer http.ResponseWriter, reque
 		srv.StandardResponse(writer, 404)
 		return
 	}
-	if ctx.Authorize != nil && !ctx.Authorize(request) {
-		srv.StandardResponse(writer, 401)
-		return
-	}
 	options := make(map[string]string)
 	if request.ParseForm() == nil {
 		for k, v := range request.Form {
@@ -62,6 +58,7 @@ func (server *ProxyServer) ContainerGetHandler(writer http.ResponseWriter, reque
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
 		if ctx.RemoteUser != "" {
 			srv.StandardResponse(writer, 403)
+			return
 		}
 		srv.StandardResponse(writer, 401)
 		return
@@ -92,6 +89,7 @@ func (server *ProxyServer) ContainerHeadHandler(writer http.ResponseWriter, requ
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
 		if ctx.RemoteUser != "" {
 			srv.StandardResponse(writer, 403)
+			return
 		}
 		srv.StandardResponse(writer, 401)
 		return
@@ -120,6 +118,7 @@ func (server *ProxyServer) ContainerPostHandler(writer http.ResponseWriter, requ
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
 		if ctx.RemoteUser != "" {
 			srv.StandardResponse(writer, 403)
+			return
 		}
 		srv.StandardResponse(writer, 401)
 		return
@@ -151,6 +150,7 @@ func (server *ProxyServer) ContainerPutHandler(writer http.ResponseWriter, reque
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
 		if ctx.RemoteUser != "" {
 			srv.StandardResponse(writer, 403)
+			return
 		}
 		srv.StandardResponse(writer, 401)
 		return
@@ -178,6 +178,7 @@ func (server *ProxyServer) ContainerDeleteHandler(writer http.ResponseWriter, re
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
 		if ctx.RemoteUser != "" {
 			srv.StandardResponse(writer, 403)
+			return
 		}
 		srv.StandardResponse(writer, 401)
 		return

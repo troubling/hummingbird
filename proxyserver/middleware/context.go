@@ -174,6 +174,7 @@ func (ctx *ProxyContext) Subrequest(writer http.ResponseWriter, req *http.Reques
 		ProxyContextMiddleware: ctx.ProxyContextMiddleware,
 		Authorize:              authorize,
 		AuthorizeOverride:      authorizeOverride,
+		RemoteUser:             ctx.RemoteUser,
 		Logger:                 ctx.Logger.With(zap.String("src", source)),
 		C:                      ctx.C,
 		TxId:                   ctx.TxId,
@@ -261,8 +262,8 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 	newWriter := srv.NewCustomWriter(writer, func(w http.ResponseWriter, status int) int {
 		// strip out any bad headers before calling real WriteHeader
 		for k := range w.Header() {
-			if k == "X-Account-Sysmeta-Project-Domain-ID" {
-				w.Header().Set("X-Account-Project-Domain-ID", w.Header().Get(k))
+			if k == "X-Account-Sysmeta-Project-Domain-Id" {
+				w.Header().Set("X-Account-Project-Domain-Id", w.Header().Get(k))
 			}
 			for _, ex := range excludeHeaders {
 				if strings.HasPrefix(k, ex) {

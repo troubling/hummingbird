@@ -30,6 +30,7 @@ type keystoneAuth struct {
 	resellerPrefixes  []string
 	accountRules      map[string]map[string][]string
 	resellerAdminRole string
+	defaultDomainID   string
 	next              http.Handler
 }
 
@@ -71,12 +72,12 @@ func (ka *keystoneAuth) accountMatchesTenant(account string, tenantID string) bo
 
 func (ka *keystoneAuth) getProjectDomainID(r *http.Request, account string) string {
 	ctx := GetProxyContext(r)
-	return ctx.GetAccountInfo(account).SysMetadata["Project-Domain-ID"]
+	return ctx.GetAccountInfo(account).SysMetadata["Project-Domain-Id"]
 }
 
 func (ka *keystoneAuth) setProjectDomainID(r *http.Request, pathParts map[string]string, identityMap map[string]string) {
 	for k := range r.Header {
-		if k == "X-Account-Sysmeta-Project-Domain-ID" {
+		if k == "X-Account-Sysmeta-Project-Domain-Id" {
 			return
 		}
 	}
@@ -91,28 +92,28 @@ func (ka *keystoneAuth) setProjectDomainID(r *http.Request, pathParts map[string
 		reqID = identityMap["projectDomainID"]
 		newID = reqID
 	}
-	if sysmetaID == "" && reqID == "default" {
+	if sysmetaID == "" && reqID == ka.defaultDomainID {
 		newID = reqID
 	}
 	if newID != "" {
-		r.Header.Set("X-Account-Sysmeta-Project-Domain-ID", newID)
+		r.Header.Set("X-Account-Sysmeta-Project-Domain-Id", newID)
 	}
 }
 
 func (ka *keystoneAuth) isNameAllowedinACL(r *http.Request, account string, identityMap map[string]string) bool {
 	userDomainID := identityMap["userDomainID"]
-	if userDomainID != "" && userDomainID != "default" {
+	if userDomainID != "" && userDomainID != ka.defaultDomainID {
 		return false
 	}
 	projectDomainID := identityMap["projectDomainID"]
-	if projectDomainID != "" && projectDomainID != "default" {
+	if projectDomainID != "" && projectDomainID != ka.defaultDomainID {
 		return false
 	}
 	tenantID := identityMap["tenantID"]
 	allow := false
 	if ka.accountMatchesTenant(account, tenantID) {
 		allow = true
-	} else if ka.getProjectDomainID(r, account) == "default" {
+	} else if common.StringInSlice(ka.getProjectDomainID(r, account), []string{ka.defaultDomainID, ""}) {
 		allow = true
 	}
 	return allow
@@ -163,6 +164,10 @@ func (ka *keystoneAuth) authorize(r *http.Request) bool {
 	for _, userRole := range common.SliceFromCSV(identityMap["roles"]) {
 		userRoles = append(userRoles, strings.ToLower(userRole))
 	}
+	userServiceRoles := []string{}
+	for _, userServiceRole := range common.SliceFromCSV(identityMap["serviceRoles"]) {
+		userServiceRoles = append(userServiceRoles, strings.ToLower(userServiceRole))
+	}
 	if common.StringInSlice(ka.resellerAdminRole, userRoles) {
 		ctx.Logger.Debug("User has reseller admin authorization", zap.String("userid", tenantID))
 		return true
@@ -206,7 +211,7 @@ func (ka *keystoneAuth) authorize(r *http.Request) bool {
 	serviceRoles := ka.accountRules[accountPrefix]["service_roles"]
 	haveServiceRole := false
 	for _, or := range serviceRoles {
-		if common.StringInSlice(or, userRoles) {
+		if common.StringInSlice(or, userServiceRoles) {
 			haveServiceRole = true
 			break
 		}
@@ -214,7 +219,7 @@ func (ka *keystoneAuth) authorize(r *http.Request) bool {
 	allowed := false
 	if haveOperatorRole && (len(serviceRoles) > 0 && haveServiceRole) {
 		allowed = true
-	} else if haveOperatorRole && !haveServiceRole {
+	} else if haveOperatorRole && len(serviceRoles) == 0 {
 		allowed = true
 	}
 	if allowed {
@@ -321,6 +326,7 @@ func NewKeystoneAuth(config conf.Section) (func(http.Handler) http.Handler, erro
 			resellerPrefixes:  resellerPrefixes,
 			accountRules:      accountRules,
 			resellerAdminRole: strings.ToLower(config.GetDefault("reseller_admin_role", "ResellerAdmin")),
+			defaultDomainID:   config.GetDefault("default_domain_id", "default"),
 		}
 	}, nil
 }

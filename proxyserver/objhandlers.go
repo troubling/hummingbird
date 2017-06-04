@@ -42,6 +42,7 @@ func (server *ProxyServer) ObjectGetHandler(writer http.ResponseWriter, request 
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
 		if ctx.RemoteUser != "" {
 			srv.StandardResponse(writer, 403)
+			return
 		}
 		srv.StandardResponse(writer, 401)
 		return
@@ -73,6 +74,7 @@ func (server *ProxyServer) ObjectHeadHandler(writer http.ResponseWriter, request
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
 		if ctx.RemoteUser != "" {
 			srv.StandardResponse(writer, 403)
+			return
 		}
 		srv.StandardResponse(writer, 401)
 		return
@@ -100,6 +102,7 @@ func (server *ProxyServer) ObjectDeleteHandler(writer http.ResponseWriter, reque
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
 		if ctx.RemoteUser != "" {
 			srv.StandardResponse(writer, 403)
+			return
 		}
 		srv.StandardResponse(writer, 401)
 		return
@@ -128,6 +131,7 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
 		if ctx.RemoteUser != "" {
 			srv.StandardResponse(writer, 403)
+			return
 		}
 		srv.StandardResponse(writer, 401)
 		return

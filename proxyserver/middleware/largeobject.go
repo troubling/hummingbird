@@ -230,7 +230,7 @@ func (xlo *xloMiddleware) feedOutSegments(sw *segWriter, request *http.Request, 
 			newReq.Header.Set("Range", rangeHeader)
 			sw := &segWriter{ResponseWriter: sw.ResponseWriter,
 				Status: 500, allowWrite: true, throwAwayHeader: true} // TODO i think i can reuse this
-			ctx.Subrequest(sw, newReq, "slo")
+			ctx.Subrequest(sw, newReq, "slo", false)
 			if sw.Status/100 != 2 {
 				ctx.Logger.Debug(fmt.Sprintf("segment not found: %s", newPath),
 					zap.String("Segment404", "404"))
@@ -261,7 +261,7 @@ func (xlo *xloMiddleware) buildSloManifest(sw *segWriter, request *http.Request,
 	}
 
 	swRefetch := &segWriter{ResponseWriter: sw.ResponseWriter, Status: 500}
-	ctx.Subrequest(swRefetch, newReq, "slo")
+	ctx.Subrequest(swRefetch, newReq, "slo", false)
 	if swRefetch.manifestBytes != nil {
 		manifestBytes = swRefetch.manifestBytes.Bytes()
 	}
@@ -278,7 +278,7 @@ func (xlo *xloMiddleware) buildDloManifest(sw *segWriter, request *http.Request,
 		return manifest, err
 	}
 	swRefetch := &segWriter{ResponseWriter: sw.ResponseWriter, Status: 500, cacheBytes: true}
-	ctx.Subrequest(swRefetch, newReq, "slo")
+	ctx.Subrequest(swRefetch, newReq, "slo", false)
 	if swRefetch.manifestBytes != nil {
 		manifestBytes = swRefetch.manifestBytes.Bytes()
 	}
@@ -522,7 +522,7 @@ func (xlo *xloMiddleware) handleSloPut(writer http.ResponseWriter, request *http
 			return
 		}
 		pw := &segWriter{ResponseWriter: writer, Status: 500}
-		ctx.Subrequest(pw, newReq, "slo")
+		ctx.Subrequest(pw, newReq, "slo", false)
 
 		if pw.Status != 200 {
 			errs = append(errs,
@@ -657,7 +657,7 @@ func (xlo *xloMiddleware) deleteAllSegments(sw *segWriter, request *http.Request
 		}
 		sw := &segWriter{ResponseWriter: sw.ResponseWriter,
 			Status: 500, allowWrite: true} // TODO i think i can reuse this
-		ctx.Subrequest(sw, newReq, "slo")
+		ctx.Subrequest(sw, newReq, "slo", false)
 	}
 	return nil
 }

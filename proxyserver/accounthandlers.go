@@ -33,6 +33,7 @@ func (server *ProxyServer) AccountGetHandler(writer http.ResponseWriter, request
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
 		if ctx.RemoteUser != "" {
 			srv.StandardResponse(writer, 403)
+			return
 		}
 		srv.StandardResponse(writer, 401)
 		return
@@ -66,6 +67,7 @@ func (server *ProxyServer) AccountHeadHandler(writer http.ResponseWriter, reques
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
 		if ctx.RemoteUser != "" {
 			srv.StandardResponse(writer, 403)
+			return
 		}
 		srv.StandardResponse(writer, 401)
 		return
@@ -87,6 +89,7 @@ func (server *ProxyServer) AccountPostHandler(writer http.ResponseWriter, reques
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
 		if ctx.RemoteUser != "" {
 			srv.StandardResponse(writer, 403)
+			return
 		}
 		srv.StandardResponse(writer, 401)
 		return
@@ -111,6 +114,7 @@ func (server *ProxyServer) AccountPutHandler(writer http.ResponseWriter, request
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
 		if ctx.RemoteUser != "" {
 			srv.StandardResponse(writer, 403)
+			return
 		}
 		srv.StandardResponse(writer, 401)
 		return
@@ -135,6 +139,7 @@ func (server *ProxyServer) AccountDeleteHandler(writer http.ResponseWriter, requ
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
 		if ctx.RemoteUser != "" {
 			srv.StandardResponse(writer, 403)
+			return
 		}
 		srv.StandardResponse(writer, 401)
 		return
