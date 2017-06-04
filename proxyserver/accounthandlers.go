@@ -34,14 +34,13 @@ func (server *ProxyServer) AccountGetHandler(writer http.ResponseWriter, request
 		srv.StandardResponse(writer, 401)
 		return
 	}
-	options := map[string]string{
-		"format":     request.FormValue("format"),
-		"limit":      request.FormValue("limit"),
-		"marker":     request.FormValue("marker"),
-		"end_marker": request.FormValue("end_marker"),
-		"prefix":     request.FormValue("prefix"),
-		"delimiter":  request.FormValue("delimiter"),
-		"reverse":    request.FormValue("reverse"),
+	options := make(map[string]string)
+	if request.ParseForm() == nil {
+		for k, v := range request.Form {
+			if listingQueryParms[k] && len(v) > 0 {
+				options[k] = v[0]
+			}
+		}
 	}
 	r, headers, code := ctx.C.GetAccount(vars["account"], options, request.Header)
 	for k := range headers {

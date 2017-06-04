@@ -23,6 +23,17 @@ import (
 	"github.com/troubling/hummingbird/proxyserver/middleware"
 )
 
+var listingQueryParms = map[string]bool{
+	"format":     true,
+	"limit":      true,
+	"marker":     true,
+	"end_marker": true,
+	"prefix":     true,
+	"delimiter":  true,
+	"reverse":    true,
+	"path":       true,
+}
+
 func (server *ProxyServer) ContainerGetHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
 	ctx := middleware.GetProxyContext(request)
@@ -38,14 +49,13 @@ func (server *ProxyServer) ContainerGetHandler(writer http.ResponseWriter, reque
 		srv.StandardResponse(writer, 401)
 		return
 	}
-	options := map[string]string{
-		"format":     request.FormValue("format"),
-		"limit":      request.FormValue("limit"),
-		"marker":     request.FormValue("marker"),
-		"end_marker": request.FormValue("end_marker"),
-		"prefix":     request.FormValue("prefix"),
-		"delimiter":  request.FormValue("delimiter"),
-		"reverse":    request.FormValue("reverse"),
+	options := make(map[string]string)
+	if request.ParseForm() == nil {
+		for k, v := range request.Form {
+			if listingQueryParms[k] && len(v) > 0 {
+				options[k] = v[0]
+			}
+		}
 	}
 	r, headers, code := ctx.C.GetContainer(vars["account"], vars["container"], options, request.Header)
 	for k := range headers {

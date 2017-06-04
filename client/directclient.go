@@ -22,9 +22,7 @@ const PostQuorumTimeoutMs = 50
 func mkquery(options map[string]string) string {
 	query := ""
 	for k, v := range options {
-		if v != "" {
-			query += url.QueryEscape(k) + "=" + url.QueryEscape(v) + "&"
-		}
+		query += url.QueryEscape(k) + "=" + url.QueryEscape(v) + "&"
 	}
 	if query != "" {
 		return "?" + strings.TrimRight(query, "&")
