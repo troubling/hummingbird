@@ -30,6 +30,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 )
 
@@ -298,15 +299,6 @@ type serverIterator struct {
 	servers []string
 }
 
-func stringInSlice(a string, list []string) bool {
-	for _, b := range list {
-		if b == a {
-			return true
-		}
-	}
-	return false
-}
-
 func (ring *memcacheRing) newServerIterator(key string) *serverIterator {
 	return &serverIterator{ring, hashKey(key), -1, make([]string, 0)}
 }
@@ -322,7 +314,7 @@ func (it *serverIterator) value() *server {
 	if it.current == -1 {
 		it.current = sort.SearchStrings(it.ring.serverKeys, it.key) % len(it.ring.serverKeys)
 	} else {
-		for stringInSlice(it.ring.ring[it.ring.serverKeys[it.current]], it.servers) {
+		for common.StringInSlice(it.ring.ring[it.ring.serverKeys[it.current]], it.servers) {
 			it.current = (it.current + 1) % len(it.ring.serverKeys)
 		}
 	}
