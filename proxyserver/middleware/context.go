@@ -189,15 +189,28 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 		return
 	}
 
-	if request.URL.Path == "/info" && request.Method == "GET" {
-		if data, err := serverInfoDump(); err != nil {
-			srv.StandardResponse(writer, 500)
-		} else {
+	if request.URL.Path == "/info" {
+		if request.Method == "GET" {
+			if data, err := serverInfoDump(); err != nil {
+				srv.StandardResponse(writer, 500)
+			} else {
+				writer.WriteHeader(200)
+				writer.Header().Set("Content-Type", "application/json")
+				writer.Write(data)
+			}
+			return
+		} else if request.Method == "OPTIONS" {
+			writer.Header().Set("Allow", "HEAD, GET, OPTIONS")
 			writer.WriteHeader(200)
-			writer.Header().Set("Content-Type", "application/json")
-			writer.Write(data)
+			return
+		} else if request.Method == "HEAD" {
+			if _, err := serverInfoDump(); err != nil {
+				srv.StandardResponse(writer, 500)
+			} else {
+				writer.WriteHeader(200)
+			}
+			return
 		}
-		return
 	}
 
 	for k := range request.Header {
