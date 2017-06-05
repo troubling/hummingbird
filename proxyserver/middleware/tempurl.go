@@ -167,7 +167,7 @@ func tempurl(next http.Handler) http.Handler {
 			srv.StandardResponse(writer, 401)
 			return
 		}
-
+		ctx.AuthorizeOverride = true
 		ctx.Authorize = func(r *http.Request) bool {
 			ar, a, c, _ := getPathParts(r)
 			return ar && ((scope == SCOPE_ACCOUNT && a == account) || (scope == SCOPE_CONTAINER && c == container))
