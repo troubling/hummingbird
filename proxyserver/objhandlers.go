@@ -19,6 +19,7 @@ import (
 	"mime"
 	"net/http"
 	"path/filepath"
+	"strings"
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/srv"
@@ -113,6 +114,7 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 	}
 	if request.Header.Get("Content-Type") == "" {
 		contentType := mime.TypeByExtension(filepath.Ext(vars["obj"]))
+		contentType = strings.Split(contentType, ";")[0] // remove any charset it tried to foist on us
 		if contentType == "" {
 			contentType = "application/octet-stream"
 		}
