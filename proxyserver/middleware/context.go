@@ -194,8 +194,8 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 			if data, err := serverInfoDump(); err != nil {
 				srv.StandardResponse(writer, 500)
 			} else {
-				writer.WriteHeader(200)
 				writer.Header().Set("Content-Type", "application/json")
+				writer.WriteHeader(200)
 				writer.Write(data)
 			}
 			return
