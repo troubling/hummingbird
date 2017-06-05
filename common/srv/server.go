@@ -29,6 +29,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -164,11 +165,11 @@ type WebWriterInterface interface {
 
 func ValidateRequest(w http.ResponseWriter, r *http.Request) bool {
 	// if invalid request will right own response and return false, otherwise true
-	if !utf8.ValidString(r.URL.Path) {
+	if !utf8.ValidString(r.URL.Path) || strings.Contains(r.URL.Path, "\x00") {
 		SimpleErrorResponse(w, 412, "Invalid UTF8 or contains NULL")
 		return false
 	}
-	if !utf8.ValidString(r.Header.Get("Content-Type")) {
+	if !utf8.ValidString(r.Header.Get("Content-Type")) || strings.Contains(r.Header.Get("Content-Type"), "\x00") {
 		SimpleErrorResponse(w, 400, "Invalid UTF8 or contains NULL")
 		return false
 	}

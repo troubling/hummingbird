@@ -471,3 +471,12 @@ func ParseContentTypeForSlo(contentType string, listedSize int64) (string, int64
 	}
 	return contentType, listedSize, nil
 }
+
+func StringInSlice(a string, list []string) bool {
+	for _, b := range list {
+		if b == a {
+			return true
+		}
+	}
+	return false
+}

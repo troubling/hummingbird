@@ -21,6 +21,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/troubling/hummingbird/common"
 )
 
 const (
@@ -59,6 +61,9 @@ func CheckMetadata(req *http.Request, targetType string) (int, string) {
 		metaSize += len(key) + len(value)
 		if key == "" {
 			return http.StatusBadRequest, "Metadata name cannot be empty"
+		}
+		if common.StringInSlice(targetType, []string{"Account", "Container"}) && (strings.Contains(key, "\x00") || strings.Contains(value, "\x00")) {
+			return http.StatusBadRequest, "Metadata must be valid UTF-8"
 		}
 		if len(key) > MAX_META_NAME_LENGTH {
 			return http.StatusBadRequest, fmt.Sprintf("Metadata name too long: %s%s", metaPrefix, key)
@@ -109,7 +114,9 @@ func CheckObjPut(req *http.Request, objectName string) (int, string) {
 			req.Header.Set("X-Delete-At", strconv.FormatInt(time.Now().Unix()+deleteAfter, 10))
 		}
 	}
-
+	if strings.Contains(req.Header.Get("Content-Type"), "\x00") {
+		return http.StatusBadRequest, "Invalid Content-Type"
+	}
 	return CheckMetadata(req, "Object")
 }
 
