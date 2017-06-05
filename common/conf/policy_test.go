@@ -24,6 +24,7 @@ import (
 )
 
 func TestLoadPolicy(t *testing.T) {
+	cachedPolicyList = nil
 	tempFile, _ := ioutil.TempFile("", "INI")
 	tempFile.Write([]byte("[swift-hash]\nswift_hash_path_prefix = changeme\nswift_hash_path_suffix = changeme\n" +
 		"[storage-policy:0]\nname = gold\naliases = yellow, orange\npolicy_type = replication\ndefault = yes\n" +
@@ -44,9 +45,16 @@ func TestLoadPolicy(t *testing.T) {
 	require.Equal(t, policyList[1].Deprecated, true)
 	require.Equal(t, policyList[1].Default, false)
 	require.Equal(t, policyList[1].Aliases, []string{})
+	require.Nil(t, policyList.ByName(""))
+	require.NotNil(t, policyList.ByName("gold"))
+	require.NotNil(t, policyList.ByName("gold").Index, 0)
+	require.NotNil(t, policyList.ByName("silver"))
+	require.NotNil(t, policyList.ByName("silver").Index, 1)
+	require.Nil(t, policyList.ByName("fuscia"))
 }
 
 func TestNoPolicies(t *testing.T) {
+	cachedPolicyList = nil
 	tempFile, _ := ioutil.TempFile("", "INI")
 	tempFile.Write([]byte("[swift-hash]\nswift_hash_path_prefix = changeme\nswift_hash_path_suffix = changeme\n"))
 	oldConfigs := configLocations
