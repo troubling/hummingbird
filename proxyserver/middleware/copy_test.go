@@ -40,7 +40,7 @@ func TestGetSourceObject(t *testing.T) {
 		next: passthrough,
 	}
 
-	body, header, code := c.getSourceObject("/ver/a/c/o", dummy)
+	body, header, code := c.getSourceObject("/ver/a/c/o", dummy, false)
 	require.Equal(t, 200, code)
 	buf := make([]byte, 1024)
 	num, err := body.Read(buf)

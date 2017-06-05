@@ -131,7 +131,7 @@ func NewPipeResponseWriter(writer *io.PipeWriter, done chan bool, logger srv.Low
 	}
 }
 
-func (c *copyMiddleware) getSourceObject(object string, request *http.Request) (io.ReadCloser, http.Header, int) {
+func (c *copyMiddleware) getSourceObject(object string, request *http.Request, postAsCopy bool) (io.ReadCloser, http.Header, int) {
 	ctx := GetProxyContext(request)
 	subRequest, err := http.NewRequest("GET", object, nil)
 	if err != nil {
@@ -147,7 +147,11 @@ func (c *copyMiddleware) getSourceObject(object string, request *http.Request) (
 	done := make(chan bool)
 	writer := NewPipeResponseWriter(pipeWriter, done, ctx.Logger)
 	go func() {
-		ctx.Subrequest(writer, subRequest, "copy")
+		if c.postAsCopy && postAsCopy {
+			ctx.Subrequest(writer, subRequest, "copy", true)
+		} else {
+			ctx.Subrequest(writer, subRequest, "copy", false)
+		}
 		writer.Close()
 	}()
 	<-done
@@ -274,7 +278,7 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 		writer.Logger.Info(fmt.Sprintf("Copying object from %s to %s", srcPath, request.URL.Path))
 	}
 
-	srcBody, srcHeader, srcStatus := c.getSourceObject(common.Urlencode(srcPath), request)
+	srcBody, srcHeader, srcStatus := c.getSourceObject(common.Urlencode(srcPath), request, writer.postAsCopy)
 	if srcBody != nil {
 		defer srcBody.Close()
 	}

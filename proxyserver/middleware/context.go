@@ -76,14 +76,18 @@ type ProxyContextMiddleware struct {
 
 type ProxyContext struct {
 	*ProxyContextMiddleware
-	C                client.ProxyClient
-	Authorize        AuthorizeFunc
-	Logger           srv.LowLevelLogger
-	TxId             string
-	responseSent     bool
-	status           int
-	accountInfoCache map[string]*AccountInfo
-	depth            int
+	C                 client.ProxyClient
+	Authorize         AuthorizeFunc
+	AuthorizeOverride bool
+	RemoteUser        string
+	ResellerRequest   bool
+	ACL               string
+	Logger            srv.LowLevelLogger
+	TxId              string
+	responseSent      bool
+	status            int
+	accountInfoCache  map[string]*AccountInfo
+	depth             int
 }
 
 func GetProxyContext(r *http.Request) *ProxyContext {
@@ -159,10 +163,18 @@ func (ctx *ProxyContext) InvalidateAccountInfo(account string) {
 	ctx.Cache.Delete(key)
 }
 
-func (ctx *ProxyContext) Subrequest(writer http.ResponseWriter, req *http.Request, source string) {
+func (ctx *ProxyContext) Subrequest(writer http.ResponseWriter, req *http.Request, source string, skipAuth bool) {
+	authorize := ctx.Authorize
+	authorizeOverride := ctx.AuthorizeOverride
+	if skipAuth {
+		authorize = nil
+		authorizeOverride = true
+	}
 	newctx := &ProxyContext{
 		ProxyContextMiddleware: ctx.ProxyContextMiddleware,
-		Authorize:              ctx.Authorize,
+		Authorize:              authorize,
+		AuthorizeOverride:      authorizeOverride,
+		RemoteUser:             ctx.RemoteUser,
 		Logger:                 ctx.Logger.With(zap.String("src", source)),
 		C:                      ctx.C,
 		TxId:                   ctx.TxId,
@@ -263,6 +275,9 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 	newWriter := srv.NewCustomWriter(writer, func(w http.ResponseWriter, status int) int {
 		// strip out any bad headers before calling real WriteHeader
 		for k := range w.Header() {
+			if k == "X-Account-Sysmeta-Project-Domain-Id" {
+				w.Header().Set("X-Account-Project-Domain-Id", w.Header().Get(k))
+			}
 			for _, ex := range excludeHeaders {
 				if strings.HasPrefix(k, ex) {
 					delete(w.Header(), k)

@@ -237,3 +237,60 @@ func normalGetHashPrefixAndSuffix() (prefix string, suffix string, err error) {
 	}
 	return
 }
+
+func ReadResellerOptions(conf Section, defaults map[string][]string) ([]string, map[string]map[string][]string) {
+	resellerPrefixOpt := conf.GetDefault("reseller_prefix", "AUTH")
+	s := []string{}
+	for _, val := range strings.Split(resellerPrefixOpt, ",") {
+		v := strings.TrimSpace(val)
+		if v != "" {
+			s = append(s, strings.TrimSpace(v))
+		}
+	}
+	resellerPrefix := []string{}
+	for _, prefix := range s {
+		if prefix == "''" {
+			prefix = ""
+		}
+		if prefix != "" && !strings.HasSuffix(prefix, "_") {
+			prefix = prefix + "_"
+		}
+		if !common.StringInSlice(prefix, resellerPrefix) {
+			resellerPrefix = append(resellerPrefix, prefix)
+		}
+	}
+	if len(resellerPrefix) == 0 {
+		resellerPrefix = append(resellerPrefix, "")
+	}
+	associatedOptions := make(map[string]map[string][]string)
+	for _, prefix := range resellerPrefix {
+		associatedOptions[prefix] = make(map[string][]string)
+		for k, v := range defaults {
+			associatedOptions[prefix][k] = v
+		}
+		for k, v := range ReadPrefixedOptions(conf, "", defaults) {
+			associatedOptions[prefix][k] = v
+		}
+		prefix_name := "''"
+		if prefix != "" {
+			prefix_name = prefix
+		}
+		for k, v := range ReadPrefixedOptions(conf, prefix_name, defaults) {
+			associatedOptions[prefix][k] = v
+		}
+	}
+	return resellerPrefix, associatedOptions
+}
+
+func ReadPrefixedOptions(conf Section, prefixName string, defaults map[string][]string) map[string][]string {
+	params := make(map[string][]string)
+	for optionName := range defaults {
+		if value, ok := conf.Get(fmt.Sprintf("%s%s", prefixName, optionName)); ok {
+			params[optionName] = []string{}
+			for _, role := range strings.Split(strings.ToLower(value), ",") {
+				params[optionName] = append(params[optionName], strings.TrimSpace(role))
+			}
+		}
+	}
+	return params
+}

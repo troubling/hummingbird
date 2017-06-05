@@ -208,6 +208,7 @@ func formpost(next http.Handler) http.Handler {
 						formpostRespond(writer, 400, "invalid request", attrs["redirect"])
 						return
 					default:
+						ctx.AuthorizeOverride = true
 						ctx.Authorize = formpostAuthorizer(scope, account, container)
 						validated = true
 					}
@@ -238,7 +239,7 @@ func formpost(next http.Handler) http.Handler {
 				} else {
 					newreq.Header.Set("Content-Type", "application/octet-stream")
 				}
-				ctx.Subrequest(neww, newreq, "formpost")
+				ctx.Subrequest(neww, newreq, "formpost", false)
 				if flr.overRead() {
 					formpostRespond(writer, 400, "max_file_size exceeded", attrs["redirect"])
 					return
