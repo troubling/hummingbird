@@ -117,7 +117,7 @@ type token struct {
 
 func (t token) Valid() bool {
 	now := time.Now().Unix()
-	return t.IssuedAt.Unix() <= now && now < t.ExpiresAt.Unix()
+	return now < t.ExpiresAt.Unix()
 }
 
 func (t token) populateReqHeader(r *http.Request, headerPrefix string) {
