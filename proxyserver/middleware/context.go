@@ -88,6 +88,7 @@ type ProxyContext struct {
 	status            int
 	accountInfoCache  map[string]*AccountInfo
 	depth             int
+	Source            string
 }
 
 func GetProxyContext(r *http.Request) *ProxyContext {
@@ -182,6 +183,7 @@ func (ctx *ProxyContext) Subrequest(writer http.ResponseWriter, req *http.Reques
 		responseSent:           false,
 		status:                 500,
 		depth:                  ctx.depth + 1,
+		Source:                 source,
 	}
 	// TODO: check depth
 	newWriter := srv.NewCustomWriter(writer, func(w http.ResponseWriter, status int) int {

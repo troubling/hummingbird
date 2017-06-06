@@ -90,6 +90,7 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 			{middleware.NewTempURL, "filter:tempurl"},
 			{middleware.NewTempAuth, "filter:tempauth"},
 			{middleware.NewRatelimiter, "filter:ratelimit"},
+			{middleware.NewStaticWeb, "filter:staticweb"},
 			{middleware.NewCopyMiddleware, "filter:copy"},
 			{middleware.NewXlo, "fliter:slo"},
 		}
@@ -106,6 +107,7 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 			{middleware.NewAuthToken, "filter:authtoken"},
 			{middleware.NewKeystoneAuth, "filter:keystoneauth"},
 			{middleware.NewRatelimiter, "filter:ratelimit"},
+			{middleware.NewStaticWeb, "filter:staticweb"},
 			{middleware.NewCopyMiddleware, "filter:copy"},
 			{middleware.NewXlo, "filter:slo"},
 		}
