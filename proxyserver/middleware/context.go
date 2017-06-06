@@ -197,7 +197,7 @@ func (ctx *ProxyContext) Subrequest(writer http.ResponseWriter, req *http.Reques
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	newWriter.Header().Set("X-Trans-Id", ctx.TxId)
 	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", newctx))
-	ctx.next.ServeHTTP(writer, req)
+	ctx.next.ServeHTTP(newWriter, req)
 }
 
 func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Request) {

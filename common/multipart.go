@@ -28,32 +28,54 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/textproto"
 )
 
+// MultiWriter is a streaming multipart writer, similar to the standard library's multipart.Writer, but
+// compatible with Swift's output and with an API geared toward our common use, multi-range responses.
 type MultiWriter struct {
-	w        io.Writer
-	boundary string
-	lastpart *part
+	w              io.Writer
+	boundary       string
+	lastpart       *part
+	contentType    string
+	contentLength  int64
+	lengthEstimate int64
 }
 
-func NewMultiWriter(w io.Writer) *MultiWriter {
+// NewMultiWriter instantiates a new MultiWriter.
+func NewMultiWriter(w io.Writer, contentType string, contentLength int64) *MultiWriter {
 	var buf [32]byte
 	_, err := io.ReadFull(rand.Reader, buf[:])
 	if err != nil {
 		panic(err)
 	}
 	return &MultiWriter{
-		w:        w,
-		boundary: fmt.Sprintf("%x", buf[:]),
+		w:              w,
+		boundary:       fmt.Sprintf("%064x", buf[:]),
+		contentType:    contentType,
+		contentLength:  contentLength,
+		lengthEstimate: int64(68), // length of --boundary--
 	}
 }
 
+// Expect adds an expected part to the Content-Length estimate for the multipart body.
+func (w *MultiWriter) Expect(start, end int64) {
+	w.lengthEstimate += int64(len(fmt.Sprintf("--%s\r\nContent-Type: %s\r\nContent-Range: bytes %d-%d/%d\r\n\r\n",
+		w.boundary, w.contentType, start, end-1, w.contentLength)))
+	w.lengthEstimate += (end - start) + 2 // part data and trailing \r\n
+}
+
+// ContentLength returns the expected Content-Length of the multipart body.
+func (w *MultiWriter) ContentLength() int64 {
+	return w.lengthEstimate
+}
+
+// Boundary returns the MultiWriter's boundary string.
 func (w *MultiWriter) Boundary() string {
 	return w.boundary
 }
 
-func (w *MultiWriter) CreatePart(header textproto.MIMEHeader) (io.Writer, error) {
+// CreatePart begins a new part in the multi-part response, with the given content ranges.
+func (w *MultiWriter) CreatePart(start, end int64) (io.Writer, error) {
 	if w.lastpart != nil {
 		if err := w.lastpart.close(); err != nil {
 			return nil, err
@@ -61,16 +83,10 @@ func (w *MultiWriter) CreatePart(header textproto.MIMEHeader) (io.Writer, error)
 	}
 	b := &bytes.Buffer{}
 	if w.lastpart != nil {
-		fmt.Fprintf(b, "\r\n--%s\r\n", w.boundary)
-	} else {
-		fmt.Fprintf(b, "--%s\r\n", w.boundary)
+		fmt.Fprintf(b, "\r\n")
 	}
-	for k, vv := range header {
-		for _, v := range vv {
-			fmt.Fprintf(b, "%s: %s\r\n", k, v)
-		}
-	}
-	fmt.Fprintf(b, "\r\n")
+	fmt.Fprintf(b, "--%s\r\nContent-Type: %s\r\nContent-Range: bytes %d-%d/%d\r\n\r\n",
+		w.boundary, w.contentType, start, end-1, w.contentLength)
 	_, err := io.Copy(w.w, b)
 	if err != nil {
 		return nil, err
@@ -82,6 +98,7 @@ func (w *MultiWriter) CreatePart(header textproto.MIMEHeader) (io.Writer, error)
 	return p, nil
 }
 
+// Close finalizes the output of the MultiWriter.
 func (w *MultiWriter) Close() error {
 	if w.lastpart != nil {
 		if err := w.lastpart.close(); err != nil {

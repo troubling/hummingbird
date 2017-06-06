@@ -198,17 +198,18 @@ func (server *ObjectServer) ObjGetHandler(writer http.ResponseWriter, request *h
 			obj.CopyRange(writer, ranges[0].Start, ranges[0].End)
 			return
 		} else if ranges != nil && len(ranges) > 1 {
-			w := common.NewMultiWriter(writer)
-			responseLength := int64(4 + len(w.Boundary()) + (len(w.Boundary())+len(metadata["Content-Type"])+47)*len(ranges))
+			w := common.NewMultiWriter(writer, metadata["Content-Type"], obj.ContentLength())
 			for _, rng := range ranges {
-				responseLength += int64(len(fmt.Sprintf("%d-%d/%d", rng.Start, rng.End-1, obj.ContentLength()))) + rng.End - rng.Start
+				w.Expect(rng.Start, rng.End)
 			}
-			headers.Set("Content-Length", strconv.FormatInt(responseLength, 10))
+			headers.Set("Content-Length", strconv.FormatInt(w.ContentLength(), 10))
 			headers.Set("Content-Type", "multipart/byteranges;boundary="+w.Boundary())
 			writer.WriteHeader(http.StatusPartialContent)
 			for _, rng := range ranges {
-				part, _ := w.CreatePart(textproto.MIMEHeader{"Content-Type": []string{metadata["Content-Type"]},
-					"Content-Range": []string{fmt.Sprintf("bytes %d-%d/%d", rng.Start, rng.End-1, obj.ContentLength())}})
+				part, err := w.CreatePart(rng.Start, rng.End)
+				if err != nil {
+					return
+				}
 				obj.CopyRange(part, rng.Start, rng.End)
 			}
 			w.Close()
