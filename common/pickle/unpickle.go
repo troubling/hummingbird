@@ -573,6 +573,17 @@ func PickleLoads(data []byte) (interface{}, error) {
 					return nil, errors.New("Invalid pickle (REDUCE): invalid array.array args")
 				}
 				state.push(PickleArray{Type: tc, Data: val})
+			case "copy_reg._reconstructor":
+				// this is a pretty hackish way of loading a serialized swift.common.header_key_dict.HeaderKeyDict
+				// and probably any other python object that's just a wrapped dict.
+				a2, ok := arg.([]interface{})
+				if !ok || len(a2) != 3 {
+					return nil, errors.New("Invalid pickle (REDUCE): copy_reg._reconstructor with unknown arg")
+				}
+				if c, ok := a2[1].(pickleGlobal); !ok || c.name != "__builtin__.dict" {
+					return nil, errors.New("Invalid pickle (REDUCE): unknown python object type in pickle")
+				}
+				state.push(a2[2])
 			default:
 				return nil, errors.New("Invalid pickle (REDUCE): unknown callable on stack")
 			}
