@@ -125,14 +125,14 @@ func CopyResponseHeaders(w http.ResponseWriter, src *http.Response) {
 
 func StandardResponse(w http.ResponseWriter, statusCode int) {
 	body := responseBodies[statusCode]
-	w.Header().Set("Content-Type", "text/html")
+	w.Header().Set("Content-Type", "text/html; charset=UTF-8")
 	w.Header().Set("Content-Length", strconv.FormatInt(int64(len(body)), 10))
 	w.WriteHeader(statusCode)
 	w.Write([]byte(body))
 }
 
 func SimpleErrorResponse(w http.ResponseWriter, statusCode int, body string) {
-	w.Header().Set("Content-Type", "text/html")
+	w.Header().Set("Content-Type", "text/html; charset=UTF-8")
 	w.Header().Set("Content-Length", strconv.FormatInt(int64(len(body)), 10))
 	w.WriteHeader(statusCode)
 	w.Write([]byte(body))
