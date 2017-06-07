@@ -36,13 +36,13 @@ Prerequisites: Go
 
 Next, you must have a working Go development environment. While these steps
 assume a SAIO, the paths can be tweaked to meet your needs in other
-environments later.
+environments later. Go 1.8+ is required.
 
 1. [Download Go binaries for your platform][3].
 1. Pick a path to install Go binaries, and extract them. The recommended
    location is `/usr/local`:
 
-        tar -C /usr/local -zxf go1.6.2.linux-amd64.tar.gz
+        tar -C /usr/local -zxf go1.8.2.linux-amd64.tar.gz
 
 1. Now, export three environment variables to inform both Go and your shell
    where to find what you'll need to run both Go and Hummingbird binaries.
@@ -68,7 +68,7 @@ environments later.
 1. Ensure you can now use the new `go` binary:
 
         $ go version
-        go version go1.6.2 linux/amd64
+        go version go1.8.2 linux/amd64
 
 
 Installing Hummingbird
