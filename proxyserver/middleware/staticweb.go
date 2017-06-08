@@ -145,7 +145,7 @@ func (s *staticWebHandler) handleDirectory(writer http.ResponseWriter, request *
 				srv.StandardResponse(writer, http.StatusMovedPermanently)
 				return
 			}
-			subreq, err := http.NewRequest("GET", fmt.Sprintf("/v1/%s/%s?limit=1&format=json&delimiter=/&prefix=%s", url.PathEscape(s.account), url.PathEscape(s.container), url.QueryEscape(s.object)), nil)
+			subreq, err := http.NewRequest("GET", fmt.Sprintf("/v1/%s/%s?limit=1&format=json&delimiter=/&prefix=%s/", url.PathEscape(s.account), url.PathEscape(s.container), url.QueryEscape(s.object)), nil)
 			if err != nil {
 				s.handleError(writer, request, http.StatusInternalServerError, err)
 				return
