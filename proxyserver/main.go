@@ -138,9 +138,8 @@ func GetServer(serverconf conf.Config, flags *flag.FlagSet) (string, int, srv.Se
 	logLevelString := serverconf.GetDefault("proxy-server", "log_level", "INFO")
 	server.logLevel = zap.NewAtomicLevel()
 	server.logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
-	logPath := serverconf.GetDefault("proxy-server", "log_path", "/var/log/swift/proxy.log")
 
-	if server.logger, err = srv.SetupLogger("proxy-server", &server.logLevel, flags, logPath); err != nil {
+	if server.logger, err = srv.SetupLogger("proxy-server", &server.logLevel, flags); err != nil {
 		return "", 0, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 	server.proxyDirectClient, err = client.NewProxyDirectClient(conf.LoadPolicies())

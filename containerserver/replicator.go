@@ -582,10 +582,8 @@ func GetReplicator(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv
 	logLevel := zap.NewAtomicLevel()
 	logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
 
-	logPath := serverconf.GetDefault("container-replicator", "log_path", "/var/log/swift/containerreplicator.log")
-
 	var logger srv.LowLevelLogger
-	if logger, err = srv.SetupLogger("container-replicator", &logLevel, flags, logPath); err != nil {
+	if logger, err = srv.SetupLogger("container-replicator", &logLevel, flags); err != nil {
 		return nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 	return &Replicator{

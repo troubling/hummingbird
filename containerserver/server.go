@@ -611,8 +611,7 @@ func GetServer(serverconf conf.Config, flags *flag.FlagSet) (bindIP string, bind
 	server.logLevel = zap.NewAtomicLevel()
 	server.logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
 
-	logPath := serverconf.GetDefault("app:container-server", "log_path", "/var/log/swift/container.log")
-	if server.logger, err = srv.SetupLogger("container-server", &server.logLevel, flags, logPath); err != nil {
+	if server.logger, err = srv.SetupLogger("container-server", &server.logLevel, flags); err != nil {
 		return "", 0, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 
