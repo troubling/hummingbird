@@ -5,7 +5,7 @@ dist: trusty
 language: go
 
 go:
-  - master
+  - 1.8.3
 
 install:
   - mkdir -p /tmp/output
