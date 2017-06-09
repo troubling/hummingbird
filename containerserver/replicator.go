@@ -542,10 +542,10 @@ func (r *Replicator) Run() {
 	}
 	for _, dev := range devices {
 		r.runningDevices[dev.Device] = newReplicationDevice(dev, r)
-		go func(dev *ring.Device) {
-			r.runningDevices[dev.Device].replicate()
+		go func(rd *replicationDevice) {
+			rd.replicate()
 			done <- struct{}{}
-		}(dev)
+		}(r.runningDevices[dev.Device])
 	}
 	waitingFor := len(devices)
 	for waitingFor > 0 {

@@ -920,10 +920,10 @@ func (r *Replicator) Run() {
 			key := rd.Key()
 			r.runningDevices[key] = rd
 			r.onceWaiting++
-			go func(dev *ring.Device, key string) {
-				r.runningDevices[key].Replicate()
+			go func(rd *replicationDevice) {
+				rd.Replicate()
 				r.onceDone <- struct{}{}
-			}(dev, key)
+			}(rd)
 		}
 	}
 	for r.onceWaiting > 0 {
