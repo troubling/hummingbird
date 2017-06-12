@@ -38,7 +38,9 @@ func NewStaticWeb(config conf.Section) (func(http.Handler) http.Handler, error) 
 }
 
 func staticWeb(next http.Handler) http.Handler {
-	return &staticWebHandler{next: next}
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		(&staticWebHandler{next: next}).ServeHTTP(writer, request)
+	})
 }
 
 type staticWebHandler struct {
@@ -374,7 +376,7 @@ func (s *staticWebHandler) handleError(writer http.ResponseWriter, request *http
 	subrec := httptest.NewRecorder()
 	s.ctx.Subrequest(subrec, subreq, "staticweb", false)
 	subresp := subrec.Result()
-	subresp.Body.Close()
+	defer subresp.Body.Close()
 	if subresp.StatusCode/100 != 2 {
 		srv.StandardResponse(writer, status)
 		return
