@@ -66,23 +66,18 @@ func NewProxyDirectClient(policyList conf.PolicyList) (*ProxyDirectClient, error
 	return c, nil
 }
 
-type QuorumResponseEntry struct {
-	StatusCode int
-	Headers    http.Header
-}
-
-func (c *ProxyDirectClient) quorumResponse(reqs ...*http.Request) (http.Header, int) {
+func (c *ProxyDirectClient) quorumResponse(reqs ...*http.Request) *http.Response {
 	// this is based on swift's best_response function.
-	responses := make(chan *QuorumResponseEntry)
+	responses := make(chan *http.Response)
 	cancel := make(chan struct{})
 	defer close(cancel)
 	for _, req := range reqs {
 		go func(req *http.Request) {
-			entry := &QuorumResponseEntry{StatusCode: 500}
-			if resp, err := c.client.Do(req); err == nil {
-				entry.StatusCode = resp.StatusCode
-				entry.Headers = resp.Header
-				resp.Body.Close()
+			var entry *http.Response
+			if resp, err := c.client.Do(req); err != nil {
+				entry = ResponseStub(http.StatusInternalServerError, err.Error())
+			} else {
+				entry = StubResponse(resp)
 			}
 			select {
 			case responses <- entry:
@@ -93,7 +88,7 @@ func (c *ProxyDirectClient) quorumResponse(reqs ...*http.Request) (http.Header, 
 	quorum := int(math.Ceil(float64(len(reqs)) / 2.0))
 	responseClasses := []int{0, 0, 0, 0, 0, 0}
 	responseCount := 0
-	var chosenResponse *QuorumResponseEntry
+	var chosenResponse *http.Response
 	for response := range responses {
 		responseCount++
 		class := response.StatusCode / 100
@@ -105,7 +100,10 @@ func (c *ProxyDirectClient) quorumResponse(reqs ...*http.Request) (http.Header, 
 			}
 		}
 	}
-	// give any pending requests *some* chance to finish
+	// Give any pending requests *some* chance to finish. This will increase
+	// the likelihood that a read immediately after a write will get the latest
+	// information, as we'll force the caller to wait until all backends have
+	// responded, with a timeout limit.
 	timeout := time.After(PostQuorumTimeoutMs * time.Millisecond)
 waiting:
 	for responseCount < len(reqs) {
@@ -116,10 +114,7 @@ waiting:
 			break waiting
 		}
 	}
-	if chosenResponse != nil {
-		return chosenResponse.Headers, chosenResponse.StatusCode
-	}
-	return nil, 503
+	return chosenResponse
 }
 
 func (c *ProxyDirectClient) firstResponse(reqs ...*http.Request) (resp *http.Response) {
@@ -144,7 +139,8 @@ func (c *ProxyDirectClient) firstResponse(reqs ...*http.Request) (resp *http.Res
 
 		select {
 		case resp = <-success:
-			if resp != nil && (resp.StatusCode/100 == 2 || resp.StatusCode == 412 || resp.StatusCode == 304 || resp.StatusCode == 416) {
+			if resp != nil && (resp.StatusCode/100 == 2 || resp.StatusCode == http.StatusPreconditionFailed || resp.StatusCode == http.StatusNotModified || resp.StatusCode == http.StatusRequestedRangeNotSatisfiable) {
+				resp = StubResponse(resp)
 				resp.Header.Set("Accept-Ranges", "bytes")
 				if etag := resp.Header.Get("Etag"); etag != "" {
 					resp.Header.Set("Etag", strings.Trim(etag, "\""))
@@ -154,7 +150,7 @@ func (c *ProxyDirectClient) firstResponse(reqs ...*http.Request) (resp *http.Res
 		case <-time.After(time.Second):
 		}
 	}
-	return nil
+	return ResponseStub(http.StatusNotFound, "")
 }
 
 type proxyClient struct {
@@ -179,62 +175,62 @@ func (c *proxyClient) invalidateContainerInfo(account string, container string) 
 	}
 }
 
-func (c *proxyClient) PutAccount(account string, headers http.Header) int {
+func (c *proxyClient) PutAccount(account string, headers http.Header) *http.Response {
 	return c.pdc.PutAccount(account, headers)
 }
-func (c *proxyClient) PostAccount(account string, headers http.Header) int {
+func (c *proxyClient) PostAccount(account string, headers http.Header) *http.Response {
 	return c.pdc.PostAccount(account, headers)
 }
-func (c *proxyClient) GetAccount(account string, options map[string]string, headers http.Header) (io.ReadCloser, http.Header, int) {
+func (c *proxyClient) GetAccount(account string, options map[string]string, headers http.Header) *http.Response {
 	return c.pdc.GetAccount(account, options, headers)
 }
-func (c *proxyClient) HeadAccount(account string, headers http.Header) (http.Header, int) {
+func (c *proxyClient) HeadAccount(account string, headers http.Header) *http.Response {
 	return c.pdc.HeadAccount(account, headers)
 }
-func (c *proxyClient) DeleteAccount(account string, headers http.Header) int {
+func (c *proxyClient) DeleteAccount(account string, headers http.Header) *http.Response {
 	return c.pdc.DeleteAccount(account, headers)
 }
-func (c *proxyClient) PutContainer(account string, container string, headers http.Header) int {
+func (c *proxyClient) PutContainer(account string, container string, headers http.Header) *http.Response {
 	defer c.invalidateContainerInfo(account, container)
 	return c.pdc.PutContainer(account, container, headers)
 }
-func (c *proxyClient) PostContainer(account string, container string, headers http.Header) int {
+func (c *proxyClient) PostContainer(account string, container string, headers http.Header) *http.Response {
 	defer c.invalidateContainerInfo(account, container)
 	return c.pdc.PostContainer(account, container, headers)
 }
-func (c *proxyClient) GetContainer(account string, container string, options map[string]string, headers http.Header) (io.ReadCloser, http.Header, int) {
+func (c *proxyClient) GetContainer(account string, container string, options map[string]string, headers http.Header) *http.Response {
 	return c.pdc.GetContainer(account, container, options, headers)
 }
 func (c *proxyClient) GetContainerInfo(account string, container string) *ContainerInfo {
 	return c.pdc.GetContainerInfo(account, container, c.mc, c.lc)
 }
-func (c *proxyClient) HeadContainer(account string, container string, headers http.Header) (http.Header, int) {
+func (c *proxyClient) HeadContainer(account string, container string, headers http.Header) *http.Response {
 	return c.pdc.HeadContainer(account, container, headers)
 }
-func (c *proxyClient) DeleteContainer(account string, container string, headers http.Header) int {
+func (c *proxyClient) DeleteContainer(account string, container string, headers http.Header) *http.Response {
 	defer c.invalidateContainerInfo(account, container)
 	return c.pdc.DeleteContainer(account, container, headers)
 }
-func (c *proxyClient) PutObject(account string, container string, obj string, headers http.Header, src io.Reader) (http.Header, int) {
+func (c *proxyClient) PutObject(account string, container string, obj string, headers http.Header, src io.Reader) *http.Response {
 	return c.pdc.PutObject(account, container, obj, headers, src, c.mc, c.lc)
 }
-func (c *proxyClient) PostObject(account string, container string, obj string, headers http.Header) int {
+func (c *proxyClient) PostObject(account string, container string, obj string, headers http.Header) *http.Response {
 	return c.pdc.PostObject(account, container, obj, headers, c.mc, c.lc)
 }
-func (c *proxyClient) GetObject(account string, container string, obj string, headers http.Header) (io.ReadCloser, http.Header, int) {
+func (c *proxyClient) GetObject(account string, container string, obj string, headers http.Header) *http.Response {
 	return c.pdc.GetObject(account, container, obj, headers, c.mc, c.lc)
 }
-func (c *proxyClient) HeadObject(account string, container string, obj string, headers http.Header) (http.Header, int) {
+func (c *proxyClient) HeadObject(account string, container string, obj string, headers http.Header) *http.Response {
 	return c.pdc.HeadObject(account, container, obj, headers, c.mc, c.lc)
 }
-func (c *proxyClient) DeleteObject(account string, container string, obj string, headers http.Header) int {
+func (c *proxyClient) DeleteObject(account string, container string, obj string, headers http.Header) *http.Response {
 	return c.pdc.DeleteObject(account, container, obj, headers, c.mc, c.lc)
 }
-func (c *proxyClient) ObjectRingFor(account string, container string) (ring.Ring, int) {
+func (c *proxyClient) ObjectRingFor(account string, container string) (ring.Ring, *http.Response) {
 	return c.pdc.ObjectRingFor(account, container, c.mc, c.lc)
 }
 
-func (c *ProxyDirectClient) PutAccount(account string, headers http.Header) int {
+func (c *ProxyDirectClient) PutAccount(account string, headers http.Header) *http.Response {
 	partition := c.AccountRing.GetPartition(account, "", "")
 	reqs := make([]*http.Request, 0)
 	for _, device := range c.AccountRing.GetNodes(partition) {
@@ -245,11 +241,10 @@ func (c *ProxyDirectClient) PutAccount(account string, headers http.Header) int 
 		}
 		reqs = append(reqs, req)
 	}
-	headers, statusCode := c.quorumResponse(reqs...)
-	return statusCode
+	return c.quorumResponse(reqs...)
 }
 
-func (c *ProxyDirectClient) PostAccount(account string, headers http.Header) int {
+func (c *ProxyDirectClient) PostAccount(account string, headers http.Header) *http.Response {
 	partition := c.AccountRing.GetPartition(account, "", "")
 	reqs := make([]*http.Request, 0)
 	for _, device := range c.AccountRing.GetNodes(partition) {
@@ -260,11 +255,10 @@ func (c *ProxyDirectClient) PostAccount(account string, headers http.Header) int
 		}
 		reqs = append(reqs, req)
 	}
-	headers, statusCode := c.quorumResponse(reqs...)
-	return statusCode
+	return c.quorumResponse(reqs...)
 }
 
-func (c *ProxyDirectClient) GetAccount(account string, options map[string]string, headers http.Header) (io.ReadCloser, http.Header, int) {
+func (c *ProxyDirectClient) GetAccount(account string, options map[string]string, headers http.Header) *http.Response {
 	partition := c.AccountRing.GetPartition(account, "", "")
 	reqs := make([]*http.Request, 0)
 	query := mkquery(options)
@@ -277,14 +271,10 @@ func (c *ProxyDirectClient) GetAccount(account string, options map[string]string
 		}
 		reqs = append(reqs, req)
 	}
-	resp := c.firstResponse(reqs...)
-	if resp == nil {
-		return nil, nil, 404
-	}
-	return resp.Body, resp.Header, resp.StatusCode
+	return c.firstResponse(reqs...)
 }
 
-func (c *ProxyDirectClient) HeadAccount(account string, headers http.Header) (http.Header, int) {
+func (c *ProxyDirectClient) HeadAccount(account string, headers http.Header) *http.Response {
 	partition := c.AccountRing.GetPartition(account, "", "")
 	reqs := make([]*http.Request, 0)
 	for _, device := range c.AccountRing.GetNodes(partition) {
@@ -299,15 +289,10 @@ func (c *ProxyDirectClient) HeadAccount(account string, headers http.Header) (ht
 		}
 		reqs = append(reqs, req)
 	}
-	resp := c.firstResponse(reqs...)
-	if resp == nil {
-		return nil, 404
-	}
-	resp.Body.Close()
-	return resp.Header, resp.StatusCode
+	return c.firstResponse(reqs...)
 }
 
-func (c *ProxyDirectClient) DeleteAccount(account string, headers http.Header) int {
+func (c *ProxyDirectClient) DeleteAccount(account string, headers http.Header) *http.Response {
 	partition := c.AccountRing.GetPartition(account, "", "")
 	reqs := make([]*http.Request, 0)
 	for _, device := range c.AccountRing.GetNodes(partition) {
@@ -318,11 +303,10 @@ func (c *ProxyDirectClient) DeleteAccount(account string, headers http.Header) i
 		}
 		reqs = append(reqs, req)
 	}
-	headers, statusCode := c.quorumResponse(reqs...)
-	return statusCode
+	return c.quorumResponse(reqs...)
 }
 
-func (c *ProxyDirectClient) PutContainer(account string, container string, headers http.Header) int {
+func (c *ProxyDirectClient) PutContainer(account string, container string, headers http.Header) *http.Response {
 	partition := c.ContainerRing.GetPartition(account, container, "")
 	accountPartition := c.AccountRing.GetPartition(account, "", "")
 	accountDevices := c.AccountRing.GetNodes(accountPartition)
@@ -340,8 +324,11 @@ func (c *ProxyDirectClient) PutContainer(account string, container string, heade
 				break
 			}
 		}
-		if policy == nil || policy.Deprecated {
-			return 400
+		if policy == nil {
+			return ResponseStub(http.StatusBadRequest, fmt.Sprintf("Invalid X-Storage-Policy %q", policyName))
+		}
+		if policy.Deprecated {
+			return ResponseStub(http.StatusBadRequest, fmt.Sprintf("Storage Policy %q is deprecated", policyName))
 		}
 		policyIndex = policy.Index
 	}
@@ -363,11 +350,10 @@ func (c *ProxyDirectClient) PutContainer(account string, container string, heade
 		req.Header.Set("X-Backend-Storage-Policy-Default", strconv.Itoa(policyDefault))
 		reqs = append(reqs, req)
 	}
-	headers, statusCode := c.quorumResponse(reqs...)
-	return statusCode
+	return c.quorumResponse(reqs...)
 }
 
-func (c *ProxyDirectClient) PostContainer(account string, container string, headers http.Header) int {
+func (c *ProxyDirectClient) PostContainer(account string, container string, headers http.Header) *http.Response {
 	partition := c.ContainerRing.GetPartition(account, container, "")
 	reqs := make([]*http.Request, 0)
 	for _, device := range c.ContainerRing.GetNodes(partition) {
@@ -379,11 +365,10 @@ func (c *ProxyDirectClient) PostContainer(account string, container string, head
 		}
 		reqs = append(reqs, req)
 	}
-	headers, statusCode := c.quorumResponse(reqs...)
-	return statusCode
+	return c.quorumResponse(reqs...)
 }
 
-func (c *ProxyDirectClient) GetContainer(account string, container string, options map[string]string, headers http.Header) (io.ReadCloser, http.Header, int) {
+func (c *ProxyDirectClient) GetContainer(account string, container string, options map[string]string, headers http.Header) *http.Response {
 	partition := c.ContainerRing.GetPartition(account, container, "")
 	reqs := make([]*http.Request, 0)
 	query := mkquery(options)
@@ -396,15 +381,10 @@ func (c *ProxyDirectClient) GetContainer(account string, container string, optio
 		}
 		reqs = append(reqs, req)
 	}
-	resp := c.firstResponse(reqs...)
-	if resp == nil {
-		return nil, nil, 404
-	}
-	return resp.Body, resp.Header, resp.StatusCode
+	return c.firstResponse(reqs...)
 }
 
 func (c *ProxyDirectClient) GetContainerInfo(account string, container string, mc ring.MemcacheRing, lc map[string]*ContainerInfo) *ContainerInfo {
-	var err error
 	key := fmt.Sprintf("container/%s/%s", account, container)
 	var ci *ContainerInfo
 	if lc != nil {
@@ -416,34 +396,35 @@ func (c *ProxyDirectClient) GetContainerInfo(account string, container string, m
 		}
 	}
 	if ci == nil {
-		headers, code := c.HeadContainer(account, container, nil)
-		if code/100 != 2 {
+		resp := c.HeadContainer(account, container, nil)
+		if resp.StatusCode/100 != 2 {
 			return nil
 		}
 		ci = &ContainerInfo{
 			Metadata:    make(map[string]string),
 			SysMetadata: make(map[string]string),
 		}
-		if ci.ObjectCount, err = strconv.ParseInt(headers.Get("X-Container-Object-Count"), 10, 64); err != nil {
+		var err error
+		if ci.ObjectCount, err = strconv.ParseInt(resp.Header.Get("X-Container-Object-Count"), 10, 64); err != nil {
 			return nil
 		}
-		if ci.ObjectBytes, err = strconv.ParseInt(headers.Get("X-Container-Bytes-Used"), 10, 64); err != nil {
+		if ci.ObjectBytes, err = strconv.ParseInt(resp.Header.Get("X-Container-Bytes-Used"), 10, 64); err != nil {
 			return nil
 		}
-		if ci.StoragePolicyIndex, err = strconv.Atoi(headers.Get("X-Backend-Storage-Policy-Index")); err != nil {
+		if ci.StoragePolicyIndex, err = strconv.Atoi(resp.Header.Get("X-Backend-Storage-Policy-Index")); err != nil {
 			return nil
 		}
-		for k := range headers {
+		for k := range resp.Header {
 			if strings.HasPrefix(k, "X-Container-Meta-") {
-				ci.Metadata[k[17:]] = headers.Get(k)
+				ci.Metadata[k[17:]] = resp.Header.Get(k)
 			} else if strings.HasPrefix(k, "X-Container-Sysmeta-") {
-				ci.SysMetadata[k[20:]] = headers.Get(k)
+				ci.SysMetadata[k[20:]] = resp.Header.Get(k)
 			} else if k == "X-Container-Read" {
-				ci.ReadACL = headers.Get(k)
+				ci.ReadACL = resp.Header.Get(k)
 			} else if k == "X-Container-Write" {
-				ci.WriteACL = headers.Get(k)
+				ci.WriteACL = resp.Header.Get(k)
 			} else if k == "X-Container-Sync-Key" {
-				ci.SyncKey = headers.Get(k)
+				ci.SyncKey = resp.Header.Get(k)
 			}
 		}
 		if mc != nil {
@@ -453,7 +434,7 @@ func (c *ProxyDirectClient) GetContainerInfo(account string, container string, m
 	return ci
 }
 
-func (c *ProxyDirectClient) HeadContainer(account string, container string, headers http.Header) (http.Header, int) {
+func (c *ProxyDirectClient) HeadContainer(account string, container string, headers http.Header) *http.Response {
 	partition := c.ContainerRing.GetPartition(account, container, "")
 	reqs := make([]*http.Request, 0)
 	for _, device := range c.ContainerRing.GetNodes(partition) {
@@ -468,15 +449,10 @@ func (c *ProxyDirectClient) HeadContainer(account string, container string, head
 		}
 		reqs = append(reqs, req)
 	}
-	resp := c.firstResponse(reqs...)
-	if resp == nil {
-		return nil, 404
-	}
-	resp.Body.Close()
-	return resp.Header, resp.StatusCode
+	return c.firstResponse(reqs...)
 }
 
-func (c *ProxyDirectClient) DeleteContainer(account string, container string, headers http.Header) int {
+func (c *ProxyDirectClient) DeleteContainer(account string, container string, headers http.Header) *http.Response {
 	partition := c.ContainerRing.GetPartition(account, container, "")
 	accountPartition := c.AccountRing.GetPartition(account, "", "")
 	accountDevices := c.AccountRing.GetNodes(accountPartition)
@@ -493,82 +469,71 @@ func (c *ProxyDirectClient) DeleteContainer(account string, container string, he
 		req.Header.Set("X-Account-Device", accountDevices[i].Device)
 		reqs = append(reqs, req)
 	}
-	headers, statusCode := c.quorumResponse(reqs...)
-	return statusCode
+	return c.quorumResponse(reqs...)
 }
 
-func (c *ProxyDirectClient) PutObject(account string, container string, obj string, headers http.Header, src io.Reader, mc ring.MemcacheRing, lc map[string]*ContainerInfo) (http.Header, int) {
-	oc, status := c.objectClient(account, container, mc, lc)
-	if status != 200 {
-		return nil, status
-	}
-	return oc.putObject(obj, headers, src)
+func (c *ProxyDirectClient) PutObject(account string, container string, obj string, headers http.Header, src io.Reader, mc ring.MemcacheRing, lc map[string]*ContainerInfo) *http.Response {
+	return newObjectClient(c, account, container, mc, lc).putObject(obj, headers, src)
 }
 
-func (c *ProxyDirectClient) PostObject(account string, container string, obj string, headers http.Header, mc ring.MemcacheRing, lc map[string]*ContainerInfo) int {
-	oc, status := c.objectClient(account, container, mc, lc)
-	if status != 200 {
-		return status
-	}
-	return oc.postObject(obj, headers)
+func (c *ProxyDirectClient) PostObject(account string, container string, obj string, headers http.Header, mc ring.MemcacheRing, lc map[string]*ContainerInfo) *http.Response {
+	return newObjectClient(c, account, container, mc, lc).postObject(obj, headers)
 }
 
-func (c *ProxyDirectClient) GetObject(account string, container string, obj string, headers http.Header, mc ring.MemcacheRing, lc map[string]*ContainerInfo) (io.ReadCloser, http.Header, int) {
-	oc, status := c.objectClient(account, container, mc, lc)
-	if status != 200 {
-		return nil, nil, status
-	}
-	return oc.getObject(obj, headers)
+func (c *ProxyDirectClient) GetObject(account string, container string, obj string, headers http.Header, mc ring.MemcacheRing, lc map[string]*ContainerInfo) *http.Response {
+	return newObjectClient(c, account, container, mc, lc).getObject(obj, headers)
 }
 
-func (c *ProxyDirectClient) GrepObject(account string, container string, obj string, search string, mc ring.MemcacheRing, lc map[string]*ContainerInfo) (io.ReadCloser, http.Header, int) {
-	oc, status := c.objectClient(account, container, mc, lc)
-	if status != 200 {
-		return nil, nil, status
-	}
-	return oc.grepObject(obj, search)
+func (c *ProxyDirectClient) GrepObject(account string, container string, obj string, search string, mc ring.MemcacheRing, lc map[string]*ContainerInfo) *http.Response {
+	return newObjectClient(c, account, container, mc, lc).grepObject(obj, search)
 }
 
-func (c *ProxyDirectClient) HeadObject(account string, container string, obj string, headers http.Header, mc ring.MemcacheRing, lc map[string]*ContainerInfo) (http.Header, int) {
-	oc, status := c.objectClient(account, container, mc, lc)
-	if status != 200 {
-		return nil, status
-	}
-	return oc.headObject(obj, headers)
+func (c *ProxyDirectClient) HeadObject(account string, container string, obj string, headers http.Header, mc ring.MemcacheRing, lc map[string]*ContainerInfo) *http.Response {
+	return newObjectClient(c, account, container, mc, lc).headObject(obj, headers)
 }
 
-func (c *ProxyDirectClient) DeleteObject(account string, container string, obj string, headers http.Header, mc ring.MemcacheRing, lc map[string]*ContainerInfo) int {
-	oc, status := c.objectClient(account, container, mc, lc)
-	if status != 200 {
-		return status
-	}
-	return oc.deleteObject(obj, headers)
+func (c *ProxyDirectClient) DeleteObject(account string, container string, obj string, headers http.Header, mc ring.MemcacheRing, lc map[string]*ContainerInfo) *http.Response {
+	return newObjectClient(c, account, container, mc, lc).deleteObject(obj, headers)
 }
 
-func (c *ProxyDirectClient) objectClient(account string, container string, mc ring.MemcacheRing, lc map[string]*ContainerInfo) (proxyObjectClient, int) {
-	ci := c.GetContainerInfo(account, container, mc, lc)
-	if ci == nil {
-		return nil, 500
-	}
-	return newStandardObjectClient(c, account, container, ci.StoragePolicyIndex)
-}
-
-func (c *ProxyDirectClient) ObjectRingFor(account string, container string, mc ring.MemcacheRing, lc map[string]*ContainerInfo) (ring.Ring, int) {
-	oc, status := c.objectClient(account, container, mc, lc)
-	if oc != nil && status == 200 {
-		return oc.ring(), status
-	}
-	return nil, status
+func (c *ProxyDirectClient) ObjectRingFor(account string, container string, mc ring.MemcacheRing, lc map[string]*ContainerInfo) (ring.Ring, *http.Response) {
+	return newObjectClient(c, account, container, mc, lc).ring()
 }
 
 type proxyObjectClient interface {
-	putObject(obj string, headers http.Header, src io.Reader) (http.Header, int)
-	postObject(obj string, headers http.Header) int
-	getObject(obj string, headers http.Header) (io.ReadCloser, http.Header, int)
-	grepObject(obj string, search string) (io.ReadCloser, http.Header, int)
-	headObject(obj string, headers http.Header) (http.Header, int)
-	deleteObject(obj string, headers http.Header) int
-	ring() ring.Ring
+	putObject(obj string, headers http.Header, src io.Reader) *http.Response
+	postObject(obj string, headers http.Header) *http.Response
+	getObject(obj string, headers http.Header) *http.Response
+	grepObject(obj string, search string) *http.Response
+	headObject(obj string, headers http.Header) *http.Response
+	deleteObject(obj string, headers http.Header) *http.Response
+	ring() (ring.Ring, *http.Response)
+}
+
+type erroringObjectClient struct {
+	body string
+}
+
+func (oc *erroringObjectClient) putObject(obj string, headers http.Header, src io.Reader) *http.Response {
+	return ResponseStub(http.StatusInternalServerError, oc.body)
+}
+func (oc *erroringObjectClient) postObject(obj string, headers http.Header) *http.Response {
+	return ResponseStub(http.StatusInternalServerError, oc.body)
+}
+func (oc *erroringObjectClient) getObject(obj string, headers http.Header) *http.Response {
+	return ResponseStub(http.StatusInternalServerError, oc.body)
+}
+func (oc *erroringObjectClient) grepObject(obj string, search string) *http.Response {
+	return ResponseStub(http.StatusInternalServerError, oc.body)
+}
+func (oc *erroringObjectClient) headObject(obj string, headers http.Header) *http.Response {
+	return ResponseStub(http.StatusInternalServerError, oc.body)
+}
+func (oc *erroringObjectClient) deleteObject(obj string, headers http.Header) *http.Response {
+	return ResponseStub(http.StatusInternalServerError, oc.body)
+}
+func (oc *erroringObjectClient) ring() (ring.Ring, *http.Response) {
+	return nil, ResponseStub(http.StatusInternalServerError, oc.body)
 }
 
 type standardObjectClient struct {
@@ -579,19 +544,23 @@ type standardObjectClient struct {
 	objectRing        ring.Ring
 }
 
-func newStandardObjectClient(proxyDirectClient *ProxyDirectClient, account string, container string, policy int) (*standardObjectClient, int) {
+func newObjectClient(proxyDirectClient *ProxyDirectClient, account string, container string, mc ring.MemcacheRing, lc map[string]*ContainerInfo) proxyObjectClient {
+	ci := proxyDirectClient.GetContainerInfo(account, container, mc, lc)
+	if ci == nil {
+		return &erroringObjectClient{body: "Could not retrieve container information."}
+	}
 	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
 	if err != nil {
-		return nil, 500
+		return &erroringObjectClient{body: "Could not retrieve hash path prefix and suffix."}
 	}
-	objectRing, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, policy)
+	objectRing, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, ci.StoragePolicyIndex)
 	if err != nil {
-		return nil, 500
+		return &erroringObjectClient{body: fmt.Sprintf("Could not load object ring for policy %d.", ci.StoragePolicyIndex)}
 	}
-	return &standardObjectClient{proxyDirectClient: proxyDirectClient, account: account, container: container, policy: policy, objectRing: objectRing}, 200
+	return &standardObjectClient{proxyDirectClient: proxyDirectClient, account: account, container: container, policy: ci.StoragePolicyIndex, objectRing: objectRing}
 }
 
-func (oc *standardObjectClient) putObject(obj string, headers http.Header, src io.Reader) (http.Header, int) {
+func (oc *standardObjectClient) putObject(obj string, headers http.Header, src io.Reader) *http.Response {
 	partition := oc.objectRing.GetPartition(oc.account, oc.container, obj)
 	containerPartition := oc.proxyDirectClient.ContainerRing.GetPartition(oc.account, oc.container, "")
 	containerDevices := oc.proxyDirectClient.ContainerRing.GetNodes(containerPartition)
@@ -637,7 +606,7 @@ func (oc *standardObjectClient) putObject(obj string, headers http.Header, src i
 	return oc.proxyDirectClient.quorumResponse(reqs...)
 }
 
-func (oc *standardObjectClient) postObject(obj string, headers http.Header) int {
+func (oc *standardObjectClient) postObject(obj string, headers http.Header) *http.Response {
 	partition := oc.objectRing.GetPartition(oc.account, oc.container, obj)
 	containerPartition := oc.proxyDirectClient.ContainerRing.GetPartition(oc.account, oc.container, "")
 	containerDevices := oc.proxyDirectClient.ContainerRing.GetNodes(containerPartition)
@@ -658,11 +627,10 @@ func (oc *standardObjectClient) postObject(obj string, headers http.Header) int 
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(oc.policy))
 		reqs = append(reqs, req)
 	}
-	headers, statusCode := oc.proxyDirectClient.quorumResponse(reqs...)
-	return statusCode
+	return oc.proxyDirectClient.quorumResponse(reqs...)
 }
 
-func (oc *standardObjectClient) getObject(obj string, headers http.Header) (io.ReadCloser, http.Header, int) {
+func (oc *standardObjectClient) getObject(obj string, headers http.Header) *http.Response {
 	partition := oc.objectRing.GetPartition(oc.account, oc.container, obj)
 	nodes := oc.objectRing.GetNodes(partition)
 	reqs := make([]*http.Request, 0, len(nodes))
@@ -679,14 +647,10 @@ func (oc *standardObjectClient) getObject(obj string, headers http.Header) (io.R
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(oc.policy))
 		reqs = append(reqs, req)
 	}
-	resp := oc.proxyDirectClient.firstResponse(reqs...)
-	if resp == nil {
-		return nil, nil, 404
-	}
-	return resp.Body, resp.Header, resp.StatusCode
+	return oc.proxyDirectClient.firstResponse(reqs...)
 }
 
-func (oc *standardObjectClient) grepObject(obj string, search string) (io.ReadCloser, http.Header, int) {
+func (oc *standardObjectClient) grepObject(obj string, search string) *http.Response {
 	partition := oc.objectRing.GetPartition(oc.account, oc.container, obj)
 	nodes := oc.objectRing.GetNodes(partition)
 	reqs := make([]*http.Request, 0, len(nodes))
@@ -700,14 +664,10 @@ func (oc *standardObjectClient) grepObject(obj string, search string) (io.ReadCl
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(oc.policy))
 		reqs = append(reqs, req)
 	}
-	resp := oc.proxyDirectClient.firstResponse(reqs...)
-	if resp == nil {
-		return nil, nil, 404
-	}
-	return resp.Body, resp.Header, resp.StatusCode
+	return oc.proxyDirectClient.firstResponse(reqs...)
 }
 
-func (oc *standardObjectClient) headObject(obj string, headers http.Header) (http.Header, int) {
+func (oc *standardObjectClient) headObject(obj string, headers http.Header) *http.Response {
 	partition := oc.objectRing.GetPartition(oc.account, oc.container, obj)
 	nodes := oc.objectRing.GetNodes(partition)
 	reqs := make([]*http.Request, 0, len(nodes))
@@ -724,15 +684,10 @@ func (oc *standardObjectClient) headObject(obj string, headers http.Header) (htt
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(oc.policy))
 		reqs = append(reqs, req)
 	}
-	resp := oc.proxyDirectClient.firstResponse(reqs...)
-	if resp == nil {
-		return nil, 404
-	}
-	resp.Body.Close()
-	return resp.Header, resp.StatusCode
+	return oc.proxyDirectClient.firstResponse(reqs...)
 }
 
-func (oc *standardObjectClient) deleteObject(obj string, headers http.Header) int {
+func (oc *standardObjectClient) deleteObject(obj string, headers http.Header) *http.Response {
 	partition := oc.objectRing.GetPartition(oc.account, oc.container, obj)
 	containerPartition := oc.proxyDirectClient.ContainerRing.GetPartition(oc.account, oc.container, "")
 	containerDevices := oc.proxyDirectClient.ContainerRing.GetNodes(containerPartition)
@@ -753,12 +708,11 @@ func (oc *standardObjectClient) deleteObject(obj string, headers http.Header) in
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(oc.policy))
 		reqs = append(reqs, req)
 	}
-	headers, statusCode := oc.proxyDirectClient.quorumResponse(reqs...)
-	return statusCode
+	return oc.proxyDirectClient.quorumResponse(reqs...)
 }
 
-func (oc *standardObjectClient) ring() ring.Ring {
-	return oc.objectRing
+func (oc *standardObjectClient) ring() (ring.Ring, *http.Response) {
+	return oc.objectRing, nil
 }
 
 type directClient struct {
@@ -768,21 +722,15 @@ type directClient struct {
 
 var _ Client = &directClient{}
 
-func (c *directClient) PutAccount(headers map[string]string) (err error) {
-	if code := c.pc.PutAccount(c.account, common.Map2Headers(headers)); code/100 != 2 {
-		return HTTPError(code)
-	}
-	return nil
+func (c *directClient) PutAccount(headers map[string]string) *http.Response {
+	return c.pc.PutAccount(c.account, common.Map2Headers(headers))
 }
 
-func (c *directClient) PostAccount(headers map[string]string) (err error) {
-	if code := c.pc.PostAccount(c.account, common.Map2Headers(headers)); code/100 != 2 {
-		return HTTPError(code)
-	}
-	return nil
+func (c *directClient) PostAccount(headers map[string]string) *http.Response {
+	return c.pc.PostAccount(c.account, common.Map2Headers(headers))
 }
 
-func (c *directClient) GetAccount(marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ContainerRecord, map[string]string, error) {
+func (c *directClient) GetAccount(marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ContainerRecord, *http.Response) {
 	options := map[string]string{
 		"format":     "json",
 		"marker":     marker,
@@ -794,46 +742,36 @@ func (c *directClient) GetAccount(marker string, endMarker string, limit int, pr
 	if limit != 0 {
 		options["limit"] = strconv.Itoa(limit)
 	}
-	r, h, code := c.pc.GetAccount(c.account, options, common.Map2Headers(headers))
-	if code != 200 {
-		return nil, nil, HTTPError(code)
+	resp := c.pc.GetAccount(c.account, options, common.Map2Headers(headers))
+	if resp.StatusCode/100 != 2 {
+		return nil, resp
 	}
 	var accountListing []ContainerRecord
-	decoder := json.NewDecoder(r)
-	decoder.Decode(&accountListing)
-	return accountListing, common.Headers2Map(h), nil
-}
-
-func (c *directClient) HeadAccount(headers map[string]string) (map[string]string, error) {
-	h, code := c.pc.HeadAccount(c.account, common.Map2Headers(headers))
-	if code/100 != 2 {
-		return nil, HTTPError(code)
+	if err := json.NewDecoder(resp.Body).Decode(&accountListing); err != nil {
+		resp.Body.Close()
+		return nil, ResponseStub(http.StatusInternalServerError, err.Error())
 	}
-	return common.Headers2Map(h), nil
+	resp.Body.Close()
+	return accountListing, resp
 }
 
-func (c *directClient) DeleteAccount(headers map[string]string) (err error) {
-	if code := c.pc.DeleteAccount(c.account, common.Map2Headers(headers)); code/100 != 2 {
-		return HTTPError(code)
-	}
-	return nil
+func (c *directClient) HeadAccount(headers map[string]string) *http.Response {
+	return c.pc.HeadAccount(c.account, common.Map2Headers(headers))
 }
 
-func (c *directClient) PutContainer(container string, headers map[string]string) (err error) {
-	if code := c.pc.PutContainer(c.account, container, common.Map2Headers(headers)); code/100 != 2 {
-		return HTTPError(code)
-	}
-	return nil
+func (c *directClient) DeleteAccount(headers map[string]string) *http.Response {
+	return c.pc.DeleteAccount(c.account, common.Map2Headers(headers))
 }
 
-func (c *directClient) PostContainer(container string, headers map[string]string) (err error) {
-	if code := c.pc.PostContainer(c.account, container, common.Map2Headers(headers)); code/100 != 2 {
-		return HTTPError(code)
-	}
-	return nil
+func (c *directClient) PutContainer(container string, headers map[string]string) *http.Response {
+	return c.pc.PutContainer(c.account, container, common.Map2Headers(headers))
 }
 
-func (c *directClient) GetContainer(container string, marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ObjectRecord, map[string]string, error) {
+func (c *directClient) PostContainer(container string, headers map[string]string) *http.Response {
+	return c.pc.PostContainer(c.account, container, common.Map2Headers(headers))
+}
+
+func (c *directClient) GetContainer(container string, marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ObjectRecord, *http.Response) {
 	options := map[string]string{
 		"format":     "json",
 		"marker":     marker,
@@ -845,71 +783,45 @@ func (c *directClient) GetContainer(container string, marker string, endMarker s
 	if limit != 0 {
 		options["limit"] = strconv.Itoa(limit)
 	}
-	r, h, code := c.pc.GetContainer(c.account, container, options, common.Map2Headers(headers))
-	if code != 200 {
-		return nil, nil, HTTPError(code)
+	resp := c.pc.GetContainer(c.account, container, options, common.Map2Headers(headers))
+	if resp.StatusCode/100 != 2 {
+		return nil, resp
 	}
-	defer r.Close()
 	var containerListing []ObjectRecord
-	decoder := json.NewDecoder(r)
-	decoder.Decode(&containerListing)
-	return containerListing, common.Headers2Map(h), nil
+	if err := json.NewDecoder(resp.Body).Decode(&containerListing); err != nil {
+		resp.Body.Close()
+		return nil, ResponseStub(http.StatusInternalServerError, err.Error())
+	}
+	resp.Body.Close()
+	return containerListing, resp
 }
 
-func (c *directClient) HeadContainer(container string, headers map[string]string) (map[string]string, error) {
-	h, code := c.pc.HeadContainer(c.account, container, common.Map2Headers(headers))
-	if code/100 != 2 {
-		return nil, HTTPError(code)
-	}
-	return common.Headers2Map(h), nil
+func (c *directClient) HeadContainer(container string, headers map[string]string) *http.Response {
+	return c.pc.HeadContainer(c.account, container, common.Map2Headers(headers))
 }
 
-func (c *directClient) DeleteContainer(container string, headers map[string]string) (err error) {
-	if code := c.pc.DeleteContainer(c.account, container, common.Map2Headers(headers)); code/100 != 2 {
-		return HTTPError(code)
-	}
-	return nil
+func (c *directClient) DeleteContainer(container string, headers map[string]string) *http.Response {
+	return c.pc.DeleteContainer(c.account, container, common.Map2Headers(headers))
 }
 
-func (c *directClient) PutObject(container string, obj string, headers map[string]string, src io.Reader) (map[string]string, error) {
-	h, code := c.pc.PutObject(c.account, container, obj, common.Map2Headers(headers), src)
-	if code/100 != 2 {
-		return nil, HTTPError(code)
-	}
-	return common.Headers2Map(h), nil
+func (c *directClient) PutObject(container string, obj string, headers map[string]string, src io.Reader) *http.Response {
+	return c.pc.PutObject(c.account, container, obj, common.Map2Headers(headers), src)
 }
 
-func (c *directClient) PostObject(container string, obj string, headers map[string]string) (err error) {
-	if code := c.pc.PostObject(c.account, container, obj, common.Map2Headers(headers)); code/100 != 2 {
-		return HTTPError(code)
-	}
-	return nil
+func (c *directClient) PostObject(container string, obj string, headers map[string]string) *http.Response {
+	return c.pc.PostObject(c.account, container, obj, common.Map2Headers(headers))
 }
 
-func (c *directClient) GetObject(container string, obj string, headers map[string]string) (io.ReadCloser, map[string]string, error) {
-	r, h, code := c.pc.GetObject(c.account, container, obj, common.Map2Headers(headers))
-	if code/100 != 2 {
-		if r != nil {
-			r.Close()
-		}
-		return nil, nil, HTTPError(code)
-	}
-	return r, common.Headers2Map(h), nil
+func (c *directClient) GetObject(container string, obj string, headers map[string]string) *http.Response {
+	return c.pc.GetObject(c.account, container, obj, common.Map2Headers(headers))
 }
 
-func (c *directClient) HeadObject(container string, obj string, headers map[string]string) (map[string]string, error) {
-	h, code := c.pc.HeadObject(c.account, container, obj, common.Map2Headers(headers))
-	if code/100 != 2 {
-		return nil, HTTPError(code)
-	}
-	return common.Headers2Map(h), nil
+func (c *directClient) HeadObject(container string, obj string, headers map[string]string) *http.Response {
+	return c.pc.HeadObject(c.account, container, obj, common.Map2Headers(headers))
 }
 
-func (c *directClient) DeleteObject(container string, obj string, headers map[string]string) (err error) {
-	if code := c.pc.DeleteObject(c.account, container, obj, common.Map2Headers(headers)); code/100 != 2 {
-		return HTTPError(code)
-	}
-	return nil
+func (c *directClient) DeleteObject(container string, obj string, headers map[string]string) *http.Response {
+	return c.pc.DeleteObject(c.account, container, obj, common.Map2Headers(headers))
 }
 
 // NewDirectClient creates a new direct client with the given account name.

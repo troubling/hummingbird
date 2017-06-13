@@ -53,8 +53,9 @@ func (server *ProxyServer) ContainerGetHandler(writer http.ResponseWriter, reque
 			}
 		}
 	}
-	r, headers, code := ctx.C.GetContainer(vars["account"], vars["container"], options, request.Header)
-	ctx.ACL = headers.Get("X-Container-Read")
+	resp := ctx.C.GetContainer(vars["account"], vars["container"], options, request.Header)
+	defer resp.Body.Close()
+	ctx.ACL = resp.Header.Get("X-Container-Read")
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
 		if ctx.RemoteUser != "" {
 			srv.StandardResponse(writer, 403)
@@ -63,14 +64,11 @@ func (server *ProxyServer) ContainerGetHandler(writer http.ResponseWriter, reque
 		srv.StandardResponse(writer, 401)
 		return
 	}
-	for k := range headers {
-		writer.Header().Set(k, headers.Get(k))
+	for k := range resp.Header {
+		writer.Header().Set(k, resp.Header.Get(k))
 	}
-	writer.WriteHeader(code)
-	if r != nil {
-		defer r.Close()
-		common.Copy(r, writer)
-	}
+	writer.WriteHeader(resp.StatusCode)
+	common.Copy(resp.Body, writer)
 }
 
 func (server *ProxyServer) ContainerHeadHandler(writer http.ResponseWriter, request *http.Request) {
@@ -84,8 +82,9 @@ func (server *ProxyServer) ContainerHeadHandler(writer http.ResponseWriter, requ
 		srv.StandardResponse(writer, 404)
 		return
 	}
-	headers, code := ctx.C.HeadContainer(vars["account"], vars["container"], request.Header)
-	ctx.ACL = headers.Get("X-Container-Read")
+	resp := ctx.C.HeadContainer(vars["account"], vars["container"], request.Header)
+	resp.Body.Close()
+	ctx.ACL = resp.Header.Get("X-Container-Read")
 	if ctx.Authorize != nil && !ctx.Authorize(request) {
 		if ctx.RemoteUser != "" {
 			srv.StandardResponse(writer, 403)
@@ -94,10 +93,10 @@ func (server *ProxyServer) ContainerHeadHandler(writer http.ResponseWriter, requ
 		srv.StandardResponse(writer, 401)
 		return
 	}
-	for k := range headers {
-		writer.Header().Set(k, headers.Get(k))
+	for k := range resp.Header {
+		writer.Header().Set(k, resp.Header.Get(k))
 	}
-	writer.WriteHeader(code)
+	writer.WriteHeader(resp.StatusCode)
 }
 
 func (server *ProxyServer) ContainerPostHandler(writer http.ResponseWriter, request *http.Request) {
@@ -129,7 +128,9 @@ func (server *ProxyServer) ContainerPostHandler(writer http.ResponseWriter, requ
 		writer.Write([]byte(str))
 		return
 	}
-	srv.StandardResponse(writer, ctx.C.PostContainer(vars["account"], vars["container"], request.Header))
+	resp := ctx.C.PostContainer(vars["account"], vars["container"], request.Header)
+	resp.Body.Close()
+	srv.StandardResponse(writer, resp.StatusCode)
 }
 
 func (server *ProxyServer) ContainerPutHandler(writer http.ResponseWriter, request *http.Request) {
@@ -161,7 +162,9 @@ func (server *ProxyServer) ContainerPutHandler(writer http.ResponseWriter, reque
 		writer.Write([]byte(str))
 		return
 	}
-	srv.StandardResponse(writer, ctx.C.PutContainer(vars["account"], vars["container"], request.Header))
+	resp := ctx.C.PutContainer(vars["account"], vars["container"], request.Header)
+	resp.Body.Close()
+	srv.StandardResponse(writer, resp.StatusCode)
 }
 
 func (server *ProxyServer) ContainerDeleteHandler(writer http.ResponseWriter, request *http.Request) {
@@ -183,7 +186,9 @@ func (server *ProxyServer) ContainerDeleteHandler(writer http.ResponseWriter, re
 		srv.StandardResponse(writer, 401)
 		return
 	}
-	srv.StandardResponse(writer, ctx.C.DeleteContainer(vars["account"], vars["container"], request.Header))
+	resp := ctx.C.DeleteContainer(vars["account"], vars["container"], request.Header)
+	resp.Body.Close()
+	srv.StandardResponse(writer, resp.StatusCode)
 }
 
 func cleanACLs(r *http.Request) error {

@@ -1,18 +1,63 @@
 package client
 
 import (
+	"bytes"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 
 	"github.com/troubling/hummingbird/common/ring"
 )
 
-// HTTPError represents a non-200 HTTP response code.
-type HTTPError int
+// ResponseStub returns a fake response with the given info.
+//
+// Note: The Request field of the returned response will be nil; you may want
+// to set the Request field if you have a specific request to reference.
+func ResponseStub(statusCode int, body string) *http.Response {
+	bodyBytes := []byte(body)
+	return &http.Response{
+		Status:        fmt.Sprintf("%d %s", statusCode, http.StatusText(statusCode)),
+		StatusCode:    statusCode,
+		Proto:         "HTTP/1.1",
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Body:          ioutil.NopCloser(bytes.NewBuffer(bodyBytes)),
+		ContentLength: int64(len(bodyBytes)),
+		Header:        http.Header{"Content-Length": {fmt.Sprintf("%d", len(bodyBytes))}, "Content-Type": {"text/plain"}},
+	}
+}
 
-func (e HTTPError) Error() string {
-	return fmt.Sprintf("Bad HTTP status code: %d", e)
+// StubResponse returns a standalone response with the detail from the original
+// response; the full body will be read into memory and the original response's
+// Body closed. This is used to allow the response to complete and close so the
+// transport can be used for another request/response.
+//
+// Note: Any error reading the original response's body will be ignored.
+//
+// Note: The Request field of the returned response will be nil; you may want
+// to set the Request field if you have a specific request to reference.
+func StubResponse(resp *http.Response) *http.Response {
+	bodyBytes, _ := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
+	header := make(http.Header, len(resp.Header))
+	for headerName, headerValues := range resp.Header {
+		copiedHeaderValues := make([]string, len(headerValues))
+		for headerValueIndex, headerValue := range headerValues {
+			copiedHeaderValues[headerValueIndex] = headerValue
+		}
+		header[headerName] = copiedHeaderValues
+	}
+	return &http.Response{
+		Status:        resp.Status,
+		StatusCode:    resp.StatusCode,
+		Proto:         resp.Proto,
+		ProtoMajor:    resp.ProtoMajor,
+		ProtoMinor:    resp.ProtoMinor,
+		Body:          ioutil.NopCloser(bytes.NewBuffer(bodyBytes)),
+		ContentLength: int64(len(bodyBytes)),
+		Header:        header,
+	}
 }
 
 // ContainerRecord is an entry in an account listing.
@@ -33,42 +78,48 @@ type ObjectRecord struct {
 
 // Client is an API interface to CloudFiles.
 type Client interface {
-	PutAccount(headers map[string]string) (err error)
-	PostAccount(headers map[string]string) (err error)
-	GetAccount(marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ContainerRecord, map[string]string, error)
-	HeadAccount(headers map[string]string) (map[string]string, error)
-	DeleteAccount(headers map[string]string) (err error)
-	PutContainer(container string, headers map[string]string) (err error)
-	PostContainer(container string, headers map[string]string) (err error)
-	GetContainer(container string, marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ObjectRecord, map[string]string, error)
-	HeadContainer(container string, headers map[string]string) (map[string]string, error)
-	DeleteContainer(container string, headers map[string]string) (err error)
-	PutObject(container string, obj string, headers map[string]string, src io.Reader) (map[string]string, error)
-	PostObject(container string, obj string, headers map[string]string) (err error)
-	GetObject(container string, obj string, headers map[string]string) (io.ReadCloser, map[string]string, error)
-	HeadObject(container string, obj string, headers map[string]string) (map[string]string, error)
-	DeleteObject(container string, obj string, headers map[string]string) (err error)
+	PutAccount(headers map[string]string) *http.Response
+	PostAccount(headers map[string]string) *http.Response
+	// GetAccount reads the body of the response and converts it into a
+	// []ContainerRecord while also returning the response instance itself.
+	GetAccount(marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ContainerRecord, *http.Response)
+	HeadAccount(headers map[string]string) *http.Response
+	DeleteAccount(headers map[string]string) *http.Response
+	PutContainer(container string, headers map[string]string) *http.Response
+	PostContainer(container string, headers map[string]string) *http.Response
+	// GetContainer reads the body of the response and converts it into an
+	// []ObjectRecord while also returning the response instance itself.
+	GetContainer(container string, marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ObjectRecord, *http.Response)
+	HeadContainer(container string, headers map[string]string) *http.Response
+	DeleteContainer(container string, headers map[string]string) *http.Response
+	PutObject(container string, obj string, headers map[string]string, src io.Reader) *http.Response
+	PostObject(container string, obj string, headers map[string]string) *http.Response
+	GetObject(container string, obj string, headers map[string]string) *http.Response
+	HeadObject(container string, obj string, headers map[string]string) *http.Response
+	DeleteObject(container string, obj string, headers map[string]string) *http.Response
 }
 
 // ProxyClient is similar to Client except it also accepts an account parameter to its operations.  This is meant to be used by the proxy server.
 type ProxyClient interface {
-	PutAccount(account string, headers http.Header) int
-	PostAccount(account string, headers http.Header) int
-	GetAccount(account string, options map[string]string, headers http.Header) (io.ReadCloser, http.Header, int)
-	HeadAccount(account string, headers http.Header) (http.Header, int)
-	DeleteAccount(account string, headers http.Header) int
-	PutContainer(account string, container string, headers http.Header) int
-	PostContainer(account string, container string, headers http.Header) int
-	GetContainer(account string, container string, options map[string]string, headers http.Header) (io.ReadCloser, http.Header, int)
+	PutAccount(account string, headers http.Header) *http.Response
+	PostAccount(account string, headers http.Header) *http.Response
+	GetAccount(account string, options map[string]string, headers http.Header) *http.Response
+	HeadAccount(account string, headers http.Header) *http.Response
+	DeleteAccount(account string, headers http.Header) *http.Response
+	PutContainer(account string, container string, headers http.Header) *http.Response
+	PostContainer(account string, container string, headers http.Header) *http.Response
+	GetContainer(account string, container string, options map[string]string, headers http.Header) *http.Response
 	GetContainerInfo(account string, container string) *ContainerInfo
-	HeadContainer(account string, container string, headers http.Header) (http.Header, int)
-	DeleteContainer(account string, container string, headers http.Header) int
-	PutObject(account string, container string, obj string, headers http.Header, src io.Reader) (http.Header, int)
-	PostObject(account string, container string, obj string, headers http.Header) int
-	GetObject(account string, container string, obj string, headers http.Header) (io.ReadCloser, http.Header, int)
-	HeadObject(account string, container string, obj string, headers http.Header) (http.Header, int)
-	DeleteObject(account string, container string, obj string, headers http.Header) int
-	ObjectRingFor(account string, container string) (ring.Ring, int)
+	HeadContainer(account string, container string, headers http.Header) *http.Response
+	DeleteContainer(account string, container string, headers http.Header) *http.Response
+	PutObject(account string, container string, obj string, headers http.Header, src io.Reader) *http.Response
+	PostObject(account string, container string, obj string, headers http.Header) *http.Response
+	GetObject(account string, container string, obj string, headers http.Header) *http.Response
+	HeadObject(account string, container string, obj string, headers http.Header) *http.Response
+	DeleteObject(account string, container string, obj string, headers http.Header) *http.Response
+	// ObjectRingFor returns the object ring for the given account/container or
+	// a response as to why the ring could not be returned.
+	ObjectRingFor(account string, container string) (ring.Ring, *http.Response)
 }
 
 // ContainerInfo is persisted in memcache via JSON; so this needs to continue to have public fields.
