@@ -44,6 +44,8 @@ func (t *testNext) ServeHTTP(writer http.ResponseWriter, request *http.Request) 
 				body = "[]"
 			}
 		}
+	case "/v1/a/c2/":
+		writer.WriteHeader(404)
 	case "/v1/a/c/o001":
 		writer.WriteHeader(200)
 		body = "Just a test"
@@ -678,6 +680,38 @@ func TestStaticWebCustomErrorPages(t *testing.T) {
 	}
 	i++
 	if next.requests[i].Method != "GET" || next.requests[i].URL.Path != "/v1/a/c/401error.html" {
+		t.Fatal(next.requests[i].Method + " " + next.requests[i].URL.Path)
+	}
+}
+
+func TestStaticWebNoContainerInfo(t *testing.T) {
+	next := &testNext{}
+	s := &staticWebHandler{next: next}
+	request, err := http.NewRequest("GET", "/v1/a/c2/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", &ProxyContext{
+		ProxyContextMiddleware: &ProxyContextMiddleware{next: s},
+		Logger:                 zap.NewNop(),
+		C:                      client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{"container/a/c2": client.NilContainerInfo}),
+		accountInfoCache:       map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
+	}))
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, request)
+	resp := rec.Result()
+	resp.Body.Close()
+	if resp.StatusCode != 404 {
+		t.Fatal(resp.StatusCode)
+	}
+	if len(next.requests) != 1 {
+		for _, r := range next.requests {
+			fmt.Printf("%s %s\n", r.Method, r.URL.Path)
+		}
+		t.Fatal(len(next.requests))
+	}
+	i := 0
+	if next.requests[i].Method != "GET" || next.requests[i].URL.Path != "/v1/a/c2/" {
 		t.Fatal(next.requests[i].Method + " " + next.requests[i].URL.Path)
 	}
 }

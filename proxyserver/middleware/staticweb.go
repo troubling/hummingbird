@@ -78,6 +78,10 @@ func (s *staticWebHandler) ServeHTTP(writer http.ResponseWriter, request *http.R
 		return
 	}
 	ci := s.ctx.C.GetContainerInfo(s.account, s.container)
+	if ci == nil {
+		s.next.ServeHTTP(writer, request)
+		return
+	}
 	s.webIndex = strings.TrimSpace(ci.Metadata["Web-Index"])
 	s.webError = strings.TrimSpace(ci.Metadata["Web-Error"])
 	s.webListings = common.LooksTrue(strings.TrimSpace(ci.Metadata["Web-Listings"]))

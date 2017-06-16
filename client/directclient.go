@@ -384,6 +384,9 @@ func (c *ProxyDirectClient) GetContainer(account string, container string, optio
 	return c.firstResponse(reqs...)
 }
 
+// NilContainerInfo is useful for testing.
+var NilContainerInfo = &ContainerInfo{}
+
 func (c *ProxyDirectClient) GetContainerInfo(account string, container string, mc ring.MemcacheRing, lc map[string]*ContainerInfo) *ContainerInfo {
 	key := fmt.Sprintf("container/%s/%s", account, container)
 	var ci *ContainerInfo
@@ -430,6 +433,9 @@ func (c *ProxyDirectClient) GetContainerInfo(account string, container string, m
 		if mc != nil {
 			mc.Set(key, ci, 30)
 		}
+	}
+	if ci == NilContainerInfo {
+		ci = nil
 	}
 	return ci
 }
