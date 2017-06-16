@@ -116,7 +116,6 @@ func getPathParts(request *http.Request) (bool, string, string, string) {
 }
 
 func (ctx *ProxyContext) GetAccountInfo(account string) *AccountInfo {
-	var err error
 	key := fmt.Sprintf("account/%s", account)
 	ai := ctx.accountInfoCache[key]
 	if ai == nil {
@@ -125,32 +124,35 @@ func (ctx *ProxyContext) GetAccountInfo(account string) *AccountInfo {
 		}
 	}
 	if ai == nil {
-		headers, code := ctx.C.HeadAccount(account, nil)
-		if code == 404 && autoCreateAccounts {
+		resp := ctx.C.HeadAccount(account, nil)
+		if resp.StatusCode == http.StatusNotFound && autoCreateAccounts {
+			resp.Body.Close()
 			ctx.C.PutAccount(account, http.Header{"X-Timestamp": []string{common.GetTimestamp()}})
-			headers, code = ctx.C.HeadAccount(account, nil)
+			resp = ctx.C.HeadAccount(account, nil)
 		}
-		if code/100 != 2 {
+		resp.Body.Close()
+		if resp.StatusCode/100 != 2 {
 			return nil
 		}
 		ai = &AccountInfo{
 			Metadata:    make(map[string]string),
 			SysMetadata: make(map[string]string),
 		}
-		if ai.ContainerCount, err = strconv.ParseInt(headers.Get("X-Account-Container-Count"), 10, 64); err != nil {
+		var err error
+		if ai.ContainerCount, err = strconv.ParseInt(resp.Header.Get("X-Account-Container-Count"), 10, 64); err != nil {
 			return nil
 		}
-		if ai.ObjectCount, err = strconv.ParseInt(headers.Get("X-Account-Object-Count"), 10, 64); err != nil {
+		if ai.ObjectCount, err = strconv.ParseInt(resp.Header.Get("X-Account-Object-Count"), 10, 64); err != nil {
 			return nil
 		}
-		if ai.ObjectBytes, err = strconv.ParseInt(headers.Get("X-Account-Bytes-Used"), 10, 64); err != nil {
+		if ai.ObjectBytes, err = strconv.ParseInt(resp.Header.Get("X-Account-Bytes-Used"), 10, 64); err != nil {
 			return nil
 		}
-		for k := range headers {
+		for k := range resp.Header {
 			if strings.HasPrefix(k, "X-Account-Meta-") {
-				ai.Metadata[k[15:]] = headers.Get(k)
+				ai.Metadata[k[15:]] = resp.Header.Get(k)
 			} else if strings.HasPrefix(k, "X-Account-Sysmeta-") {
-				ai.SysMetadata[k[18:]] = headers.Get(k)
+				ai.SysMetadata[k[18:]] = resp.Header.Get(k)
 			}
 		}
 		ctx.Cache.Set(key, ai, 30)

@@ -46,15 +46,13 @@ func (server *ProxyServer) AccountGetHandler(writer http.ResponseWriter, request
 			}
 		}
 	}
-	r, headers, code := ctx.C.GetAccount(vars["account"], options, request.Header)
-	for k := range headers {
-		writer.Header().Set(k, headers.Get(k))
+	resp := ctx.C.GetAccount(vars["account"], options, request.Header)
+	for k := range resp.Header {
+		writer.Header().Set(k, resp.Header.Get(k))
 	}
-	writer.WriteHeader(code)
-	if r != nil {
-		defer r.Close()
-		common.Copy(r, writer)
-	}
+	writer.WriteHeader(resp.StatusCode)
+	defer resp.Body.Close()
+	common.Copy(resp.Body, writer)
 }
 
 func (server *ProxyServer) AccountHeadHandler(writer http.ResponseWriter, request *http.Request) {
@@ -72,11 +70,12 @@ func (server *ProxyServer) AccountHeadHandler(writer http.ResponseWriter, reques
 		srv.StandardResponse(writer, 401)
 		return
 	}
-	headers, code := ctx.C.HeadAccount(vars["account"], request.Header)
-	for k := range headers {
-		writer.Header().Set(k, headers.Get(k))
+	resp := ctx.C.HeadAccount(vars["account"], request.Header)
+	for k := range resp.Header {
+		writer.Header().Set(k, resp.Header.Get(k))
 	}
-	writer.WriteHeader(code)
+	resp.Body.Close()
+	writer.WriteHeader(resp.StatusCode)
 }
 
 func (server *ProxyServer) AccountPostHandler(writer http.ResponseWriter, request *http.Request) {
@@ -101,7 +100,9 @@ func (server *ProxyServer) AccountPostHandler(writer http.ResponseWriter, reques
 		return
 	}
 	defer ctx.InvalidateAccountInfo(vars["account"])
-	srv.StandardResponse(writer, ctx.C.PostAccount(vars["account"], request.Header))
+	resp := ctx.C.PostAccount(vars["account"], request.Header)
+	resp.Body.Close()
+	srv.StandardResponse(writer, resp.StatusCode)
 }
 
 func (server *ProxyServer) AccountPutHandler(writer http.ResponseWriter, request *http.Request) {
@@ -126,7 +127,9 @@ func (server *ProxyServer) AccountPutHandler(writer http.ResponseWriter, request
 		return
 	}
 	defer ctx.InvalidateAccountInfo(vars["account"])
-	srv.StandardResponse(writer, ctx.C.PutAccount(vars["account"], request.Header))
+	resp := ctx.C.PutAccount(vars["account"], request.Header)
+	resp.Body.Close()
+	srv.StandardResponse(writer, resp.StatusCode)
 }
 
 func (server *ProxyServer) AccountDeleteHandler(writer http.ResponseWriter, request *http.Request) {
@@ -145,5 +148,7 @@ func (server *ProxyServer) AccountDeleteHandler(writer http.ResponseWriter, requ
 		return
 	}
 	defer ctx.InvalidateAccountInfo(vars["account"])
-	srv.StandardResponse(writer, ctx.C.DeleteAccount(vars["account"], request.Header))
+	resp := ctx.C.DeleteAccount(vars["account"], request.Header)
+	resp.Body.Close()
+	srv.StandardResponse(writer, resp.StatusCode)
 }

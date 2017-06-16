@@ -4,15 +4,11 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/troubling/hummingbird/common"
 )
 
 // userClient is a Client to be used by end-users.  It knows how to authenticate with auth v1 and v2.
@@ -39,50 +35,41 @@ func (c *userClient) authedRequest(method string, path string, body io.Reader, h
 	return req, nil
 }
 
-func (c *userClient) do(req *http.Request) (*http.Response, error) {
+func (c *userClient) do(req *http.Request) *http.Response {
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, err
+		return ResponseStub(http.StatusBadRequest, err.Error())
 	}
-	if resp.StatusCode == 401 {
+	if resp.StatusCode == http.StatusUnauthorized {
 		resp.Body.Close()
-		if c.authenticate() != nil {
-			return nil, errors.New("Authentication failed.")
+		if aResp := c.authenticate(); aResp.StatusCode/100 != 2 {
+			return aResp
 		}
 		resp, err = c.client.Do(req)
 		if err != nil {
-			return nil, err
+			return ResponseStub(http.StatusBadRequest, err.Error())
 		}
 	}
-	if resp.StatusCode/100 != 2 {
-		resp.Body.Close()
-		return nil, HTTPError(resp.StatusCode)
-	}
-	return resp, nil
+	return resp
 }
 
-func (c *userClient) doRequest(method string, path string, body io.Reader, headers map[string]string) error {
+func (c *userClient) doRequest(method string, path string, body io.Reader, headers map[string]string) *http.Response {
 	req, err := c.authedRequest(method, path, body, headers)
 	if err != nil {
-		return err
+		return ResponseStub(http.StatusBadRequest, err.Error())
 	}
-	resp, err := c.do(req)
-	if err != nil {
-		return err
-	}
-	resp.Body.Close()
-	return nil
+	return c.do(req)
 }
 
-func (c *userClient) PutAccount(headers map[string]string) (err error) {
+func (c *userClient) PutAccount(headers map[string]string) *http.Response {
 	return c.doRequest("PUT", "", nil, headers)
 }
 
-func (c *userClient) PostAccount(headers map[string]string) (err error) {
+func (c *userClient) PostAccount(headers map[string]string) *http.Response {
 	return c.doRequest("POST", "", nil, headers)
 }
 
-func (c *userClient) GetAccount(marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ContainerRecord, map[string]string, error) {
+func (c *userClient) GetAccount(marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ContainerRecord, *http.Response) {
 	limitStr := ""
 	if limit > 0 {
 		limitStr = strconv.Itoa(limit)
@@ -90,51 +77,39 @@ func (c *userClient) GetAccount(marker string, endMarker string, limit int, pref
 	path := mkquery(map[string]string{"marker": marker, "end_marker": endMarker, "prefix": prefix, "delimiter": delimiter, "limit": limitStr, "reverse": reverse})
 	req, err := c.authedRequest("GET", path, nil, headers)
 	if err != nil {
-		return nil, nil, err
+		return nil, ResponseStub(http.StatusBadRequest, err.Error())
 	}
 	req.Header.Set("Accept", "application/json")
-	resp, err := c.do(req)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, nil, err
+	resp := c.do(req)
+	if resp.StatusCode/100 != 2 {
+		return nil, resp
 	}
 	var accountListing []ContainerRecord
-	if err := json.Unmarshal(body, &accountListing); err != nil {
-		return nil, nil, err
-	}
-	return accountListing, common.Headers2Map(resp.Header), nil
-}
-
-func (c *userClient) HeadAccount(headers map[string]string) (map[string]string, error) {
-	req, err := c.authedRequest("HEAD", "", nil, headers)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := c.do(req)
-	if err != nil {
-		return nil, err
+	if err := json.NewDecoder(resp.Body).Decode(&accountListing); err != nil {
+		resp.Body.Close()
+		return nil, ResponseStub(http.StatusInternalServerError, err.Error())
 	}
 	resp.Body.Close()
-	return common.Headers2Map(resp.Header), nil
+	return accountListing, resp
 }
 
-func (c *userClient) DeleteAccount(headers map[string]string) (err error) {
+func (c *userClient) HeadAccount(headers map[string]string) *http.Response {
+	return c.doRequest("HEAD", "", nil, headers)
+}
+
+func (c *userClient) DeleteAccount(headers map[string]string) *http.Response {
 	return c.doRequest("DELETE", "", nil, nil)
 }
 
-func (c *userClient) PutContainer(container string, headers map[string]string) (err error) {
+func (c *userClient) PutContainer(container string, headers map[string]string) *http.Response {
 	return c.doRequest("PUT", "/"+container, nil, headers)
 }
 
-func (c *userClient) PostContainer(container string, headers map[string]string) (err error) {
+func (c *userClient) PostContainer(container string, headers map[string]string) *http.Response {
 	return c.doRequest("POST", "/"+container, nil, headers)
 }
 
-func (c *userClient) GetContainer(container string, marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ObjectRecord, map[string]string, error) {
+func (c *userClient) GetContainer(container string, marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ObjectRecord, *http.Response) {
 	limitStr := ""
 	if limit > 0 {
 		limitStr = strconv.Itoa(limit)
@@ -142,109 +117,71 @@ func (c *userClient) GetContainer(container string, marker string, endMarker str
 	path := "/" + container + mkquery(map[string]string{"marker": marker, "end_marker": endMarker, "prefix": prefix, "delimiter": delimiter, "limit": limitStr, "reverse": reverse})
 	req, err := c.authedRequest("GET", path, nil, headers)
 	if err != nil {
-		return nil, nil, err
+		return nil, ResponseStub(http.StatusBadRequest, err.Error())
 	}
 	req.Header.Set("Accept", "application/json")
-	resp, err := c.do(req)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, nil, err
+	resp := c.do(req)
+	if resp.StatusCode/100 != 2 {
+		return nil, resp
 	}
 	var containerListing []ObjectRecord
-	if err := json.Unmarshal(body, &containerListing); err != nil {
-		return nil, nil, err
-	}
-	return containerListing, common.Headers2Map(resp.Header), nil
-}
-
-func (c *userClient) HeadContainer(container string, headers map[string]string) (map[string]string, error) {
-	req, err := c.authedRequest("HEAD", "/"+container, nil, headers)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := c.do(req)
-	if err != nil {
-		return nil, err
+	if err := json.NewDecoder(resp.Body).Decode(&containerListing); err != nil {
+		resp.Body.Close()
+		return nil, ResponseStub(http.StatusInternalServerError, err.Error())
 	}
 	resp.Body.Close()
-	return common.Headers2Map(resp.Header), nil
+	return containerListing, resp
 }
 
-func (c *userClient) DeleteContainer(container string, headers map[string]string) (err error) {
+func (c *userClient) HeadContainer(container string, headers map[string]string) *http.Response {
+	return c.doRequest("HEAD", "/"+container, nil, headers)
+}
+
+func (c *userClient) DeleteContainer(container string, headers map[string]string) *http.Response {
 	return c.doRequest("DELETE", "/"+container, nil, headers)
 }
 
-func (c *userClient) PutObject(container string, obj string, headers map[string]string, src io.Reader) (map[string]string, error) {
-	req, err := c.authedRequest("PUT", "/"+container+"/"+obj, src, headers)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := c.do(req)
-	if err != nil {
-		return nil, err
-	}
-	resp.Body.Close()
-	return common.Headers2Map(resp.Header), nil
+func (c *userClient) PutObject(container string, obj string, headers map[string]string, src io.Reader) *http.Response {
+	return c.doRequest("PUT", "/"+container+"/"+obj, src, headers)
 }
 
-func (c *userClient) PostObject(container string, obj string, headers map[string]string) (err error) {
+func (c *userClient) PostObject(container string, obj string, headers map[string]string) *http.Response {
 	return c.doRequest("POST", "/"+container+"/"+obj, nil, headers)
 }
 
-func (c *userClient) GetObject(container string, obj string, headers map[string]string) (io.ReadCloser, map[string]string, error) {
-	req, err := c.authedRequest("GET", "/"+container+"/"+obj, nil, headers)
-	if err != nil {
-		return nil, nil, err
-	}
-	resp, err := c.do(req)
-	if err != nil {
-		return nil, nil, err
-	}
-	return resp.Body, common.Headers2Map(resp.Header), nil
+func (c *userClient) GetObject(container string, obj string, headers map[string]string) *http.Response {
+	return c.doRequest("GET", "/"+container+"/"+obj, nil, headers)
 }
 
-func (c *userClient) HeadObject(container string, obj string, headers map[string]string) (map[string]string, error) {
-	req, err := c.authedRequest("HEAD", "/"+container+"/"+obj, nil, headers)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := c.do(req)
-	if err != nil {
-		return nil, err
-	}
-	resp.Body.Close()
-	return common.Headers2Map(resp.Header), nil
+func (c *userClient) HeadObject(container string, obj string, headers map[string]string) *http.Response {
+	return c.doRequest("HEAD", "/"+container+"/"+obj, nil, headers)
 }
 
-func (c *userClient) DeleteObject(container string, obj string, headers map[string]string) (err error) {
+func (c *userClient) DeleteObject(container string, obj string, headers map[string]string) *http.Response {
 	return c.doRequest("DELETE", "/"+container+"/"+obj, nil, headers)
 }
 
-func (c *userClient) authenticatev1() error {
+func (c *userClient) authenticatev1() *http.Response {
 	req, err := http.NewRequest("GET", c.authurl, nil)
+	if err != nil {
+		return ResponseStub(http.StatusBadRequest, err.Error())
+	}
 	req.Header.Set("X-Auth-User", c.username)
 	req.Header.Set("X-Auth-Key", c.apikey)
-	if err != nil {
-		return err
-	}
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return err
+		return ResponseStub(http.StatusBadRequest, err.Error())
 	}
-	resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return HTTPError(resp.StatusCode)
+		return resp
 	}
 	c.ServiceURL = resp.Header.Get("X-Storage-Url")
 	c.AuthToken = resp.Header.Get("X-Auth-Token")
-	if c.ServiceURL != "" && c.AuthToken != "" {
-		return nil
+	if c.ServiceURL == "" || c.AuthToken != "" {
+		resp.Body.Close()
+		return ResponseStub(http.StatusInternalServerError, "Response did not have X-Storage-Url or X-Auth-Token headers.")
 	}
-	return errors.New("Failed to authenticate.")
+	return resp
 }
 
 type KeystoneRequestV2 struct {
@@ -289,7 +226,7 @@ type KeystoneResponseV2 struct {
 	} `json:"access"`
 }
 
-func (c *userClient) authenticatev2() (err error) {
+func (c *userClient) authenticatev2() *http.Response {
 	if !strings.HasSuffix(c.authurl, "tokens") {
 		if c.authurl[len(c.authurl)-1] == '/' {
 			c.authurl = c.authurl + "tokens"
@@ -298,6 +235,7 @@ func (c *userClient) authenticatev2() (err error) {
 		}
 	}
 	var authReq []byte
+	var err error
 	if c.password != "" {
 		creds := &KeystonePasswordAuthV2{TenantName: c.tenant}
 		creds.PasswordCredentials.Username = c.username
@@ -309,25 +247,24 @@ func (c *userClient) authenticatev2() (err error) {
 		creds.APIKeyCredentials.APIKey = c.apikey
 		authReq, err = json.Marshal(&KeystoneRequestV2{Auth: creds})
 	} else {
-		return errors.New("Couldn't figure out what credentials to use.")
+		return ResponseStub(http.StatusInternalServerError, "Couldn't figure out what credentials to use.")
 	}
 	if err != nil {
-		return err
+		return ResponseStub(http.StatusInternalServerError, err.Error())
 	}
 	resp, err := c.client.Post(c.authurl, "application/json", bytes.NewBuffer(authReq))
 	if err != nil {
-		return err
+		return ResponseStub(http.StatusBadRequest, err.Error())
 	}
-	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return HTTPError(resp.StatusCode)
+		return resp
 	}
 	var authResponse KeystoneResponseV2
-	if body, err := ioutil.ReadAll(resp.Body); err != nil {
-		return err
-	} else if err = json.Unmarshal(body, &authResponse); err != nil {
-		return err
+	if err := json.NewDecoder(resp.Body).Decode(&authResponse); err != nil {
+		resp.Body.Close()
+		return ResponseStub(http.StatusInternalServerError, err.Error())
 	}
+	resp.Body.Close()
 	c.AuthToken = authResponse.Access.Token.ID
 	region := c.region
 	if region == "" {
@@ -342,15 +279,15 @@ func (c *userClient) authenticatev2() (err error) {
 					} else {
 						c.ServiceURL = e.PublicURL
 					}
-					return nil
+					return ResponseStub(http.StatusOK, "")
 				}
 			}
 		}
 	}
-	return errors.New("Didn't find endpoint")
+	return ResponseStub(http.StatusInternalServerError, "Didn't find endpoint")
 }
 
-func (c *userClient) authenticate() error {
+func (c *userClient) authenticate() *http.Response {
 	if strings.Contains(c.authurl, "/v2") {
 		return c.authenticatev2()
 	} else {
@@ -358,8 +295,9 @@ func (c *userClient) authenticate() error {
 	}
 }
 
-// NewClient creates a new end-user client.  It authenticates immediately, and returns an error if unable to.
-func NewClient(tenant string, username string, password string, apikey string, region string, authurl string, private bool) (Client, error) {
+// NewClient creates a new end-user client. It authenticates immediately, and
+// returns the error response if unable to.
+func NewClient(tenant string, username string, password string, apikey string, region string, authurl string, private bool) (Client, *http.Response) {
 	c := &userClient{
 		client:   &http.Client{Timeout: 30 * time.Minute},
 		tenant:   tenant,
@@ -370,14 +308,18 @@ func NewClient(tenant string, username string, password string, apikey string, r
 		authurl:  authurl,
 		private:  private,
 	}
-	if err := c.authenticate(); err != nil {
-		return nil, err
+	if aResp := c.authenticate(); aResp.StatusCode/100 != 2 {
+		return nil, aResp
+	} else {
+		aResp.Body.Close()
 	}
 	return c, nil
 }
 
-// NewInsecureClient creates a new end-user client with SSL verification turned off.  It authenticates immediately, and returns an error if unable to.
-func NewInsecureClient(tenant string, username string, password string, apikey string, region string, authurl string, private bool) (Client, error) {
+// NewInsecureClient creates a new end-user client with SSL verification turned
+// off. It authenticates immediately, and returns the error response if unable
+// to.
+func NewInsecureClient(tenant string, username string, password string, apikey string, region string, authurl string, private bool) (Client, *http.Response) {
 	c := &userClient{
 		client: &http.Client{
 			Timeout: 30 * time.Minute,
@@ -393,8 +335,10 @@ func NewInsecureClient(tenant string, username string, password string, apikey s
 		authurl:  authurl,
 		private:  private,
 	}
-	if err := c.authenticate(); err != nil {
-		return nil, err
+	if aResp := c.authenticate(); aResp.StatusCode/100 != 2 {
+		return nil, aResp
+	} else {
+		aResp.Body.Close()
 	}
 	return c, nil
 }

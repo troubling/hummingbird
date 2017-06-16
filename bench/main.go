@@ -22,6 +22,7 @@ import (
 	"io/ioutil"
 	"math"
 	"math/rand"
+	"net/http"
 	"os"
 	"sort"
 	"sync"
@@ -40,16 +41,18 @@ type Object struct {
 }
 
 func (obj *Object) Put() bool {
-	_, err := obj.c.PutObject(obj.container, obj.name, nil, bytes.NewReader(obj.data))
-	return err == nil
+	resp := obj.c.PutObject(obj.container, obj.name, nil, bytes.NewReader(obj.data))
+	resp.Body.Close()
+	return resp.StatusCode/100 != 2
 }
 
 func (obj *Object) Get() bool {
-	if r, _, err := obj.c.GetObject(obj.container, obj.name, nil); err != nil {
+	if resp := obj.c.GetObject(obj.container, obj.name, nil); resp.StatusCode/100 != 2 {
+		resp.Body.Close()
 		return false
 	} else {
-		io.Copy(ioutil.Discard, r)
-		r.Close()
+		io.Copy(ioutil.Discard, resp.Body)
+		resp.Body.Close()
 		return true
 	}
 }
@@ -160,13 +163,16 @@ func RunBench(args []string) {
 	salt := fmt.Sprintf("%d", rand.Int63())
 
 	var cli client.Client
+	var resp *http.Response
 	if allowInsecureAuthCert {
-		cli, err = client.NewInsecureClient("", authUser, "", authKey, "", authURL, false)
+		cli, resp = client.NewInsecureClient("", authUser, "", authKey, "", authURL, false)
 	} else {
-		cli, err = client.NewClient("", authUser, "", authKey, "", authURL, false)
+		cli, resp = client.NewClient("", authUser, "", authKey, "", authURL, false)
 	}
-	if err != nil {
-		fmt.Println("Error creating client:", err)
+	if resp != nil {
+		msg, _ := ioutil.ReadAll(resp.Body)
+		resp.Body.Close()
+		fmt.Println("Error creating client:", msg)
 		os.Exit(1)
 	}
 	numContainers := concurrency
@@ -256,13 +262,16 @@ func RunThrash(args []string) {
 	salt := fmt.Sprintf("%d", rand.Int63())
 
 	var cli client.Client
+	var resp *http.Response
 	if allowInsecureAuthCert {
-		cli, err = client.NewInsecureClient("", authUser, "", authKey, "", authURL, false)
+		cli, resp = client.NewInsecureClient("", authUser, "", authKey, "", authURL, false)
 	} else {
-		cli, err = client.NewClient("", authUser, "", authKey, "", authURL, false)
+		cli, resp = client.NewClient("", authUser, "", authKey, "", authURL, false)
 	}
 	if err != nil {
-		fmt.Println("Error creating client:", err)
+		msg, _ := ioutil.ReadAll(resp.Body)
+		resp.Body.Close()
+		fmt.Println("Error creating client:", msg)
 		os.Exit(1)
 	}
 

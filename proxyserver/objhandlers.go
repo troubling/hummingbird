@@ -47,15 +47,13 @@ func (server *ProxyServer) ObjectGetHandler(writer http.ResponseWriter, request 
 		srv.StandardResponse(writer, 401)
 		return
 	}
-	r, headers, code := ctx.C.GetObject(vars["account"], vars["container"], vars["obj"], request.Header)
-	for k := range headers {
-		writer.Header().Set(k, headers.Get(k))
+	resp := ctx.C.GetObject(vars["account"], vars["container"], vars["obj"], request.Header)
+	for k := range resp.Header {
+		writer.Header().Set(k, resp.Header.Get(k))
 	}
-	writer.WriteHeader(code)
-	if r != nil {
-		defer r.Close()
-		common.Copy(r, writer)
-	}
+	writer.WriteHeader(resp.StatusCode)
+	common.Copy(resp.Body, writer)
+	resp.Body.Close()
 }
 
 func (server *ProxyServer) ObjectHeadHandler(writer http.ResponseWriter, request *http.Request) {
@@ -79,11 +77,12 @@ func (server *ProxyServer) ObjectHeadHandler(writer http.ResponseWriter, request
 		srv.StandardResponse(writer, 401)
 		return
 	}
-	headers, code := ctx.C.HeadObject(vars["account"], vars["container"], vars["obj"], request.Header)
-	for k := range headers {
-		writer.Header().Set(k, headers.Get(k))
+	resp := ctx.C.HeadObject(vars["account"], vars["container"], vars["obj"], request.Header)
+	for k := range resp.Header {
+		writer.Header().Set(k, resp.Header.Get(k))
 	}
-	writer.WriteHeader(code)
+	resp.Body.Close()
+	writer.WriteHeader(resp.StatusCode)
 }
 
 func (server *ProxyServer) ObjectDeleteHandler(writer http.ResponseWriter, request *http.Request) {
@@ -107,7 +106,9 @@ func (server *ProxyServer) ObjectDeleteHandler(writer http.ResponseWriter, reque
 		srv.StandardResponse(writer, 401)
 		return
 	}
-	srv.StandardResponse(writer, ctx.C.DeleteObject(vars["account"], vars["container"], vars["obj"], request.Header))
+	resp := ctx.C.DeleteObject(vars["account"], vars["container"], vars["obj"], request.Header)
+	resp.Body.Close()
+	srv.StandardResponse(writer, resp.StatusCode)
 }
 
 func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request *http.Request) {
@@ -150,10 +151,11 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 		writer.Write([]byte(str))
 		return
 	}
-	h, code := ctx.C.PutObject(vars["account"], vars["container"], vars["obj"], request.Header, request.Body)
-	writer.Header().Set("Etag", h.Get("Etag"))
+	resp := ctx.C.PutObject(vars["account"], vars["container"], vars["obj"], request.Header, request.Body)
+	resp.Body.Close()
+	writer.Header().Set("Etag", resp.Header.Get("Etag"))
 	if modified, err := common.ParseDate(request.Header.Get("X-Timestamp")); err == nil {
 		writer.Header().Set("Last-Modified", common.FormatLastModified(modified))
 	}
-	srv.StandardResponse(writer, code)
+	srv.StandardResponse(writer, resp.StatusCode)
 }
