@@ -40,6 +40,21 @@ const (
 	EXTRA_HEADER_COUNT        = 0
 )
 
+var DEFAULT_CONSTRAINTS = map[string]interface{}{
+	"max_file_size":             MAX_FILE_SIZE,
+	"max_meta_name_length":      MAX_META_NAME_LENGTH,
+	"max_meta_value_length":     MAX_META_VALUE_LENGTH,
+	"max_meta_count":            MAX_META_COUNT,
+	"max_meta_overall_size":     MAX_META_OVERALL_SIZE,
+	"max_header_size":           MAX_HEADER_SIZE,
+	"max_object_name_length":    MAX_OBJECT_NAME_LENGTH,
+	"container_listing_limit":   CONTAINER_LISTING_LIMIT,
+	"account_listing_limit":     ACCOUNT_LISTING_LIMIT,
+	"max_account_name_length":   MAX_ACCOUNT_NAME_LENGTH,
+	"max_container_name_length": MAX_CONTAINER_NAME_LENGTH,
+	"extra_header_count":        EXTRA_HEADER_COUNT,
+}
+
 func CheckMetadata(req *http.Request, targetType string) (int, string) {
 	metaCount := 0
 	metaSize := 0

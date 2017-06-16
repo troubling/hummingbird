@@ -41,6 +41,23 @@ func (p PolicyList) Default() int {
 	return 0
 }
 
+func (p PolicyList) GetPolicyInfo() []map[string]interface{} {
+	policyInfo := []map[string]interface{}{}
+	for _, v := range p {
+		if v.Deprecated {
+			continue
+		}
+		pol := map[string]interface{}{}
+		pol["name"] = v.Name
+		if v.Default {
+			pol["default"] = v.Default
+		}
+		pol["aliases"] = strings.Join(v.Aliases, ", ")
+		policyInfo = append(policyInfo, pol)
+	}
+	return policyInfo
+}
+
 // LoadPolicies loads policies, probably from /etc/swift/swift.conf
 func normalLoadPolicies() PolicyList {
 	policies := map[int]*Policy{0: {
@@ -56,18 +73,19 @@ func normalLoadPolicies() PolicyList {
 			for key := range conf.File {
 				var policyIndex int
 				if c, err := fmt.Sscanf(key, "storage-policy:%d", &policyIndex); err == nil && c == 1 {
-					aliases := []string{}
+					name := conf.GetDefault(key, "name", fmt.Sprintf("Policy-%d", policyIndex))
+					aliases := []string{name}
 					aliasList := conf.GetDefault(key, "aliases", "")
 					for _, alias := range strings.Split(aliasList, ",") {
 						alias = strings.Trim(alias, " ")
-						if alias != "" {
+						if alias != "" && alias != name {
 							aliases = append(aliases, alias)
 						}
 					}
 					policies[policyIndex] = &Policy{
 						Index:      policyIndex,
 						Type:       conf.GetDefault(key, "policy_type", "replication"),
-						Name:       conf.GetDefault(key, "name", fmt.Sprintf("Policy-%d", policyIndex)),
+						Name:       name,
 						Aliases:    aliases,
 						Deprecated: conf.GetBool(key, "deprecated", false),
 						Default:    conf.GetBool(key, "default", false),

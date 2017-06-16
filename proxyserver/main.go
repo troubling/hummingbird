@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/troubling/hummingbird/client"
+	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
@@ -143,9 +144,19 @@ func GetServer(serverconf conf.Config, flags *flag.FlagSet) (string, int, srv.Se
 	if server.logger, err = srv.SetupLogger("proxy-server", &server.logLevel, flags, logPath); err != nil {
 		return "", 0, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
-	server.proxyDirectClient, err = client.NewProxyDirectClient(conf.LoadPolicies())
+	policies := conf.LoadPolicies()
+	server.proxyDirectClient, err = client.NewProxyDirectClient(policies)
 	if err != nil {
 		return "", 0, nil, nil, fmt.Errorf("Error setting up proxyDirectClient: %v", err)
 	}
+	info := map[string]interface{}{
+		"version":          common.Version,
+		"strict_cors_mode": true,
+		"policies":         policies.GetPolicyInfo(),
+	}
+	for k, v := range DEFAULT_CONSTRAINTS {
+		info[k] = v
+	}
+	middleware.RegisterInfo("swift", info)
 	return bindIP, int(bindPort), server, server.logger, nil
 }
