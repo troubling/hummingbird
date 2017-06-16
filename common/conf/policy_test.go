@@ -39,11 +39,38 @@ func TestLoadPolicy(t *testing.T) {
 	require.Equal(t, policyList[0].Name, "gold")
 	require.Equal(t, policyList[0].Default, true)
 	require.Equal(t, policyList[0].Deprecated, false)
-	require.Equal(t, policyList[0].Aliases, []string{"yellow", "orange"})
+	require.Equal(t, policyList[0].Aliases, []string{"gold", "yellow", "orange"})
 	require.Equal(t, policyList[1].Name, "silver")
 	require.Equal(t, policyList[1].Deprecated, true)
 	require.Equal(t, policyList[1].Default, false)
-	require.Equal(t, policyList[1].Aliases, []string{})
+	require.Equal(t, policyList[1].Aliases, []string{"silver"})
+}
+
+func TestGetPolicyInfo(t *testing.T) {
+	tempFile, _ := ioutil.TempFile("", "INI")
+	tempFile.Write([]byte("[swift-hash]\nswift_hash_path_prefix = changeme\nswift_hash_path_suffix = changeme\n" +
+		"[storage-policy:0]\nname = gold\naliases = yellow, orange\npolicy_type = replication\ndefault = yes\n" +
+		"[storage-policy:1]\nname = rose\naliases = rose, apple\npolicy_type = replication\n" +
+		"[storage-policy:2]\nname = silver\npolicy_type = replication\ndeprecated = yes\n"))
+	oldConfigs := configLocations
+	defer func() {
+		configLocations = oldConfigs
+		defer tempFile.Close()
+		defer os.Remove(tempFile.Name())
+	}()
+	configLocations = []string{tempFile.Name()}
+	policyList := LoadPolicies()
+	policyInfo := policyList.GetPolicyInfo()
+	require.Equal(t, 2, len(policyInfo))
+	expectedGold := map[string]interface{}{"name": "gold",
+		"default": true,
+		"aliases": "gold, yellow, orange",
+	}
+	expectedRose := map[string]interface{}{"name": "rose",
+		"aliases": "rose, apple",
+	}
+	require.Contains(t, policyInfo, expectedGold)
+	require.Contains(t, policyInfo, expectedRose)
 }
 
 func TestNoPolicies(t *testing.T) {
