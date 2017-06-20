@@ -51,7 +51,6 @@ func (server *ProxyServer) ObjectGetHandler(writer http.ResponseWriter, request 
 	for k := range resp.Header {
 		writer.Header().Set(k, resp.Header.Get(k))
 	}
-	handleCors(writer, request)
 	writer.WriteHeader(resp.StatusCode)
 	common.Copy(resp.Body, writer)
 	resp.Body.Close()
@@ -83,7 +82,6 @@ func (server *ProxyServer) ObjectHeadHandler(writer http.ResponseWriter, request
 		writer.Header().Set(k, resp.Header.Get(k))
 	}
 	resp.Body.Close()
-	handleCors(writer, request)
 	writer.WriteHeader(resp.StatusCode)
 }
 
@@ -110,7 +108,6 @@ func (server *ProxyServer) ObjectDeleteHandler(writer http.ResponseWriter, reque
 	}
 	resp := ctx.C.DeleteObject(vars["account"], vars["container"], vars["obj"], request.Header)
 	resp.Body.Close()
-	handleCors(writer, request)
 	srv.StandardResponse(writer, resp.StatusCode)
 }
 
@@ -160,6 +157,5 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 	if modified, err := common.ParseDate(request.Header.Get("X-Timestamp")); err == nil {
 		writer.Header().Set("Last-Modified", common.FormatLastModified(modified))
 	}
-	handleCors(writer, request)
 	srv.StandardResponse(writer, resp.StatusCode)
 }

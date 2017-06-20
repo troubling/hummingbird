@@ -29,51 +29,6 @@ import (
 	"github.com/troubling/hummingbird/proxyserver/middleware"
 )
 
-func TestHandleCorsStar(t *testing.T) {
-	theHeader := make(http.Header, 1)
-	fakeWriter := test.MockResponseWriter{SaveHeader: &theHeader}
-
-	r := httptest.NewRequest("GET", "/v1/a/c/o", nil)
-	ctx := &middleware.ProxyContext{
-		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
-			"container/a/c": {Metadata: map[string]string{"Access-Control-Allow-Origin": "*"}},
-		}),
-	}
-	r = r.WithContext(context.WithValue(r.Context(), "proxycontext", ctx))
-	r = srv.SetVars(r, map[string]string{"account": "a", "container": "c"})
-
-	handleCors(fakeWriter, r)
-	require.Equal(t, theHeader.Get("Access-Control-Allow-Origin"), "")
-	r.Header.Set("Origin", "hey.com")
-	handleCors(fakeWriter, r)
-	require.Equal(t, theHeader.Get("Access-Control-Allow-Origin"), "*")
-	require.True(t, strings.Index(theHeader.Get("Access-Control-Expose-Headers"), "Etag") >= 0)
-}
-
-func TestHandleCorsSpec(t *testing.T) {
-	theHeader := make(http.Header, 1)
-	fakeWriter := test.MockResponseWriter{SaveHeader: &theHeader}
-
-	r := httptest.NewRequest("GET", "/v1/a/c/o", nil)
-	ctx := &middleware.ProxyContext{
-		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
-			"container/a/c": {Metadata: map[string]string{"Access-Control-Allow-Origin": "there.com", "Access-Control-Expose-Headers": "a b"}},
-		}),
-	}
-	r = r.WithContext(context.WithValue(r.Context(), "proxycontext", ctx))
-	r = srv.SetVars(r, map[string]string{"account": "a", "container": "c"})
-
-	r.Header.Set("Origin", "hey.com")
-	handleCors(fakeWriter, r)
-	require.Equal(t, theHeader.Get("Access-Control-Allow-Origin"), "")
-	require.Equal(t, theHeader.Get("Access-Control-Expose-Headers"), "")
-
-	r.Header.Set("Origin", "there.com")
-	handleCors(fakeWriter, r)
-	require.Equal(t, theHeader.Get("Access-Control-Allow-Origin"), "there.com")
-	require.True(t, strings.Index(theHeader.Get("Access-Control-Expose-Headers"), "a,b") >= 0)
-
-}
 func TestOptionsHandler(t *testing.T) {
 	p := ProxyServer{}
 	theHeader := make(http.Header, 1)

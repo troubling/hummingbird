@@ -69,7 +69,6 @@ func (server *ProxyServer) ContainerGetHandler(writer http.ResponseWriter, reque
 	for k := range resp.Header {
 		writer.Header().Set(k, resp.Header.Get(k))
 	}
-	handleCors(writer, request)
 	writer.WriteHeader(resp.StatusCode)
 	common.Copy(resp.Body, writer)
 }
@@ -99,7 +98,6 @@ func (server *ProxyServer) ContainerHeadHandler(writer http.ResponseWriter, requ
 	for k := range resp.Header {
 		writer.Header().Set(k, resp.Header.Get(k))
 	}
-	handleCors(writer, request)
 	writer.WriteHeader(resp.StatusCode)
 }
 
@@ -134,7 +132,6 @@ func (server *ProxyServer) ContainerPostHandler(writer http.ResponseWriter, requ
 	}
 	resp := ctx.C.PostContainer(vars["account"], vars["container"], request.Header)
 	resp.Body.Close()
-	handleCors(writer, request)
 	srv.StandardResponse(writer, resp.StatusCode)
 }
 
@@ -169,7 +166,6 @@ func (server *ProxyServer) ContainerPutHandler(writer http.ResponseWriter, reque
 	}
 	resp := ctx.C.PutContainer(vars["account"], vars["container"], request.Header)
 	resp.Body.Close()
-	handleCors(writer, request)
 	srv.StandardResponse(writer, resp.StatusCode)
 }
 
@@ -194,7 +190,6 @@ func (server *ProxyServer) ContainerDeleteHandler(writer http.ResponseWriter, re
 	}
 	resp := ctx.C.DeleteContainer(vars["account"], vars["container"], request.Header)
 	resp.Body.Close()
-	handleCors(writer, request)
 	srv.StandardResponse(writer, resp.StatusCode)
 }
 
@@ -220,47 +215,6 @@ func setVary(writer http.ResponseWriter, h string) {
 }
 
 var publicMethods = []string{"HEAD", "GET", "PUT", "POST", "OPTIONS", "DELETE", "COPY"}
-
-func handleCors(writer http.ResponseWriter, request *http.Request) {
-	vars := srv.GetVars(request)
-	ctx := middleware.GetProxyContext(request)
-	origin := request.Header.Get("Origin")
-	if ctx == nil || origin == "" {
-		return
-	}
-	if ci := ctx.C.GetContainerInfo(vars["account"], vars["container"]); ci != nil {
-		if !common.IsOriginAllowed(ci.Metadata["Access-Control-Allow-Origin"], origin) {
-			return
-		}
-		if writer.Header().Get("Access-Control-Expose-Headers") == "" {
-			corsExposeHeaders := []string{"Cache-Control", "Content-Language",
-				"Content-Type", "Expires", "Last-Modified", "Pragma", "Etag",
-				"X-Timestamp", "X-Trans-Id", "X-Openstack-Request-Id"}
-			for k := range writer.Header() {
-				if strings.HasPrefix(
-					k, "X-Container-Meta") || strings.HasPrefix(
-					k, "X-Object-Meta") {
-					corsExposeHeaders = append(corsExposeHeaders, k)
-				}
-			}
-			if ci.Metadata["Access-Control-Expose-Headers"] != "" {
-				for _, h := range strings.Split(
-					ci.Metadata["Access-Control-Expose-Headers"], " ") {
-					corsExposeHeaders = append(corsExposeHeaders, h)
-				}
-			}
-			writer.Header().Set(
-				"Access-Control-Expose-Headers", strings.Join(corsExposeHeaders, ","))
-		}
-		if writer.Header().Get("Access-Control-Allow-Origin") == "" {
-			if ci.Metadata["Access-Control-Allow-Origin"] == "*" {
-				writer.Header().Set("Access-Control-Allow-Origin", "*")
-			} else {
-				writer.Header().Set("Access-Control-Allow-Origin", origin)
-			}
-		}
-	}
-}
 
 func (server *ProxyServer) OptionsHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
