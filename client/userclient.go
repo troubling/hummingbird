@@ -287,8 +287,98 @@ func (c *userClient) authenticatev2() *http.Response {
 	return ResponseStub(http.StatusInternalServerError, "Didn't find endpoint")
 }
 
+type keystoneRequestV3 struct {
+	Auth struct {
+		Identity struct {
+			Methods  []string `json:"methods"`
+			Password struct {
+				User struct {
+					Name   string `json:"name"`
+					Domain struct {
+						Name string `json:"name"`
+					} `json:"domain"`
+					Password string `json:"password"`
+				} `json:"user"`
+			} `json:"password"`
+		} `json:"identity"`
+	} `json:"auth"`
+}
+
+type keystoneResponseV3 struct {
+	Token struct {
+		Catalog []struct {
+			Type      string `json:"type"`
+			Endpoints []struct {
+				Region    string `json:"region"`
+				URL       string `json:"url"`
+				Interface string `json:"interface"`
+			} `json:"endpoints"`
+		} `json:"catalog"`
+	} `json:"token"`
+}
+
+func (c *userClient) authenticatev3() *http.Response {
+	if !strings.HasSuffix(c.authurl, "auth/tokens") {
+		if c.authurl[len(c.authurl)-1] == '/' {
+			c.authurl = c.authurl + "auth/tokens"
+		} else {
+			c.authurl = c.authurl + "/auth/tokens"
+		}
+	}
+	var authReq []byte
+	var err error
+	if c.password != "" {
+		creds := &keystoneRequestV3{}
+		creds.Auth.Identity.Methods = []string{"password"}
+		creds.Auth.Identity.Password.User.Domain.Name = "Default"
+		creds.Auth.Identity.Password.User.Name = c.username
+		creds.Auth.Identity.Password.User.Password = c.password
+		authReq, err = json.Marshal(creds)
+	} else if c.apikey != "" {
+		panic("v3 by api key not implemented yet")
+	} else {
+		return ResponseStub(http.StatusInternalServerError, "Couldn't figure out what credentials to use.")
+	}
+	if err != nil {
+		return ResponseStub(http.StatusInternalServerError, err.Error())
+	}
+	resp, err := c.client.Post(c.authurl, "application/json", bytes.NewBuffer(authReq))
+	if err != nil {
+		return ResponseStub(http.StatusBadRequest, err.Error())
+	}
+	if resp.StatusCode/100 != 2 {
+		return resp
+	}
+	defer resp.Body.Close()
+	c.AuthToken = resp.Header.Get("X-Subject-Token")
+	if c.AuthToken == "" {
+		return ResponseStub(http.StatusInternalServerError, "No X-Subject-Token in response.")
+	}
+	var authResponse keystoneResponseV3
+	if err := json.NewDecoder(resp.Body).Decode(&authResponse); err != nil {
+		return ResponseStub(http.StatusInternalServerError, err.Error())
+	}
+	intrfc := "public"
+	if c.private {
+		intrfc = "private"
+	}
+	for _, s := range authResponse.Token.Catalog {
+		if s.Type == "object-store" {
+			for _, e := range s.Endpoints {
+				if ((e.Region == c.region || c.region == "") && e.Interface == intrfc) || len(s.Endpoints) == 1 {
+					c.ServiceURL = e.URL
+					return ResponseStub(http.StatusOK, "")
+				}
+			}
+		}
+	}
+	return ResponseStub(http.StatusInternalServerError, "Didn't find endpoint")
+}
+
 func (c *userClient) authenticate() *http.Response {
-	if strings.Contains(c.authurl, "/v2") {
+	if strings.Contains(c.authurl, "/v3") {
+		return c.authenticatev3()
+	} else if strings.Contains(c.authurl, "/v2") {
 		return c.authenticatev2()
 	} else {
 		return c.authenticatev1()
