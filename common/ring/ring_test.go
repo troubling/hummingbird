@@ -81,6 +81,24 @@ func TestLoadRing(t *testing.T) {
 	require.Equal(t, uint64(29), ring.getData().PartShift)
 }
 
+func TestGetNodesInOrder(t *testing.T) {
+	fp, err := ioutil.TempFile("", "")
+	require.Nil(t, err)
+	defer fp.Close()
+	defer os.RemoveAll(fp.Name())
+	require.Nil(t, writeARing(fp, 4, 2, 29))
+	r, err := LoadRing(fp.Name(), "prefix", "suffix")
+	require.Nil(t, err)
+	ring, ok := r.(*hashRing)
+	require.True(t, ok)
+	require.NotNil(t, ring)
+	nodes := ring.GetNodesInOrder(0)
+	require.Equal(t, 2, len(nodes))
+	// some of these values may not be obvious, but they shouldn't change
+	require.Equal(t, 0, nodes[0].Id)
+	require.Equal(t, 1, nodes[1].Id)
+}
+
 func TestGetNodes(t *testing.T) {
 	fp, err := ioutil.TempFile("", "")
 	require.Nil(t, err)
@@ -94,9 +112,9 @@ func TestGetNodes(t *testing.T) {
 	require.NotNil(t, ring)
 	nodes := ring.GetNodes(0)
 	require.Equal(t, 2, len(nodes))
-	// some of these values may not be obvious, but they shouldn't change
-	require.Equal(t, 0, nodes[0].Id)
-	require.Equal(t, 1, nodes[1].Id)
+	// make sure one node is 0 and one node is 1.
+	require.True(t, 0 == nodes[0].Id || 0 == nodes[1].Id)
+	require.True(t, 1 == nodes[0].Id || 1 == nodes[1].Id)
 }
 
 func TestGetJobNodes(t *testing.T) {

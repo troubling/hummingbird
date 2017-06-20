@@ -191,15 +191,17 @@ func LogPanics(logger LowLevelLogger, msg string) {
 }
 
 // SetupLogger configures structured logging using uber's zap library.
-func SetupLogger(prefix string, atomicLevel *zap.AtomicLevel, flags *flag.FlagSet, logPath string) (LowLevelLogger, error) {
+func SetupLogger(prefix string, atomicLevel *zap.AtomicLevel, flags *flag.FlagSet) (LowLevelLogger, error) {
 	productionConfig := zap.NewProductionConfig()
 	productionConfig.Level = *atomicLevel
-	productionConfig.OutputPaths = []string{logPath}
-	productionConfig.ErrorOutputPaths = []string{logPath}
-	vFlag := flags.Lookup("v")
-	dFlag := flags.Lookup("d")
-	if vFlag != nil && dFlag != nil && vFlag.Value.(flag.Getter).Get().(bool) && !dFlag.Value.(flag.Getter).Get().(bool) {
+	if lFlag := flags.Lookup("l"); lFlag != nil && lFlag.Value.(flag.Getter).Get().(string) != "" {
+		productionConfig.OutputPaths = []string{lFlag.Value.(flag.Getter).Get().(string)}
+	} else {
 		productionConfig.OutputPaths = []string{"stdout"}
+	}
+	if eFlag := flags.Lookup("e"); eFlag != nil && eFlag.Value.(flag.Getter).Get().(string) != "" {
+		productionConfig.ErrorOutputPaths = []string{eFlag.Value.(flag.Getter).Get().(string)}
+	} else {
 		productionConfig.ErrorOutputPaths = []string{"stderr"}
 	}
 	baseLogger, err := productionConfig.Build()
@@ -217,17 +219,6 @@ type HummingbirdServer struct {
 	Listener net.Listener
 	logger   LowLevelLogger
 	finalize func()
-}
-
-func ShutdownStdio() {
-	devnull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0600)
-	if err != nil {
-		panic("Error opening /dev/null")
-	}
-	syscall.Dup2(int(devnull.Fd()), int(os.Stdin.Fd()))
-	syscall.Dup2(int(devnull.Fd()), int(os.Stdout.Fd()))
-	syscall.Dup2(int(devnull.Fd()), int(os.Stderr.Fd()))
-	devnull.Close()
 }
 
 func RetryListen(ip string, port int) (net.Listener, error) {
@@ -262,13 +253,6 @@ type Server interface {
 	Finalize() // This is called before stoping gracefully so that a server can clean up before closing
 }
 
-/*
-	SIGINT - graceful shutdown
-	SIGTERM, SIGQUIT - immediate shutdown
-	SIGABRT - dump goroutines stacktrace
-
-	Graceful shutdown/restart gives any open connections 5 minutes to complete, then exits.
-*/
 func RunServers(GetServer func(conf.Config, *flag.FlagSet) (string, int, Server, LowLevelLogger, error), flags *flag.FlagSet) {
 	var servers []*HummingbirdServer
 
@@ -311,13 +295,11 @@ func RunServers(GetServer func(conf.Config, *flag.FlagSet) (string, int, Server,
 	}
 
 	if len(servers) > 0 {
-		if flags.Lookup("d").Value.(flag.Getter).Get() == true {
-			ShutdownStdio()
-		}
 		c := make(chan os.Signal, 1)
-		signal.Notify(c, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGABRT)
+		signal.Notify(c, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGABRT)
 		s := <-c
-		if s == syscall.SIGINT {
+		switch s {
+		case syscall.SIGTERM, syscall.SIGHUP: // graceful shutdown
 			var wg sync.WaitGroup
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute*5)
 			defer cancel()
@@ -350,10 +332,10 @@ func RunServers(GetServer func(conf.Config, *flag.FlagSet) (string, int, Server,
 				fmt.Println("Forcing shutdown after timeout.")
 				return
 			}
-		} else if s == syscall.SIGABRT {
+		case syscall.SIGABRT, syscall.SIGQUIT: // drop a traceback
 			pid := os.Getpid()
 			DumpGoroutinesStackTrace(pid)
-		} else {
+		default:
 			for _, srv := range servers {
 				if err := srv.Close(); err != nil {
 					srv.logger.Error("Error shutdown", zap.Error(err))
@@ -403,11 +385,12 @@ func RunDaemon(GetDaemon func(conf.Config, *flag.FlagSet) (Daemon, LowLevelLogge
 	}
 
 	if len(daemons) > 0 {
-		if flags.Lookup("d").Value.(flag.Getter).Get() == true {
-			ShutdownStdio()
-		}
 		c := make(chan os.Signal, 1)
-		signal.Notify(c, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
-		<-c
+		signal.Notify(c, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGABRT)
+		switch <-c {
+		case syscall.SIGABRT, syscall.SIGQUIT: // drop a traceback
+			pid := os.Getpid()
+			DumpGoroutinesStackTrace(pid)
+		}
 	}
 }

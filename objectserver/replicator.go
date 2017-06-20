@@ -979,8 +979,7 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv
 			return nil, nil, fmt.Errorf("Unable to load ring for Policy %d.", policy.Index)
 		}
 	}
-	logPath := serverconf.GetDefault("object-replicator", "log_path", "/var/log/swift/objectreplicator.log")
-	if replicator.logger, err = srv.SetupLogger("object-replicator", &logLevel, flags, logPath); err != nil {
+	if replicator.logger, err = srv.SetupLogger("object-replicator", &logLevel, flags); err != nil {
 		return nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 	devices_flag := flags.Lookup("devices")

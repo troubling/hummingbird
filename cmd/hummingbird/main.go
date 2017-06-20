@@ -16,12 +16,13 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"math/rand"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -37,23 +38,14 @@ import (
 	"github.com/troubling/hummingbird/proxyserver"
 )
 
-func WritePid(name string, pid int) error {
-	file, err := os.Create(fmt.Sprintf("/var/run/hummingbird/%s.pid", name))
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(file, "%d", pid)
-	file.Close()
-	return nil
-}
+const (
+	runPath = "/var/run/hummingbird"
+	logPath = "/var/log/hummingbird"
+)
 
-func RemovePid(name string) error {
-	return os.RemoveAll(fmt.Sprintf("/var/run/hummingbird/%s.pid", name))
-}
-
-func GetProcess(name string) (*os.Process, error) {
+func getProcess(name string) (*os.Process, error) {
 	var pid int
-	file, err := os.Open(fmt.Sprintf("/var/run/hummingbird/%s.pid", name))
+	file, err := os.Open(filepath.Join(runPath, fmt.Sprintf("%s.pid", name)))
 	if err != nil {
 		return nil, err
 	}
@@ -90,110 +82,112 @@ func findConfig(name string) string {
 	return ""
 }
 
-func StartServer(name string, args ...string) {
-	_, err := GetProcess(name)
+func startServer(name string, args ...string) error {
+	process, err := getProcess(name)
 	if err == nil {
-		fmt.Println("Found already running", name, "server")
-		return
+		process.Release()
+		return errors.New("Found already running " + name + " server")
 	}
 
 	serverConf := findConfig(name)
 	if serverConf == "" {
-		fmt.Println("Unable to find config file")
-		return
+		return errors.New("Unable to find config file.")
 	}
 
 	serverExecutable, err := exec.LookPath(os.Args[0])
 	if err != nil {
-		fmt.Println("Unable to find hummingbird executable in path.")
-		return
+		return errors.New("Unable to find hummingbird executable in path.")
 	}
 
 	uid, gid, err := conf.UidFromConf(serverConf)
 	if err != nil {
-		fmt.Println("Unable to find uid to execute process:", err)
-		return
+		return errors.New("Unable to find uid to execute process:" + err.Error())
 	}
 
-	cmd := exec.Command(serverExecutable, append([]string{name, "-d", "-c", serverConf}, args...)...)
+	logfile := filepath.Join(logPath, name+".log")
+	errfile := filepath.Join(logPath, name+".err")
+	cmd := exec.Command(serverExecutable, append([]string{name, "-c", serverConf, "-l", logfile, "-e", errfile}, args...)...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if uint32(os.Getuid()) != uid { // This is goofy.
 		cmd.SysProcAttr.Credential = &syscall.Credential{Uid: uid, Gid: gid}
 	}
-	rdp, err := cmd.StdoutPipe()
-	cmd.Stderr = cmd.Stdout
-	if err != nil {
-		fmt.Println("Error creating stdout pipe:", err)
-		return
-	}
+	cmd.Stdin = nil
 
 	syscall.Umask(022)
 	err = cmd.Start()
 	if err != nil {
-		fmt.Println("Error starting server:", err)
-		return
+		return errors.New("Error starting server:" + err.Error())
 	}
-	io.Copy(os.Stdout, rdp)
-	WritePid(name, cmd.Process.Pid)
-	fmt.Println(strings.Title(name), "server started.")
-}
-
-func StopServer(name string, args ...string) {
-	process, err := GetProcess(name)
+	file, err := os.Create(filepath.Join(runPath, fmt.Sprintf("%s.pid", name)))
 	if err != nil {
-		fmt.Println("Error finding", name, "server process:", err)
-		return
+		return errors.New("Error creating pidfile:" + err.Error())
 	}
-	process.Signal(syscall.SIGTERM)
-	process.Wait()
-	RemovePid(name)
-	fmt.Println(strings.Title(name), "server stopped.")
+	defer file.Close()
+	fmt.Fprintf(file, "%d", cmd.Process.Pid)
+	fmt.Println(strings.Title(name), "server started.")
+	return nil
 }
 
-func RestartServer(name string, args ...string) {
-	process, err := GetProcess(name)
+func stopServer(name string, args ...string) error {
+	process, err := getProcess(name)
+	if err != nil {
+		return errors.New(strings.Title(name) + " server not found.")
+	}
+	process.Signal(os.Kill)
+	process.Wait()
+	os.Remove(filepath.Join(runPath, fmt.Sprintf("%s.pid", name)))
+	fmt.Println(strings.Title(name), "server stopped.")
+	return nil
+}
+
+func restartServer(name string, args ...string) error {
+	process, err := getProcess(name)
 	if err == nil {
-		process.Signal(syscall.SIGTERM)
+		process.Signal(os.Kill)
 		process.Wait()
 		fmt.Println(strings.Title(name), "server stopped.")
 	} else {
 		fmt.Println(strings.Title(name), "server not found.")
 	}
-	RemovePid(name)
-	StartServer(name, args...)
+	os.Remove(filepath.Join(runPath, fmt.Sprintf("%s.pid", name)))
+	return startServer(name, args...)
 }
 
-func GracefulRestartServer(name string, args ...string) {
-	process, err := GetProcess(name)
+func gracefulRestartServer(name string, args ...string) error {
+	process, err := getProcess(name)
 	if err == nil {
-		process.Signal(syscall.SIGINT)
+		process.Signal(syscall.SIGTERM)
 		time.Sleep(time.Second)
 		fmt.Println(strings.Title(name), "server graceful shutdown began.")
 	} else {
 		fmt.Println(strings.Title(name), "server not found.")
 	}
-	RemovePid(name)
-	StartServer(name, args...)
+	process.Release()
+	os.Remove(filepath.Join(runPath, fmt.Sprintf("%s.pid", name)))
+	return startServer(name, args...)
 }
 
-func GracefulShutdownServer(name string, args ...string) {
-	process, err := GetProcess(name)
+func gracefulShutdownServer(name string, args ...string) error {
+	process, err := getProcess(name)
 	if err != nil {
-		fmt.Println("Error finding", name, "server process:", err)
-		return
+		return errors.New(strings.Title(name) + " server not found.")
 	}
-	process.Signal(syscall.SIGINT)
-	RemovePid(name)
+	process.Signal(syscall.SIGTERM)
+	process.Release()
+	os.Remove(filepath.Join(runPath, fmt.Sprintf("%s.pid", name)))
 	fmt.Println(strings.Title(name), "server graceful shutdown began.")
+	return nil
 }
 
-func ProcessControlCommand(serverCommand func(name string, args ...string)) {
-	if !fs.Exists("/var/run/hummingbird") {
-		err := os.MkdirAll("/var/run/hummingbird", 0600)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Unable to create /var/run/hummingbird\n")
-			fmt.Fprintf(os.Stderr, "You should create it, writable by the user you wish to launch servers with.\n")
-			os.Exit(1)
+func processControlCommand(serverCommand func(name string, args ...string) error) {
+	for _, reqDir := range []string{runPath, logPath} {
+		if !fs.Exists(reqDir) {
+			err := os.MkdirAll(reqDir, 0600)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, reqDir, "does not exist, and unable to create it.")
+				fmt.Fprintln(os.Stderr, "You should create it, writable by the user you wish to launch servers with.")
+				os.Exit(1)
+			}
 		}
 	}
 
@@ -204,144 +198,168 @@ func ProcessControlCommand(serverCommand func(name string, args ...string)) {
 
 	switch flag.Arg(1) {
 	case "proxy", "object", "object-replicator", "object-auditor", "container", "container-replicator", "account", "account-replicator":
-		serverCommand(flag.Arg(1), flag.Args()[2:]...)
+		if err := serverCommand(flag.Arg(1), flag.Args()[2:]...); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	case "main":
+		exc := 0
+		for _, server := range []string{"proxy", "object", "container", "account"} {
+			if err := serverCommand(server); err != nil {
+				fmt.Fprintln(os.Stderr, server, ":", err)
+				exc = 1
+			}
+		}
+		os.Exit(exc)
 	case "all":
+		exc := 0
 		for _, server := range []string{"proxy", "object", "object-replicator", "object-auditor",
 			"container", "container-replicator", "account", "account-replicator"} {
-			serverCommand(server)
+			if err := serverCommand(server); err != nil {
+				fmt.Fprintln(os.Stderr, server, ":", err)
+				exc = 1
+			}
 		}
+		os.Exit(exc)
 	default:
 		flag.Usage()
 	}
 }
 
+func init() {
+	rand.Seed(time.Now().UTC().UnixNano())
+}
+
 func main() {
-	common.SetRlimits()
-	rand.Seed(time.Now().Unix())
-
-	/* sub-command flag parsers */
-
 	proxyFlags := flag.NewFlagSet("proxy server", flag.ExitOnError)
-	proxyFlags.Bool("d", false, "Close stdio once the server is running")
-	proxyFlags.Bool("v", false, "Send all log messages to the console (if -d is not specified)")
 	proxyFlags.String("c", findConfig("proxy"), "Config file/directory to use")
+	proxyFlags.String("l", "stdout", "Log location")
+	proxyFlags.String("e", "stderr", "Error log location")
 	proxyFlags.Usage = func() {
-		fmt.Fprintf(os.Stderr, "hummingbird proxy [ARGS]\n")
-		fmt.Fprintf(os.Stderr, "  Run proxy server\n")
+		fmt.Fprintln(os.Stderr, "hummingbird proxy [ARGS]")
+		fmt.Fprintln(os.Stderr, "  Run proxy server")
 		proxyFlags.PrintDefaults()
 	}
 
 	objectFlags := flag.NewFlagSet("object server", flag.ExitOnError)
-	objectFlags.Bool("d", false, "Close stdio once the server is running")
-	objectFlags.Bool("v", false, "Send all log messages to the console (if -d is not specified)")
 	objectFlags.String("c", findConfig("object"), "Config file/directory to use")
+	objectFlags.String("l", "stdout", "Log location")
+	objectFlags.String("e", "stderr", "Error log location")
 	objectFlags.Usage = func() {
-		fmt.Fprintf(os.Stderr, "hummingbird object [ARGS]\n")
-		fmt.Fprintf(os.Stderr, "  Run object server\n")
+		fmt.Fprintln(os.Stderr, "hummingbird object [ARGS]")
+		fmt.Fprintln(os.Stderr, "  Run object server")
 		objectFlags.PrintDefaults()
 	}
 
 	objectReplicatorFlags := flag.NewFlagSet("object replicator", flag.ExitOnError)
 	objectReplicatorFlags.Bool("q", false, "Quorum Delete. Will delete handoff node if pushed to #replicas/2 + 1 nodes.")
-	objectReplicatorFlags.Bool("d", false, "Close stdio once the daemon is running")
-	objectReplicatorFlags.Bool("v", false, "Send all log messages to the console (if -d is not specified)")
 	objectReplicatorFlags.String("c", findConfig("object"), "Config file/directory to use")
+	objectReplicatorFlags.String("l", "stdout", "Log location")
+	objectReplicatorFlags.String("e", "stderr", "Error log location")
 	objectReplicatorFlags.Bool("once", false, "Run one pass of the replicator")
 	objectReplicatorFlags.String("devices", "", "Replicate only given devices. Comma-separated list.")
 	objectReplicatorFlags.String("partitions", "", "Replicate only given partitions. Comma-separated list.")
 	objectReplicatorFlags.Usage = func() {
-		fmt.Fprintf(os.Stderr, "hummingbird object-replicator [ARGS]\n")
-		fmt.Fprintf(os.Stderr, "  Run object replicator\n")
+		fmt.Fprintln(os.Stderr, "hummingbird object-replicator [ARGS]")
+		fmt.Fprintln(os.Stderr, "  Run object replicator")
 		objectReplicatorFlags.PrintDefaults()
 	}
 
 	objectAuditorFlags := flag.NewFlagSet("object auditor", flag.ExitOnError)
-	objectAuditorFlags.Bool("d", false, "Close stdio once the daemon is running")
-	objectAuditorFlags.Bool("v", false, "Send all log messages to the console (if -d is not specified)")
 	objectAuditorFlags.String("c", findConfig("object"), "Config file/directory to use")
+	objectAuditorFlags.String("l", "stdout", "Log location")
+	objectAuditorFlags.String("e", "stderr", "Error log location")
 	objectAuditorFlags.Bool("once", false, "Run one pass of the auditor")
 	objectAuditorFlags.Usage = func() {
-		fmt.Fprintf(os.Stderr, "hummingbird object-auditor [ARGS]\n")
-		fmt.Fprintf(os.Stderr, "  Run object auditor\n")
+		fmt.Fprintln(os.Stderr, "hummingbird object-auditor [ARGS]")
+		fmt.Fprintln(os.Stderr, "  Run object auditor")
 		objectAuditorFlags.PrintDefaults()
 	}
 
 	containerFlags := flag.NewFlagSet("container server", flag.ExitOnError)
-	containerFlags.Bool("d", false, "Close stdio once the server is running")
 	containerFlags.String("c", findConfig("container"), "Config file/directory to use")
+	containerFlags.String("l", "stdout", "Log location")
+	containerFlags.String("e", "stderr", "Error log location")
 	containerFlags.Usage = func() {
-		fmt.Fprintf(os.Stderr, "hummingbird container [ARGS]\n")
-		fmt.Fprintf(os.Stderr, "  Run container server\n")
+		fmt.Fprintln(os.Stderr, "hummingbird container [ARGS]")
+		fmt.Fprintln(os.Stderr, "  Run container server")
 		containerFlags.PrintDefaults()
 	}
 
 	containerReplicatorFlags := flag.NewFlagSet("container replicator", flag.ExitOnError)
-	containerReplicatorFlags.Bool("d", false, "Close stdio once the server is running")
 	containerReplicatorFlags.String("c", findConfig("container"), "Config file/directory to use")
+	containerReplicatorFlags.String("l", "stdout", "Log location")
+	containerReplicatorFlags.String("e", "stderr", "Error log location")
 	containerReplicatorFlags.Bool("once", false, "Run one pass of the replicator")
 	containerReplicatorFlags.Usage = func() {
-		fmt.Fprintf(os.Stderr, "hummingbird container-replicator [ARGS]\n")
-		fmt.Fprintf(os.Stderr, "  Run container replicator\n")
+		fmt.Fprintln(os.Stderr, "hummingbird container-replicator [ARGS]")
+		fmt.Fprintln(os.Stderr, "  Run container replicator")
 		containerReplicatorFlags.PrintDefaults()
 	}
 
 	accountFlags := flag.NewFlagSet("account server", flag.ExitOnError)
-	accountFlags.Bool("d", false, "Close stdio once the server is running")
 	accountFlags.String("c", findConfig("account"), "Config file/directory to use")
-	accountFlags.Bool("v", false, "Send all log messages to the console (if -d is not specified)")
+	accountFlags.String("l", "stdout", "Log location")
+	accountFlags.String("e", "stderr", "Error log location")
 	accountFlags.Usage = func() {
-		fmt.Fprintf(os.Stderr, "hummingbird account [ARGS]\n")
-		fmt.Fprintf(os.Stderr, "  Run account server\n")
+		fmt.Fprintln(os.Stderr, "hummingbird account [ARGS]")
+		fmt.Fprintln(os.Stderr, "  Run account server")
 		accountFlags.PrintDefaults()
 	}
 
 	accountReplicatorFlags := flag.NewFlagSet("account replicator", flag.ExitOnError)
-	accountReplicatorFlags.Bool("d", false, "Close stdio once the server is running")
 	accountReplicatorFlags.String("c", findConfig("account"), "Config file/directory to use")
+	accountReplicatorFlags.String("l", "stdout", "Log location")
+	accountReplicatorFlags.String("e", "stderr", "Error log location")
 	accountReplicatorFlags.Bool("once", false, "Run one pass of the replicator")
 	accountReplicatorFlags.Usage = func() {
-		fmt.Fprintf(os.Stderr, "hummingbird account-replicator [ARGS]\n")
-		fmt.Fprintf(os.Stderr, "  Run account replicator\n")
+		fmt.Fprintln(os.Stderr, "hummingbird account-replicator [ARGS]")
+		fmt.Fprintln(os.Stderr, "  Run account replicator")
 		accountReplicatorFlags.PrintDefaults()
 	}
 
 	/* main flag parser, which doesn't do much */
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Hummingbird Usage\n")
+		fmt.Fprintln(os.Stderr, "Hummingbird Usage")
 		flag.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "\n")
-		fmt.Fprintf(os.Stderr, "hummingbird [DAEMON COMMAND] [DAEMON NAME]\n")
-		fmt.Fprintf(os.Stderr, "  Process control for daemons.  The commands are:\n")
-		fmt.Fprintf(os.Stderr, "     start: start a server\n")
-		fmt.Fprintf(os.Stderr, "     shutdown: gracefully stop a server\n")
-		fmt.Fprintf(os.Stderr, "     stop: stop a server immediately\n")
-		fmt.Fprintf(os.Stderr, "     reload: alias for graceful-restart\n")
-		fmt.Fprintf(os.Stderr, "     restart: stop then restart a server\n")
-		fmt.Fprintf(os.Stderr, "  The daemons are: object, proxy, object-replicator, object-auditor, all\n")
-		fmt.Fprintf(os.Stderr, "\n")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "The built-in process control is for entertainment purposes only. Please use a real service manager.")
+		fmt.Fprintln(os.Stderr, "     hummingbird start [daemon name]    -- start a server")
+		fmt.Fprintln(os.Stderr, "     hummingbird stop [daemon name]     -- stop a server immediately")
+		fmt.Fprintln(os.Stderr, "     hummingbird shutdown [daemon name] -- gracefully stop a server")
+		fmt.Fprintln(os.Stderr, "     hummingbird reload [daemon name]   -- alias for graceful-restart")
+		fmt.Fprintln(os.Stderr, "     hummingbird restart [daemon name]  -- stop then restart a server")
+		fmt.Fprintln(os.Stderr, "  The daemons are: object, proxy, object-replicator, object-auditor, all, main")
+		fmt.Fprintln(os.Stderr)
 		objectFlags.Usage()
-		fmt.Fprintf(os.Stderr, "\n")
+		fmt.Fprintln(os.Stderr)
 		objectReplicatorFlags.Usage()
-		fmt.Fprintf(os.Stderr, "\n")
+		fmt.Fprintln(os.Stderr)
 		objectAuditorFlags.Usage()
-		fmt.Fprintf(os.Stderr, "\n")
+		fmt.Fprintln(os.Stderr)
 		proxyFlags.Usage()
-		fmt.Fprintf(os.Stderr, "\n")
-		fmt.Fprintf(os.Stderr, "hummingbird moveparts [old ring.gz]\n")
-		fmt.Fprintf(os.Stderr, "  Prioritize replication for moving partitions after a ring change\n\n")
-		fmt.Fprintf(os.Stderr, "hummingbird restoredevice [ip] [device-name]\n")
-		fmt.Fprintf(os.Stderr, "  Reconstruct a device from its peers\n\n")
-		fmt.Fprintf(os.Stderr, "hummingbird rescueparts [partnum1,partnum2,...]\n")
-		fmt.Fprintf(os.Stderr, "  Will send requests to all the object nodes to try to fully replicate given partitions if they have them.\n\n")
-		fmt.Fprintf(os.Stderr, "hummingbird bench CONFIG\n")
-		fmt.Fprintf(os.Stderr, "  Run bench tool\n\n")
-		fmt.Fprintf(os.Stderr, "hummingbird dbench CONFIG\n")
-		fmt.Fprintf(os.Stderr, "  Run direct to object server bench tool\n\n")
-		fmt.Fprintf(os.Stderr, "hummingbird thrash CONFIG\n")
-		fmt.Fprintf(os.Stderr, "  Run thrash bench tool\n")
-		fmt.Fprintf(os.Stderr, "hummingbird grep [ACCOUNT/CONTAINER/PREFIX] [SEARCH-STRING]\n")
-		fmt.Fprintf(os.Stderr, "  Run grep on the edge\n")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "hummingbird moveparts [old ring.gz]")
+		fmt.Fprintln(os.Stderr, "  Prioritize replication for moving partitions after a ring change")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "hummingbird restoredevice [ip] [device-name]")
+		fmt.Fprintln(os.Stderr, "  Reconstruct a device from its peers")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "hummingbird rescueparts [partnum1,partnum2,...]")
+		fmt.Fprintln(os.Stderr, "  Will send requests to all the object nodes to try to fully replicate given partitions if they have them.")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "hummingbird bench CONFIG")
+		fmt.Fprintln(os.Stderr, "  Run bench tool")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "hummingbird dbench CONFIG")
+		fmt.Fprintln(os.Stderr, "  Run direct to object server bench tool")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "hummingbird thrash CONFIG")
+		fmt.Fprintln(os.Stderr, "  Run thrash bench tool")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "hummingbird grep [ACCOUNT/CONTAINER/PREFIX] [SEARCH-STRING]")
+		fmt.Fprintln(os.Stderr, "  Run grep on the edge")
 	}
 
 	flag.Parse()
@@ -355,15 +373,15 @@ func main() {
 	case "version":
 		fmt.Println(common.Version)
 	case "start":
-		ProcessControlCommand(StartServer)
+		processControlCommand(startServer)
 	case "stop":
-		ProcessControlCommand(StopServer)
+		processControlCommand(stopServer)
 	case "restart":
-		ProcessControlCommand(RestartServer)
+		processControlCommand(restartServer)
 	case "reload", "graceful-restart":
-		ProcessControlCommand(GracefulRestartServer)
+		processControlCommand(gracefulRestartServer)
 	case "shutdown", "graceful-shutdown":
-		ProcessControlCommand(GracefulShutdownServer)
+		processControlCommand(gracefulShutdownServer)
 	case "proxy":
 		proxyFlags.Parse(flag.Args()[1:])
 		srv.RunServers(proxyserver.GetServer, proxyFlags)

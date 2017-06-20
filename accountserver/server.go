@@ -526,8 +526,7 @@ func GetServer(serverconf conf.Config, flags *flag.FlagSet) (bindIP string, bind
 	logLevelString := serverconf.GetDefault("app:account-server", "log_level", "INFO")
 	server.logLevel = zap.NewAtomicLevel()
 	server.logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
-	logPath := serverconf.GetDefault("app:account-server", "log_path", "/var/log/swift/account.log")
-	if server.logger, err = srv.SetupLogger("account-server", &server.logLevel, flags, logPath); err != nil {
+	if server.logger, err = srv.SetupLogger("account-server", &server.logLevel, flags); err != nil {
 		return "", 0, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 	server.accountEngine = newLRUEngine(server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, 32)

@@ -362,8 +362,7 @@ func NewAuditor(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv.Lo
 	logLevelString := serverconf.GetDefault("object-auditor", "log_level", "INFO")
 	logLevel := zap.NewAtomicLevel()
 	logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
-	logPath := serverconf.GetDefault("object-auditor", "log_path", "/var/log/swift/objectauditor.log")
-	if d.logger, err = srv.SetupLogger("object-auditor", &logLevel, flags, logPath); err != nil {
+	if d.logger, err = srv.SetupLogger("object-auditor", &logLevel, flags); err != nil {
 		return nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 	d.bytesPerSecond = serverconf.GetInt("object-auditor", "bytes_per_second", 10000000)

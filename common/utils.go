@@ -27,7 +27,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/cactus/go-statsd-client/statsd"
@@ -205,10 +204,6 @@ func ParseRange(rangeHeader string, fileSize int64) (reqRanges []HttpRange, err 
 		return nil, errors.New("Unsatisfiable range")
 	}
 	return reqRanges, nil
-}
-
-func SetRlimits() {
-	syscall.Setrlimit(syscall.RLIMIT_NOFILE, &syscall.Rlimit{Max: 65536, Cur: 65536})
 }
 
 func GetEpochFromTimestamp(timestamp string) (string, error) {
