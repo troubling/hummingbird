@@ -27,6 +27,7 @@ import (
 
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/pickle"
+	"github.com/troubling/hummingbird/common/test"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
@@ -203,6 +204,7 @@ func makeAuditor(settings ...string) *Auditor {
 	for i := 0; i < len(settings); i += 2 {
 		configString += fmt.Sprintf("%s=%s\n", settings[i], settings[i+1])
 	}
+	configString += test.GetLogPathConfLine("objectauditor.log")
 	conf, _ := conf.StringConfig(configString)
 	auditorDaemon, _, _ := NewAuditor(conf, &flag.FlagSet{})
 	obs, logs = observer.New(zap.InfoLevel)

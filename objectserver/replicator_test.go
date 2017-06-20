@@ -51,6 +51,7 @@ func newTestReplicator(settings ...string) (*Replicator, error) {
 
 func newTestReplicatorWithFlags(settings []string, flags *flag.FlagSet) (*Replicator, error) {
 	configString := "[object-replicator]\nmount_check=false\n"
+	configString += test.GetLogPathConfLine("objectreplicator.log")
 	for i := 0; i < len(settings); i += 2 {
 		configString += fmt.Sprintf("%s=%s\n", settings[i], settings[i+1])
 	}

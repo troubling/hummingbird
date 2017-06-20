@@ -181,6 +181,7 @@ func NewEnvironment(settings ...string) *Environment {
 		configString += fmt.Sprintf("devices=%s\n", driveRoot)
 		configString += fmt.Sprintf("bind_port=%d\n", port)
 		configString += fmt.Sprintf("bind_ip=%s\n", host)
+		configString += test.GetLogPathConfLine("storage.log")
 		for i := 0; i < len(settings); i += 2 {
 			configString += fmt.Sprintf("%s=%s\n", settings[i], settings[i+1])
 		}
