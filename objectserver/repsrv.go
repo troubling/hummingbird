@@ -313,7 +313,7 @@ func (r *Replicator) GetHandler() http.Handler {
 		router.HandlePolicy("REPLICATE", "/:device/:partition/:suffixes", policy.Index, commonHandlers.ThenFunc(r.objReplicateHandler))
 		router.HandlePolicy("REPLICATE", "/:device/:partition", policy.Index, commonHandlers.ThenFunc(r.objReplicateHandler))
 	}
-	router.Get("/debug", http.DefaultServeMux)
+	router.Get("/debug/*_", http.DefaultServeMux)
 	return router
 }
 
