@@ -107,13 +107,7 @@ func (r *hashRing) getData() *ringData {
 }
 
 func (r *hashRing) GetNodes(partition uint64) (response []*Device) {
-	d := r.getData()
-	if partition >= uint64(len(d.replica2part2devId[0])) {
-		return nil
-	}
-	for i := 0; i < d.ReplicaCount; i++ {
-		response = append(response, &d.Devs[d.replica2part2devId[i][partition]])
-	}
+	response = r.GetNodesInOrder(partition)
 	for i := range response {
 		j := rand.Intn(i + 1)
 		response[i], response[j] = response[j], response[i]
