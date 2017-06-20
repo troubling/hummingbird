@@ -167,6 +167,7 @@ func tempurl(next http.Handler) http.Handler {
 			srv.StandardResponse(writer, 401)
 			return
 		}
+		ctx.RemoteUser = ".tempurl"
 		ctx.AuthorizeOverride = true
 		ctx.Authorize = func(r *http.Request) bool {
 			ar, a, c, _ := getPathParts(r)

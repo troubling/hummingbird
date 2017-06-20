@@ -208,6 +208,7 @@ func formpost(next http.Handler) http.Handler {
 						formpostRespond(writer, 400, "invalid request", attrs["redirect"])
 						return
 					default:
+						ctx.RemoteUser = ".formpost"
 						ctx.AuthorizeOverride = true
 						ctx.Authorize = formpostAuthorizer(scope, account, container)
 						validated = true
