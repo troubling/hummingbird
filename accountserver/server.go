@@ -493,6 +493,8 @@ func (server *AccountServer) GetHandler(config conf.Config) http.Handler {
 	router.Get("/diskusage", commonHandlers.ThenFunc(server.DiskUsageHandler))
 	router.Get("/recon/:method/:recon_type", commonHandlers.ThenFunc(server.ReconHandler))
 	router.Get("/recon/:method", commonHandlers.ThenFunc(server.ReconHandler))
+	router.Get("/debug/pprof/:parm", http.DefaultServeMux)
+	router.Post("/debug/pprof/:parm", http.DefaultServeMux)
 	router.Put("/:device/tmp/:filename", commonHandlers.ThenFunc(server.TmpUploadHandler))
 	router.Put("/:device/:partition/:account/:container", commonHandlers.ThenFunc(server.ContainerPutHandler))
 	router.Put("/:device/:partition/:account", commonHandlers.ThenFunc(server.AccountPutHandler))
@@ -501,8 +503,6 @@ func (server *AccountServer) GetHandler(config conf.Config) http.Handler {
 	router.Head("/:device/:partition/:account", commonHandlers.ThenFunc(server.AccountGetHandler))
 	router.Post("/:device/:partition/:account", commonHandlers.ThenFunc(server.AccountPostHandler))
 	router.Replicate("/:device/:partition/:hash", commonHandlers.ThenFunc(server.AccountReplicateHandler))
-	router.Get("/debug/pprof/:parm", http.DefaultServeMux)
-	router.Post("/debug/pprof/:parm", http.DefaultServeMux)
 	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Invalid path: %s", r.URL.Path), http.StatusBadRequest)
 	})
