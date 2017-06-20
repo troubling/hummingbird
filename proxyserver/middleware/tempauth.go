@@ -89,12 +89,14 @@ func (ta *tempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 		if ctx.Authorize == nil {
 			var authed cachedAuth
 			if err := ctx.Cache.GetStructured("auth:"+token, &authed); err != nil {
-				srv.StandardResponse(writer, 401)
-				return
-			}
-			ctx.RemoteUser = authed.User
-			ctx.Authorize = func(r *http.Request) bool {
-				return authed.Authenticated
+				ctx.Authorize = func(r *http.Request) bool {
+					return false
+				}
+			} else {
+				ctx.RemoteUser = authed.User
+				ctx.Authorize = func(r *http.Request) bool {
+					return authed.Authenticated
+				}
 			}
 		}
 	}
