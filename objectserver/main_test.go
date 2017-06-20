@@ -78,7 +78,10 @@ func makeObjectServer(settings ...string) (*TestServer, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, _, server, _, _ := GetServer(conf, &flag.FlagSet{})
+	_, _, server, _, err := GetServer(conf, &flag.FlagSet{})
+	if err != nil {
+		return nil, err
+	}
 	ts := httptest.NewServer(server.GetHandler(conf))
 	u, err := url.Parse(ts.URL)
 	if err != nil {

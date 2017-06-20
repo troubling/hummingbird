@@ -198,13 +198,14 @@ func TestAuditHashNoMetadata(t *testing.T) {
 var obs zapcore.Core
 var logs *observer.ObservedLogs
 
-func makeAuditor(settings ...string) *Auditor {
+func makeAuditor(t *testing.T, settings ...string) *Auditor {
 	configString := "[object-auditor]\n"
 	for i := 0; i < len(settings); i += 2 {
 		configString += fmt.Sprintf("%s=%s\n", settings[i], settings[i+1])
 	}
 	conf, _ := conf.StringConfig(configString)
-	auditorDaemon, _, _ := NewAuditor(conf, &flag.FlagSet{})
+	auditorDaemon, _, err := NewAuditor(conf, &flag.FlagSet{})
+	require.Nil(t, err)
 	obs, logs = observer.New(zap.InfoLevel)
 	auditorDaemon.(*AuditorDaemon).logger = zap.New(obs)
 	return &Auditor{AuditorDaemon: auditorDaemon.(*AuditorDaemon), filesPerSecond: 1}
@@ -221,7 +222,7 @@ func TestFailsWithoutSection(t *testing.T) {
 }
 
 func TestAuditSuffixNotDir(t *testing.T) {
-	auditor := makeAuditor()
+	auditor := makeAuditor(t)
 	file, _ := ioutil.TempFile("", "")
 	defer file.Close()
 	defer os.RemoveAll(file.Name())
@@ -239,7 +240,7 @@ func TestAuditSuffixPasses(t *testing.T) {
 	defer f.Close()
 	WriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
 	f.Write([]byte("testcontents"))
-	auditor := makeAuditor()
+	auditor := makeAuditor(t)
 	totalPasses := auditor.totalPasses
 	auditor.auditSuffix(filepath.Join(dir, "abc"))
 	assert.Equal(t, totalPasses+1, auditor.totalPasses)
@@ -252,7 +253,7 @@ func TestAuditSuffixQuarantine(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "objects", "1", "abc", "fffffffffffffffffffffffffffffabc"), 0777)
 	f, _ := os.Create(filepath.Join(dir, "objects", "1", "abc", "fffffffffffffffffffffffffffffabc", "12345.derp"))
 	defer f.Close()
-	auditor := makeAuditor()
+	auditor := makeAuditor(t)
 	totalQuarantines := auditor.totalQuarantines
 	auditor.auditSuffix(filepath.Join(dir, "objects", "1", "abc"))
 	assert.Equal(t, totalQuarantines+1, auditor.totalQuarantines)
@@ -265,13 +266,13 @@ func TestAuditSuffixSkipsBad(t *testing.T) {
 	dir, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(dir)
 	os.MkdirAll(filepath.Join(dir, "objects", "1", "abc", "notavalidhash"), 0777)
-	auditor := makeAuditor()
+	auditor := makeAuditor(t)
 	auditor.auditSuffix(filepath.Join(dir, "objects", "1", "abc"))
 	assert.Equal(t, logs.TakeAll()[0].Message, "Skipping invalid file in suffix")
 }
 
 func TestAuditPartitionNotDir(t *testing.T) {
-	auditor := makeAuditor()
+	auditor := makeAuditor(t)
 	file, _ := ioutil.TempFile("", "")
 	defer file.Close()
 	defer os.RemoveAll(file.Name())
@@ -289,7 +290,7 @@ func TestAuditPartitionPasses(t *testing.T) {
 	defer f.Close()
 	WriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
 	f.Write([]byte("testcontents"))
-	auditor := makeAuditor()
+	auditor := makeAuditor(t)
 	totalPasses := auditor.totalPasses
 	auditor.auditPartition(filepath.Join(dir, "1"))
 	assert.Equal(t, totalPasses+1, auditor.totalPasses)
@@ -309,7 +310,7 @@ func TestAuditPartitionSkipsBadData(t *testing.T) {
 	defer f.Close()
 	WriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
 	f.Write([]byte("testcontents"))
-	auditor := makeAuditor()
+	auditor := makeAuditor(t)
 	totalPasses := auditor.totalPasses
 	auditor.auditPartition(filepath.Join(dir, "1"))
 	assert.Equal(t, totalPasses+1, auditor.totalPasses)
@@ -317,7 +318,7 @@ func TestAuditPartitionSkipsBadData(t *testing.T) {
 }
 
 func TestAuditDeviceNotDir(t *testing.T) {
-	auditor := makeAuditor("mount_check", "false")
+	auditor := makeAuditor(t, "mount_check", "false")
 	file, _ := ioutil.TempFile("", "")
 	defer file.Close()
 	defer os.RemoveAll(file.Name())
@@ -335,7 +336,7 @@ func TestAuditDevicePasses(t *testing.T) {
 	defer f.Close()
 	WriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
 	f.Write([]byte("testcontents"))
-	auditor := makeAuditor("mount_check", "false")
+	auditor := makeAuditor(t, "mount_check", "false")
 	totalPasses := auditor.totalPasses
 	auditor.auditDevice(filepath.Join(dir, "sda"))
 	assert.Equal(t, totalPasses+1, auditor.totalPasses)
@@ -351,7 +352,7 @@ func TestAuditDeviceSkipsBadData(t *testing.T) {
 	defer f.Close()
 	WriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
 	f.Write([]byte("testcontents"))
-	auditor := makeAuditor("mount_check", "false")
+	auditor := makeAuditor(t, "mount_check", "false")
 	totalPasses := auditor.totalPasses
 	auditor.auditDevice(filepath.Join(dir, "sda"))
 	assert.Equal(t, totalPasses+1, auditor.totalPasses)
@@ -362,13 +363,13 @@ func TestAuditDeviceUnmounted(t *testing.T) {
 	dir, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(dir)
 	os.MkdirAll(filepath.Join(dir, "sda", "objects", "1"), 0777)
-	auditor := makeAuditor("mount_check", "true")
+	auditor := makeAuditor(t, "mount_check", "true")
 	auditor.auditDevice(filepath.Join(dir, "sda"))
 	assert.Equal(t, logs.TakeAll()[0].Message, "Skipping unmounted device")
 }
 
 func TestFinalLog(t *testing.T) {
-	auditor := makeAuditor()
+	auditor := makeAuditor(t)
 	auditor.passStart = time.Now().Add(-60 * time.Second)
 	auditor.totalQuarantines = 5
 	auditor.totalErrors = 3
@@ -411,7 +412,7 @@ func TestAuditRun(t *testing.T) {
 	defer f.Close()
 	WriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
 	f.Write([]byte("testcontents"))
-	auditor := makeAuditor("mount_check", "false")
+	auditor := makeAuditor(t, "mount_check", "false")
 	auditor.driveRoot = dir
 	totalPasses := auditor.totalPasses
 	auditor.run(OneTimeChan())
@@ -420,7 +421,7 @@ func TestAuditRun(t *testing.T) {
 }
 
 func TestStatReport(t *testing.T) {
-	auditor := makeAuditor("mount_check", "false")
+	auditor := makeAuditor(t, "mount_check", "false")
 	auditor.passStart = time.Now().Add(-120 * time.Second)
 	auditor.lastLog = time.Now().Add(-120 * time.Second)
 	auditor.passes = 120
