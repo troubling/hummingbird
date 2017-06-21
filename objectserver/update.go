@@ -145,34 +145,30 @@ func (server *ObjectServer) updateContainer(metadata map[string]string, request 
 	}
 }
 
-func (server *ObjectServer) updateDeleteAt(request *http.Request, deleteAtStr string, vars map[string]string, logger srv.LowLevelLogger) {
-	deleteAt, err := common.ParseDate(deleteAtStr)
-	if err != nil {
-		return
-	}
-	container := common.GetDefault(request.Header, "X-Delete-At-Container", "")
+func (server *ObjectServer) updateDeleteAt(method string, header http.Header, deleteAtTime time.Time, vars map[string]string, logger srv.LowLevelLogger) {
+	container := common.GetDefault(header, "X-Delete-At-Container", "")
 	if container == "" {
-		container = server.expirerContainer(deleteAt, vars["account"], vars["container"], vars["obj"])
+		container = server.expirerContainer(deleteAtTime, vars["account"], vars["container"], vars["obj"])
 	}
-	obj := fmt.Sprintf("%010d-%s/%s/%s", deleteAt.Unix(), vars["account"], vars["container"], vars["obj"])
-	partition := common.GetDefault(request.Header, "X-Delete-At-Partition", "")
-	hosts := splitHeader(request.Header.Get("X-Delete-At-Host"))
-	devices := splitHeader(request.Header.Get("X-Delete-At-Device"))
+	obj := fmt.Sprintf("%010d-%s/%s/%s", deleteAtTime.Unix(), vars["account"], vars["container"], vars["obj"])
+	partition := common.GetDefault(header, "X-Delete-At-Partition", "")
+	hosts := splitHeader(header.Get("X-Delete-At-Host"))
+	devices := splitHeader(header.Get("X-Delete-At-Device"))
 	requestHeaders := http.Header{
-		"X-Backend-Storage-Policy-Index": {common.GetDefault(request.Header, "X-Backend-Storage-Policy-Index", "0")},
-		"Referer":                        {common.GetDefault(request.Header, "Referer", "-")},
-		"User-Agent":                     {common.GetDefault(request.Header, "User-Agent", "-")},
-		"X-Trans-Id":                     {common.GetDefault(request.Header, "X-Trans-Id", "-")},
-		"X-Timestamp":                    {request.Header.Get("X-Timestamp")},
+		"X-Backend-Storage-Policy-Index": {common.GetDefault(header, "X-Backend-Storage-Policy-Index", "0")},
+		"Referer":                        {common.GetDefault(header, "Referer", "-")},
+		"User-Agent":                     {common.GetDefault(header, "User-Agent", "-")},
+		"X-Trans-Id":                     {common.GetDefault(header, "X-Trans-Id", "-")},
+		"X-Timestamp":                    {header.Get("X-Timestamp")},
 	}
-	if request.Method != "DELETE" {
+	if method != "DELETE" {
 		requestHeaders.Add("X-Content-Type", "text/plain")
 		requestHeaders.Add("X-Size", "0")
 		requestHeaders.Add("X-Etag", zeroByteHash)
 	}
 	failures := 0
 	for index := range hosts {
-		if !server.sendContainerUpdate(hosts[index], devices[index], request.Method, partition, deleteAtAccount, container, obj, requestHeaders) {
+		if !server.sendContainerUpdate(hosts[index], devices[index], method, partition, deleteAtAccount, container, obj, requestHeaders) {
 			logger.Error("ERROR container update failed with (saving for async update later)",
 				zap.String("Host", hosts[index]),
 				zap.String("Device", devices[index]))
@@ -180,14 +176,14 @@ func (server *ObjectServer) updateDeleteAt(request *http.Request, deleteAtStr st
 		}
 	}
 	if failures > 0 || len(hosts) == 0 {
-		server.saveAsync(request.Method, deleteAtAccount, container, obj, vars["device"], requestHeaders)
+		server.saveAsync(method, deleteAtAccount, container, obj, vars["device"], requestHeaders)
 	}
 }
 
 func (server *ObjectServer) containerUpdates(writer http.ResponseWriter, request *http.Request, metadata map[string]string, deleteAt string, vars map[string]string, logger srv.LowLevelLogger) {
 	defer middleware.Recover(writer, request, "PANIC WHILE UPDATING CONTAINER LISTINGS")
-	if deleteAt != "" {
-		go server.updateDeleteAt(request, deleteAt, vars, logger)
+	if deleteAtTime, err := common.ParseDate(deleteAt); err != nil {
+		go server.updateDeleteAt(request.Method, request.Header, deleteAtTime, vars, logger)
 	}
 
 	firstDone := make(chan struct{}, 1)

@@ -111,6 +111,32 @@ func (server *ProxyServer) ObjectDeleteHandler(writer http.ResponseWriter, reque
 	srv.StandardResponse(writer, resp.StatusCode)
 }
 
+func (server *ProxyServer) ObjectPostHandler(writer http.ResponseWriter, request *http.Request) {
+	vars := srv.GetVars(request)
+	ctx := middleware.GetProxyContext(request)
+	if ctx == nil {
+		srv.StandardResponse(writer, 500)
+		return
+	}
+	containerInfo := ctx.C.GetContainerInfo(vars["account"], vars["container"])
+	if containerInfo == nil {
+		srv.StandardResponse(writer, 404)
+		return
+	}
+	ctx.ACL = containerInfo.WriteACL
+	if ctx.Authorize != nil && !ctx.Authorize(request) {
+		if ctx.RemoteUser != "" {
+			srv.StandardResponse(writer, 403)
+			return
+		}
+		srv.StandardResponse(writer, 401)
+		return
+	}
+	resp := ctx.C.PostObject(vars["account"], vars["container"], vars["obj"], request.Header)
+	resp.Body.Close()
+	srv.StandardResponse(writer, resp.StatusCode)
+}
+
 func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
 	ctx := middleware.GetProxyContext(request)

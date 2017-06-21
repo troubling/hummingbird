@@ -44,6 +44,7 @@ type Object interface {
 	SetData(size int64) (io.Writer, error)
 	// Commit saves a new object data that was started with SetData.
 	Commit(metadata map[string]string) error
+	commitMeta(metadata map[string]string) error
 	// Delete deletes the object.
 	Delete(metadata map[string]string) error
 	// Close releases any resources held by the Object instance.

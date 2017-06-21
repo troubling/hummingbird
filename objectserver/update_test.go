@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/pickle"
 	"github.com/troubling/hummingbird/common/srv"
@@ -83,12 +84,15 @@ func TestUpdateDeleteAt(t *testing.T) {
 
 	vars := map[string]string{"account": "a", "container": "c", "obj": "o", "device": "sda"}
 	req = srv.SetVars(req, vars)
-	deleteAtStr := "1434707411"
-	server.updateDeleteAt(req, deleteAtStr, vars, dl)
+	deleteAtTime, err := common.ParseDate("1434707411")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.updateDeleteAt(req.Method, req.Header, deleteAtTime, vars, dl)
 	require.True(t, requestSent)
 
 	cs.Close()
-	server.updateDeleteAt(req, deleteAtStr, vars, dl)
+	server.updateDeleteAt(req.Method, req.Header, deleteAtTime, vars, dl)
 	expectedFile := filepath.Join(ts.root, "sda", "async_pending", "8fc", "02cc012fe572f27e455edbea32da78fc-12345.6789")
 	require.True(t, fs.Exists(expectedFile))
 	data, err := ioutil.ReadFile(expectedFile)
@@ -115,8 +119,11 @@ func TestUpdateDeleteAtNoHeaders(t *testing.T) {
 
 	vars := map[string]string{"account": "a", "container": "c", "obj": "o", "device": "sda"}
 	req = srv.SetVars(req, vars)
-	deleteAtStr := "1434707411"
-	server.updateDeleteAt(req, deleteAtStr, vars, zap.NewNop())
+	deleteAtTime, err := common.ParseDate("1434707411")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.updateDeleteAt(req.Method, req.Header, deleteAtTime, vars, zap.NewNop())
 	expectedFile := filepath.Join(ts.root, "sda", "async_pending", "8fc", "02cc012fe572f27e455edbea32da78fc-12345.6789")
 	require.True(t, fs.Exists(expectedFile))
 	data, err := ioutil.ReadFile(expectedFile)

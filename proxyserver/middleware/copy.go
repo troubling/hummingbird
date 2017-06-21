@@ -48,8 +48,7 @@ func (cw *CopyWriter) WriteHeader(status int) {
 }
 
 type copyMiddleware struct {
-	next       http.Handler
-	postAsCopy bool
+	next http.Handler
 }
 
 func (cw *CopyWriter) getSrcAccountName(request *http.Request) string {
@@ -131,7 +130,7 @@ func NewPipeResponseWriter(writer *io.PipeWriter, done chan bool, logger srv.Low
 	}
 }
 
-func (c *copyMiddleware) getSourceObject(object string, request *http.Request, postAsCopy bool) (io.ReadCloser, http.Header, int) {
+func (c *copyMiddleware) getSourceObject(object string, request *http.Request) (io.ReadCloser, http.Header, int) {
 	ctx := GetProxyContext(request)
 	subRequest, err := http.NewRequest("GET", object, nil)
 	if err != nil {
@@ -147,11 +146,7 @@ func (c *copyMiddleware) getSourceObject(object string, request *http.Request, p
 	done := make(chan bool)
 	writer := NewPipeResponseWriter(pipeWriter, done, ctx.Logger)
 	go func() {
-		if c.postAsCopy && postAsCopy {
-			ctx.Subrequest(writer, subRequest, "copy", true)
-		} else {
-			ctx.Subrequest(writer, subRequest, "copy", false)
-		}
+		ctx.Subrequest(writer, subRequest, "copy", false)
 		writer.Close()
 	}()
 	<-done
@@ -278,7 +273,7 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 		writer.Logger.Info(fmt.Sprintf("Copying object from %s to %s", srcPath, request.URL.Path))
 	}
 
-	srcBody, srcHeader, srcStatus := c.getSourceObject(common.Urlencode(srcPath), request, writer.postAsCopy)
+	srcBody, srcHeader, srcStatus := c.getSourceObject(common.Urlencode(srcPath), request)
 	if srcBody != nil {
 		defer srcBody.Close()
 	}
@@ -296,11 +291,7 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 
 	origHeader := make(map[string][]string)
 	copyItems(origHeader, request.Header)
-	if writer.postAsCopy {
-		// Post-as-copy: ignore new sysmeta, copy existing sysmeta
-		RemoveItemsWithPrefix(request.Header, "X-Object-Sysmeta-")
-		copyItemsWithPrefix(request.Header, srcHeader, "X-Object-Sysmeta-")
-	} else if common.LooksTrue(request.Header.Get("X-Fresh-Metadata")) {
+	if common.LooksTrue(request.Header.Get("X-Fresh-Metadata")) {
 		// # x-fresh-metadata only applies to copy, not post-as-copy: ignore
 		// existing user metadata, update existing sysmeta with new
 		copyItemsWithPrefix(request.Header, srcHeader, "X-Object-Sysmeta-")
@@ -326,9 +317,6 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 		}
 		if srcHeader.Get("X-Object-Manifest") != "" {
 			values.Del("Multipart-Manifest")
-			if !c.postAsCopy {
-				request.Header.Set("X-Object-Manifest", srcHeader.Get("X-Object-Manifest"))
-			}
 		}
 	}
 
@@ -375,11 +363,9 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 
 	copyMetaItems(respHeader, request.Header)
 
-	if !writer.postAsCopy {
-		for k, v := range respHeader {
-			for _, v1 := range v {
-				writer.Header().Add(k, v1)
-			}
+	for k, v := range respHeader {
+		for _, v1 := range v {
+			writer.Header().Add(k, v1)
 		}
 	}
 
@@ -413,7 +399,7 @@ func (c *copyMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Req
 		cw.origReqMethod = "COPY"
 		c.handleCopy(cw, request)
 		return
-	} else if request.Method == "POST" && c.postAsCopy {
+	} else if request.Method == "POST" && request.Header.Get("Content-Type") != "" {
 		cw.origReqMethod = "POST"
 		c.handlePostAsCopy(cw, request)
 		return
@@ -422,10 +408,5 @@ func (c *copyMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Req
 }
 
 func NewCopyMiddleware(config conf.Section) (func(http.Handler) http.Handler, error) {
-	return func(next http.Handler) http.Handler {
-		return &copyMiddleware{
-			next:       next,
-			postAsCopy: config.GetBool("object_post_as_copy", false),
-		}
-	}, nil
+	return func(next http.Handler) http.Handler { return &copyMiddleware{next: next} }, nil
 }
