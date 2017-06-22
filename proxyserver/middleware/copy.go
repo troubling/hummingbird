@@ -137,6 +137,9 @@ func (c *copyMiddleware) getSourceObject(object string, request *http.Request) (
 		ctx.Logger.Error("getSourceObject GET error", zap.Error(err))
 		return nil, nil, 400
 	}
+	if request.FormValue("multipart-manifest") == "get" {
+		subRequest.URL.RawQuery = "multipart-manifest=get&format=raw"
+	}
 	copyItems(subRequest.Header, request.Header)
 	// FIXME. Are we going to do X-Newest?
 	subRequest.Header.Set("X-Newest", "true")
@@ -168,7 +171,8 @@ func (c *copyMiddleware) handlePostAsCopy(writer *CopyWriter, request *http.Requ
 	if err != nil {
 		srv.StandardResponse(writer, 400)
 	}
-	values.Set("Multipart-Manifest", "get")
+	values.Set("multipart-manifest", "get")
+	values.Set("format", "raw")
 	request.URL.RawQuery = values.Encode()
 
 	c.handlePut(writer, request)
@@ -311,12 +315,12 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 	if err != nil {
 		srv.StandardResponse(writer, 400)
 	}
-	if values.Get("Multipart-Manifest") == "get" {
+	if values.Get("multipart-manifest") == "get" {
 		if srcHeader.Get("X-Static-Large-Object") != "" {
-			values.Set("Multipart-Manifest", "put")
+			values.Set("multipart-manifest", "put")
 		}
 		if srcHeader.Get("X-Object-Manifest") != "" {
-			values.Del("Multipart-Manifest")
+			values.Del("multipart-manifest")
 		}
 	}
 
@@ -326,8 +330,7 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 
 	if srcStatus == http.StatusOK &&
 		srcHeader.Get("X-Static-Large-Object") == "" &&
-		(srcHeader.Get("X-Object-Manifest") == "" ||
-			request.Header.Get("Multipart-Manifest") == "get") {
+		(srcHeader.Get("X-Object-Manifest") == "" || request.FormValue("multipart-manifest") == "get") {
 		// copy source etag so that copied content is verified, unless:
 		//  - not a 200 OK response: source etag may not match the actual
 		//    content, for example with a 206 Partial Content response to a
