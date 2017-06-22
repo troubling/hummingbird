@@ -93,7 +93,7 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 			{middleware.NewRatelimiter, "filter:ratelimit"},
 			{middleware.NewStaticWeb, "filter:staticweb"},
 			{middleware.NewCopyMiddleware, "filter:copy"},
-			{middleware.NewXlo, "fliter:slo"},
+			{middleware.NewXlo, "filter:slo"},
 		}
 	} else {
 		middlewares = []struct {
