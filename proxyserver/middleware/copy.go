@@ -321,6 +321,7 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 		}
 		if srcHeader.Get("X-Object-Manifest") != "" {
 			values.Del("multipart-manifest")
+			request.Header.Set("X-Object-Manifest", srcHeader.Get("X-Object-Manifest"))
 		}
 	}
 
