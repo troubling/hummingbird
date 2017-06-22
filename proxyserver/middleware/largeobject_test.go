@@ -74,12 +74,14 @@ func TestGetMultipartManifest(t *testing.T) {
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "/v/a/c/o?multipart-manifest=get", nil)
 	require.Nil(t, err)
+	fakeContext := NewFakeProxyContext(next)
+	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", fakeContext))
 
 	sm.ServeHTTP(w, req)
 	resp := w.Result()
 	body, _ := ioutil.ReadAll(resp.Body)
 
-	require.Equal(t, resp.Header.Get("Content-Type"), "application/json; charset=utf-8")
+	require.Equal(t, "application/json; charset=utf-8", resp.Header.Get("Content-Type"))
 	var manifest []segItem
 	err = json.Unmarshal(body, &manifest)
 	require.Nil(t, err)
@@ -230,7 +232,7 @@ func TestGetRangedSlo(t *testing.T) {
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "/v1/a/c/o", nil)
 	require.Nil(t, err)
-	fakeContext := NewFakeProxyContext(next)
+	fakeContext := NewFakeProxyContext(&sm)
 	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", fakeContext))
 
 	sm.ServeHTTP(w, req)
@@ -291,7 +293,7 @@ func TestGetSuperSlo(t *testing.T) {
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "/v1/a/c/o", nil)
 	require.Nil(t, err)
-	fakeContext := NewFakeProxyContext(next)
+	fakeContext := NewFakeProxyContext(&sm)
 	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", fakeContext))
 
 	sm.ServeHTTP(w, req)
@@ -302,11 +304,12 @@ func TestGetSuperSlo(t *testing.T) {
 	require.Equal(t, "345678456789", string(body))
 	require.Equal(t, "/v1/a/c/o", paths[0])
 	require.Equal(t, "/v1/a/hat/man", paths[1])
-	require.Equal(t, "/v1/a/hat/a", paths[2])
-	require.Equal(t, "/v1/a/hat/b", paths[3])
-	require.Equal(t, "/v1/a/hat/c", paths[4])
-	require.Equal(t, "/v1/a/hat/b", paths[5])
-	require.Equal(t, "/v1/a/hat/c", paths[6])
+	require.Equal(t, "/v1/a/hat/man", paths[2])
+	require.Equal(t, "/v1/a/hat/a", paths[3])
+	require.Equal(t, "/v1/a/hat/b", paths[4])
+	require.Equal(t, "/v1/a/hat/c", paths[5])
+	require.Equal(t, "/v1/a/hat/b", paths[6])
+	require.Equal(t, "/v1/a/hat/c", paths[7])
 }
 
 func TestPutSlo(t *testing.T) {

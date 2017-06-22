@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"mime"
 	"net/http"
 	"path/filepath"
@@ -39,10 +38,6 @@ import (
 
 var maxManifestSize = 1024 * 1024 * 2 // TODO add a check for this
 var maxManifestLen = 1000
-
-type xloMiddleware struct {
-	next http.Handler
-}
 
 type segItem struct {
 	Hash         string `json:"hash"`
@@ -89,82 +84,74 @@ func splitSegPath(thePath string) (string, string, error) {
 	return segPathParts[0], segPathParts[1], nil
 }
 
-type segWriter struct {
+type xloIdentifyWriter struct {
 	http.ResponseWriter
-	Status           int
-	ContentLength    int64
-	ContentRange     string
-	Etag             string
-	ContentType      string
-	LastModified     string
-	isSlo            bool
-	isDlo            bool
-	dloHeader        string
-	cacheBytes       bool
-	throwAwayHeader  bool
-	Error            error
-	manifestBytes    *bytes.Buffer
-	allowWriteHeader bool
-	allowWrite       bool
-	xloFuncName      string
+	funcName string
+	status   int
+	isSlo    bool
+	isDlo    bool
+	body     *bytes.Buffer
 }
 
-func (sw *segWriter) WriteUpstreamHeader() {
-	if sw.isSlo {
-		sw.Header().Set("X-Static-Large-Object", "True")
-	}
-	sw.ResponseWriter.WriteHeader(sw.Status)
-	sw.Header().Del("X-Static-Large-Object")
-}
-
-func (sw *segWriter) WriteHeader(status int) {
-	sw.Status = status
-	if sw.throwAwayHeader { // DLO segments cannot be sub-DLOs. just treat as bytes
-		return
-	}
-	sw.ContentLength, _ = strconv.ParseInt(sw.Header().Get("Content-Length"), 10, 64)
-	sw.ContentRange = sw.Header().Get("Content-Range")
-	sw.Etag = strings.Trim(sw.Header().Get("Etag"), "\"")
-	sw.ContentType = sw.Header().Get("Content-Type")
-	sw.LastModified = sw.Header().Get("Last-Modified")
-	sw.manifestBytes = bytes.NewBuffer(make([]byte, 0))
-	if theDlo := sw.Header().Get("X-Object-Manifest"); theDlo != "" && sw.xloFuncName != "get" {
+func (sw *xloIdentifyWriter) WriteHeader(status int) {
+	sw.status = status
+	if theDlo := sw.Header().Get("X-Object-Manifest"); theDlo != "" && sw.funcName != "get" {
 		sw.isDlo = true
-		sw.dloHeader = theDlo
-		sw.allowWrite = false // because DLO manifests can be segments- do not write out bytes yet
 	}
 	if isSlo := sw.Header().Get("X-Static-Large-Object"); isSlo == "True" {
 		sw.isSlo = true
-		sw.cacheBytes = true
-		sw.Header().Del("X-Static-Large-Object")
 	}
-	if !sw.isSlo && !sw.isDlo && sw.allowWriteHeader {
+	if !sw.isSlo && !sw.isDlo {
 		sw.ResponseWriter.WriteHeader(status)
+		return
+	}
+	sw.body = bytes.NewBuffer(make([]byte, 0))
+}
+
+func (sw *xloIdentifyWriter) Write(b []byte) (int, error) {
+	if sw.isDlo {
+		return len(b), nil
+	} else if sw.isSlo {
+		return sw.body.Write(b)
+	} else {
+		return sw.ResponseWriter.Write(b)
 	}
 }
 
-func (sw *segWriter) Write(b []byte) (int, error) {
-	if sw.cacheBytes {
-		sw.manifestBytes.Write(b)
-		return len(b), nil
-	}
-	if sw.allowWrite {
-		return sw.ResponseWriter.Write(b)
-	}
+type xloForwardBodyWriter struct {
+	io.Writer
+	status int
+	header http.Header
+}
+
+func (x *xloForwardBodyWriter) Header() http.Header         { return x.header }
+func (x *xloForwardBodyWriter) WriteHeader(status int)      { x.status = status }
+func (x *xloForwardBodyWriter) Write(b []byte) (int, error) { return x.Writer.Write(b) }
+
+type xloCaptureWriter struct {
+	status int
+	body   []byte
+	header http.Header
+}
+
+func (x *xloCaptureWriter) Header() http.Header    { return x.header }
+func (x *xloCaptureWriter) WriteHeader(status int) { x.status = status }
+func (x *xloCaptureWriter) Write(b []byte) (int, error) {
+	x.body = append(x.body, b...)
 	return len(b), nil
 }
 
-func needToRefetchManifest(sw *segWriter, request *http.Request) bool {
+func needToRefetchManifest(sw *xloIdentifyWriter, request *http.Request) bool {
 	if request.Method == "HEAD" {
 		return true
 	}
 	//TODO: what does the if-match stuff mean? if ((req.if_match or req.if_none_match) and in swift
-	if request.Header.Get("Range") != "" && (sw.Status == 416) {
+	if request.Header.Get("Range") != "" && (sw.status == 416) {
 		return true
 	}
-	if request.Header.Get("Range") != "" && (sw.Status == 200 || sw.Status == 206) {
+	if request.Header.Get("Range") != "" && (sw.status == 200 || sw.status == 206) {
 		re := regexp.MustCompile(`bytes (\d+)-(\d+)/(\d+)$`)
-		res := re.FindStringSubmatch(sw.ContentRange)
+		res := re.FindStringSubmatch(sw.Header().Get("Content-Range"))
 		if res == nil || len(res) != 4 {
 			return true
 		}
@@ -176,17 +163,15 @@ func needToRefetchManifest(sw *segWriter, request *http.Request) bool {
 	return false
 }
 
-func (xlo *xloMiddleware) feedOutSegments(sw *segWriter, request *http.Request, manifest []segItem, reqRange common.HttpRange, count int) {
+type xloMiddleware struct {
+	next http.Handler
+}
+
+func (xlo *xloMiddleware) feedOutSegments(sw *xloIdentifyWriter, request *http.Request, manifest []segItem, reqRange common.HttpRange) {
 	ctx := GetProxyContext(request)
-	if count > 10 {
-		ctx.Logger.Error(fmt.Sprintf("max recursion depth: %s", request.URL.Path),
-			zap.String("MaxDepth", "10"))
-		return
-	}
 	pathMap, err := common.ParseProxyPath(request.URL.Path)
 	if err != nil || pathMap["account"] == "" {
-		ctx.Logger.Error(fmt.Sprintf("invalid origReq path: %s", request.URL.Path),
-			zap.Error(err))
+		ctx.Logger.Error("invalid origReq path", zap.String("path", request.URL.Path), zap.Error(err))
 		return
 	}
 	for _, si := range manifest {
@@ -219,70 +204,51 @@ func (xlo *xloMiddleware) feedOutSegments(sw *segWriter, request *http.Request, 
 			return
 		}
 		newPath := fmt.Sprintf("/v1/%s/%s/%s", pathMap["account"], container, object)
-		if !si.SubSlo {
-			newReq, err := http.NewRequest("GET", newPath, http.NoBody)
-			if err != nil {
-				ctx.Logger.Error(fmt.Sprintf("error building subrequest: %s", err),
-					zap.Error(err))
-				return
-			}
-			rangeHeader := fmt.Sprintf("bytes=%d-%d", subReqStart, subReqEnd-1)
-			newReq.Header.Set("Range", rangeHeader)
-			sw := &segWriter{ResponseWriter: sw.ResponseWriter,
-				Status: 500, allowWrite: true, throwAwayHeader: true} // TODO i think i can reuse this
-			ctx.Subrequest(sw, newReq, "slo", false)
-			if sw.Status/100 != 2 {
-				ctx.Logger.Debug(fmt.Sprintf("segment not found: %s", newPath),
-					zap.String("Segment404", "404"))
-				break
-			}
-		} else {
-			subManifest, err := xlo.buildSloManifest(sw, request, newPath)
-			if err != nil {
-				ctx.Logger.Error(fmt.Sprintf("error building submanifest: %s", err),
-					zap.Error(err))
-				return
-			}
-			subRange := common.HttpRange{Start: subReqStart, End: subReqEnd}
-			xlo.feedOutSegments(sw, request, subManifest, subRange, count+1)
+		newReq, err := http.NewRequest("GET", newPath, http.NoBody)
+		if err != nil {
+			ctx.Logger.Error("error building subrequest", zap.Error(err))
+			return
+		}
+		newReq.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", subReqStart, subReqEnd-1))
+		sw := &xloForwardBodyWriter{Writer: sw.ResponseWriter, header: make(http.Header)}
+		ctx.Subrequest(sw, newReq, "slo", false)
+		if sw.status/100 != 2 {
+			ctx.Logger.Debug("segment not found", zap.String("path", newPath),
+				zap.String("Segment404", "404"))
+			break
 		}
 		reqRange.Start -= segLen
 		reqRange.End -= segLen
 	}
 }
 
-func (xlo *xloMiddleware) buildSloManifest(sw *segWriter, request *http.Request, manPath string) (manifest []segItem, err error) {
-
+func (xlo *xloMiddleware) buildSloManifest(request *http.Request, manPath string) (manifest []segItem, err error) {
 	ctx := GetProxyContext(request)
-	var manifestBytes []byte
 	newReq, err := http.NewRequest("GET", fmt.Sprintf("%s?multipart-manifest=get", manPath), http.NoBody)
 	if err != nil {
 		return manifest, err
 	}
-
-	swRefetch := &segWriter{ResponseWriter: sw.ResponseWriter, Status: 500}
+	swRefetch := &xloCaptureWriter{header: make(http.Header)}
 	ctx.Subrequest(swRefetch, newReq, "slo", false)
-	if swRefetch.manifestBytes != nil {
-		manifestBytes = swRefetch.manifestBytes.Bytes()
+	if swRefetch.status != 200 && swRefetch.body == nil {
+		return nil, errors.New("Error fetching manifest")
 	}
-	err = json.Unmarshal(manifestBytes, &manifest)
+	err = json.Unmarshal(swRefetch.body, &manifest)
 	return manifest, err
 }
 
-func (xlo *xloMiddleware) buildDloManifest(sw *segWriter, request *http.Request, account string, container string, prefix string) (manifest []segItem, err error) {
-
+func (xlo *xloMiddleware) buildDloManifest(sw *xloIdentifyWriter, request *http.Request, account string, container string, prefix string) (manifest []segItem, err error) {
 	ctx := GetProxyContext(request)
-	var manifestBytes []byte
 	newReq, err := http.NewRequest("GET", fmt.Sprintf("/v1/%s/%s?format=json&prefix=%s", account, container, prefix), http.NoBody)
 	if err != nil {
 		return manifest, err
 	}
-	swRefetch := &segWriter{ResponseWriter: sw.ResponseWriter, Status: 500, cacheBytes: true}
+	swRefetch := &xloCaptureWriter{header: make(http.Header)}
 	ctx.Subrequest(swRefetch, newReq, "slo", false)
-	if swRefetch.manifestBytes != nil {
-		manifestBytes = swRefetch.manifestBytes.Bytes()
+	if swRefetch.status != 200 && swRefetch.body == nil {
+		return nil, errors.New("Error fetching manifest")
 	}
-	if err = json.Unmarshal(manifestBytes, &manifest); err != nil {
+	if err = json.Unmarshal(swRefetch.body, &manifest); err != nil {
 		return manifest, err
 	}
 	for i := range manifest {
@@ -309,7 +275,7 @@ func convertManifest(manifestBytes []byte) ([]byte, error) {
 	return []byte(newBody), nil
 }
 
-func (xlo *xloMiddleware) byteFeeder(sw *segWriter, request *http.Request, xloEtag string, xloContentLengthStr string, manifest []segItem) {
+func (xlo *xloMiddleware) byteFeeder(sw *xloIdentifyWriter, request *http.Request, xloEtag string, xloContentLengthStr string, manifest []segItem) {
 	xloContentLength := int64(0)
 	if xloContentLengthStr != "" {
 		if cl, err := strconv.ParseInt(xloContentLengthStr, 10, 64); err == nil {
@@ -345,25 +311,22 @@ func (xlo *xloMiddleware) byteFeeder(sw *segWriter, request *http.Request, xloEt
 			return
 		}
 	}
-	// TODO: think i need to copy all the object meta headers here....
 	sw.Header().Set("Content-Length", strconv.FormatInt(xloContentLength, 10))
-	sw.Header().Set("Content-Type", sw.ContentType)
+	sw.Header().Set("Content-Type", sw.Header().Get("Content-Type"))
 	sw.Header().Set("Etag", fmt.Sprintf("\"%s\"", xloEtag))
-	sw.Status = 200
-	sw.WriteUpstreamHeader()
+	sw.ResponseWriter.WriteHeader(200)
 	// this does not validate the first segment like swift. we can add that later (never)
-	xlo.feedOutSegments(sw, request, manifest, reqRange, 0)
-
+	xlo.feedOutSegments(sw, request, manifest, reqRange)
 }
 
-func (xlo *xloMiddleware) handleDloGet(sw *segWriter, request *http.Request) {
+func (xlo *xloMiddleware) handleDloGet(sw *xloIdentifyWriter, request *http.Request) {
 	pathMap, err := common.ParseProxyPath(request.URL.Path)
 	if err != nil || pathMap["object"] == "" {
 		srv.SimpleErrorResponse(sw.ResponseWriter, 400, fmt.Sprintf(
 			"invalid must multipath PUT to an object path: %s", request.URL.Path))
 		return
 	}
-	container, prefix, err := splitSegPath(sw.dloHeader)
+	container, prefix, err := splitSegPath(sw.Header().Get("X-Object-Manifest"))
 	if err != nil {
 		srv.SimpleErrorResponse(sw.ResponseWriter, 400, "invalid dlo manifest path")
 		return
@@ -377,14 +340,14 @@ func (xlo *xloMiddleware) handleDloGet(sw *segWriter, request *http.Request) {
 	xlo.byteFeeder(sw, request, "", "", manifest)
 }
 
-func (xlo *xloMiddleware) handleSloGet(sw *segWriter, request *http.Request) {
+func (xlo *xloMiddleware) handleSloGet(sw *xloIdentifyWriter, request *http.Request) {
 	// next has already been called and this is an SLO
 	//TODO: what does comment at slo.py#624 mean?
 	contentType, _, _ := common.ParseContentTypeForSlo(sw.Header().Get("Content-Type"), 0)
 	sw.Header().Set("Content-Type", contentType)
 
-	if sw.xloFuncName == "get" {
-		manifestBytes := sw.manifestBytes.Bytes()
+	if sw.funcName == "get" {
+		manifestBytes := sw.body.Bytes()
 		var err error
 		if request.URL.Query().Get("format") == "raw" {
 			manifestBytes, err = convertManifest(manifestBytes)
@@ -397,28 +360,27 @@ func (xlo *xloMiddleware) handleSloGet(sw *segWriter, request *http.Request) {
 		}
 		sw.Header().Set("Content-Length", strconv.Itoa(len(manifestBytes)))
 		sw.Header().Set("Etag", strings.Trim(sw.Header().Get("Etag"), "\""))
-		sw.WriteUpstreamHeader()
+		sw.ResponseWriter.WriteHeader(http.StatusOK)
 		sw.ResponseWriter.Write(manifestBytes)
 		return
 	}
-	sloEtag := request.Header.Get("X-Object-Sysmeta-Slo-Etag")
-	savedContentLength := request.Header.Get("X-Object-Sysmeta-Slo-Size")
+	sloEtag := sw.Header().Get("X-Object-Sysmeta-Slo-Etag")
+	savedContentLength := sw.Header().Get("X-Object-Sysmeta-Slo-Size")
 	isConditional := ((request.Header.Get("If-Match") != "" ||
 		request.Header.Get("If-None-Match") != "") &&
-		(sw.Status == 304 || sw.Status == 412))
+		(sw.status == 304 || sw.status == 412))
 
 	if (request.Method == "HEAD" || isConditional) && (sloEtag != "" || savedContentLength != "") {
-
 		sw.Header().Set("Content-Length", savedContentLength)
 		sw.Header().Set("Etag", fmt.Sprintf("\"%s\"", sloEtag))
-		sw.WriteUpstreamHeader()
+		sw.ResponseWriter.WriteHeader(sw.status)
 		return
 	}
 	var manifest []segItem
 	var err error
-	manifestBytes := sw.manifestBytes.Bytes()
+	manifestBytes := sw.body.Bytes()
 	if needToRefetchManifest(sw, request) {
-		manifest, err = xlo.buildSloManifest(sw, request, request.URL.Path)
+		manifest, err = xlo.buildSloManifest(request, request.URL.Path)
 	} else {
 		err = json.Unmarshal(manifestBytes, &manifest)
 	}
@@ -430,12 +392,16 @@ func (xlo *xloMiddleware) handleSloGet(sw *segWriter, request *http.Request) {
 
 func parsePutSloManifest(body io.ReadCloser) (manifest []sloPutManifest, errs []string) {
 	dec := json.NewDecoder(body)
-	if _, err := dec.Token(); err != nil {
-		errs = append(errs, "Invalid manifest json- not a list.")
-		return manifest, errs
+	if d, err := dec.Token(); err != nil {
+		return manifest, []string{"Invalid manifest json- not a list."}
+	} else if r, ok := d.(json.Delim); !ok || r != '[' {
+		return manifest, []string{"Invalid manifest json- not a list."}
 	}
-	i := 0
-	for dec.More() {
+	for i := 0; dec.More(); i++ {
+		if i > maxManifestLen {
+			errs = append(errs, "Invalid manifest json- too many segments")
+			break
+		}
 		var manItem sloPutManifest
 		if err := dec.Decode(&manItem); err == io.EOF {
 			break
@@ -450,29 +416,18 @@ func parsePutSloManifest(body io.ReadCloser) (manifest []sloPutManifest, errs []
 		}
 		// cant really check this here because you can send size_bytes as None now
 		if manItem.SizeBytes < 0 {
-			errs = append(errs,
-				fmt.Sprintf("Index %d: too small; each segment must be at least 1 byte.", i))
+			errs = append(errs, fmt.Sprintf("Index %d: too small; each segment must be at least 1 byte.", i))
 			continue
 		}
 		if manItem.Range != "" {
 			if strings.Count(manItem.Range, "-") != 1 {
-				errs = append(errs,
-					fmt.Sprintf("Index %d: invalid or multiple ranges (only one allowed)", i))
+				errs = append(errs, fmt.Sprintf("Index %d: invalid or multiple ranges (only one allowed)", i))
 				continue
 			}
 		}
 		manifest = append(manifest, manItem)
-		if len(manifest) > maxManifestLen {
-			errs = append(errs, "Invalid manifest json- too many segments")
-			break
-		}
-		i += 1
-	}
-	if _, err := dec.Token(); err != nil {
-		errs = append(errs, "Invalid manifest json- ending bracket.")
 	}
 	return manifest, errs
-
 }
 
 func (xlo *xloMiddleware) handleSloPut(writer http.ResponseWriter, request *http.Request) {
@@ -488,8 +443,7 @@ func (xlo *xloMiddleware) handleSloPut(writer http.ResponseWriter, request *http
 		return
 	}
 	if request.Header.Get("X-Copy-From") != "" {
-		srv.SimpleErrorResponse(writer, 405,
-			"Multipart Manifest PUTs cannot be COPY requests")
+		srv.SimpleErrorResponse(writer, 405, "Multipart Manifest PUTs cannot be COPY requests")
 		return
 	}
 	manifest, errs := parsePutSloManifest(request.Body)
@@ -505,13 +459,11 @@ func (xlo *xloMiddleware) handleSloPut(writer http.ResponseWriter, request *http
 	for _, spm := range manifest {
 		spmContainer, spmObject, err := splitSegPath(spm.Path)
 		if err != nil {
-			errs = append(errs,
-				fmt.Sprintf("invalid manifest path: %s", spm.Path))
+			errs = append(errs, fmt.Sprintf("invalid manifest path: %s", spm.Path))
 			break
 		}
 		if spmContainer == pathMap["container"] && spmObject == pathMap["object"] {
-			errs = append(errs,
-				fmt.Sprintf("manifest cannot reference itself: %s", spm.Path))
+			errs = append(errs, fmt.Sprintf("manifest cannot reference itself: %s", spm.Path))
 			break
 		}
 
@@ -521,33 +473,21 @@ func (xlo *xloMiddleware) handleSloPut(writer http.ResponseWriter, request *http
 			ctx.Logger.Error("Couldn't create http.Request", zap.Error(err))
 			return
 		}
-		pw := &segWriter{ResponseWriter: writer, Status: 500}
+		pw := &xloCaptureWriter{header: make(http.Header)}
 		ctx.Subrequest(pw, newReq, "slo", false)
-
-		if pw.Status != 200 {
-			errs = append(errs,
-				fmt.Sprintf("%d response on segment: %s", pw.Status, newPath))
+		if pw.status != 200 {
+			errs = append(errs, fmt.Sprintf("%d response on segment: %s", pw.status, newPath))
 			continue
 		}
-		contentLength := pw.ContentLength
-		segEtag := pw.Etag
-		if pw.isSlo {
-			subWriter := &segWriter{ResponseWriter: writer, Status: 500}
-			subManifest, err := xlo.buildSloManifest(subWriter, request, newPath)
-			if err != nil {
-				errs = append(errs,
-					fmt.Sprintf("could not build submanifest response on segment: %s (%s)", newPath, err))
-				continue
-			}
-			subSize := int64(0)
-			subSegEtag := md5.New()
-			for _, si := range subManifest {
-				segLen, segHash := si.segLenHash()
-				subSize += segLen
-				io.WriteString(subSegEtag, segHash)
-			}
-			segEtag = fmt.Sprintf("%x", subSegEtag.Sum(nil))
-			contentLength = subSize
+		contentLength, err := strconv.ParseInt(pw.Header().Get("Content-Length"), 10, 64)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("bad content-length on segment: %s", newPath))
+			continue
+		}
+		segEtag := strings.Trim(pw.Header().Get("Etag"), "\"")
+		isSlo := false
+		if xslo := pw.Header().Get("X-Static-Large-Object"); xslo == "True" {
+			isSlo = true
 		}
 		if spm.SizeBytes > 0 && contentLength != spm.SizeBytes {
 			errs = append(errs,
@@ -577,11 +517,11 @@ func (xlo *xloMiddleware) handleSloPut(writer http.ResponseWriter, request *http
 				fmt.Sprintf("Etag Mismatch on %s: %s != %s", spm.Path, spm.Etag, segEtag))
 			continue
 		}
-		lastModDate, _ := common.ParseDate(pw.LastModified)
+		lastModDate, _ := common.ParseDate(pw.Header().Get("Last-Modified"))
 
-		contentType, _, _ := common.ParseContentTypeForSlo(pw.ContentType, 0)
+		contentType, _, _ := common.ParseContentTypeForSlo(pw.Header().Get("Content-Type"), 0)
 		newSi := segItem{Name: spm.Path, Bytes: contentLength,
-			Hash: segEtag, Range: parsedRange, SubSlo: pw.isSlo,
+			Hash: segEtag, Range: parsedRange, SubSlo: isSlo,
 			ContentType:  contentType,
 			LastModified: lastModDate.Format("2006-01-02T15:04:05.00000")}
 		_, newSiHash := newSi.segLenHash()
@@ -606,33 +546,31 @@ func (xlo *xloMiddleware) handleSloPut(writer http.ResponseWriter, request *http
 			contentType = "application/octet-stream"
 		}
 	}
-	request.Header.Set("Content-Type", fmt.Sprintf("%s;swift_bytes=%d", contentType, totalSize))
-	request.Header.Set("X-Static-Large-Object", "True")
-	request.Header.Set("X-Object-Sysmeta-Slo-Etag", xloEtagGen)
-	request.Header.Set("X-Object-Sysmeta-Slo-Size", fmt.Sprintf("%d", totalSize))
 	newBody, err := json.Marshal(toPutManifest)
+	putReq, err := http.NewRequest("PUT", request.URL.Path, bytes.NewReader(newBody))
+	if err != nil {
+		ctx.Logger.Error("Creating new request", zap.Error(err))
+		srv.StandardResponse(writer, http.StatusInternalServerError)
+		return
+	}
+	putReq.Header.Set("Content-Type", fmt.Sprintf("%s;swift_bytes=%d", contentType, totalSize))
+	putReq.Header.Set("X-Static-Large-Object", "True")
+	putReq.Header.Set("X-Object-Sysmeta-Slo-Etag", xloEtagGen)
+	putReq.Header.Set("X-Object-Sysmeta-Slo-Size", fmt.Sprintf("%d", totalSize))
 	if err != nil {
 		srv.SimpleErrorResponse(writer, 400, "could not build slo manifest")
 		return
 	}
-	request.Header.Set("Etag", fmt.Sprintf("%x", md5.Sum(newBody)))
-	request.Header.Set("Content-Length", strconv.Itoa(len(newBody)))
-	request.Body = ioutil.NopCloser(bytes.NewReader(newBody))
-
-	pw := &segWriter{ResponseWriter: writer, Status: 500, isSlo: true}
-	xlo.next.ServeHTTP(pw, request)
-	pw.WriteUpstreamHeader()
+	putReq.Header.Set("Etag", fmt.Sprintf("%x", md5.Sum(newBody)))
+	putReq.Header.Set("Content-Length", strconv.Itoa(len(newBody)))
+	ctx.Subrequest(writer, putReq, "slo", false)
 	return
 }
 
-func (xlo *xloMiddleware) deleteAllSegments(sw *segWriter, request *http.Request, manifest []segItem, count int) error {
-	if count > 10 {
-		return errors.New("Max recusion depth exceeded on delete")
-	}
+func (xlo *xloMiddleware) deleteAllSegments(w http.ResponseWriter, request *http.Request, manifest []segItem) error {
 	pathMap, err := common.ParseProxyPath(request.URL.Path)
 	if err != nil || pathMap["account"] == "" {
-		return errors.New(fmt.Sprintf(
-			"invalid path to slo delete: %s", request.URL.Path))
+		return errors.New(fmt.Sprintf("invalid path to slo delete: %s", request.URL.Path))
 	}
 	ctx := GetProxyContext(request)
 	for _, si := range manifest {
@@ -640,23 +578,12 @@ func (xlo *xloMiddleware) deleteAllSegments(sw *segWriter, request *http.Request
 		if err != nil {
 			return errors.New(fmt.Sprintf("invalid slo item: %s", si.Name))
 		}
-		newPath := fmt.Sprintf("/v1/%s/%s/%s", pathMap["account"], container, object)
-		if si.SubSlo {
-			subManifest, err := xlo.buildSloManifest(sw, request, newPath)
-			if err != nil {
-				return errors.New(fmt.Sprintf("invalid sub-slo manifest: %s", newPath))
-			}
-			if err = xlo.deleteAllSegments(
-				sw, request, subManifest, count+1); err != nil {
-				return err
-			}
-		}
+		newPath := fmt.Sprintf("/v1/%s/%s/%s?multipart-manifest=delete", pathMap["account"], container, object)
 		newReq, err := http.NewRequest("DELETE", newPath, http.NoBody)
 		if err != nil {
 			return errors.New(fmt.Sprintf("error building subrequest: %s", err))
 		}
-		sw := &segWriter{ResponseWriter: sw.ResponseWriter,
-			Status: 500, allowWrite: true} // TODO i think i can reuse this
+		sw := &xloCaptureWriter{header: make(http.Header)}
 		ctx.Subrequest(sw, newReq, "slo", false)
 	}
 	return nil
@@ -669,18 +596,13 @@ func (xlo *xloMiddleware) handleSloDelete(writer http.ResponseWriter, request *h
 			"invalid must multipath DELETE to an object path: %s", request.URL.Path))
 		return
 	}
-	sw := &segWriter{ResponseWriter: writer, Status: 500}
-	manifest, err := xlo.buildSloManifest(sw, request, request.URL.Path)
+	manifest, err := xlo.buildSloManifest(request, request.URL.Path)
 	if err != nil {
-		srv.SimpleErrorResponse(writer, 400, fmt.Sprintf(
-			"invalid manifest json: %s", err))
+		srv.SimpleErrorResponse(writer, 400, fmt.Sprintf("invalid manifest json: %s", err))
 		return
-
 	}
-	dw := &segWriter{ResponseWriter: writer, Status: 500, allowWriteHeader: true, allowWrite: true}
-	if err = xlo.deleteAllSegments(dw, request, manifest, 0); err != nil {
-		srv.SimpleErrorResponse(writer, 400, fmt.Sprintf(
-			"error deleting slo: %s", err))
+	if err = xlo.deleteAllSegments(writer, request, manifest); err != nil {
+		srv.SimpleErrorResponse(writer, 400, fmt.Sprintf("error deleting slo: %s", err))
 	}
 	xlo.next.ServeHTTP(writer, request)
 	return
@@ -729,21 +651,20 @@ func (xlo *xloMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Re
 		xlo.handleSloDelete(writer, request)
 		return
 	}
-
 	if request.Method == "GET" || request.Method == "HEAD" {
-		updateEtagIsAt(request, "X-Object-Sysmeta-Slo-Etag")
+		if xloFuncName != "get" {
+			updateEtagIsAt(request, "X-Object-Sysmeta-Slo-Etag")
+		}
+		sw := &xloIdentifyWriter{ResponseWriter: writer, funcName: xloFuncName}
+		xlo.next.ServeHTTP(sw, request)
+		if sw.isSlo {
+			xlo.handleSloGet(sw, request)
+		} else if sw.isDlo {
+			xlo.handleDloGet(sw, request)
+		}
+		return
 	}
-
-	sw := &segWriter{ResponseWriter: writer, Status: 500,
-		xloFuncName: xloFuncName, allowWriteHeader: true, allowWrite: true}
-	xlo.next.ServeHTTP(sw, request)
-
-	if sw.isSlo && (request.Method == "GET" || request.Method == "HEAD") {
-		xlo.handleSloGet(sw, request)
-	}
-	if sw.isDlo && (request.Method == "GET" || request.Method == "HEAD") {
-		xlo.handleDloGet(sw, request)
-	}
+	xlo.next.ServeHTTP(writer, request)
 }
 
 func NewXlo(config conf.Section) (func(http.Handler) http.Handler, error) {
