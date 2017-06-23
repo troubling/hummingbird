@@ -50,6 +50,7 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 	router.Head("/v1/:account/:container/*obj", http.HandlerFunc(server.ObjectHeadHandler))
 	router.Put("/v1/:account/:container/*obj", http.HandlerFunc(server.ObjectPutHandler))
 	router.Delete("/v1/:account/:container/*obj", http.HandlerFunc(server.ObjectDeleteHandler))
+	router.Post("/v1/:account/:container/*obj", http.HandlerFunc(server.ObjectPostHandler))
 	router.Options("/v1/:account/:container/*obj", http.HandlerFunc(server.OptionsHandler))
 
 	router.Get("/v1/:account/:container", http.HandlerFunc(server.ContainerGetHandler))

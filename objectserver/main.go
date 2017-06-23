@@ -334,6 +334,93 @@ func (server *ObjectServer) ObjPutHandler(writer http.ResponseWriter, request *h
 	srv.StandardResponse(writer, http.StatusCreated)
 }
 
+func (server *ObjectServer) ObjPostHandler(writer http.ResponseWriter, request *http.Request) {
+	vars := srv.GetVars(request)
+
+	requestTimestamp, err := common.StandardizeTimestamp(request.Header.Get("X-Timestamp"))
+	if err != nil {
+		srv.GetLogger(request).Error("Error standardizing request X-Timestamp", zap.Error(err))
+		http.Error(writer, "Invalid X-Timestamp header", http.StatusBadRequest)
+		return
+	}
+	if vars["obj"] == "" {
+		http.Error(writer, fmt.Sprintf("Invalid path: %s", request.URL.Path), http.StatusBadRequest)
+		return
+	}
+	if request.Header.Get("Content-Type") != "" {
+		http.Error(writer, fmt.Sprintf("Content-Type may not be sent with object POST: %q", request.Header.Get("Content-Type")), http.StatusConflict)
+		return
+	}
+	var deleteAtTime time.Time
+	if deleteAt := request.Header.Get("X-Delete-At"); deleteAt != "" {
+		if deleteAtTime, err := common.ParseDate(deleteAt); err != nil || deleteAtTime.Before(time.Now()) {
+			http.Error(writer, "X-Delete-At in past", 400)
+			return
+		}
+	}
+
+	obj, err := server.newObject(request, vars, false)
+	if err != nil {
+		srv.GetLogger(request).Error("Error getting obj", zap.Error(err))
+		srv.StandardResponse(writer, http.StatusInternalServerError)
+		return
+	}
+	defer obj.Close()
+	if !obj.Exists() {
+		srv.StandardResponse(writer, http.StatusNotFound)
+		return
+	}
+
+	origMetadata := obj.Metadata()
+	if requestTime, err := common.ParseDate(requestTimestamp); err == nil {
+		if origLastModified, err := common.ParseDate(origMetadata["X-Timestamp"]); err == nil && !requestTime.After(origLastModified) {
+			writer.Header().Set("X-Backend-Timestamp", origMetadata["X-Timestamp"])
+			srv.StandardResponse(writer, http.StatusConflict)
+			return
+		}
+	}
+
+	metadata := make(map[string]string)
+	if v, ok := origMetadata["X-Static-Large-Object"]; ok {
+		metadata["X-Static-Large-Object"] = v
+	}
+	copyHdrs := map[string]bool{"Content-Disposition": true, "Content-Encoding": true, "X-Delete-At": true, "X-Object-Manifest": true, "X-Static-Large-Object": true}
+	for _, v := range strings.Fields(request.Header.Get("X-Backend-Replication-Headers")) {
+		copyHdrs[v] = true
+	}
+	for key := range request.Header {
+		if allowed, ok := server.allowedHeaders[key]; (ok && allowed) ||
+			copyHdrs[key] ||
+			strings.HasPrefix(key, "X-Object-Meta-") ||
+			strings.HasPrefix(key, "X-Object-Transient-Sysmeta-") {
+			metadata[key] = request.Header.Get(key)
+		}
+	}
+	metadata["name"] = "/" + vars["account"] + "/" + vars["container"] + "/" + vars["obj"]
+	metadata["X-Timestamp"] = requestTimestamp
+	var origDeleteAtTime time.Time
+	if origDeleteAt := origMetadata["X-Delete-At"]; origDeleteAt != "" {
+		if origDeleteAtTime, err = common.ParseDate(origDeleteAt); err != nil {
+			origDeleteAtTime = time.Time{}
+		}
+	}
+	if !deleteAtTime.Equal(origDeleteAtTime) {
+		if !deleteAtTime.IsZero() {
+			server.updateDeleteAt("PUT", request.Header, deleteAtTime, vars, srv.GetLogger(request))
+		}
+		if !origDeleteAtTime.IsZero() {
+			server.updateDeleteAt("DELETE", request.Header, origDeleteAtTime, vars, srv.GetLogger(request))
+		}
+	}
+
+	if err := obj.commitMeta(metadata); err != nil {
+		srv.GetLogger(request).Error("Error saving object meta file", zap.Error(err))
+		srv.StandardResponse(writer, http.StatusInternalServerError)
+		return
+	}
+	srv.StandardResponse(writer, http.StatusAccepted)
+}
+
 func (server *ObjectServer) ObjDeleteHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
 	headers := writer.Header()
@@ -528,6 +615,7 @@ func (server *ObjectServer) GetHandler(config conf.Config) http.Handler {
 	router.Get("/:device/:partition/:account/:container/*obj", commonHandlers.ThenFunc(server.ObjGetHandler))
 	router.Head("/:device/:partition/:account/:container/*obj", commonHandlers.ThenFunc(server.ObjGetHandler))
 	router.Put("/:device/:partition/:account/:container/*obj", commonHandlers.ThenFunc(server.ObjPutHandler))
+	router.Post("/:device/:partition/:account/:container/*obj", commonHandlers.ThenFunc(server.ObjPostHandler))
 	router.Delete("/:device/:partition/:account/:container/*obj", commonHandlers.ThenFunc(server.ObjDeleteHandler))
 	router.Options("/", commonHandlers.ThenFunc(server.OptionsHandler))
 	router.Get("/debug/pprof/:parm", http.DefaultServeMux)

@@ -40,7 +40,7 @@ func TestGetSourceObject(t *testing.T) {
 		next: passthrough,
 	}
 
-	body, header, code := c.getSourceObject("/ver/a/c/o", dummy, false)
+	body, header, code := c.getSourceObject("/ver/a/c/o", dummy)
 	require.Equal(t, 200, code)
 	buf := make([]byte, 1024)
 	num, err := body.Read(buf)
@@ -290,6 +290,7 @@ func TestPostAsCopy(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 	req, _ := http.NewRequest("POST", "/v1/a/c/o", nil)
+	req.Header.Set("Content-Type", "something")
 
 	ctx := NewFakeProxyContext(handler)
 	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", ctx))
