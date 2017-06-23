@@ -28,6 +28,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -592,7 +593,12 @@ func TestGetReplicator(t *testing.T) {
 	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
-	config, err := conf.StringConfig("[account-replicator]\nmount_check=false\nbind_port=1000")
+	configString := strings.Join([]string{
+		"[account-replicator]\n",
+		"mount_check=false\n",
+		"bind_port=1000\n"}, "")
+	configString += test.GetLogPathConfLine("accountreplicator.log")
+	config, err := conf.StringConfig(configString)
 	require.Nil(t, err)
 	r, logger, err := GetReplicator(config, &flag.FlagSet{})
 	require.Nil(t, err)

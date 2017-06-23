@@ -17,7 +17,10 @@ package test
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
+	"os"
+	"path"
 
 	"github.com/troubling/hummingbird/common/ring"
 )
@@ -206,3 +209,11 @@ func (m MockResponseWriter) WriteString(s string) (n int, err error) {
 }
 
 func (m MockResponseWriter) WriteHeader(int) {}
+
+func GetLogPathConfLine(log_file string) string {
+	log_dir := os.Getenv("LOGDIR")
+	if log_dir == "" {
+		return ""
+	}
+	return fmt.Sprintf("log_path=%s\n", path.Join(log_dir, log_file))
+}

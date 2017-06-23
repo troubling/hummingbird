@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"flag"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -597,7 +598,14 @@ func TestGetServer(t *testing.T) {
 		return conf.SyncRealmList(map[string]conf.SyncRealm{})
 	}
 
-	configString := "[app:container-server]\ndevices=whatever\nmount_check=false\nbind_ip=127.0.0.2\nbind_port=1000\nlog_level=INFO\n"
+	configString := strings.Join([]string{
+		"[app:container-server]\n",
+		"devices=whatever\n",
+		"mount_check=false\n",
+		"bind_ip=127.0.0.2\n",
+		"bind_port=1000\n",
+		"log_level=INFO\n"}, "")
+	configString += test.GetLogPathConfLine("container.log")
 	conf, err := conf.StringConfig(configString)
 	require.Nil(t, err)
 	bindIP, bindPort, s, logger, err := GetServer(conf, &flag.FlagSet{})

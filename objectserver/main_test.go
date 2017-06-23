@@ -71,6 +71,7 @@ func makeObjectServer(settings ...string) (*TestServer, error) {
 		return nil, err
 	}
 	configString := fmt.Sprintf("[app:object-server]\ndevices=%s\nmount_check=false\n", driveRoot)
+	configString += test.GetLogPathConfLine("object.log")
 	for i := 0; i < len(settings); i += 2 {
 		configString += fmt.Sprintf("%s=%s\n", settings[i], settings[i+1])
 	}
