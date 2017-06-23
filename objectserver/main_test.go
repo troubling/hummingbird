@@ -196,6 +196,78 @@ func TestBasicPutDelete(t *testing.T) {
 	assert.Equal(t, 404, resp.StatusCode)
 }
 
+func TestBasicPutPostGet(t *testing.T) {
+	ts, err := makeObjectServer()
+	assert.Nil(t, err)
+	defer ts.Close()
+
+	timestamp := common.GetTimestamp()
+	req, err := http.NewRequest("PUT", fmt.Sprintf("http://%s:%d/sda/0/a/c/o", ts.host, ts.port), bytes.NewBuffer([]byte("SOME DATA")))
+	assert.Nil(t, err)
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("Content-Length", "9")
+	req.Header.Set("X-Timestamp", timestamp)
+	resp, err := http.DefaultClient.Do(req)
+	assert.Nil(t, err)
+	assert.Equal(t, 201, resp.StatusCode)
+
+	timestamp = common.GetTimestamp()
+	req, err = http.NewRequest("POST", fmt.Sprintf("http://%s:%d/sda/0/a/c/o", ts.host, ts.port), nil)
+	assert.Nil(t, err)
+	req.Header.Set("X-Object-Meta-TestPutPostGet", "Hi!")
+	req.Header.Set("X-Timestamp", timestamp)
+	resp, err = http.DefaultClient.Do(req)
+	assert.Nil(t, err)
+	assert.Equal(t, 202, resp.StatusCode)
+
+	resp, err = ts.Do("GET", "/sda/0/a/c/o", nil)
+	assert.Nil(t, err)
+	assert.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, timestamp, resp.Header.Get("X-Timestamp"))
+	assert.Equal(t, "9", resp.Header.Get("Content-Length"))
+	assert.Equal(t, "Hi!", resp.Header.Get("X-Object-Meta-TestPutPostGet"))
+}
+
+func TestPostContentType(t *testing.T) {
+	ts, err := makeObjectServer()
+	assert.Nil(t, err)
+	defer ts.Close()
+
+	timestamp := common.GetTimestamp()
+	req, err := http.NewRequest("PUT", fmt.Sprintf("http://%s:%d/sda/0/a/c/o", ts.host, ts.port), bytes.NewBuffer([]byte("SOME DATA")))
+	assert.Nil(t, err)
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("Content-Length", "9")
+	req.Header.Set("X-Timestamp", timestamp)
+	resp, err := http.DefaultClient.Do(req)
+	assert.Nil(t, err)
+	assert.Equal(t, 201, resp.StatusCode)
+
+	timestamp = common.GetTimestamp()
+	req, err = http.NewRequest("POST", fmt.Sprintf("http://%s:%d/sda/0/a/c/o", ts.host, ts.port), nil)
+	assert.Nil(t, err)
+	req.Header.Set("Content-Type", "any/thing")
+	req.Header.Set("X-Timestamp", timestamp)
+	resp, err = http.DefaultClient.Do(req)
+	assert.Nil(t, err)
+	assert.Equal(t, 409, resp.StatusCode)
+}
+
+func TestPostNotFound(t *testing.T) {
+	ts, err := makeObjectServer()
+	assert.Nil(t, err)
+	defer ts.Close()
+
+	timestamp := common.GetTimestamp()
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s:%d/sda/0/a/c/o", ts.host, ts.port), nil)
+	assert.Nil(t, err)
+	req.Header.Set("X-Object-Meta-TestPostNotFound", "Howdy!")
+	req.Header.Set("X-Timestamp", timestamp)
+	resp, err := http.DefaultClient.Do(req)
+	assert.Nil(t, err)
+	assert.Equal(t, 404, resp.StatusCode)
+}
+
 func TestGetRanges(t *testing.T) {
 	ts, err := makeObjectServer()
 	assert.Nil(t, err)

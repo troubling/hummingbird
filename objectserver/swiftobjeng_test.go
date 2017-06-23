@@ -170,3 +170,39 @@ func TestSwiftObjectDelete(t *testing.T) {
 	defer swo.Close()
 	require.False(t, swo.Exists())
 }
+
+func TestSwiftObjectCommitMeta(t *testing.T) {
+	driveRoot, err := ioutil.TempDir("", "")
+	require.Nil(t, err)
+	var wg sync.WaitGroup
+	defer func() {
+		wg.Wait()
+		defer os.RemoveAll(driveRoot)
+	}()
+
+	vars := map[string]string{"device": "sda", "account": "a", "container": "c", "object": "o", "partition": "1"}
+	swcon := &SwiftEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
+	swo, err := swcon.New(vars, false, &wg)
+	require.Nil(t, err)
+	defer swo.Close()
+	w, err := swo.SetData(1)
+	require.Nil(t, err)
+	w.Write([]byte("!"))
+	swo.Commit(map[string]string{"Content-Length": "1", "Content-Type": "text/plain", "X-Timestamp": "1234567890.123456"})
+
+	swo, err = swcon.New(vars, false, &wg)
+	require.Nil(t, err)
+	defer swo.Close()
+	require.True(t, swo.Exists())
+	require.Equal(t, swo.(*SwiftObject).metaFile, "")
+	err = swo.commitMeta(map[string]string{"X-Timestamp": "1234567891.123456", "X-Object-Meta-TestSwiftObjectCommitMeta": "Hello!"})
+	require.Nil(t, err)
+
+	swo, err = swcon.New(vars, false, &wg)
+	require.Nil(t, err)
+	defer swo.Close()
+	require.True(t, swo.Exists())
+	require.Equal(t, swo.Metadata()["X-Object-Meta-TestSwiftObjectCommitMeta"], "Hello!")
+	require.NotEqual(t, swo.(*SwiftObject).metaFile, "")
+	require.True(t, fs.Exists(swo.(*SwiftObject).metaFile))
+}
