@@ -1,6 +1,8 @@
 Hummingbird
 ===========
 
+[![Join the chat at https://gitter.im/troubling/hummingbird](https://badges.gitter.im/troubling/hummingbird.svg)](https://gitter.im/troubling/hummingbird?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 Hummingbird is a Golang implementation of some parts of [OpenStack Swift][1].
 The idea is to keep the same protocols and on-disk layout while dramatically
 improving performance.
