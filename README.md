@@ -31,25 +31,21 @@ you're using rsyslog or a standard SAIO, simply uncomment these two lines in
 Save it, then run `sudo service rsyslog restart`.
 
 
-Prerequisites: Go
------------------
+Prerequisites: Go 1.8
+---------------------
 
 Next, you must have a working Go development environment. While these steps
 assume a SAIO, the paths can be tweaked to meet your needs in other
 environments later.
 
 1. [Download Go binaries for your platform][3].
-1. Pick a path to install Go binaries, and extract them. The recommended
-   location is `/usr/local`:
-
-        tar -C /usr/local -zxf go1.6.2.linux-amd64.tar.gz
 
 1. Now, export three environment variables to inform both Go and your shell
    where to find what you'll need to run both Go and Hummingbird binaries.
 
-   * `GOROOT` -- The `go` subdirectory of the location you extracted to above,
-     for instance, `/usr/local/go`. This is more where the core binaries and
-     libraries for Go are kept -- not any code you write.
+   * `GOROOT` -- The `go` subdirectory of the location where your Go system
+     binaries and libraries are, usually `/usr/local/go`. This is not the
+     location of any code you write.
 
    * `GOPATH` -- The folder where you intend to keep Go code, binaries, etc.
      For simplicity, we'll do this in your home directory, so we'll use
@@ -68,7 +64,7 @@ environments later.
 1. Ensure you can now use the new `go` binary:
 
         $ go version
-        go version go1.6.2 linux/amd64
+        go version go1.8.1 linux/amd64
 
 
 Installing Hummingbird
@@ -78,19 +74,18 @@ Now we need to bring the Hummingbird codebase into our GOPATH. We already have
 Swift cloned in our SAIO, so it's easier for us to just symlink it into a
 folder structure within our GOPATH:
 
-    mkdir -p $GOPATH/src/github.com/openstack
-    ln -s ~/swift $GOPATH/src/github.com/openstack/swift
+    mkdir -p $GOPATH/src/github.com/troubling
+    ln -s ~/hummingbird $GOPATH/src/github.com/troubling/hummingbird
 
-Since Hummingbird work is ongoing in a feature branch, be sure you checkout the
-appropriate branch before attempting to install:
+Now, check it out:
 
-    cd $GOPATH/src/github.com/openstack/swift
-    git checkout feature/hummingbird
+    cd $GOPATH/src/github.com/troubling
+    git clone git@github.com:troubling/hummingbird.git
 
 Now you're ready to compile, test, and install Hummingbird. A Makefile is
 provided to make this simpler:
 
-    cd $GOPATH/src/github.com/openstack/swift/go
+    cd $GOPATH/src/github.com/troubling/hummingbird
     make get test all
 
 Once complete, your output will look similar like this:
