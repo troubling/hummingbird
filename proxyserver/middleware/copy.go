@@ -273,7 +273,8 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 
 	srcPath := fmt.Sprintf("/v1/%s/%s/%s", srcAccountName, srcContainer, srcObject)
 
-	if writer.origReqMethod != "POST" {
+	post := writer.origReqMethod == "POST"
+	if !post {
 		writer.Logger.Info(fmt.Sprintf("Copying object from %s to %s", srcPath, request.URL.Path))
 	}
 
@@ -295,7 +296,11 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 
 	origHeader := make(map[string][]string)
 	copyItems(origHeader, request.Header)
-	if common.LooksTrue(request.Header.Get("X-Fresh-Metadata")) {
+	if post {
+		// Post-as-copy: ignore new sysmeta, copy existing sysmeta
+		RemoveItemsWithPrefix(request.Header, "X-Object-Sysmeta-")
+		copyItemsWithPrefix(request.Header, srcHeader, "X-Object-Sysmeta-")
+	} else if common.LooksTrue(request.Header.Get("X-Fresh-Metadata")) {
 		// # x-fresh-metadata only applies to copy, not post-as-copy: ignore
 		// existing user metadata, update existing sysmeta with new
 		copyItemsWithPrefix(request.Header, srcHeader, "X-Object-Sysmeta-")
