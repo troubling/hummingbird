@@ -16,7 +16,9 @@
 package proxyserver
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/srv"
@@ -202,4 +204,64 @@ func cleanACLs(r *http.Request) error {
 		}
 	}
 	return nil
+}
+
+func setVary(writer http.ResponseWriter, h string) {
+	if v := writer.Header().Get("Vary"); v != "" {
+		writer.Header().Set("Vary", fmt.Sprintf("%s, %s", v, h))
+	} else {
+		writer.Header().Set("Vary", h)
+	}
+}
+
+var publicMethods = []string{"HEAD", "GET", "PUT", "POST", "OPTIONS", "DELETE", "COPY"}
+
+func (server *ProxyServer) OptionsHandler(writer http.ResponseWriter, request *http.Request) {
+	vars := srv.GetVars(request)
+	ctx := middleware.GetProxyContext(request)
+	origin := request.Header.Get("Origin")
+	methodString := strings.Join(publicMethods, ", ")
+	if origin == "" || vars["container"] == "" {
+		writer.Header().Set("Allow", methodString)
+		srv.StandardResponse(writer, 200)
+		return
+	}
+	if rqm := request.Header.Get("Access-Control-Request-Method"); rqm == "" {
+		srv.SimpleErrorResponse(writer, 401, "")
+		return
+	} else {
+		found := false
+		for _, method := range publicMethods {
+			if rqm == method {
+				found = true
+				break
+			}
+		}
+		if !found {
+			srv.SimpleErrorResponse(writer, 401, "")
+			return
+		}
+	}
+	if ci := ctx.C.GetContainerInfo(vars["account"], vars["container"]); ci != nil {
+		if common.IsOriginAllowed(ci.Metadata["Access-Control-Allow-Origin"], origin) {
+			writer.Header().Set("Allow", methodString)
+			if ci.Metadata["Access-Control-Allow-Origin"] == "*" {
+				writer.Header().Set("Access-Control-Allow-Origin", "*")
+			} else {
+				writer.Header().Set("Access-Control-Allow-Origin", origin)
+				setVary(writer, "Origin")
+			}
+			if ma := ci.Metadata["Access-Control-Max-Age"]; ma != "" {
+				writer.Header().Set("Access-Control-Max-Age", ma)
+			}
+			if rh := request.Header.Get("Access-Control-Request-Headers"); rh != "" {
+				writer.Header().Set("Access-Control-Allow-Headers", rh)
+				setVary(writer, "Access-Control-Request-Headers")
+			}
+			srv.StandardResponse(writer, 200)
+			return
+		}
+	}
+	srv.SimpleErrorResponse(writer, 401, "")
+	return
 }
