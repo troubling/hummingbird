@@ -381,18 +381,27 @@ func (server *ObjectServer) ObjPostHandler(writer http.ResponseWriter, request *
 	}
 
 	metadata := make(map[string]string)
-	replHdrs := make(map[string]bool)
-	for _, v := range strings.Fields(request.Header.Get("X-Backend-Replication-Headers")) {
-		replHdrs[v] = true
+	if v, ok := origMetadata["X-Static-Large-Object"]; ok {
+		metadata["X-Static-Large-Object"] = v
 	}
+	copyHdrs := make(map[string]bool)
+	for _, v := range strings.Fields(request.Header.Get("X-Backend-Replication-Headers")) {
+		copyHdrs[v] = true
+	}
+	copyHdrs["Content-Disposition"] = true
+	copyHdrs["Content-Encoding"] = true
+	copyHdrs["X-Delete-At"] = true
+	copyHdrs["X-Object-Manifest"] = true
+	copyHdrs["X-Static-Large-Object"] = true
 	for key := range request.Header {
 		if allowed, ok := server.allowedHeaders[key]; (ok && allowed) ||
-			replHdrs[key] ||
+			copyHdrs[key] ||
 			strings.HasPrefix(key, "X-Object-Meta-") ||
 			strings.HasPrefix(key, "X-Object-Transient-Sysmeta-") {
 			metadata[key] = request.Header.Get(key)
 		}
 	}
+	metadata["name"] = "/" + vars["account"] + "/" + vars["container"] + "/" + vars["obj"]
 	metadata["X-Timestamp"] = requestTimestamp
 	var origDeleteAtTime time.Time
 	if origDeleteAt := origMetadata["X-Delete-At"]; origDeleteAt != "" {
