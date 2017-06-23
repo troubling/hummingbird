@@ -189,7 +189,10 @@ func NewEnvironment(settings ...string) *Environment {
 		configString += fmt.Sprintf("bind_ip=%s\n", trsHost)
 		configString += "[object-auditor]\n"
 		conf, _ := conf.StringConfig(configString)
-		_, _, server, _, _ := objectserver.GetServer(conf, &flag.FlagSet{})
+		_, _, server, _, err := objectserver.GetServer(conf, &flag.FlagSet{})
+		if err != nil {
+			log.Fatal(err)
+		}
 		ts.Config.Handler = server.GetHandler(conf)
 
 		replicator, _, err := objectserver.NewReplicator(conf, &flag.FlagSet{})
