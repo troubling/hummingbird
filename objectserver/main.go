@@ -384,15 +384,10 @@ func (server *ObjectServer) ObjPostHandler(writer http.ResponseWriter, request *
 	if v, ok := origMetadata["X-Static-Large-Object"]; ok {
 		metadata["X-Static-Large-Object"] = v
 	}
-	copyHdrs := make(map[string]bool)
+	copyHdrs := map[string]bool{"Content-Disposition": true, "Content-Encoding": true, "X-Delete-At": true, "X-Object-Manifest": true, "X-Static-Large-Object": true}
 	for _, v := range strings.Fields(request.Header.Get("X-Backend-Replication-Headers")) {
 		copyHdrs[v] = true
 	}
-	copyHdrs["Content-Disposition"] = true
-	copyHdrs["Content-Encoding"] = true
-	copyHdrs["X-Delete-At"] = true
-	copyHdrs["X-Object-Manifest"] = true
-	copyHdrs["X-Static-Large-Object"] = true
 	for key := range request.Header {
 		if allowed, ok := server.allowedHeaders[key]; (ok && allowed) ||
 			copyHdrs[key] ||
