@@ -475,6 +475,7 @@ func (v *versionedWrites) ServeHTTP(writer http.ResponseWriter, request *http.Re
 	apiReq, account, container, object := getPathParts(request)
 	if container == "" && object == "" {
 		v.next.ServeHTTP(writer, request)
+		return
 	}
 	if !apiReq || account == "" {
 		srv.StandardResponse(writer, 401)
