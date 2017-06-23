@@ -82,24 +82,25 @@ func (ta *tempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 			writer.Header().Set("X-Storage-URL", fmt.Sprintf("http://%s/v1/AUTH_%s", request.Host, account))
 		}
 		srv.StandardResponse(writer, 200)
+		return
 	} else if strings.HasPrefix(request.URL.Path, "/v1") || strings.HasPrefix(request.URL.Path, "/V1") {
 		token := request.Header.Get("X-Auth-Token")
 		ctx := GetProxyContext(request)
 		if ctx.Authorize == nil {
 			var authed cachedAuth
 			if err := ctx.Cache.GetStructured("auth:"+token, &authed); err != nil {
-				srv.StandardResponse(writer, 401)
-				return
-			}
-			ctx.RemoteUser = authed.User
-			ctx.Authorize = func(r *http.Request) bool {
-				return authed.Authenticated
+				ctx.Authorize = func(r *http.Request) bool {
+					return false
+				}
+			} else {
+				ctx.RemoteUser = authed.User
+				ctx.Authorize = func(r *http.Request) bool {
+					return authed.Authenticated
+				}
 			}
 		}
-		ta.next.ServeHTTP(writer, request)
-	} else {
-		ta.next.ServeHTTP(writer, request)
 	}
+	ta.next.ServeHTTP(writer, request)
 }
 
 func NewTempAuth(config conf.Section) (func(http.Handler) http.Handler, error) {

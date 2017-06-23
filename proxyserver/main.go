@@ -51,6 +51,7 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 	router.Put("/v1/:account/:container/*obj", http.HandlerFunc(server.ObjectPutHandler))
 	router.Delete("/v1/:account/:container/*obj", http.HandlerFunc(server.ObjectDeleteHandler))
 	router.Post("/v1/:account/:container/*obj", http.HandlerFunc(server.ObjectPostHandler))
+	router.Options("/v1/:account/:container/*obj", http.HandlerFunc(server.OptionsHandler))
 
 	router.Get("/v1/:account/:container", http.HandlerFunc(server.ContainerGetHandler))
 	router.Get("/v1/:account/:container/", http.HandlerFunc(server.ContainerGetHandler))
@@ -62,6 +63,8 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 	router.Delete("/v1/:account/:container/", http.HandlerFunc(server.ContainerDeleteHandler))
 	router.Post("/v1/:account/:container", http.HandlerFunc(server.ContainerPostHandler))
 	router.Post("/v1/:account/:container/", http.HandlerFunc(server.ContainerPostHandler))
+	router.Options("/v1/:account/:container", http.HandlerFunc(server.OptionsHandler))
+	router.Options("/v1/:account/:container/", http.HandlerFunc(server.OptionsHandler))
 
 	router.Get("/v1/:account", http.HandlerFunc(server.AccountGetHandler))
 	router.Get("/v1/:account/", http.HandlerFunc(server.AccountGetHandler))
@@ -73,6 +76,8 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 	router.Delete("/v1/:account/", http.HandlerFunc(server.AccountDeleteHandler))
 	router.Post("/v1/:account", http.HandlerFunc(server.AccountPostHandler))
 	router.Post("/v1/:account/", http.HandlerFunc(server.AccountPostHandler))
+	router.Options("/v1/:account", http.HandlerFunc(server.OptionsHandler))
+	router.Options("/v1/:account/", http.HandlerFunc(server.OptionsHandler))
 
 	tempAuth := config.GetBool("proxy-server", "tempauth_enabled", true)
 	var middlewares []struct {
@@ -88,6 +93,7 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 			{middleware.NewCatchError, "filter:catch_errors"},
 			{middleware.NewHealthcheck, "filter:healthcheck"},
 			{middleware.NewRequestLogger, "filter:proxy-logging"},
+			{middleware.NewCors, "filter:cors"}, // TODO: i dont want to have to have a seciton for this
 			{middleware.NewFormPost, "filter:formpost"},
 			{middleware.NewTempURL, "filter:tempurl"},
 			{middleware.NewTempAuth, "filter:tempauth"},
@@ -104,6 +110,7 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 			{middleware.NewCatchError, "filter:catch_errors"},
 			{middleware.NewHealthcheck, "filter:healthcheck"},
 			{middleware.NewRequestLogger, "filter:proxy-logging"},
+			{middleware.NewCors, "filter:cors"},
 			{middleware.NewFormPost, "filter:formpost"},
 			{middleware.NewTempURL, "filter:tempurl"},
 			{middleware.NewAuthToken, "filter:authtoken"},
