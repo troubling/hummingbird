@@ -144,9 +144,6 @@ func (c *copyMiddleware) getSourceObject(object string, request *http.Request, p
 	// FIXME. Are we going to do X-Newest?
 	subRequest.Header.Set("X-Newest", "true")
 	subRequest.Header.Del("X-Backend-Storage-Policy-Index")
-	if !post { // POST doesn't need to auth the internal GET
-		subRequest.Header.Set("X-Auth-Token", request.Header.Get("X-Auth-Token"))
-	}
 
 	pipeReader, pipeWriter := io.Pipe()
 	done := make(chan bool)
