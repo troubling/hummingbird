@@ -242,6 +242,7 @@ func (xlo *xloMiddleware) buildDloManifest(sw *xloIdentifyWriter, request *http.
 	if err != nil {
 		return manifest, err
 	}
+	ctx.copyAuth(newReq, request)
 	swRefetch := &xloCaptureWriter{header: make(http.Header)}
 	ctx.Subrequest(swRefetch, newReq, "slo", false)
 	if swRefetch.status != 200 || swRefetch.body == nil {
