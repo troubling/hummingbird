@@ -104,7 +104,7 @@ func (s *staticWebHandler) handleObject(writer http.ResponseWriter, request *htt
 		s.handleError(writer, request, http.StatusInternalServerError, err)
 		return
 	}
-	subreq.Header.Set("X-Auth-Token", request.Header.Get("X-Auth-Token"))
+	GetProxyContext(request).copyAuth(subreq, request)
 	subrec := httptest.NewRecorder()
 	s.ctx.Subrequest(subrec, subreq, "staticweb", false)
 	subresp := subrec.Result()
@@ -135,7 +135,7 @@ func (s *staticWebHandler) handleDirectory(writer http.ResponseWriter, request *
 				s.handleError(writer, request, http.StatusInternalServerError, err)
 				return
 			}
-			subreq.Header.Set("X-Auth-Token", request.Header.Get("X-Auth-Token"))
+			GetProxyContext(request).copyAuth(subreq, request)
 			subrec := httptest.NewRecorder()
 			s.ctx.Subrequest(subrec, subreq, "staticweb", false)
 			subresp := subrec.Result()
@@ -156,7 +156,7 @@ func (s *staticWebHandler) handleDirectory(writer http.ResponseWriter, request *
 				s.handleError(writer, request, http.StatusInternalServerError, err)
 				return
 			}
-			subreq.Header.Set("X-Auth-Token", request.Header.Get("X-Auth-Token"))
+			GetProxyContext(request).copyAuth(subreq, request)
 			subrec := httptest.NewRecorder()
 			s.ctx.Subrequest(subrec, subreq, "staticweb", false)
 			subresp := subrec.Result()
@@ -190,7 +190,7 @@ func (s *staticWebHandler) handleDirectory(writer http.ResponseWriter, request *
 			s.handleError(writer, request, http.StatusInternalServerError, err)
 			return
 		}
-		subreq.Header.Set("X-Auth-Token", request.Header.Get("X-Auth-Token"))
+		GetProxyContext(request).copyAuth(subreq, request)
 		subrec := httptest.NewRecorder()
 		s.ctx.Subrequest(subrec, subreq, "staticweb", false)
 		subresp := subrec.Result()
@@ -247,7 +247,7 @@ func (s *staticWebHandler) handleDirectory(writer http.ResponseWriter, request *
 		s.handleError(writer, request, http.StatusInternalServerError, err)
 		return
 	}
-	subreq.Header.Set("X-Auth-Token", request.Header.Get("X-Auth-Token"))
+	GetProxyContext(request).copyAuth(subreq, request)
 	subrec := httptest.NewRecorder()
 	s.ctx.Subrequest(subrec, subreq, "staticweb", false)
 	subresp := subrec.Result()
@@ -376,7 +376,7 @@ func (s *staticWebHandler) handleError(writer http.ResponseWriter, request *http
 		srv.StandardResponse(writer, status)
 		return
 	}
-	subreq.Header.Set("X-Auth-Token", request.Header.Get("X-Auth-Token"))
+	GetProxyContext(request).copyAuth(subreq, request)
 	subrec := httptest.NewRecorder()
 	s.ctx.Subrequest(subrec, subreq, "staticweb", false)
 	subresp := subrec.Result()
