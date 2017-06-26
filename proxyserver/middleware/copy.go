@@ -130,7 +130,7 @@ func NewPipeResponseWriter(writer *io.PipeWriter, done chan bool, logger srv.Low
 	}
 }
 
-func (c *copyMiddleware) getSourceObject(object string, request *http.Request) (io.ReadCloser, http.Header, int) {
+func (c *copyMiddleware) getSourceObject(object string, request *http.Request, post bool) (io.ReadCloser, http.Header, int) {
 	ctx := GetProxyContext(request)
 	subRequest, err := http.NewRequest("GET", object, nil)
 	if err != nil {
@@ -144,12 +144,18 @@ func (c *copyMiddleware) getSourceObject(object string, request *http.Request) (
 	// FIXME. Are we going to do X-Newest?
 	subRequest.Header.Set("X-Newest", "true")
 	subRequest.Header.Del("X-Backend-Storage-Policy-Index")
+	if !post { // POST doesn't need to auth the internal GET
+		subRequest.Header.Set("X-Auth-Token", request.Header.Get("X-Auth-Token"))
+	}
 
 	pipeReader, pipeWriter := io.Pipe()
 	done := make(chan bool)
 	writer := NewPipeResponseWriter(pipeWriter, done, ctx.Logger)
 	go func() {
-		ctx.Subrequest(writer, subRequest, "copy", false)
+		// POST doesn't need to auth the internal GET; if they issued a POST
+		// and it was authorized and we happen to need to do a GET+PUT for our
+		// own reasons, that's fine.
+		ctx.Subrequest(writer, subRequest, "copy", !post)
 		writer.Close()
 	}()
 	<-done
@@ -278,7 +284,7 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 		writer.Logger.Info(fmt.Sprintf("Copying object from %s to %s", srcPath, request.URL.Path))
 	}
 
-	srcBody, srcHeader, srcStatus := c.getSourceObject(common.Urlencode(srcPath), request)
+	srcBody, srcHeader, srcStatus := c.getSourceObject(common.Urlencode(srcPath), request, post)
 	if srcBody != nil {
 		defer srcBody.Close()
 	}
