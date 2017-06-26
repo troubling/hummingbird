@@ -145,7 +145,6 @@ func needToRefetchManifest(sw *xloIdentifyWriter, request *http.Request) bool {
 	if request.Method == "HEAD" {
 		return true
 	}
-	//TODO: what does the if-match stuff mean? if ((req.if_match or req.if_none_match) and in swift
 	if request.Header.Get("Range") != "" && (sw.status == 416) {
 		return true
 	}
@@ -308,6 +307,20 @@ func (xlo *xloMiddleware) byteFeeder(sw *xloIdentifyWriter, request *http.Reques
 			xloContentLength += reqRange.End - reqRange.Start
 		} else {
 			srv.SimpleErrorResponse(sw.ResponseWriter, 400, "invalid range")
+			return
+		}
+	}
+	if request.Header.Get("If-Match") != "" {
+		ifMatches := common.ParseIfMatch(request.Header.Get("If-Match"))
+		if !ifMatches[strings.Trim(xloEtag, "\"")] {
+			srv.SimpleErrorResponse(sw.ResponseWriter, 412, "")
+			return
+		}
+	}
+	if request.Header.Get("If-None-Match") != "" {
+		ifNoneMatches := common.ParseIfMatch(request.Header.Get("If-None-Match"))
+		if ifNoneMatches[strings.Trim(xloEtag, "\"")] {
+			srv.SimpleErrorResponse(sw.ResponseWriter, 304, "")
 			return
 		}
 	}
@@ -563,6 +576,9 @@ func (xlo *xloMiddleware) handleSloPut(writer http.ResponseWriter, request *http
 	}
 	putReq.Header.Set("Etag", fmt.Sprintf("%x", md5.Sum(newBody)))
 	putReq.Header.Set("Content-Length", strconv.Itoa(len(newBody)))
+	if request.Header.Get("If-None-Match") != "" {
+		putReq.Header.Set("If-None-Match", request.Header.Get("If-None-Match"))
+	}
 	ctx.Subrequest(writer, putReq, "slo", false)
 	return
 }

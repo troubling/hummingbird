@@ -495,3 +495,19 @@ func IsOriginAllowed(allowedOriginHeader, requestOrigin string) bool {
 	}
 	return false
 }
+
+func ParseIfMatch(s string) map[string]bool {
+	r := make(map[string]bool)
+	if len(strings.Trim(s, " ")) > 0 {
+		for _, ss := range strings.Split(s, ",") {
+			if sst := strings.Trim(ss, " "); sst != "" {
+				if sst[0] == '"' && sst[len(sst)-1] == '"' {
+					r[sst[1:len(sst)-1]] = true
+				} else {
+					r[sst] = true
+				}
+			}
+		}
+	}
+	return r
+}
