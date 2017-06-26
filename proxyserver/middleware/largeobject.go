@@ -243,6 +243,9 @@ func (xlo *xloMiddleware) buildDloManifest(sw *xloIdentifyWriter, request *http.
 	if err != nil {
 		return manifest, err
 	}
+	if v := request.Header.Get("X-Auth-Token"); v != "" {
+		newReq.Header.Set("X-Auth-Token", v)
+	}
 	swRefetch := &xloCaptureWriter{header: make(http.Header)}
 	ctx.Subrequest(swRefetch, newReq, "slo", false)
 	if swRefetch.status != 200 || swRefetch.body == nil {
