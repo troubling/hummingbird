@@ -74,22 +74,6 @@ func (server *ObjectServer) newObject(req *http.Request, vars map[string]string,
 	return engine.New(vars, needData, &server.asyncWG)
 }
 
-func parseIfMatch(s string) map[string]bool {
-	r := make(map[string]bool)
-	if len(strings.Trim(s, " ")) > 0 {
-		for _, ss := range strings.Split(s, ",") {
-			if sst := strings.Trim(ss, " "); sst != "" {
-				if sst[0] == '"' && sst[len(sst)-1] == '"' {
-					r[sst[1:len(sst)-1]] = true
-				} else {
-					r[sst] = true
-				}
-			}
-		}
-	}
-	return r
-}
-
 func resolveEtag(req *http.Request, metadata map[string]string) string {
 	etag := metadata["ETag"]
 	for _, ph := range strings.Split(req.Header.Get("X-Backend-Etag-Is-At"), ",") {
@@ -112,8 +96,8 @@ func (server *ObjectServer) ObjGetHandler(writer http.ResponseWriter, request *h
 	}
 	defer obj.Close()
 
-	ifMatches := parseIfMatch(request.Header.Get("If-Match"))
-	ifNoneMatches := parseIfMatch(request.Header.Get("If-None-Match"))
+	ifMatches := common.ParseIfMatch(request.Header.Get("If-Match"))
+	ifNoneMatches := common.ParseIfMatch(request.Header.Get("If-None-Match"))
 
 	if !obj.Exists() {
 		if ifMatches["*"] {
