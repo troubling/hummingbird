@@ -87,7 +87,7 @@ type customWriter struct {
 }
 
 func (w *customWriter) WriteHeader(status int) {
-	w.ResponseWriter.WriteHeader(w.f(w, status))
+	w.ResponseWriter.WriteHeader(w.f(w.ResponseWriter, status))
 }
 
 // NewCustomWriter creates an http.ResponseWriter wrapper that calls your function on WriteHeader.

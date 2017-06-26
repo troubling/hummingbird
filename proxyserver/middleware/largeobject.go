@@ -327,7 +327,12 @@ func (xlo *xloMiddleware) byteFeeder(sw *xloIdentifyWriter, request *http.Reques
 	sw.Header().Set("Content-Length", strconv.FormatInt(xloContentLength, 10))
 	sw.Header().Set("Content-Type", sw.Header().Get("Content-Type"))
 	sw.Header().Set("Etag", fmt.Sprintf("\"%s\"", xloEtag))
-	sw.ResponseWriter.WriteHeader(200)
+	if reqRangeStr == "" {
+		sw.ResponseWriter.WriteHeader(http.StatusOK)
+	} else {
+		sw.Header().Set("Content-Range", fmt.Sprintf("%d-%d/%s", reqRange.Start, reqRange.End, xloContentLengthStr))
+		sw.ResponseWriter.WriteHeader(http.StatusPartialContent)
+	}
 	// this does not validate the first segment like swift. we can add that later (never)
 	xlo.feedOutSegments(sw, request, manifest, reqRange)
 }

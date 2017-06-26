@@ -18,7 +18,6 @@ package common
 import (
 	"bytes"
 	"errors"
-	"net/textproto"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -26,28 +25,27 @@ import (
 
 func TestMultiWriter(t *testing.T) {
 	w := &bytes.Buffer{}
-	mw := NewMultiWriter(w)
+	mw := NewMultiWriter(w, "text/plain", 100)
 
 	boundary := mw.Boundary()
 
-	p, _ := mw.CreatePart(textproto.MIMEHeader{"Content-Type": []string{"text/plain"}})
+	p, _ := mw.CreatePart(0, 3)
 	p.Write([]byte("HI"))
 
-	p, _ = mw.CreatePart(textproto.MIMEHeader{"Content-Type": []string{"text/plain"}})
+	p, _ = mw.CreatePart(4, 9)
 	p.Write([]byte("THERE"))
 
 	mw.Close()
-	shouldBe := "--" + boundary + "\r\nContent-Type: text/plain\r\n\r\nHI\r\n--" + boundary + "\r\nContent-Type: text/plain\r\n\r\nTHERE\r\n--" + boundary + "--"
+	shouldBe := "--" + boundary + "\r\nContent-Type: text/plain\r\nContent-Range: bytes 0-2/100\r\n\r\nHI\r\n--" +
+		boundary + "\r\nContent-Type: text/plain\r\nContent-Range: bytes 4-8/100\r\n\r\nTHERE\r\n--" + boundary + "--"
 	assert.Equal(t, shouldBe, string(w.Bytes()))
 }
 
 func TestMultiWriterClosedPart(t *testing.T) {
 	w := &bytes.Buffer{}
-	mw := NewMultiWriter(w)
-
-	p1, _ := mw.CreatePart(textproto.MIMEHeader{"Content-Type": []string{"text/plain"}})
-	mw.CreatePart(textproto.MIMEHeader{"Content-Type": []string{"text/plain"}})
-
+	mw := NewMultiWriter(w, "text/plain", 100)
+	p1, _ := mw.CreatePart(0, 10)
+	mw.CreatePart(10, 20)
 	_, err := p1.Write([]byte("HI"))
 	assert.NotNil(t, err)
 }
@@ -65,12 +63,12 @@ func (f *FailWriter) Write(d []byte) (n int, err error) {
 }
 
 func TestMultiWriterFails(t *testing.T) {
-	mw := NewMultiWriter(&FailWriter{0})
+	mw := NewMultiWriter(&FailWriter{0}, "text/plain", 100)
 
-	p, _ := mw.CreatePart(textproto.MIMEHeader{"Content-Type": []string{"text/plain"}})
+	p, _ := mw.CreatePart(0, 10)
 	_, err := p.Write([]byte("HI"))
 	assert.NotNil(t, err)
 	assert.NotNil(t, mw.Close())
-	_, err = mw.CreatePart(textproto.MIMEHeader{"Content-Type": []string{"text/plain"}})
+	_, err = mw.CreatePart(10, 20)
 	assert.NotNil(t, err)
 }
