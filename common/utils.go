@@ -126,8 +126,12 @@ func UUID() string {
 	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", rand.Int63n(0xffffffff), rand.Int63n(0xffff), rand.Int63n(0xffff), rand.Int63n(0xffff), rand.Int63n(0xffffffffffff))
 }
 
+func CanonicalTimestampFromTime(t time.Time) string {
+	return CanonicalTimestamp(float64(t.UnixNano()) / 1000000000.0)
+}
+
 func GetTimestamp() string {
-	return CanonicalTimestamp(float64(time.Now().UnixNano()) / 1000000000.0)
+	return CanonicalTimestampFromTime(time.Now())
 }
 
 func FormatLastModified(lastModified time.Time) string {
