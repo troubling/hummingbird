@@ -130,7 +130,7 @@ func NewPipeResponseWriter(writer *io.PipeWriter, done chan bool, logger srv.Low
 	}
 }
 
-func (c *copyMiddleware) getSourceObject(object string, request *http.Request) (io.ReadCloser, http.Header, int) {
+func (c *copyMiddleware) getSourceObject(object string, request *http.Request, post bool) (io.ReadCloser, http.Header, int) {
 	ctx := GetProxyContext(request)
 	subRequest, err := http.NewRequest("GET", object, nil)
 	if err != nil {
@@ -149,7 +149,10 @@ func (c *copyMiddleware) getSourceObject(object string, request *http.Request) (
 	done := make(chan bool)
 	writer := NewPipeResponseWriter(pipeWriter, done, ctx.Logger)
 	go func() {
-		ctx.Subrequest(writer, subRequest, "copy", false)
+		// POST doesn't need to auth the internal GET; if they issued a POST
+		// and it was authorized and we happen to need to do a GET+PUT for our
+		// own reasons, that's fine.
+		ctx.Subrequest(writer, subRequest, "copy", !post)
 		writer.Close()
 	}()
 	<-done
@@ -273,11 +276,12 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 
 	srcPath := fmt.Sprintf("/v1/%s/%s/%s", srcAccountName, srcContainer, srcObject)
 
-	if writer.origReqMethod != "POST" {
+	post := writer.origReqMethod == "POST"
+	if !post {
 		writer.Logger.Info(fmt.Sprintf("Copying object from %s to %s", srcPath, request.URL.Path))
 	}
 
-	srcBody, srcHeader, srcStatus := c.getSourceObject(common.Urlencode(srcPath), request)
+	srcBody, srcHeader, srcStatus := c.getSourceObject(common.Urlencode(srcPath), request, post)
 	if srcBody != nil {
 		defer srcBody.Close()
 	}
@@ -295,7 +299,11 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 
 	origHeader := make(map[string][]string)
 	copyItems(origHeader, request.Header)
-	if common.LooksTrue(request.Header.Get("X-Fresh-Metadata")) {
+	if post {
+		// Post-as-copy: ignore new sysmeta, copy existing sysmeta
+		RemoveItemsWithPrefix(request.Header, "X-Object-Sysmeta-")
+		copyItemsWithPrefix(request.Header, srcHeader, "X-Object-Sysmeta-")
+	} else if common.LooksTrue(request.Header.Get("X-Fresh-Metadata")) {
 		// # x-fresh-metadata only applies to copy, not post-as-copy: ignore
 		// existing user metadata, update existing sysmeta with new
 		copyItemsWithPrefix(request.Header, srcHeader, "X-Object-Sysmeta-")

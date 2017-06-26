@@ -244,8 +244,8 @@ func (xlo *xloMiddleware) buildDloManifest(sw *xloIdentifyWriter, request *http.
 	}
 	swRefetch := &xloCaptureWriter{header: make(http.Header)}
 	ctx.Subrequest(swRefetch, newReq, "slo", false)
-	if swRefetch.status != 200 && swRefetch.body == nil {
-		return nil, errors.New("Error fetching manifest")
+	if swRefetch.status != 200 || swRefetch.body == nil {
+		return nil, fmt.Errorf("Error %d fetching manifest", swRefetch.status)
 	}
 	if err = json.Unmarshal(swRefetch.body, &manifest); err != nil {
 		return manifest, err
