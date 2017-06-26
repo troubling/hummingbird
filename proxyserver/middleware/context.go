@@ -80,6 +80,7 @@ type ProxyContext struct {
 	C                client.ProxyClient
 	Authorize        AuthorizeFunc
 	RemoteUsers      []string
+	StorageOwner     bool
 	ResellerRequest  bool
 	ACL              string
 	subrequestCopy   subrequestCopy

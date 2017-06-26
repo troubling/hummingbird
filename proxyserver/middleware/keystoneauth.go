@@ -16,7 +16,6 @@
 package middleware
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -203,7 +202,7 @@ func (ka *keystoneAuth) authorize(r *http.Request) (bool, int) {
 		return true, http.StatusOK
 	}
 
-	isAuthorized, authErr := ka.authorizeUnconfirmedIdentity(r, pathParts["object"], referrers, roles)
+	isAuthorized, authErr := AuthorizeUnconfirmedIdentity(r, pathParts["object"], referrers, roles)
 
 	if isAuthorized {
 		return true, http.StatusOK
@@ -294,22 +293,12 @@ func (ka *keystoneAuth) authorizeAnonymous(r *http.Request) (bool, int) {
 	}
 
 	referrers, roles := ParseACL(ctx.ACL)
-	isAuthorized, _ = ka.authorizeUnconfirmedIdentity(r, pathParts["object"], referrers, roles)
+	isAuthorized, _ = AuthorizeUnconfirmedIdentity(r, pathParts["object"], referrers, roles)
 
 	if !isAuthorized {
 		return false, s
 	}
 	return true, http.StatusOK
-}
-
-func (ka *keystoneAuth) authorizeUnconfirmedIdentity(r *http.Request, obj string, referrers []string, roles []string) (bool, error) {
-	if ReferrerAllowed(r.Referer(), referrers) {
-		if obj != "" || common.StringInSlice(".rlistings", roles) {
-			return true, nil
-		}
-		return false, nil
-	}
-	return false, errors.New("unable to confirm identity")
 }
 
 func keystoneSubrequestCopy(dst, src *http.Request) {
