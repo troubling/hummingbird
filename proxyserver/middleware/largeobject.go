@@ -300,13 +300,15 @@ func (xlo *xloMiddleware) byteFeeder(sw *xloIdentifyWriter, request *http.Reques
 		if ranges, err := common.ParseRange(reqRangeStr, xloContentLength); err == nil {
 			xloContentLength = 0
 			if len(ranges) != 1 {
-				srv.SimpleErrorResponse(sw.ResponseWriter, 400, "invalid multi range")
+				sw.ResponseWriter.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", xloContentLength))
+				srv.SimpleErrorResponse(sw.ResponseWriter, http.StatusRequestedRangeNotSatisfiable, "invalid multi range")
 				return
 			}
 			reqRange = ranges[0]
 			xloContentLength += reqRange.End - reqRange.Start
 		} else {
-			srv.SimpleErrorResponse(sw.ResponseWriter, 400, "invalid range")
+			sw.ResponseWriter.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", xloContentLength))
+			srv.SimpleErrorResponse(sw.ResponseWriter, http.StatusRequestedRangeNotSatisfiable, "invalid range")
 			return
 		}
 	}
