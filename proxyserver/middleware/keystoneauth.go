@@ -54,6 +54,7 @@ func (ka *keystoneAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx.RemoteUser = identityMap["tenantName"]
 	ctx.Authorize = ka.authorize
+	ctx.addSubrequestCopy(keystoneSubrequestCopy)
 	userRoles := common.SliceFromCSV(identityMap["roles"])
 	for _, r := range userRoles {
 		if ka.resellerAdminRole == strings.ToLower(r) {
@@ -295,6 +296,16 @@ func (ka *keystoneAuth) authorizeUnconfirmedIdentity(r *http.Request, obj string
 		return false, nil
 	}
 	return false, errors.New("unable to confirm identity")
+}
+
+func keystoneSubrequestCopy(dst, src *http.Request) {
+	for _, h := range []string{"X-Identity-Status", "X-Service-Identity-Status", "X-User-Id", "X-User-Name", "X-Project-Id", "X-Project-Name", "X-Roles", "X-Service-Roles", "X-User-Domain-Id", "X-User-Domain-Name", "X-Project-Domain-Id", "X-Project-Domain-Name"} {
+		if v := src.Header.Get(h); v != "" {
+			dst.Header.Set(h, v)
+		} else {
+			delete(dst.Header, h)
+		}
+	}
 }
 
 func extractIdentity(r *http.Request) map[string]string {

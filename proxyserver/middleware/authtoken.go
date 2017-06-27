@@ -213,9 +213,13 @@ func (at *authToken) fetchAndValidateToken(ctx *ProxyContext, authToken string) 
 }
 
 func (at *authToken) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx := GetProxyContext(r)
+	if ctx.Authorize != nil {
+		at.next.ServeHTTP(w, r)
+		return
+	}
 	removeAuthHeaders(r)
 	r.Header.Set("X-Identity-Status", "Invalid")
-	ctx := GetProxyContext(r)
 	serviceAuthToken := r.Header.Get("X-Service-Token")
 	if serviceAuthToken != "" {
 		serviceToken, serviceTokenValid := at.fetchAndValidateToken(ctx, serviceAuthToken)

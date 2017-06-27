@@ -67,6 +67,7 @@ type AccountInfo struct {
 }
 
 type AuthorizeFunc func(r *http.Request) bool
+type subrequestCopy func(dst, src *http.Request)
 
 type ProxyContextMiddleware struct {
 	next              http.Handler
@@ -82,6 +83,7 @@ type ProxyContext struct {
 	RemoteUser       string
 	ResellerRequest  bool
 	ACL              string
+	subrequestCopy   subrequestCopy
 	Logger           srv.LowLevelLogger
 	TxId             string
 	responseSent     bool
@@ -100,6 +102,18 @@ func GetProxyContext(r *http.Request) *ProxyContext {
 
 func (ctx *ProxyContext) Response() (bool, int) {
 	return ctx.responseSent, ctx.status
+}
+
+func (ctx *ProxyContext) addSubrequestCopy(f subrequestCopy) {
+	if ctx.subrequestCopy == nil {
+		ctx.subrequestCopy = f
+		return
+	}
+	ca := ctx.subrequestCopy
+	ctx.subrequestCopy = func(dst, src *http.Request) {
+		ca(dst, src)
+		f(dst, src)
+	}
 }
 
 func getPathParts(request *http.Request) (bool, string, string, string) {
@@ -175,6 +189,7 @@ func (ctx *ProxyContext) newSubrequest(method, urlStr string, body io.Reader, re
 		ProxyContextMiddleware: ctx.ProxyContextMiddleware,
 		Authorize:              ctx.Authorize,
 		RemoteUser:             ctx.RemoteUser,
+		subrequestCopy:         ctx.subrequestCopy,
 		Logger:                 ctx.Logger.With(zap.String("src", source)),
 		C:                      ctx.C,
 		TxId:                   ctx.TxId,
@@ -185,6 +200,9 @@ func (ctx *ProxyContext) newSubrequest(method, urlStr string, body io.Reader, re
 		Source:                 source,
 	}
 	subreq = subreq.WithContext(context.WithValue(req.Context(), "proxycontext", subctx))
+	if subctx.subrequestCopy != nil {
+		subctx.subrequestCopy(subreq, req)
+	}
 	subreq.Header.Set("X-Trans-Id", subctx.TxId)
 	subreq.Header.Set("X-Timestamp", common.GetTimestamp())
 	return subreq, nil

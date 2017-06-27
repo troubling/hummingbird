@@ -55,6 +55,11 @@ type cachedAuth struct {
 }
 
 func (ta *tempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	ctx := GetProxyContext(request)
+	if ctx.Authorize != nil {
+		ta.next.ServeHTTP(writer, request)
+		return
+	}
 	if request.URL.Path == "/auth/v1.0" {
 		user := request.Header.Get("X-Auth-User")
 		parts := strings.Split(user, ":")
@@ -70,10 +75,8 @@ func (ta *tempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 			srv.StandardResponse(writer, 401)
 			return
 		}
-		if ctx := GetProxyContext(request); ctx != nil {
-			ctx.Cache.Set("auth:"+token, &cachedAuth{Authenticated: true, User: user}, 3600)
-			ctx.RemoteUser = user
-		}
+		ctx.Cache.Set("auth:"+token, &cachedAuth{Authenticated: true, User: user}, 3600)
+		ctx.RemoteUser = user
 		writer.Header().Set("X-Storage-Token", token)
 		writer.Header().Set("X-Auth-Token", token)
 		if url != "" {
@@ -85,18 +88,15 @@ func (ta *tempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 		return
 	} else if strings.HasPrefix(request.URL.Path, "/v1") || strings.HasPrefix(request.URL.Path, "/V1") {
 		token := request.Header.Get("X-Auth-Token")
-		ctx := GetProxyContext(request)
-		if ctx.Authorize == nil {
-			var authed cachedAuth
-			if err := ctx.Cache.GetStructured("auth:"+token, &authed); err != nil {
-				ctx.Authorize = func(r *http.Request) bool {
-					return false
-				}
-			} else {
-				ctx.RemoteUser = authed.User
-				ctx.Authorize = func(r *http.Request) bool {
-					return authed.Authenticated
-				}
+		var authed cachedAuth
+		if err := ctx.Cache.GetStructured("auth:"+token, &authed); err != nil {
+			ctx.Authorize = func(r *http.Request) bool {
+				return false
+			}
+		} else {
+			ctx.RemoteUser = authed.User
+			ctx.Authorize = func(r *http.Request) bool {
+				return authed.Authenticated
 			}
 		}
 	}
