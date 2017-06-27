@@ -236,24 +236,24 @@ func (xlo *xloMiddleware) buildSloManifest(request *http.Request, manPath string
 	return manifest, err
 }
 
-func (xlo *xloMiddleware) buildDloManifest(sw *xloIdentifyWriter, request *http.Request, account string, container string, prefix string) (manifest []segItem, err error) {
+func (xlo *xloMiddleware) buildDloManifest(sw *xloIdentifyWriter, request *http.Request, account string, container string, prefix string) (manifest []segItem, status int, err error) {
 	ctx := GetProxyContext(request)
 	newReq, err := http.NewRequest("GET", fmt.Sprintf("/v1/%s/%s?format=json&prefix=%s", account, container, prefix), http.NoBody)
 	if err != nil {
-		return manifest, err
+		return manifest, 500, err
 	}
 	swRefetch := &xloCaptureWriter{header: make(http.Header)}
 	ctx.Subrequest(swRefetch, newReq, "slo", false)
 	if swRefetch.status != 200 || swRefetch.body == nil {
-		return nil, fmt.Errorf("Error %d fetching manifest", swRefetch.status)
+		return nil, swRefetch.status, fmt.Errorf("Error %d fetching manifest", swRefetch.status)
 	}
 	if err = json.Unmarshal(swRefetch.body, &manifest); err != nil {
-		return manifest, err
+		return manifest, 500, err
 	}
 	for i := range manifest {
 		manifest[i].Name = fmt.Sprintf("%s/%s", container, manifest[i].Name)
 	}
-	return manifest, nil
+	return manifest, 200, nil
 }
 
 func convertManifest(manifestBytes []byte) ([]byte, error) {
@@ -349,9 +349,9 @@ func (xlo *xloMiddleware) handleDloGet(sw *xloIdentifyWriter, request *http.Requ
 		srv.SimpleErrorResponse(sw.ResponseWriter, 400, "invalid dlo manifest path")
 		return
 	}
-	manifest, err := xlo.buildDloManifest(sw, request, pathMap["account"], container, prefix)
+	manifest, status, err := xlo.buildDloManifest(sw, request, pathMap["account"], container, prefix)
 	if err != nil {
-		srv.SimpleErrorResponse(sw.ResponseWriter, 400,
+		srv.SimpleErrorResponse(sw.ResponseWriter, status,
 			fmt.Sprintf("can not build dlo manifest at: %s?%s", container, prefix))
 		return
 	}
