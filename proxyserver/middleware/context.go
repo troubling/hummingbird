@@ -203,6 +203,9 @@ func (ctx *ProxyContext) newSubrequest(method, urlStr string, body io.Reader, re
 	if subctx.subrequestCopy != nil {
 		subctx.subrequestCopy(subreq, req)
 	}
+	if v := req.Header.Get("Referer"); v != "" {
+		subreq.Header.Set("Referer", v)
+	}
 	subreq.Header.Set("X-Trans-Id", subctx.TxId)
 	subreq.Header.Set("X-Timestamp", common.GetTimestamp())
 	return subreq, nil
