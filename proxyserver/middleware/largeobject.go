@@ -406,6 +406,7 @@ func (xlo *xloMiddleware) handleSloGet(sw *xloIdentifyWriter, request *http.Requ
 	}
 	if err != nil {
 		srv.SimpleErrorResponse(sw.ResponseWriter, 400, "invalid slo manifest")
+		return
 	}
 	xlo.byteFeeder(sw, request, sloEtag, savedContentLength, manifest)
 }
@@ -556,6 +557,7 @@ func (xlo *xloMiddleware) handleSloPut(writer http.ResponseWriter, request *http
 	if reqEtag := request.Header.Get("Etag"); reqEtag != "" {
 		if strings.Trim(reqEtag, "\"") != xloEtagGen {
 			srv.SimpleErrorResponse(writer, 422, "Invalid Etag")
+			return
 		}
 	}
 	contentType := request.Header.Get("Content-Type")
@@ -572,6 +574,11 @@ func (xlo *xloMiddleware) handleSloPut(writer http.ResponseWriter, request *http
 		ctx.Logger.Error("Creating new request", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
+	}
+	for k := range request.Header {
+		if strings.HasPrefix(k, "X-Object-Meta-") {
+			putReq.Header.Set(k, request.Header.Get(k))
+		}
 	}
 	putReq.Header.Set("Content-Type", fmt.Sprintf("%s;swift_bytes=%d", contentType, totalSize))
 	putReq.Header.Set("X-Static-Large-Object", "True")
@@ -626,6 +633,7 @@ func (xlo *xloMiddleware) handleSloDelete(writer http.ResponseWriter, request *h
 	}
 	if err = xlo.deleteAllSegments(writer, request, manifest); err != nil {
 		srv.SimpleErrorResponse(writer, 400, fmt.Sprintf("error deleting slo: %s", err))
+		return
 	}
 	xlo.next.ServeHTTP(writer, request)
 	return
