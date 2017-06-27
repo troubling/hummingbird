@@ -166,15 +166,6 @@ func (ctx *ProxyContext) InvalidateAccountInfo(account string) {
 	ctx.Cache.Delete(key)
 }
 
-func (ctx *ProxyContext) copyAuth(dst, src *http.Request) {
-	// Simple copying of X-Auth-Token for now.
-	// Someday maybe expand it so auth middleware can append to a chain of
-	// copyAuth functions that get called by this one. Or whatever.
-	if v := src.Header.Get("X-Auth-Token"); v != "" {
-		dst.Header.Set("X-Auth-Token", v)
-	}
-}
-
 func (ctx *ProxyContext) newSubrequest(method, urlStr string, body io.Reader, req *http.Request, source string) (*http.Request, error) {
 	subreq, err := http.NewRequest(method, urlStr, body)
 	if err != nil {
@@ -194,7 +185,6 @@ func (ctx *ProxyContext) newSubrequest(method, urlStr string, body io.Reader, re
 		Source:                 source,
 	}
 	subreq = subreq.WithContext(context.WithValue(req.Context(), "proxycontext", subctx))
-	ctx.copyAuth(subreq, req)
 	subreq.Header.Set("X-Trans-Id", subctx.TxId)
 	subreq.Header.Set("X-Timestamp", common.GetTimestamp())
 	return subreq, nil
