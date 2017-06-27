@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -76,19 +77,18 @@ type ProxyContextMiddleware struct {
 
 type ProxyContext struct {
 	*ProxyContextMiddleware
-	C                 client.ProxyClient
-	Authorize         AuthorizeFunc
-	AuthorizeOverride bool
-	RemoteUser        string
-	ResellerRequest   bool
-	ACL               string
-	Logger            srv.LowLevelLogger
-	TxId              string
-	responseSent      bool
-	status            int
-	accountInfoCache  map[string]*AccountInfo
-	depth             int
-	Source            string
+	C                client.ProxyClient
+	Authorize        AuthorizeFunc
+	RemoteUser       string
+	ResellerRequest  bool
+	ACL              string
+	Logger           srv.LowLevelLogger
+	TxId             string
+	responseSent     bool
+	status           int
+	accountInfoCache map[string]*AccountInfo
+	depth            int
+	Source           string
 }
 
 func GetProxyContext(r *http.Request) *ProxyContext {
@@ -166,17 +166,14 @@ func (ctx *ProxyContext) InvalidateAccountInfo(account string) {
 	ctx.Cache.Delete(key)
 }
 
-func (ctx *ProxyContext) Subrequest(writer http.ResponseWriter, req *http.Request, source string, skipAuth bool) {
-	authorize := ctx.Authorize
-	authorizeOverride := ctx.AuthorizeOverride
-	if skipAuth {
-		authorize = nil
-		authorizeOverride = true
+func (ctx *ProxyContext) newSubrequest(method, urlStr string, body io.Reader, req *http.Request, source string) (*http.Request, error) {
+	subreq, err := http.NewRequest(method, urlStr, body)
+	if err != nil {
+		return nil, err
 	}
-	newctx := &ProxyContext{
+	subctx := &ProxyContext{
 		ProxyContextMiddleware: ctx.ProxyContextMiddleware,
-		Authorize:              authorize,
-		AuthorizeOverride:      authorizeOverride,
+		Authorize:              ctx.Authorize,
 		RemoteUser:             ctx.RemoteUser,
 		Logger:                 ctx.Logger.With(zap.String("src", source)),
 		C:                      ctx.C,
@@ -187,17 +184,22 @@ func (ctx *ProxyContext) Subrequest(writer http.ResponseWriter, req *http.Reques
 		depth:                  ctx.depth + 1,
 		Source:                 source,
 	}
-	// TODO: check depth
-	newWriter := srv.NewCustomWriter(writer, func(w http.ResponseWriter, status int) int {
-		newctx.responseSent = true
-		newctx.status = status
+	subreq = subreq.WithContext(context.WithValue(req.Context(), "proxycontext", subctx))
+	subreq.Header.Set("X-Trans-Id", subctx.TxId)
+	subreq.Header.Set("X-Timestamp", common.GetTimestamp())
+	return subreq, nil
+}
+
+func (ctx *ProxyContext) serveHTTPSubrequest(writer http.ResponseWriter, subreq *http.Request) {
+	subctx := GetProxyContext(subreq)
+	// TODO: check subctx.depth
+	subwriter := srv.NewCustomWriter(writer, func(w http.ResponseWriter, status int) int {
+		subctx.responseSent = true
+		subctx.status = status
 		return status
 	})
-	req.Header.Set("X-Trans-Id", ctx.TxId)
-	req.Header.Set("X-Timestamp", common.GetTimestamp())
-	newWriter.Header().Set("X-Trans-Id", ctx.TxId)
-	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", newctx))
-	ctx.next.ServeHTTP(newWriter, req)
+	subwriter.Header().Set("X-Trans-Id", subctx.TxId)
+	ctx.next.ServeHTTP(subwriter, subreq)
 }
 
 func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Request) {

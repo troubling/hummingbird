@@ -132,7 +132,7 @@ func NewPipeResponseWriter(writer *io.PipeWriter, done chan bool, logger srv.Low
 
 func (c *copyMiddleware) getSourceObject(object string, request *http.Request, post bool) (io.ReadCloser, http.Header, int) {
 	ctx := GetProxyContext(request)
-	subRequest, err := http.NewRequest("GET", object, nil)
+	subRequest, err := ctx.newSubrequest("GET", object, nil, request, "copy")
 	if err != nil {
 		ctx.Logger.Error("getSourceObject GET error", zap.Error(err))
 		return nil, nil, 400
@@ -144,15 +144,18 @@ func (c *copyMiddleware) getSourceObject(object string, request *http.Request, p
 	// FIXME. Are we going to do X-Newest?
 	subRequest.Header.Set("X-Newest", "true")
 	subRequest.Header.Del("X-Backend-Storage-Policy-Index")
+	if post {
+		// POST doesn't need to auth the internal GET; if they issued a POST
+		// and it was authorized and we happen to need to do a GET+PUT for our
+		// own reasons, that's fine.
+		GetProxyContext(subRequest).Authorize = func(r *http.Request) bool { return true }
+	}
 
 	pipeReader, pipeWriter := io.Pipe()
 	done := make(chan bool)
 	writer := NewPipeResponseWriter(pipeWriter, done, ctx.Logger)
 	go func() {
-		// POST doesn't need to auth the internal GET; if they issued a POST
-		// and it was authorized and we happen to need to do a GET+PUT for our
-		// own reasons, that's fine.
-		ctx.Subrequest(writer, subRequest, "copy", !post)
+		ctx.serveHTTPSubrequest(writer, subRequest)
 		writer.Close()
 	}()
 	<-done
@@ -225,6 +228,8 @@ func copyItemsWithPrefix(dest, src http.Header, prefix string) {
 	}
 }
 
+// TODO: This seems like it might copy headers it shouldn't.
+// Also, shouldn't it be called copyHeaders instead?
 func copyItems(dest, src http.Header) {
 	for k, v := range src {
 		dest.Del(k)
