@@ -209,7 +209,6 @@ func formpost(next http.Handler) http.Handler {
 						return
 					default:
 						ctx.RemoteUser = ".formpost"
-						ctx.AuthorizeOverride = true
 						ctx.Authorize = formpostAuthorizer(scope, account, container)
 						validated = true
 					}
@@ -228,7 +227,7 @@ func formpost(next http.Handler) http.Handler {
 				path += fn
 				neww := httptest.NewRecorder()
 				flr := &fpLimitReader{Reader: p, l: maxFileSize}
-				newreq, err := http.NewRequest("PUT", path, flr)
+				newreq, err := ctx.newSubrequest("PUT", path, flr, request, "formpost")
 				if err != nil {
 					formpostRespond(writer, 500, "internal server error", attrs["redirect"])
 					return
@@ -240,7 +239,7 @@ func formpost(next http.Handler) http.Handler {
 				} else {
 					newreq.Header.Set("Content-Type", "application/octet-stream")
 				}
-				ctx.Subrequest(neww, newreq, "formpost", false)
+				ctx.serveHTTPSubrequest(neww, newreq)
 				if flr.overRead() {
 					formpostRespond(writer, 400, "max_file_size exceeded", attrs["redirect"])
 					return

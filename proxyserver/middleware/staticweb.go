@@ -99,14 +99,13 @@ func (s *staticWebHandler) ServeHTTP(writer http.ResponseWriter, request *http.R
 }
 
 func (s *staticWebHandler) handleObject(writer http.ResponseWriter, request *http.Request) {
-	subreq, err := http.NewRequest("HEAD", request.URL.Path, nil)
+	subreq, err := s.ctx.newSubrequest("HEAD", request.URL.Path, nil, request, "staticweb")
 	if err != nil {
 		s.handleError(writer, request, http.StatusInternalServerError, err)
 		return
 	}
-	subreq.Header.Set("X-Auth-Token", request.Header.Get("X-Auth-Token"))
 	subrec := httptest.NewRecorder()
-	s.ctx.Subrequest(subrec, subreq, "staticweb", false)
+	s.ctx.serveHTTPSubrequest(subrec, subreq)
 	subresp := subrec.Result()
 	if subresp.StatusCode >= 200 && subresp.StatusCode <= 399 {
 		if subresp.Header.Get("Content-Type") == s.webDirType && subresp.ContentLength <= 1 {
@@ -130,14 +129,13 @@ func (s *staticWebHandler) handleDirectory(writer http.ResponseWriter, request *
 	}
 	if !strings.HasSuffix(request.URL.Path, "/") {
 		if s.webIndex != "" {
-			subreq, err := http.NewRequest("HEAD", request.URL.Path+"/"+s.webIndex, nil)
+			subreq, err := s.ctx.newSubrequest("HEAD", request.URL.Path+"/"+s.webIndex, nil, request, "staticweb")
 			if err != nil {
 				s.handleError(writer, request, http.StatusInternalServerError, err)
 				return
 			}
-			subreq.Header.Set("X-Auth-Token", request.Header.Get("X-Auth-Token"))
 			subrec := httptest.NewRecorder()
-			s.ctx.Subrequest(subrec, subreq, "staticweb", false)
+			s.ctx.serveHTTPSubrequest(subrec, subreq)
 			subresp := subrec.Result()
 			if subresp.StatusCode >= 200 && subresp.StatusCode <= 399 {
 				writer.Header().Set("Location", request.URL.Path+"/")
@@ -151,14 +149,13 @@ func (s *staticWebHandler) handleDirectory(writer http.ResponseWriter, request *
 				srv.StandardResponse(writer, http.StatusMovedPermanently)
 				return
 			}
-			subreq, err := http.NewRequest("GET", fmt.Sprintf("/v1/%s/%s?limit=1&format=json&delimiter=/&prefix=%s/", url.PathEscape(s.account), url.PathEscape(s.container), url.QueryEscape(s.object)), nil)
+			subreq, err := s.ctx.newSubrequest("GET", fmt.Sprintf("/v1/%s/%s?limit=1&format=json&delimiter=/&prefix=%s/", url.PathEscape(s.account), url.PathEscape(s.container), url.QueryEscape(s.object)), nil, request, "staticweb")
 			if err != nil {
 				s.handleError(writer, request, http.StatusInternalServerError, err)
 				return
 			}
-			subreq.Header.Set("X-Auth-Token", request.Header.Get("X-Auth-Token"))
 			subrec := httptest.NewRecorder()
-			s.ctx.Subrequest(subrec, subreq, "staticweb", false)
+			s.ctx.serveHTTPSubrequest(subrec, subreq)
 			subresp := subrec.Result()
 			if subresp.StatusCode/100 != 2 {
 				s.handleError(writer, request, subresp.StatusCode, nil)
@@ -185,17 +182,16 @@ func (s *staticWebHandler) handleDirectory(writer http.ResponseWriter, request *
 		return
 	}
 	if s.webIndex != "" {
-		subreq, err := http.NewRequest("HEAD", request.URL.Path+s.webIndex, nil)
+		subreq, err := s.ctx.newSubrequest("HEAD", request.URL.Path+s.webIndex, nil, request, "staticweb")
 		if err != nil {
 			s.handleError(writer, request, http.StatusInternalServerError, err)
 			return
 		}
-		subreq.Header.Set("X-Auth-Token", request.Header.Get("X-Auth-Token"))
 		subrec := httptest.NewRecorder()
-		s.ctx.Subrequest(subrec, subreq, "staticweb", false)
+		s.ctx.serveHTTPSubrequest(subrec, subreq)
 		subresp := subrec.Result()
 		if subresp.StatusCode/100 == 2 {
-			subreq, err := http.NewRequest(request.Method, request.URL.Path+s.webIndex, request.Body)
+			subreq, err := s.ctx.newSubrequest(request.Method, request.URL.Path+s.webIndex, request.Body, request, "staticweb")
 			if err != nil {
 				s.handleError(writer, request, http.StatusInternalServerError, err)
 				return
@@ -203,7 +199,7 @@ func (s *staticWebHandler) handleDirectory(writer http.ResponseWriter, request *
 			for k, v := range request.Header {
 				subreq.Header[k] = v
 			}
-			s.ctx.Subrequest(writer, subreq, "staticweb", false)
+			s.ctx.serveHTTPSubrequest(writer, subreq)
 			return
 		} else if subresp.StatusCode != http.StatusNotFound {
 			s.handleError(writer, request, subresp.StatusCode, nil)
@@ -242,14 +238,13 @@ func (s *staticWebHandler) handleDirectory(writer http.ResponseWriter, request *
 	if s.object != "" {
 		listingPath += fmt.Sprintf("&prefix=%s", url.QueryEscape(s.object))
 	}
-	subreq, err := http.NewRequest("GET", listingPath, nil)
+	subreq, err := s.ctx.newSubrequest("GET", listingPath, nil, request, "staticweb")
 	if err != nil {
 		s.handleError(writer, request, http.StatusInternalServerError, err)
 		return
 	}
-	subreq.Header.Set("X-Auth-Token", request.Header.Get("X-Auth-Token"))
 	subrec := httptest.NewRecorder()
-	s.ctx.Subrequest(subrec, subreq, "staticweb", false)
+	s.ctx.serveHTTPSubrequest(subrec, subreq)
 	subresp := subrec.Result()
 	if subresp.StatusCode/100 != 2 {
 		s.handleError(writer, request, subresp.StatusCode, nil)
@@ -371,14 +366,13 @@ func (s *staticWebHandler) handleError(writer http.ResponseWriter, request *http
 		srv.StandardResponse(writer, status)
 		return
 	}
-	subreq, err := http.NewRequest("GET", fmt.Sprintf("/v1/%s/%s/%d%s", url.PathEscape(s.account), url.PathEscape(s.container), status, s.webError), nil)
+	subreq, err := s.ctx.newSubrequest("GET", fmt.Sprintf("/v1/%s/%s/%d%s", url.PathEscape(s.account), url.PathEscape(s.container), status, s.webError), nil, request, "staticweb")
 	if err != nil {
 		srv.StandardResponse(writer, status)
 		return
 	}
-	subreq.Header.Set("X-Auth-Token", request.Header.Get("X-Auth-Token"))
 	subrec := httptest.NewRecorder()
-	s.ctx.Subrequest(subrec, subreq, "staticweb", false)
+	s.ctx.serveHTTPSubrequest(subrec, subreq)
 	subresp := subrec.Result()
 	defer subresp.Body.Close()
 	if subresp.StatusCode/100 != 2 {

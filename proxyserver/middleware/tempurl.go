@@ -168,7 +168,6 @@ func tempurl(next http.Handler) http.Handler {
 			return
 		}
 		ctx.RemoteUser = ".tempurl"
-		ctx.AuthorizeOverride = true
 		ctx.Authorize = func(r *http.Request) bool {
 			ar, a, c, _ := getPathParts(r)
 			return ar && ((scope == SCOPE_ACCOUNT && a == account) || (scope == SCOPE_CONTAINER && c == container))
