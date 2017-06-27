@@ -77,19 +77,18 @@ type ProxyContextMiddleware struct {
 
 type ProxyContext struct {
 	*ProxyContextMiddleware
-	C                 client.ProxyClient
-	Authorize         AuthorizeFunc
-	AuthorizeOverride bool
-	RemoteUser        string
-	ResellerRequest   bool
-	ACL               string
-	Logger            srv.LowLevelLogger
-	TxId              string
-	responseSent      bool
-	status            int
-	accountInfoCache  map[string]*AccountInfo
-	depth             int
-	Source            string
+	C                client.ProxyClient
+	Authorize        AuthorizeFunc
+	RemoteUser       string
+	ResellerRequest  bool
+	ACL              string
+	Logger           srv.LowLevelLogger
+	TxId             string
+	responseSent     bool
+	status           int
+	accountInfoCache map[string]*AccountInfo
+	depth            int
+	Source           string
 }
 
 func GetProxyContext(r *http.Request) *ProxyContext {
@@ -183,6 +182,8 @@ func (ctx *ProxyContext) newSubrequest(method, urlStr string, body io.Reader, re
 	}
 	subctx := &ProxyContext{
 		ProxyContextMiddleware: ctx.ProxyContextMiddleware,
+		Authorize:              ctx.Authorize,
+		RemoteUser:             ctx.RemoteUser,
 		Logger:                 ctx.Logger.With(zap.String("src", source)),
 		C:                      ctx.C,
 		TxId:                   ctx.TxId,

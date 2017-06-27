@@ -209,7 +209,6 @@ func formpost(next http.Handler) http.Handler {
 						return
 					default:
 						ctx.RemoteUser = ".formpost"
-						ctx.AuthorizeOverride = true
 						ctx.Authorize = formpostAuthorizer(scope, account, container)
 						validated = true
 					}
