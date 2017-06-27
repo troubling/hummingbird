@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 
@@ -411,9 +412,27 @@ func (c *copyMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Req
 		cw.origReqMethod = "COPY"
 		c.handleCopy(cw, request)
 		return
-	} else if request.Method == "POST" && request.Header.Get("Content-Type") != "" {
-		cw.origReqMethod = "POST"
-		c.handlePostAsCopy(cw, request)
+	} else if request.Method == "POST" {
+		// TODO: Replace with PipeResponse stuff from #154
+		subrec := httptest.NewRecorder()
+		c.next.ServeHTTP(subrec, request)
+		subresp := subrec.Result()
+		defer subresp.Body.Close()
+		if subresp.StatusCode == http.StatusConflict {
+			cw.origReqMethod = "POST"
+			c.handlePostAsCopy(cw, request)
+		} else {
+			// Copy headers that weren't previously set.
+			for k, vs := range subresp.Header {
+				if _, ok := writer.Header()[k]; !ok {
+					for _, v := range vs {
+						writer.Header().Add(k, v)
+					}
+				}
+			}
+			writer.WriteHeader(subresp.StatusCode)
+			io.Copy(writer, subresp.Body)
+		}
 		return
 	}
 	c.next.ServeHTTP(writer, request)
