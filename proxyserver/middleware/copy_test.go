@@ -261,6 +261,12 @@ func NewAccountPutResponseFunc(t *testing.T, w http.ResponseWriter, r *http.Requ
 	w.Write([]byte(body))
 }
 
+func PostAsCopyPostResponseFunc(t *testing.T, w http.ResponseWriter, r *http.Request) {
+	require.Equal(t, "POST", r.Method)
+	require.Equal(t, "/v1/a/c/o", r.URL.Path)
+	w.WriteHeader(409)
+}
+
 func PostAsCopyPutResponseFunc(t *testing.T, w http.ResponseWriter, r *http.Request) {
 	require.Equal(t, "PUT", r.Method)
 	require.Equal(t, "/v1/a/c/o", r.URL.Path)
@@ -285,7 +291,7 @@ func TestPostAsCopy(t *testing.T) {
 	c, err := NewCopyMiddleware(section)
 	require.Nil(t, err)
 
-	passthrough := NewPassthroughFunc(t, Simple200GetResponseFunc, PostAsCopyPutResponseFunc)
+	passthrough := NewPassthroughFunc(t, PostAsCopyPostResponseFunc, Simple200GetResponseFunc, PostAsCopyPutResponseFunc)
 	handler := c(passthrough)
 
 	rr := httptest.NewRecorder()

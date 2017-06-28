@@ -64,7 +64,7 @@ func multirange(next http.Handler) http.Handler {
 		var contentType string
 		var mw *common.MultiWriter
 
-		subreq, err := http.NewRequest("GET", request.URL.Path, nil)
+		subreq, err := ctx.newSubrequest("GET", request.URL.Path, nil, request, "multirange")
 		if err != nil {
 			srv.StandardResponse(writer, 500)
 			return
@@ -113,12 +113,12 @@ func multirange(next http.Handler) http.Handler {
 			}
 			return status
 		})
-		if ctx.Subrequest(subw, subreq, "multirange", false); uw.err != nil {
+		if ctx.serveHTTPSubrequest(subw, subreq); uw.err != nil {
 			return
 		}
 
 		for _, rng := range ranges[1:] {
-			if subreq, err = http.NewRequest("GET", request.URL.Path, nil); err != nil {
+			if subreq, err = ctx.newSubrequest("GET", request.URL.Path, nil, request, "multirange"); err != nil {
 				srv.StandardResponse(writer, 500)
 				return
 			}
@@ -138,7 +138,7 @@ func multirange(next http.Handler) http.Handler {
 				}
 				return status
 			})
-			if ctx.Subrequest(subw, subreq, "multirange", false); uw.err != nil {
+			if ctx.serveHTTPSubrequest(subw, subreq); uw.err != nil {
 				return
 			}
 		}

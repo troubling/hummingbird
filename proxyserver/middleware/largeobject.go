@@ -230,7 +230,7 @@ func (xlo *xloMiddleware) feedOutSegments(sw *xloIdentifyWriter, request *http.R
 			return
 		}
 		newPath := fmt.Sprintf("/v1/%s/%s/%s", pathMap["account"], container, object)
-		newReq, err := http.NewRequest("GET", newPath, http.NoBody)
+		newReq, err := ctx.newSubrequest("GET", newPath, http.NoBody, request, "slo")
 		if err != nil {
 			ctx.Logger.Error("error building subrequest", zap.Error(err))
 			if writeHeader {
@@ -244,7 +244,7 @@ func (xlo *xloMiddleware) feedOutSegments(sw *xloIdentifyWriter, request *http.R
 			sw2.status = status
 			writeHeader = false
 		}
-		ctx.Subrequest(sw2, newReq, "slo", false)
+		ctx.serveHTTPSubrequest(sw2, newReq)
 		if sw2.status/100 != 2 {
 			ctx.Logger.Debug("segment not found", zap.String("path", newPath),
 				zap.String("Segment404", "404"))
@@ -260,12 +260,12 @@ func (xlo *xloMiddleware) feedOutSegments(sw *xloIdentifyWriter, request *http.R
 
 func (xlo *xloMiddleware) buildSloManifest(request *http.Request, manPath string) (manifest []segItem, status int, err error) {
 	ctx := GetProxyContext(request)
-	newReq, err := http.NewRequest("GET", fmt.Sprintf("%s?multipart-manifest=get", manPath), http.NoBody)
+	newReq, err := ctx.newSubrequest("GET", fmt.Sprintf("%s?multipart-manifest=get", manPath), http.NoBody, request, "slo")
 	if err != nil {
 		return manifest, http.StatusInternalServerError, err
 	}
 	swRefetch := &xloCaptureWriter{header: make(http.Header)}
-	ctx.Subrequest(swRefetch, newReq, "slo", false)
+	ctx.serveHTTPSubrequest(swRefetch, newReq)
 	if swRefetch.status != 200 && swRefetch.body == nil {
 		return nil, swRefetch.status, errors.New("Error fetching manifest")
 	}
@@ -275,12 +275,12 @@ func (xlo *xloMiddleware) buildSloManifest(request *http.Request, manPath string
 
 func (xlo *xloMiddleware) buildDloManifest(sw *xloIdentifyWriter, request *http.Request, account string, container string, prefix string) (manifest []segItem, status int, err error) {
 	ctx := GetProxyContext(request)
-	newReq, err := http.NewRequest("GET", fmt.Sprintf("/v1/%s/%s?format=json&prefix=%s", account, container, prefix), http.NoBody)
+	newReq, err := ctx.newSubrequest("GET", fmt.Sprintf("/v1/%s/%s?format=json&prefix=%s", account, container, prefix), http.NoBody, request, "slo")
 	if err != nil {
 		return manifest, 500, err
 	}
 	swRefetch := &xloCaptureWriter{header: make(http.Header)}
-	ctx.Subrequest(swRefetch, newReq, "slo", false)
+	ctx.serveHTTPSubrequest(swRefetch, newReq)
 	if swRefetch.status != 200 || swRefetch.body == nil {
 		return nil, swRefetch.status, fmt.Errorf("Error %d fetching manifest", swRefetch.status)
 	}
@@ -526,13 +526,13 @@ func (xlo *xloMiddleware) handleSloPut(writer http.ResponseWriter, request *http
 		}
 
 		newPath := fmt.Sprintf("/v1/%s/%s/%s", pathMap["account"], spmContainer, spmObject)
-		newReq, err := http.NewRequest("HEAD", newPath, http.NoBody)
+		newReq, err := ctx.newSubrequest("HEAD", newPath, http.NoBody, request, "slo")
 		if err != nil {
 			ctx.Logger.Error("Couldn't create http.Request", zap.Error(err))
 			return
 		}
 		pw := &xloCaptureWriter{header: make(http.Header)}
-		ctx.Subrequest(pw, newReq, "slo", false)
+		ctx.serveHTTPSubrequest(pw, newReq)
 		if pw.status != 200 {
 			errs = append(errs, fmt.Sprintf("%d response on segment: %s", pw.status, newPath))
 			continue
@@ -606,7 +606,7 @@ func (xlo *xloMiddleware) handleSloPut(writer http.ResponseWriter, request *http
 		}
 	}
 	newBody, err := json.Marshal(toPutManifest)
-	putReq, err := http.NewRequest("PUT", request.URL.Path, bytes.NewReader(newBody))
+	putReq, err := ctx.newSubrequest("PUT", request.URL.Path, bytes.NewReader(newBody), request, "slo")
 	if err != nil {
 		ctx.Logger.Error("Creating new request", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
@@ -630,7 +630,7 @@ func (xlo *xloMiddleware) handleSloPut(writer http.ResponseWriter, request *http
 	if request.Header.Get("If-None-Match") != "" {
 		putReq.Header.Set("If-None-Match", request.Header.Get("If-None-Match"))
 	}
-	ctx.Subrequest(writer, putReq, "slo", false)
+	ctx.serveHTTPSubrequest(writer, putReq)
 	return
 }
 
@@ -646,12 +646,12 @@ func (xlo *xloMiddleware) deleteAllSegments(w http.ResponseWriter, request *http
 			return errors.New(fmt.Sprintf("invalid slo item: %s", si.Name))
 		}
 		newPath := fmt.Sprintf("/v1/%s/%s/%s?multipart-manifest=delete", pathMap["account"], container, object)
-		newReq, err := http.NewRequest("DELETE", newPath, http.NoBody)
+		newReq, err := ctx.newSubrequest("DELETE", newPath, http.NoBody, request, "slo")
 		if err != nil {
 			return errors.New(fmt.Sprintf("error building subrequest: %s", err))
 		}
 		sw := &xloCaptureWriter{header: make(http.Header)}
-		ctx.Subrequest(sw, newReq, "slo", false)
+		ctx.serveHTTPSubrequest(sw, newReq)
 	}
 	return nil
 }

@@ -35,28 +35,31 @@ type keystoneAuth struct {
 }
 
 func (ka *keystoneAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	identityMap := extractIdentity(r)
 	defer ka.next.ServeHTTP(w, r)
 	ctx := GetProxyContext(r)
-	if ctx.AuthorizeOverride {
-		ctx.Logger.Debug("Authorizing from an overriding middleware")
+	if ctx.Authorize != nil {
 		return
 	}
+	pathParts, err := common.ParseProxyPath(r.URL.Path)
+	if err != nil {
+		return
+	}
+	if _, ok := ka.getAccountPrefix(pathParts["account"]); !ok {
+		return
+	}
+	identityMap := extractIdentity(r)
 	if len(identityMap) == 0 {
-		if ctx.Authorize == nil {
-			ctx.Authorize = ka.authorizeAnonymous
-		}
-	} else {
-		if ctx.Authorize == nil {
-			ctx.RemoteUser = identityMap["tenantName"]
-			ctx.Authorize = ka.authorize
-		}
-		userRoles := common.SliceFromCSV(identityMap["roles"])
-		for _, r := range userRoles {
-			if ka.resellerAdminRole == strings.ToLower(r) {
-				ctx.ResellerRequest = true
-				break
-			}
+		ctx.Authorize = ka.authorizeAnonymous
+		return
+	}
+	ctx.RemoteUser = identityMap["tenantName"]
+	ctx.Authorize = ka.authorize
+	ctx.addSubrequestCopy(keystoneSubrequestCopy)
+	userRoles := common.SliceFromCSV(identityMap["roles"])
+	for _, r := range userRoles {
+		if ka.resellerAdminRole == strings.ToLower(r) {
+			ctx.ResellerRequest = true
+			break
 		}
 	}
 }
@@ -293,6 +296,16 @@ func (ka *keystoneAuth) authorizeUnconfirmedIdentity(r *http.Request, obj string
 		return false, nil
 	}
 	return false, errors.New("unable to confirm identity")
+}
+
+func keystoneSubrequestCopy(dst, src *http.Request) {
+	for _, h := range []string{"X-Identity-Status", "X-Service-Identity-Status", "X-User-Id", "X-User-Name", "X-Project-Id", "X-Project-Name", "X-Roles", "X-Service-Roles", "X-User-Domain-Id", "X-User-Domain-Name", "X-Project-Domain-Id", "X-Project-Domain-Name"} {
+		if v := src.Header.Get(h); v != "" {
+			dst.Header.Set(h, v)
+		} else {
+			delete(dst.Header, h)
+		}
+	}
 }
 
 func extractIdentity(r *http.Request) map[string]string {
