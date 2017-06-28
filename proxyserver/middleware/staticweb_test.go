@@ -610,6 +610,7 @@ func TestStaticWebCustomErrorPages(t *testing.T) {
 		}}}),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
 	}))
+	request.Header.Set("X-Web-Mode", "t")
 	rec := httptest.NewRecorder()
 	s.ServeHTTP(rec, request)
 	resp := rec.Result()

@@ -30,7 +30,7 @@ func TestPutTooBig(t *testing.T) {
 	require.Nil(t, err)
 	req.ContentLength = MAX_FILE_SIZE + 1
 	status, _ := CheckObjPut(req, "o")
-	require.Equal(t, status, http.StatusRequestEntityTooLarge)
+	require.Equal(t, http.StatusRequestEntityTooLarge, status)
 }
 
 func TestBadTransferEncoding(t *testing.T) {
@@ -38,9 +38,9 @@ func TestBadTransferEncoding(t *testing.T) {
 	require.Nil(t, err)
 	req.ContentLength = -1
 	status, _ := CheckObjPut(req, "o")
-	require.Equal(t, status, http.StatusLengthRequired)
+	require.Equal(t, http.StatusLengthRequired, status)
 
-	req.Header.Set("Transfer-Encoding", "notchunked")
+	req.TransferEncoding = []string{"notchunked"}
 	status, _ = CheckObjPut(req, "o")
 	require.Equal(t, status, http.StatusLengthRequired)
 }
@@ -51,61 +51,65 @@ func TestLengthOnCopyFrom(t *testing.T) {
 	req.ContentLength = 1
 	req.Header.Set("X-Copy-From", "/v1/a/c/otherobject")
 	status, _ := CheckObjPut(req, "o")
-	require.Equal(t, status, http.StatusBadRequest)
+	require.Equal(t, http.StatusBadRequest, status)
 }
 
 func TestNameTooLong(t *testing.T) {
 	req, err := http.NewRequest("PUT", "/v1/a/c/o", nil)
 	require.Nil(t, err)
 	req.ContentLength = 1
+	req.Header.Set("Content-Length", "1")
 	status, _ := CheckObjPut(req, strings.Repeat("o", MAX_OBJECT_NAME_LENGTH+1))
-	require.Equal(t, status, http.StatusBadRequest)
+	require.Equal(t, http.StatusBadRequest, status)
 }
 
 func TestNoContentType(t *testing.T) {
 	req, err := http.NewRequest("PUT", "/v1/a/c/o", nil)
 	require.Nil(t, err)
 	req.ContentLength = 1
+	req.Header.Set("Content-Length", "1")
 	req.Header.Set("Content-Type", "")
 	status, _ := CheckObjPut(req, "o")
-	require.Equal(t, status, http.StatusBadRequest)
+	require.Equal(t, http.StatusBadRequest, status)
 }
 
 func TestNoContentLength(t *testing.T) {
 	req, err := http.NewRequest("PUT", "/v1/a/c/o", nil)
 	require.Nil(t, err)
-	req.ContentLength = 0
+	req.ContentLength = -1
 	req.Header.Set("Content-Length", "")
 	status, _ := CheckObjPut(req, "o")
-	require.Equal(t, status, http.StatusLengthRequired)
+	require.Equal(t, http.StatusLengthRequired, status)
 }
 
 func TestBadXDeleteAt(t *testing.T) {
 	req, err := http.NewRequest("PUT", "/v1/a/c/o", nil)
 	require.Nil(t, err)
 	req.ContentLength = 1
+	req.Header.Set("Content-Length", "1")
 	req.Header.Set("Content-Type", "text/plain")
 	req.Header.Set("X-Delete-At", "1")
 	status, _ := CheckObjPut(req, "o")
-	require.Equal(t, status, http.StatusBadRequest)
+	require.Equal(t, http.StatusBadRequest, status)
 
 	req.Header.Set("X-Delete-At", "!")
 	status, _ = CheckObjPut(req, "o")
-	require.Equal(t, status, http.StatusBadRequest)
+	require.Equal(t, http.StatusBadRequest, status)
 }
 
 func TestBadXDeleteAfter(t *testing.T) {
 	req, err := http.NewRequest("PUT", "/v1/a/c/o", nil)
 	require.Nil(t, err)
 	req.ContentLength = 1
+	req.Header.Set("Content-Length", "1")
 	req.Header.Set("Content-Type", "text/plain")
 	req.Header.Set("X-Delete-After", "-1")
 	status, _ := CheckObjPut(req, "o")
-	require.Equal(t, status, http.StatusBadRequest)
+	require.Equal(t, http.StatusBadRequest, status)
 
 	req.Header.Set("X-Delete-After", "!")
 	status, _ = CheckObjPut(req, "o")
-	require.Equal(t, status, http.StatusBadRequest)
+	require.Equal(t, http.StatusBadRequest, status)
 
 	req.Header.Set("X-Delete-After", "5")
 	status, _ = CheckObjPut(req, "o")
@@ -118,7 +122,7 @@ func TestTooBigHeader(t *testing.T) {
 	require.Nil(t, err)
 	req.Header.Set("X", strings.Repeat("X", MAX_HEADER_SIZE+1))
 	status, _ := CheckMetadata(req, "Object")
-	require.Equal(t, status, http.StatusBadRequest)
+	require.Equal(t, http.StatusBadRequest, status)
 }
 
 func TestUnnamedMeta(t *testing.T) {
@@ -126,7 +130,7 @@ func TestUnnamedMeta(t *testing.T) {
 	require.Nil(t, err)
 	req.Header.Set("X-Object-Meta-", "X")
 	status, _ := CheckMetadata(req, "Object")
-	require.Equal(t, status, http.StatusBadRequest)
+	require.Equal(t, http.StatusBadRequest, status)
 }
 
 func TestLongMetaName(t *testing.T) {
@@ -134,7 +138,7 @@ func TestLongMetaName(t *testing.T) {
 	require.Nil(t, err)
 	req.Header.Set(fmt.Sprintf("X-Object-Meta-%s", strings.Repeat("X", MAX_META_NAME_LENGTH+1)), "X")
 	status, _ := CheckMetadata(req, "Object")
-	require.Equal(t, status, http.StatusBadRequest)
+	require.Equal(t, http.StatusBadRequest, status)
 }
 
 func TestLongMetaValue(t *testing.T) {
@@ -142,7 +146,7 @@ func TestLongMetaValue(t *testing.T) {
 	require.Nil(t, err)
 	req.Header.Set("X-Object-Meta-Key", strings.Repeat("X", MAX_META_VALUE_LENGTH+1))
 	status, _ := CheckMetadata(req, "Object")
-	require.Equal(t, status, http.StatusBadRequest)
+	require.Equal(t, http.StatusBadRequest, status)
 }
 
 func TestTooManyMetas(t *testing.T) {
@@ -152,7 +156,7 @@ func TestTooManyMetas(t *testing.T) {
 		req.Header.Set(fmt.Sprintf("X-Object-Meta-%d", i), "X")
 	}
 	status, _ := CheckMetadata(req, "Object")
-	require.Equal(t, status, http.StatusBadRequest)
+	require.Equal(t, http.StatusBadRequest, status)
 }
 
 func TestTooMuchMeta(t *testing.T) {
@@ -162,7 +166,7 @@ func TestTooMuchMeta(t *testing.T) {
 		req.Header.Set(fmt.Sprintf("X-Object-Meta-%d", i), strings.Repeat("X", MAX_META_VALUE_LENGTH))
 	}
 	status, _ := CheckMetadata(req, "Object")
-	require.Equal(t, status, http.StatusBadRequest)
+	require.Equal(t, http.StatusBadRequest, status)
 }
 
 func TestContainerNameTooLong(t *testing.T) {
@@ -170,5 +174,5 @@ func TestContainerNameTooLong(t *testing.T) {
 	require.Nil(t, err)
 	req.ContentLength = 1
 	status, _ := CheckContainerPut(req, strings.Repeat("o", MAX_CONTAINER_NAME_LENGTH+1))
-	require.Equal(t, status, http.StatusBadRequest)
+	require.Equal(t, http.StatusBadRequest, status)
 }

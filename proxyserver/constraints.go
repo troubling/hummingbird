@@ -100,11 +100,11 @@ func CheckObjPut(req *http.Request, objectName string) (int, string) {
 	if req.ContentLength > MAX_FILE_SIZE {
 		return http.StatusRequestEntityTooLarge, "Your request is too large."
 	}
-	if req.ContentLength <= 0 && req.Header.Get("Content-Length") == "" && req.Header.Get("Transfer-Encoding") != "chunked" {
-		return http.StatusLengthRequired, "Missing Content-Length header."
-	}
 	if req.Header.Get("X-Copy-From") != "" && req.ContentLength != 0 {
 		return http.StatusBadRequest, "Copy requests require a zero byte body"
+	}
+	if req.Header.Get("Content-Length") == "" && !common.StringInSlice("chunked", req.TransferEncoding) {
+		return http.StatusLengthRequired, "Missing Content-Length header."
 	}
 	if len(objectName) > MAX_OBJECT_NAME_LENGTH {
 		return http.StatusBadRequest, fmt.Sprintf("Object name length of %d longer than %d", len(objectName), MAX_OBJECT_NAME_LENGTH)
@@ -112,7 +112,6 @@ func CheckObjPut(req *http.Request, objectName string) (int, string) {
 	if req.Header.Get("Content-Type") == "" {
 		return http.StatusBadRequest, "No content type"
 	}
-	// check content-type is utf-8
 
 	if xda := req.Header.Get("X-Delete-At"); xda != "" {
 		if deleteAfter, err := strconv.ParseInt(xda, 10, 64); err != nil {
