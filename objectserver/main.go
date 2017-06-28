@@ -332,10 +332,6 @@ func (server *ObjectServer) ObjPostHandler(writer http.ResponseWriter, request *
 		http.Error(writer, fmt.Sprintf("Invalid path: %s", request.URL.Path), http.StatusBadRequest)
 		return
 	}
-	if request.Header.Get("Content-Type") != "" {
-		http.Error(writer, fmt.Sprintf("Content-Type may not be sent with object POST: %q", request.Header.Get("Content-Type")), http.StatusConflict)
-		return
-	}
 	var deleteAtTime time.Time
 	if deleteAt := request.Header.Get("X-Delete-At"); deleteAt != "" {
 		if deleteAtTime, err := common.ParseDate(deleteAt); err != nil || deleteAtTime.Before(time.Now()) {
@@ -363,6 +359,10 @@ func (server *ObjectServer) ObjPostHandler(writer http.ResponseWriter, request *
 			srv.StandardResponse(writer, http.StatusConflict)
 			return
 		}
+	}
+	if t := request.Header.Get("Content-Type"); t != "" && t != origMetadata["Content-Type"] {
+		http.Error(writer, fmt.Sprintf("Content-Type may not be sent with object POST: %q", t), http.StatusConflict)
+		return
 	}
 
 	metadata := make(map[string]string)
