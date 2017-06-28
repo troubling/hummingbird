@@ -66,7 +66,7 @@ type AccountInfo struct {
 	SysMetadata    map[string]string
 }
 
-type AuthorizeFunc func(r *http.Request) bool
+type AuthorizeFunc func(r *http.Request) (bool, int)
 type subrequestCopy func(dst, src *http.Request)
 
 type ProxyContextMiddleware struct {
@@ -80,7 +80,7 @@ type ProxyContext struct {
 	*ProxyContextMiddleware
 	C                client.ProxyClient
 	Authorize        AuthorizeFunc
-	RemoteUser       string
+	RemoteUsers      []string
 	ResellerRequest  bool
 	ACL              string
 	subrequestCopy   subrequestCopy
@@ -188,7 +188,7 @@ func (ctx *ProxyContext) newSubrequest(method, urlStr string, body io.Reader, re
 	subctx := &ProxyContext{
 		ProxyContextMiddleware: ctx.ProxyContextMiddleware,
 		Authorize:              ctx.Authorize,
-		RemoteUser:             ctx.RemoteUser,
+		RemoteUsers:            ctx.RemoteUsers,
 		subrequestCopy:         ctx.subrequestCopy,
 		Logger:                 ctx.Logger.With(zap.String("src", source)),
 		C:                      ctx.C,

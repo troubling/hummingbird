@@ -110,8 +110,8 @@ func TestTempurlMiddlewarePassAlreadyAuthorized(t *testing.T) {
 	r := httptest.NewRequest("GET", "/v1/something", nil)
 	r = r.WithContext(context.WithValue(r.Context(), "proxycontext",
 		&ProxyContext{
-			Authorize: func(r *http.Request) bool {
-				return false
+			Authorize: func(r *http.Request) (bool, int) {
+				return false, http.StatusForbidden
 			},
 		}))
 	w := httptest.NewRecorder()
@@ -242,11 +242,14 @@ func TestTempurlMiddlewareContainerKey(t *testing.T) {
 	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		ctx := GetProxyContext(request)
 		require.NotNil(t, ctx.Authorize)
-		require.True(t, ctx.Authorize(request))
+		ok, _ := ctx.Authorize(request)
+		require.True(t, ok)
 		// make sure authorizing requests to other containers fail, since we're using a container key.
-		require.False(t, ctx.Authorize(httptest.NewRequest("GET", "/v1/a/b/o", nil)))
+		ok, _ = ctx.Authorize(httptest.NewRequest("GET", "/v1/a/b/o", nil))
+		require.False(t, ok)
 		// but other objects in the container are fine?
-		require.True(t, ctx.Authorize(httptest.NewRequest("GET", "/v1/a/c/o2", nil)))
+		ok, _ = ctx.Authorize(httptest.NewRequest("GET", "/v1/a/c/o2", nil))
+		require.True(t, ok)
 		writer.WriteHeader(200)
 	})
 	mid := tempurl(handler)
@@ -268,7 +271,8 @@ func TestTempurlMiddlewarePath(t *testing.T) {
 	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		ctx := GetProxyContext(request)
 		require.NotNil(t, ctx.Authorize)
-		require.True(t, ctx.Authorize(request))
+		ok, _ := ctx.Authorize(request)
+		require.True(t, ok)
 		writer.WriteHeader(200)
 	})
 	mid := tempurl(handler)
@@ -291,11 +295,14 @@ func TestTempurlMiddlewareAccountKey(t *testing.T) {
 	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		ctx := GetProxyContext(request)
 		require.NotNil(t, ctx.Authorize)
-		require.True(t, ctx.Authorize(request))
+		ok, _ := ctx.Authorize(request)
+		require.True(t, ok)
 		// check that authorizing with other containers in the account works
-		require.True(t, ctx.Authorize(httptest.NewRequest("GET", "/v1/a/b/o", nil)))
+		ok, _ = ctx.Authorize(httptest.NewRequest("GET", "/v1/a/b/o", nil))
+		require.True(t, ok)
 		// but not other accounts, obvs.
-		require.False(t, ctx.Authorize(httptest.NewRequest("GET", "/v1/a2/b/o", nil)))
+		ok, _ = ctx.Authorize(httptest.NewRequest("GET", "/v1/a2/b/o", nil))
+		require.False(t, ok)
 		writer.WriteHeader(200)
 	})
 	mid := tempurl(handler)

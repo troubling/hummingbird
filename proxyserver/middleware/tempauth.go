@@ -76,7 +76,7 @@ func (ta *tempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 			return
 		}
 		ctx.Cache.Set("auth:"+token, &cachedAuth{Authenticated: true, User: user}, 3600)
-		ctx.RemoteUser = user
+		ctx.RemoteUsers = []string{user}
 		writer.Header().Set("X-Storage-Token", token)
 		writer.Header().Set("X-Auth-Token", token)
 		if url != "" {
@@ -90,13 +90,24 @@ func (ta *tempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 		token := request.Header.Get("X-Auth-Token")
 		var authed cachedAuth
 		if err := ctx.Cache.GetStructured("auth:"+token, &authed); err != nil {
-			ctx.Authorize = func(r *http.Request) bool {
-				return false
+			ctx.Authorize = func(r *http.Request) (bool, int) {
+				s := http.StatusUnauthorized
+				if len(ctx.RemoteUsers) != 0 {
+					s = http.StatusForbidden
+				}
+				return false, s
 			}
 		} else {
-			ctx.RemoteUser = authed.User
-			ctx.Authorize = func(r *http.Request) bool {
-				return authed.Authenticated
+			ctx.RemoteUsers = []string{authed.User}
+			ctx.Authorize = func(r *http.Request) (bool, int) {
+				if authed.Authenticated {
+					return true, http.StatusOK
+				}
+				s := http.StatusUnauthorized
+				if len(ctx.RemoteUsers) != 0 {
+					s = http.StatusForbidden
+				}
+				return false, s
 			}
 		}
 	}

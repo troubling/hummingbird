@@ -67,7 +67,7 @@ func (s *staticWebHandler) ServeHTTP(writer http.ResponseWriter, request *http.R
 		s.next.ServeHTTP(writer, request)
 		return
 	}
-	if s.ctx.RemoteUser != "" && !common.LooksTrue(request.Header.Get("X-Web-Mode")) {
+	if len(s.ctx.RemoteUsers) != 0 && !common.LooksTrue(request.Header.Get("X-Web-Mode")) {
 		s.next.ServeHTTP(writer, request)
 		return
 	}
@@ -96,13 +96,11 @@ func (s *staticWebHandler) ServeHTTP(writer http.ResponseWriter, request *http.R
 		return
 	}
 	s.ctx.ACL = ci.ReadACL
-	if s.ctx.Authorize != nil && !s.ctx.Authorize(request) {
-		if s.ctx.RemoteUser != "" {
-			srv.StandardResponse(writer, 403)
+	if s.ctx.Authorize != nil {
+		if ok, st := s.ctx.Authorize(request); !ok {
+			srv.StandardResponse(writer, st)
 			return
 		}
-		srv.StandardResponse(writer, 401)
-		return
 	}
 	s.handleDirectory(writer, request)
 }
