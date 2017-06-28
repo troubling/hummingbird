@@ -95,6 +95,15 @@ func (s *staticWebHandler) ServeHTTP(writer http.ResponseWriter, request *http.R
 		s.handleObject(writer, request)
 		return
 	}
+	s.ctx.ACL = ci.ReadACL
+	if s.ctx.Authorize != nil && !s.ctx.Authorize(request) {
+		if s.ctx.RemoteUser != "" {
+			srv.StandardResponse(writer, 403)
+			return
+		}
+		srv.StandardResponse(writer, 401)
+		return
+	}
 	s.handleDirectory(writer, request)
 }
 
@@ -124,7 +133,11 @@ func (s *staticWebHandler) handleObject(writer http.ResponseWriter, request *htt
 
 func (s *staticWebHandler) handleDirectory(writer http.ResponseWriter, request *http.Request) {
 	if s.webIndex == "" && !s.webListings {
-		s.handleError(writer, request, http.StatusNotFound, nil)
+		if common.LooksTrue(request.Header.Get("X-Web-Mode")) {
+			s.handleError(writer, request, http.StatusNotFound, nil)
+			return
+		}
+		s.next.ServeHTTP(writer, request)
 		return
 	}
 	if !strings.HasSuffix(request.URL.Path, "/") {
