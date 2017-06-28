@@ -77,8 +77,8 @@ func (s *staticWebHandler) ServeHTTP(writer http.ResponseWriter, request *http.R
 		s.next.ServeHTTP(writer, request)
 		return
 	}
-	ci := s.ctx.C.GetContainerInfo(s.account, s.container)
-	if ci == nil {
+	ci, err := s.ctx.C.GetContainerInfo(s.account, s.container)
+	if err != nil {
 		s.next.ServeHTTP(writer, request)
 		return
 	}

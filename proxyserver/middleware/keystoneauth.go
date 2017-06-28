@@ -75,7 +75,11 @@ func (ka *keystoneAuth) accountMatchesTenant(account string, tenantID string) bo
 
 func (ka *keystoneAuth) getProjectDomainID(r *http.Request, account string) string {
 	ctx := GetProxyContext(r)
-	return ctx.GetAccountInfo(account).SysMetadata["Project-Domain-Id"]
+	ai, err := ctx.GetAccountInfo(account)
+	if err != nil {
+		return "" // TODO: I assume this is what we want here
+	}
+	return ai.SysMetadata["Project-Domain-Id"]
 }
 
 func (ka *keystoneAuth) setProjectDomainID(r *http.Request, pathParts map[string]string, identityMap map[string]string) {
