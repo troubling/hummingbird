@@ -39,13 +39,11 @@ func (server *ProxyServer) ObjectGetHandler(writer http.ResponseWriter, request 
 		return
 	}
 	ctx.ACL = containerInfo.ReadACL
-	if ctx.Authorize != nil && !ctx.Authorize(request) {
-		if ctx.RemoteUser != "" {
-			srv.StandardResponse(writer, 403)
+	if ctx.Authorize != nil {
+		if ok, s := ctx.Authorize(request); !ok {
+			srv.StandardResponse(writer, s)
 			return
 		}
-		srv.StandardResponse(writer, 401)
-		return
 	}
 	resp := ctx.C.GetObject(vars["account"], vars["container"], vars["obj"], request.Header)
 	for k := range resp.Header {
@@ -69,13 +67,11 @@ func (server *ProxyServer) ObjectHeadHandler(writer http.ResponseWriter, request
 		return
 	}
 	ctx.ACL = containerInfo.ReadACL
-	if ctx.Authorize != nil && !ctx.Authorize(request) {
-		if ctx.RemoteUser != "" {
-			srv.StandardResponse(writer, 403)
+	if ctx.Authorize != nil {
+		if ok, s := ctx.Authorize(request); !ok {
+			srv.StandardResponse(writer, s)
 			return
 		}
-		srv.StandardResponse(writer, 401)
-		return
 	}
 	resp := ctx.C.HeadObject(vars["account"], vars["container"], vars["obj"], request.Header)
 	for k := range resp.Header {
@@ -98,13 +94,11 @@ func (server *ProxyServer) ObjectDeleteHandler(writer http.ResponseWriter, reque
 		return
 	}
 	ctx.ACL = containerInfo.WriteACL
-	if ctx.Authorize != nil && !ctx.Authorize(request) {
-		if ctx.RemoteUser != "" {
-			srv.StandardResponse(writer, 403)
+	if ctx.Authorize != nil {
+		if ok, s := ctx.Authorize(request); !ok {
+			srv.StandardResponse(writer, s)
 			return
 		}
-		srv.StandardResponse(writer, 401)
-		return
 	}
 	resp := ctx.C.DeleteObject(vars["account"], vars["container"], vars["obj"], request.Header)
 	resp.Body.Close()
@@ -124,13 +118,11 @@ func (server *ProxyServer) ObjectPostHandler(writer http.ResponseWriter, request
 		return
 	}
 	ctx.ACL = containerInfo.WriteACL
-	if ctx.Authorize != nil && !ctx.Authorize(request) {
-		if ctx.RemoteUser != "" {
-			srv.StandardResponse(writer, 403)
+	if ctx.Authorize != nil {
+		if ok, s := ctx.Authorize(request); !ok {
+			srv.StandardResponse(writer, s)
 			return
 		}
-		srv.StandardResponse(writer, 401)
-		return
 	}
 	resp := ctx.C.PostObject(vars["account"], vars["container"], vars["obj"], request.Header)
 	resp.Body.Close()
@@ -155,13 +147,11 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 		return
 	}
 	ctx.ACL = containerInfo.WriteACL
-	if ctx.Authorize != nil && !ctx.Authorize(request) {
-		if ctx.RemoteUser != "" {
-			srv.StandardResponse(writer, 403)
+	if ctx.Authorize != nil {
+		if ok, s := ctx.Authorize(request); !ok {
+			srv.StandardResponse(writer, s)
 			return
 		}
-		srv.StandardResponse(writer, 401)
-		return
 	}
 	if request.Header.Get("Content-Type") == "" {
 		contentType := mime.TypeByExtension(filepath.Ext(vars["obj"]))

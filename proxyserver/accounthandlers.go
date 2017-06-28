@@ -30,13 +30,11 @@ func (server *ProxyServer) AccountGetHandler(writer http.ResponseWriter, request
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	if ctx.Authorize != nil && !ctx.Authorize(request) {
-		if ctx.RemoteUser != "" {
-			srv.StandardResponse(writer, 403)
+	if ctx.Authorize != nil {
+		if ok, s := ctx.Authorize(request); !ok {
+			srv.StandardResponse(writer, s)
 			return
 		}
-		srv.StandardResponse(writer, 401)
-		return
 	}
 	options := make(map[string]string)
 	if request.ParseForm() == nil {
@@ -62,13 +60,11 @@ func (server *ProxyServer) AccountHeadHandler(writer http.ResponseWriter, reques
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	if ctx.Authorize != nil && !ctx.Authorize(request) {
-		if ctx.RemoteUser != "" {
-			srv.StandardResponse(writer, 403)
+	if ctx.Authorize != nil {
+		if ok, s := ctx.Authorize(request); !ok {
+			srv.StandardResponse(writer, s)
 			return
 		}
-		srv.StandardResponse(writer, 401)
-		return
 	}
 	resp := ctx.C.HeadAccount(vars["account"], request.Header)
 	for k := range resp.Header {
@@ -85,13 +81,11 @@ func (server *ProxyServer) AccountPostHandler(writer http.ResponseWriter, reques
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	if ctx.Authorize != nil && !ctx.Authorize(request) {
-		if ctx.RemoteUser != "" {
-			srv.StandardResponse(writer, 403)
+	if ctx.Authorize != nil {
+		if ok, s := ctx.Authorize(request); !ok {
+			srv.StandardResponse(writer, s)
 			return
 		}
-		srv.StandardResponse(writer, 401)
-		return
 	}
 	if status, str := CheckMetadata(request, "Account"); status != http.StatusOK {
 		writer.Header().Set("Content-Type", "text/plain")
@@ -112,13 +106,11 @@ func (server *ProxyServer) AccountPutHandler(writer http.ResponseWriter, request
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	if ctx.Authorize != nil && !ctx.Authorize(request) {
-		if ctx.RemoteUser != "" {
-			srv.StandardResponse(writer, 403)
+	if ctx.Authorize != nil {
+		if ok, s := ctx.Authorize(request); !ok {
+			srv.StandardResponse(writer, s)
 			return
 		}
-		srv.StandardResponse(writer, 401)
-		return
 	}
 	if status, str := CheckMetadata(request, "Account"); status != http.StatusOK {
 		writer.Header().Set("Content-Type", "text/plain")
@@ -139,13 +131,11 @@ func (server *ProxyServer) AccountDeleteHandler(writer http.ResponseWriter, requ
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	if ctx.Authorize != nil && !ctx.Authorize(request) {
-		if ctx.RemoteUser != "" {
-			srv.StandardResponse(writer, 403)
+	if ctx.Authorize != nil {
+		if ok, s := ctx.Authorize(request); !ok {
+			srv.StandardResponse(writer, s)
 			return
 		}
-		srv.StandardResponse(writer, 401)
-		return
 	}
 	defer ctx.InvalidateAccountInfo(vars["account"])
 	resp := ctx.C.DeleteAccount(vars["account"], request.Header)

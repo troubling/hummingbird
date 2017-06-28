@@ -52,7 +52,7 @@ func (ka *keystoneAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ctx.Authorize = ka.authorizeAnonymous
 		return
 	}
-	ctx.RemoteUser = identityMap["tenantName"]
+	ctx.RemoteUsers = []string{identityMap["tenantName"]}
 	ctx.Authorize = ka.authorize
 	ctx.addSubrequestCopy(keystoneSubrequestCopy)
 	userRoles := common.SliceFromCSV(identityMap["roles"])
@@ -141,10 +141,16 @@ func (ka *keystoneAuth) authorizeCrossTenant(userID string, userName string,
 	return ""
 }
 
-func (ka *keystoneAuth) authorize(r *http.Request) bool {
+func (ka *keystoneAuth) authorize(r *http.Request) (bool, int) {
 	identityMap := extractIdentity(r)
 	ctx := GetProxyContext(r)
-
+	if ctx == nil {
+		return false, http.StatusUnauthorized
+	}
+	s := http.StatusUnauthorized
+	if len(ctx.RemoteUsers) != 0 {
+		s = http.StatusForbidden
+	}
 	tenantID := identityMap["tenantID"]
 	tenantName := identityMap["tenantName"]
 	userID := identityMap["userID"]
@@ -154,12 +160,12 @@ func (ka *keystoneAuth) authorize(r *http.Request) bool {
 
 	// allow OPTIONS requests to proceed as normal
 	if r.Method == "OPTIONS" {
-		return true
+		return true, http.StatusOK
 	}
 	pathParts, err := common.ParseProxyPath(r.URL.Path)
 	if err != nil {
 		ctx.Logger.Error("Unable to parse URL", zap.Error(err))
-		return false
+		return false, s
 	}
 
 	ka.setProjectDomainID(r, pathParts, identityMap)
@@ -173,7 +179,7 @@ func (ka *keystoneAuth) authorize(r *http.Request) bool {
 	}
 	if common.StringInSlice(ka.resellerAdminRole, userRoles) {
 		ctx.Logger.Debug("User has reseller admin authorization", zap.String("userid", tenantID))
-		return true
+		return true, http.StatusOK
 	}
 
 	if pathParts["container"] == "" && pathParts["object"] == "" &&
@@ -181,7 +187,7 @@ func (ka *keystoneAuth) authorize(r *http.Request) bool {
 		ctx.Logger.Debug("User is not allowed to delete its own account",
 			zap.String("tenantName", tenantName),
 			zap.String("userName", userName))
-		return false
+		return false, s
 	}
 	matchedACL := ""
 	if len(roles) > 0 {
@@ -190,17 +196,17 @@ func (ka *keystoneAuth) authorize(r *http.Request) bool {
 	}
 	if matchedACL != "" {
 		ctx.Logger.Debug("user allowed in ACL authorizing", zap.String("user", matchedACL))
-		return true
+		return true, http.StatusOK
 	}
 
 	isAuthorized, authErr := ka.authorizeUnconfirmedIdentity(r, pathParts["object"], referrers, roles)
 
 	if isAuthorized {
-		return true
+		return true, http.StatusOK
 	}
 
 	if !ka.accountMatchesTenant(pathParts["account"], tenantID) {
-		return false
+		return false, s
 	}
 	accountPrefix, _ := ka.getAccountPrefix(pathParts["account"])
 	operatorRoles := ka.accountRules[accountPrefix]["operator_roles"]
@@ -226,19 +232,19 @@ func (ka *keystoneAuth) authorize(r *http.Request) bool {
 		allowed = true
 	}
 	if allowed {
-		return true
+		return true, http.StatusOK
 	}
 	if !isAuthorized && authErr == nil {
-		return false
+		return false, s
 	}
 
 	for _, role := range roles {
 		if common.StringInSlice(role, userRoles) {
-			return true
+			return true, http.StatusOK
 		}
 
 	}
-	return false
+	return false, s
 }
 
 func (ka *keystoneAuth) getAccountPrefix(account string) (string, bool) {
@@ -256,16 +262,20 @@ func (ka *keystoneAuth) getAccountPrefix(account string) (string, bool) {
 	return "", false
 }
 
-func (ka *keystoneAuth) authorizeAnonymous(r *http.Request) bool {
+func (ka *keystoneAuth) authorizeAnonymous(r *http.Request) (bool, int) {
 	ctx := GetProxyContext(r)
 	pathParts, err := common.ParseProxyPath(r.URL.Path)
+	s := http.StatusUnauthorized
+	if len(ctx.RemoteUsers) != 0 {
+		s = http.StatusForbidden
+	}
 	if err != nil {
 		ctx.Logger.Error("Unable to parse URL", zap.Error(err))
-		return false
+		return false, s
 	}
 	// allow OPTIONS requests to proceed as normal
 	if r.Method == "OPTIONS" {
-		return true
+		return true, http.StatusOK
 	}
 	isAuthorized := false
 	if pathParts["account"] != "" {
@@ -276,16 +286,16 @@ func (ka *keystoneAuth) authorizeAnonymous(r *http.Request) bool {
 		}
 	}
 	if !isAuthorized {
-		return false
+		return false, s
 	}
 
 	referrers, roles := ParseACL(ctx.ACL)
 	isAuthorized, _ = ka.authorizeUnconfirmedIdentity(r, pathParts["object"], referrers, roles)
 
 	if !isAuthorized {
-		return false
+		return false, s
 	}
-	return true
+	return true, http.StatusOK
 }
 
 func (ka *keystoneAuth) authorizeUnconfirmedIdentity(r *http.Request, obj string, referrers []string, roles []string) (bool, error) {
