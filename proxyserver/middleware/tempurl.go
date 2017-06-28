@@ -167,10 +167,13 @@ func tempurl(next http.Handler) http.Handler {
 			srv.StandardResponse(writer, 401)
 			return
 		}
-		ctx.RemoteUser = ".tempurl"
-		ctx.Authorize = func(r *http.Request) bool {
+		ctx.RemoteUsers = []string{".tempurl"}
+		ctx.Authorize = func(r *http.Request) (bool, int) {
 			ar, a, c, _ := getPathParts(r)
-			return ar && ((scope == SCOPE_ACCOUNT && a == account) || (scope == SCOPE_CONTAINER && c == container))
+			if ar && ((scope == SCOPE_ACCOUNT && a == account) || (scope == SCOPE_CONTAINER && c == container)) {
+				return true, http.StatusOK
+			}
+			return false, http.StatusForbidden
 		}
 
 		next.ServeHTTP(

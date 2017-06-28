@@ -149,7 +149,7 @@ func (c *copyMiddleware) getSourceObject(object string, request *http.Request, p
 		// POST doesn't need to auth the internal GET; if they issued a POST
 		// and it was authorized and we happen to need to do a GET+PUT for our
 		// own reasons, that's fine.
-		GetProxyContext(subRequest).Authorize = func(r *http.Request) bool { return true }
+		GetProxyContext(subRequest).Authorize = func(r *http.Request) (bool, int) { return true, http.StatusOK }
 	}
 
 	pipeReader, pipeWriter := io.Pipe()

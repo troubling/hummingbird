@@ -71,7 +71,7 @@ func TestMultiRange(t *testing.T) {
 	r, err := http.NewRequest("GET", "/v1/a/c/o", nil)
 	r = r.WithContext(context.WithValue(r.Context(), "proxycontext",
 		&ProxyContext{
-			Authorize:              func(r *http.Request) bool { return true },
+			Authorize:              func(r *http.Request) (bool, int) { return true, http.StatusOK },
 			Logger:                 zap.NewNop(),
 			ProxyContextMiddleware: &ProxyContextMiddleware{next: h},
 		}))
@@ -127,7 +127,7 @@ func TestMultiRangeNotFound(t *testing.T) {
 	r, err := http.NewRequest("GET", "/v1/a/c/o", nil)
 	r = r.WithContext(context.WithValue(r.Context(), "proxycontext",
 		&ProxyContext{
-			Authorize:              func(r *http.Request) bool { return true },
+			Authorize:              func(r *http.Request) (bool, int) { return true, http.StatusOK },
 			Logger:                 zap.NewNop(),
 			ProxyContextMiddleware: &ProxyContextMiddleware{next: h},
 		}))

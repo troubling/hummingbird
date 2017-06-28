@@ -121,15 +121,19 @@ func formpostRespond(writer http.ResponseWriter, status int, message, redirect s
 	}
 }
 
-func formpostAuthorizer(scope int, account, container string) func(r *http.Request) bool {
-	return func(r *http.Request) bool {
+func formpostAuthorizer(scope int, account, container string) func(r *http.Request) (bool, int) {
+	return func(r *http.Request) (bool, int) {
 		ar, a, c, _ := getPathParts(r)
 		if scope == FP_SCOPE_ACCOUNT {
-			return ar && a == account
+			if ar && a == account {
+				return true, http.StatusOK
+			}
 		} else if scope == FP_SCOPE_CONTAINER {
-			return ar && a == account && c == container
+			if ar && a == account && c == container {
+				return true, http.StatusOK
+			}
 		}
-		return false
+		return false, http.StatusForbidden
 	}
 }
 
@@ -208,7 +212,7 @@ func formpost(next http.Handler) http.Handler {
 						formpostRespond(writer, 400, "invalid request", attrs["redirect"])
 						return
 					default:
-						ctx.RemoteUser = ".formpost"
+						ctx.RemoteUsers = []string{".formpost"}
 						ctx.Authorize = formpostAuthorizer(scope, account, container)
 						validated = true
 					}
