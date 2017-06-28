@@ -35,6 +35,13 @@ func (server *ProxyServer) ObjectGetHandler(writer http.ResponseWriter, request 
 	}
 	containerInfo := ctx.C.GetContainerInfo(vars["account"], vars["container"])
 	if containerInfo == nil {
+		ctx.ACL = ""
+		if ctx.Authorize != nil {
+			if ok, s := ctx.Authorize(request); !ok {
+				srv.StandardResponse(writer, s)
+				return
+			}
+		}
 		srv.StandardResponse(writer, 404)
 		return
 	}
@@ -63,6 +70,13 @@ func (server *ProxyServer) ObjectHeadHandler(writer http.ResponseWriter, request
 	}
 	containerInfo := ctx.C.GetContainerInfo(vars["account"], vars["container"])
 	if containerInfo == nil {
+		ctx.ACL = ""
+		if ctx.Authorize != nil {
+			if ok, s := ctx.Authorize(request); !ok {
+				srv.StandardResponse(writer, s)
+				return
+			}
+		}
 		srv.StandardResponse(writer, 404)
 		return
 	}
@@ -90,6 +104,13 @@ func (server *ProxyServer) ObjectDeleteHandler(writer http.ResponseWriter, reque
 	}
 	containerInfo := ctx.C.GetContainerInfo(vars["account"], vars["container"])
 	if containerInfo == nil {
+		ctx.ACL = ""
+		if ctx.Authorize != nil {
+			if ok, s := ctx.Authorize(request); !ok {
+				srv.StandardResponse(writer, s)
+				return
+			}
+		}
 		srv.StandardResponse(writer, 404)
 		return
 	}
@@ -114,6 +135,13 @@ func (server *ProxyServer) ObjectPostHandler(writer http.ResponseWriter, request
 	}
 	containerInfo := ctx.C.GetContainerInfo(vars["account"], vars["container"])
 	if containerInfo == nil {
+		ctx.ACL = ""
+		if ctx.Authorize != nil {
+			if ok, s := ctx.Authorize(request); !ok {
+				srv.StandardResponse(writer, s)
+				return
+			}
+		}
 		srv.StandardResponse(writer, 404)
 		return
 	}
@@ -143,6 +171,13 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 	}
 	containerInfo := ctx.C.GetContainerInfo(vars["account"], vars["container"])
 	if containerInfo == nil {
+		ctx.ACL = ""
+		if ctx.Authorize != nil {
+			if ok, s := ctx.Authorize(request); !ok {
+				srv.StandardResponse(writer, s)
+				return
+			}
+		}
 		srv.StandardResponse(writer, 404)
 		return
 	}
