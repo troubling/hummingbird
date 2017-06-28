@@ -272,7 +272,11 @@ func (server *ContainerServer) ContainerPutHandler(writer http.ResponseWriter, r
 	}
 	created, db, err := server.containerEngine.Create(vars, timestamp, metadata, policyIndex, defaultPolicyIndex)
 	if err == ErrorPolicyConflict {
-		srv.StandardResponse(writer, http.StatusConflict)
+		if policyIndex == -1 {
+			srv.StandardResponse(writer, http.StatusAccepted)
+		} else {
+			srv.StandardResponse(writer, http.StatusConflict)
+		}
 		return
 	} else if err != nil {
 		srv.GetLogger(request).Error("Unable to create database.", zap.Error(err))
