@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -201,7 +202,7 @@ func (c *proxyClient) PostContainer(account string, container string, headers ht
 func (c *proxyClient) GetContainer(account string, container string, options map[string]string, headers http.Header) *http.Response {
 	return c.pdc.GetContainer(account, container, options, headers)
 }
-func (c *proxyClient) GetContainerInfo(account string, container string) *ContainerInfo {
+func (c *proxyClient) GetContainerInfo(account string, container string) (*ContainerInfo, error) {
 	return c.pdc.GetContainerInfo(account, container, c.mc, c.lc)
 }
 func (c *proxyClient) HeadContainer(account string, container string, headers http.Header) *http.Response {
@@ -387,7 +388,7 @@ func (c *ProxyDirectClient) GetContainer(account string, container string, optio
 // NilContainerInfo is useful for testing.
 var NilContainerInfo = &ContainerInfo{}
 
-func (c *ProxyDirectClient) GetContainerInfo(account string, container string, mc ring.MemcacheRing, lc map[string]*ContainerInfo) *ContainerInfo {
+func (c *ProxyDirectClient) GetContainerInfo(account string, container string, mc ring.MemcacheRing, lc map[string]*ContainerInfo) (*ContainerInfo, error) {
 	key := fmt.Sprintf("container/%s/%s", account, container)
 	var ci *ContainerInfo
 	if lc != nil {
@@ -401,7 +402,7 @@ func (c *ProxyDirectClient) GetContainerInfo(account string, container string, m
 	if ci == nil {
 		resp := c.HeadContainer(account, container, nil)
 		if resp.StatusCode/100 != 2 {
-			return nil
+			return nil, fmt.Errorf("%d error retrieving info for container %s/%s", resp.StatusCode, account, container)
 		}
 		ci = &ContainerInfo{
 			Metadata:    make(map[string]string),
@@ -409,13 +410,13 @@ func (c *ProxyDirectClient) GetContainerInfo(account string, container string, m
 		}
 		var err error
 		if ci.ObjectCount, err = strconv.ParseInt(resp.Header.Get("X-Container-Object-Count"), 10, 64); err != nil {
-			return nil
+			return nil, fmt.Errorf("Error retrieving info for container %s/%s : %s", account, container, err)
 		}
 		if ci.ObjectBytes, err = strconv.ParseInt(resp.Header.Get("X-Container-Bytes-Used"), 10, 64); err != nil {
-			return nil
+			return nil, fmt.Errorf("Error retrieving info for container %s/%s : %s", account, container, err)
 		}
 		if ci.StoragePolicyIndex, err = strconv.Atoi(resp.Header.Get("X-Backend-Storage-Policy-Index")); err != nil {
-			return nil
+			return nil, fmt.Errorf("Error retrieving info for container %s/%s : %s", account, container, err)
 		}
 		for k := range resp.Header {
 			if strings.HasPrefix(k, "X-Container-Meta-") {
@@ -435,9 +436,9 @@ func (c *ProxyDirectClient) GetContainerInfo(account string, container string, m
 		}
 	}
 	if ci == NilContainerInfo {
-		ci = nil
+		return nil, errors.New("No container info for testing")
 	}
-	return ci
+	return ci, nil
 }
 
 func (c *ProxyDirectClient) HeadContainer(account string, container string, headers http.Header) *http.Response {
@@ -551,8 +552,8 @@ type standardObjectClient struct {
 }
 
 func newObjectClient(proxyDirectClient *ProxyDirectClient, account string, container string, mc ring.MemcacheRing, lc map[string]*ContainerInfo) proxyObjectClient {
-	ci := proxyDirectClient.GetContainerInfo(account, container, mc, lc)
-	if ci == nil {
+	ci, err := proxyDirectClient.GetContainerInfo(account, container, mc, lc)
+	if err != nil {
 		return &erroringObjectClient{body: "Could not retrieve container information."}
 	}
 	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()

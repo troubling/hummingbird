@@ -129,7 +129,7 @@ func getPathParts(request *http.Request) (bool, string, string, string) {
 	return apiRequest, "", "", ""
 }
 
-func (ctx *ProxyContext) GetAccountInfo(account string) *AccountInfo {
+func (ctx *ProxyContext) GetAccountInfo(account string) (*AccountInfo, error) {
 	key := fmt.Sprintf("account/%s", account)
 	ai := ctx.accountInfoCache[key]
 	if ai == nil {
@@ -146,7 +146,7 @@ func (ctx *ProxyContext) GetAccountInfo(account string) *AccountInfo {
 		}
 		resp.Body.Close()
 		if resp.StatusCode/100 != 2 {
-			return nil
+			return nil, fmt.Errorf("%d error retrieving info for account %s", resp.StatusCode, account)
 		}
 		ai = &AccountInfo{
 			Metadata:    make(map[string]string),
@@ -154,13 +154,13 @@ func (ctx *ProxyContext) GetAccountInfo(account string) *AccountInfo {
 		}
 		var err error
 		if ai.ContainerCount, err = strconv.ParseInt(resp.Header.Get("X-Account-Container-Count"), 10, 64); err != nil {
-			return nil
+			return nil, fmt.Errorf("Error retrieving info for account %s : %s", account, err)
 		}
 		if ai.ObjectCount, err = strconv.ParseInt(resp.Header.Get("X-Account-Object-Count"), 10, 64); err != nil {
-			return nil
+			return nil, fmt.Errorf("Error retrieving info for account %s : %s", account, err)
 		}
 		if ai.ObjectBytes, err = strconv.ParseInt(resp.Header.Get("X-Account-Bytes-Used"), 10, 64); err != nil {
-			return nil
+			return nil, fmt.Errorf("Error retrieving info for account %s : %s", account, err)
 		}
 		for k := range resp.Header {
 			if strings.HasPrefix(k, "X-Account-Meta-") {
@@ -171,7 +171,7 @@ func (ctx *ProxyContext) GetAccountInfo(account string) *AccountInfo {
 		}
 		ctx.Cache.Set(key, ai, 30)
 	}
-	return ai
+	return ai, nil
 }
 
 func (ctx *ProxyContext) InvalidateAccountInfo(account string) {
@@ -283,12 +283,7 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if ctx.GetAccountInfo(account) == nil {
-				hdr := http.Header{
-					"X-Timestamp": []string{common.GetTimestamp()},
-				}
-				ctx.C.PutAccount(account, hdr) // Auto-create the account if we can't get its info
-			}
+			ctx.GetAccountInfo(account)
 		}()
 		if container != "" {
 			wg.Add(1)

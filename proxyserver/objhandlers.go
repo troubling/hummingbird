@@ -33,8 +33,8 @@ func (server *ProxyServer) ObjectGetHandler(writer http.ResponseWriter, request 
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	containerInfo := ctx.C.GetContainerInfo(vars["account"], vars["container"])
-	if containerInfo == nil {
+	containerInfo, err := ctx.C.GetContainerInfo(vars["account"], vars["container"])
+	if err != nil {
 		srv.StandardResponse(writer, 404)
 		return
 	}
@@ -61,8 +61,8 @@ func (server *ProxyServer) ObjectHeadHandler(writer http.ResponseWriter, request
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	containerInfo := ctx.C.GetContainerInfo(vars["account"], vars["container"])
-	if containerInfo == nil {
+	containerInfo, err := ctx.C.GetContainerInfo(vars["account"], vars["container"])
+	if err != nil {
 		srv.StandardResponse(writer, 404)
 		return
 	}
@@ -88,8 +88,8 @@ func (server *ProxyServer) ObjectDeleteHandler(writer http.ResponseWriter, reque
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	containerInfo := ctx.C.GetContainerInfo(vars["account"], vars["container"])
-	if containerInfo == nil {
+	containerInfo, err := ctx.C.GetContainerInfo(vars["account"], vars["container"])
+	if err != nil {
 		srv.StandardResponse(writer, 404)
 		return
 	}
@@ -112,8 +112,8 @@ func (server *ProxyServer) ObjectPostHandler(writer http.ResponseWriter, request
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	containerInfo := ctx.C.GetContainerInfo(vars["account"], vars["container"])
-	if containerInfo == nil {
+	containerInfo, err := ctx.C.GetContainerInfo(vars["account"], vars["container"])
+	if err != nil {
 		srv.StandardResponse(writer, 404)
 		return
 	}
@@ -141,8 +141,8 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 		srv.SimpleErrorResponse(writer, 400, "If-None-Match only supports *")
 		return
 	}
-	containerInfo := ctx.C.GetContainerInfo(vars["account"], vars["container"])
-	if containerInfo == nil {
+	containerInfo, err := ctx.C.GetContainerInfo(vars["account"], vars["container"])
+	if err != nil {
 		srv.StandardResponse(writer, 404)
 		return
 	}
