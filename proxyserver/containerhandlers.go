@@ -43,7 +43,7 @@ func (server *ProxyServer) ContainerGetHandler(writer http.ResponseWriter, reque
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	if ctx.GetAccountInfo(vars["account"]) == nil {
+	if _, err := ctx.GetAccountInfo(vars["account"]); err != nil {
 		srv.StandardResponse(writer, 404)
 		return
 	}
@@ -78,7 +78,7 @@ func (server *ProxyServer) ContainerHeadHandler(writer http.ResponseWriter, requ
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	if ctx.GetAccountInfo(vars["account"]) == nil {
+	if _, err := ctx.GetAccountInfo(vars["account"]); err != nil {
 		srv.StandardResponse(writer, 404)
 		return
 	}
@@ -104,7 +104,7 @@ func (server *ProxyServer) ContainerPostHandler(writer http.ResponseWriter, requ
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	if ctx.GetAccountInfo(vars["account"]) == nil {
+	if _, err := ctx.GetAccountInfo(vars["account"]); err != nil {
 		srv.StandardResponse(writer, 404)
 		return
 	}
@@ -136,7 +136,7 @@ func (server *ProxyServer) ContainerPutHandler(writer http.ResponseWriter, reque
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	if ctx.GetAccountInfo(vars["account"]) == nil {
+	if _, err := ctx.GetAccountInfo(vars["account"]); err != nil {
 		srv.StandardResponse(writer, 404)
 		return
 	}
@@ -168,7 +168,7 @@ func (server *ProxyServer) ContainerDeleteHandler(writer http.ResponseWriter, re
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	if ctx.GetAccountInfo(vars["account"]) == nil {
+	if _, err := ctx.GetAccountInfo(vars["account"]); err != nil {
 		srv.StandardResponse(writer, 404)
 		return
 	}
@@ -232,7 +232,7 @@ func (server *ProxyServer) OptionsHandler(writer http.ResponseWriter, request *h
 			return
 		}
 	}
-	if ci := ctx.C.GetContainerInfo(vars["account"], vars["container"]); ci != nil {
+	if ci, err := ctx.C.GetContainerInfo(vars["account"], vars["container"]); err == nil {
 		if common.IsOriginAllowed(ci.Metadata["Access-Control-Allow-Origin"], origin) {
 			writer.Header().Set("Allow", methodString)
 			if ci.Metadata["Access-Control-Allow-Origin"] == "*" {

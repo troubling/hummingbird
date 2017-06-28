@@ -33,8 +33,8 @@ func (server *ProxyServer) ObjectGetHandler(writer http.ResponseWriter, request 
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	containerInfo := ctx.C.GetContainerInfo(vars["account"], vars["container"])
-	if containerInfo == nil {
+	containerInfo, err := ctx.C.GetContainerInfo(vars["account"], vars["container"])
+	if err != nil {
 		ctx.ACL = ""
 		if ctx.Authorize != nil {
 			if ok, s := ctx.Authorize(request); !ok {
@@ -68,8 +68,8 @@ func (server *ProxyServer) ObjectHeadHandler(writer http.ResponseWriter, request
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	containerInfo := ctx.C.GetContainerInfo(vars["account"], vars["container"])
-	if containerInfo == nil {
+	containerInfo, err := ctx.C.GetContainerInfo(vars["account"], vars["container"])
+	if err != nil {
 		ctx.ACL = ""
 		if ctx.Authorize != nil {
 			if ok, s := ctx.Authorize(request); !ok {
@@ -102,8 +102,8 @@ func (server *ProxyServer) ObjectDeleteHandler(writer http.ResponseWriter, reque
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	containerInfo := ctx.C.GetContainerInfo(vars["account"], vars["container"])
-	if containerInfo == nil {
+	containerInfo, err := ctx.C.GetContainerInfo(vars["account"], vars["container"])
+	if err != nil {
 		ctx.ACL = ""
 		if ctx.Authorize != nil {
 			if ok, s := ctx.Authorize(request); !ok {
@@ -133,8 +133,8 @@ func (server *ProxyServer) ObjectPostHandler(writer http.ResponseWriter, request
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	containerInfo := ctx.C.GetContainerInfo(vars["account"], vars["container"])
-	if containerInfo == nil {
+	containerInfo, err := ctx.C.GetContainerInfo(vars["account"], vars["container"])
+	if err != nil {
 		ctx.ACL = ""
 		if ctx.Authorize != nil {
 			if ok, s := ctx.Authorize(request); !ok {
@@ -169,8 +169,8 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 		srv.SimpleErrorResponse(writer, 400, "If-None-Match only supports *")
 		return
 	}
-	containerInfo := ctx.C.GetContainerInfo(vars["account"], vars["container"])
-	if containerInfo == nil {
+	containerInfo, err := ctx.C.GetContainerInfo(vars["account"], vars["container"])
+	if err != nil {
 		ctx.ACL = ""
 		if ctx.Authorize != nil {
 			if ok, s := ctx.Authorize(request); !ok {

@@ -109,7 +109,7 @@ type ProxyClient interface {
 	PutContainer(account string, container string, headers http.Header) *http.Response
 	PostContainer(account string, container string, headers http.Header) *http.Response
 	GetContainer(account string, container string, options map[string]string, headers http.Header) *http.Response
-	GetContainerInfo(account string, container string) *ContainerInfo
+	GetContainerInfo(account string, container string) (*ContainerInfo, error)
 	HeadContainer(account string, container string, headers http.Header) *http.Response
 	DeleteContainer(account string, container string, headers http.Header) *http.Response
 	PutObject(account string, container string, obj string, headers http.Header, src io.Reader) *http.Response
