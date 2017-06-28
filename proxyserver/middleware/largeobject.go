@@ -534,7 +534,7 @@ func (xlo *xloMiddleware) handleSloPut(writer http.ResponseWriter, request *http
 		pw := &xloCaptureWriter{header: make(http.Header)}
 		ctx.serveHTTPSubrequest(pw, newReq)
 		if pw.status != 200 {
-			errs = append(errs, fmt.Sprintf("%d response on segment: %s", pw.status, newPath))
+			errs = append(errs, fmt.Sprintf("%d %s response on segment: %s", pw.status, http.StatusText(pw.status), newPath))
 			continue
 		}
 		contentLength, err := strconv.ParseInt(pw.Header().Get("Content-Length"), 10, 64)

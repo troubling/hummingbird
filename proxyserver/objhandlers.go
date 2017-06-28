@@ -35,6 +35,15 @@ func (server *ProxyServer) ObjectGetHandler(writer http.ResponseWriter, request 
 	}
 	containerInfo := ctx.C.GetContainerInfo(vars["account"], vars["container"])
 	if containerInfo == nil {
+		ctx.ACL = ""
+		if ctx.Authorize != nil && !ctx.Authorize(request) {
+			if ctx.RemoteUser != "" {
+				srv.StandardResponse(writer, 403)
+				return
+			}
+			srv.StandardResponse(writer, 401)
+			return
+		}
 		srv.StandardResponse(writer, 404)
 		return
 	}
@@ -65,6 +74,15 @@ func (server *ProxyServer) ObjectHeadHandler(writer http.ResponseWriter, request
 	}
 	containerInfo := ctx.C.GetContainerInfo(vars["account"], vars["container"])
 	if containerInfo == nil {
+		ctx.ACL = ""
+		if ctx.Authorize != nil && !ctx.Authorize(request) {
+			if ctx.RemoteUser != "" {
+				srv.StandardResponse(writer, 403)
+				return
+			}
+			srv.StandardResponse(writer, 401)
+			return
+		}
 		srv.StandardResponse(writer, 404)
 		return
 	}
@@ -94,6 +112,15 @@ func (server *ProxyServer) ObjectDeleteHandler(writer http.ResponseWriter, reque
 	}
 	containerInfo := ctx.C.GetContainerInfo(vars["account"], vars["container"])
 	if containerInfo == nil {
+		ctx.ACL = ""
+		if ctx.Authorize != nil && !ctx.Authorize(request) {
+			if ctx.RemoteUser != "" {
+				srv.StandardResponse(writer, 403)
+				return
+			}
+			srv.StandardResponse(writer, 401)
+			return
+		}
 		srv.StandardResponse(writer, 404)
 		return
 	}
@@ -120,6 +147,15 @@ func (server *ProxyServer) ObjectPostHandler(writer http.ResponseWriter, request
 	}
 	containerInfo := ctx.C.GetContainerInfo(vars["account"], vars["container"])
 	if containerInfo == nil {
+		ctx.ACL = ""
+		if ctx.Authorize != nil && !ctx.Authorize(request) {
+			if ctx.RemoteUser != "" {
+				srv.StandardResponse(writer, 403)
+				return
+			}
+			srv.StandardResponse(writer, 401)
+			return
+		}
 		srv.StandardResponse(writer, 404)
 		return
 	}
@@ -151,6 +187,15 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 	}
 	containerInfo := ctx.C.GetContainerInfo(vars["account"], vars["container"])
 	if containerInfo == nil {
+		ctx.ACL = ""
+		if ctx.Authorize != nil && !ctx.Authorize(request) {
+			if ctx.RemoteUser != "" {
+				srv.StandardResponse(writer, 403)
+				return
+			}
+			srv.StandardResponse(writer, 401)
+			return
+		}
 		srv.StandardResponse(writer, 404)
 		return
 	}
