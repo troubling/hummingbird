@@ -71,7 +71,7 @@ func (ta *tempAuth) getUserGroups(tu *testUser) []string {
 		for _, r := range ta.resellers {
 			groups = append(groups, r+tu.Account)
 		}
-		if !common.StringInSlice(tu.AccountId, groups) {
+		if tu.AccountId != "" && !common.StringInSlice(tu.AccountId, groups) {
 			groups = append(groups, tu.AccountId)
 		}
 	}
@@ -250,21 +250,17 @@ func (ta *tempAuth) authorize(r *http.Request) (bool, int) {
 					return true, http.StatusOK
 				}
 			}
-
 		}
 	}
-
 	referrers, roles := ParseACL(ctx.ACL)
 	if auth, _ := AuthorizeUnconfirmedIdentity(r, pathParts["object"], referrers, roles); auth {
 		return true, http.StatusOK
 	}
-
 	for _, ru := range ctx.RemoteUsers {
 		if common.StringInSlice(ru, roles) {
 			return true, http.StatusOK
 		}
 	}
-
 	return false, s
 }
 

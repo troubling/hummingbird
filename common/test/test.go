@@ -17,6 +17,7 @@ package test
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 
 	"github.com/troubling/hummingbird/common/ring"
@@ -147,9 +148,10 @@ func (m *fakeMoreNodes) Next() *ring.Device {
 
 // Fake MemcacheRing
 type FakeMemcacheRing struct {
-	MockIncrResults []int64
-	MockIncrKeys    []string
-	MockSetValues   []interface{}
+	MockIncrResults   []int64
+	MockIncrKeys      []string
+	MockSetValues     []interface{}
+	MockGetStructured map[string][]byte
 }
 
 func (mr *FakeMemcacheRing) Decr(key string, delta int64, timeout int) (int64, error) {
@@ -165,6 +167,9 @@ func (mr *FakeMemcacheRing) Get(key string) (interface{}, error) {
 }
 
 func (mr *FakeMemcacheRing) GetStructured(key string, val interface{}) error {
+	if v, ok := mr.MockGetStructured[key]; ok {
+		json.Unmarshal(v, val)
+	}
 	return nil
 }
 
