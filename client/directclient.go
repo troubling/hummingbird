@@ -333,9 +333,6 @@ func (c *ProxyDirectClient) PutContainer(account string, container string, heade
 		}
 		policyIndex = policy.Index
 	}
-	if policyIndex < 0 {
-		policyIndex = policyDefault
-	}
 	reqs := make([]*http.Request, 0)
 	for i, device := range c.ContainerRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", device.Ip, device.Port, device.Device, partition,

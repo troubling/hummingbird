@@ -16,6 +16,7 @@
 package proxyserver
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/troubling/hummingbird/common"
@@ -88,9 +89,9 @@ func (server *ProxyServer) AccountPostHandler(writer http.ResponseWriter, reques
 		}
 	}
 	if status, str := CheckMetadata(request, "Account"); status != http.StatusOK {
-		writer.Header().Set("Content-Type", "text/plain")
+		writer.Header().Set("Content-Type", "text/html; charset=UTF-8")
 		writer.WriteHeader(status)
-		writer.Write([]byte(str))
+		writer.Write([]byte(fmt.Sprintf("<html><h1>%s</h1><p>%s</p></html>", http.StatusText(status), str)))
 		return
 	}
 	defer ctx.InvalidateAccountInfo(vars["account"])
@@ -113,9 +114,9 @@ func (server *ProxyServer) AccountPutHandler(writer http.ResponseWriter, request
 		}
 	}
 	if status, str := CheckMetadata(request, "Account"); status != http.StatusOK {
-		writer.Header().Set("Content-Type", "text/plain")
+		writer.Header().Set("Content-Type", "text/html; charset=UTF-8")
 		writer.WriteHeader(status)
-		writer.Write([]byte(str))
+		writer.Write([]byte(fmt.Sprintf("<html><h1>%s</h1><p>%s</p></html>", http.StatusText(status), str)))
 		return
 	}
 	defer ctx.InvalidateAccountInfo(vars["account"])
