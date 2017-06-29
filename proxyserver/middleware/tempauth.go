@@ -303,7 +303,7 @@ func NewTempAuth(config conf.Section) (func(http.Handler) http.Handler, error) {
 
 		users = append(users, testUser{account, user, valparts[0], groups, url, accountId})
 	}
-	RegisterInfo("tempauth", map[string]interface{}{"account_acls": true})
+	RegisterInfo("tempauth", map[string]interface{}{"account_acls": false})
 	return func(next http.Handler) http.Handler {
 		return &tempAuth{
 			next:         next,
