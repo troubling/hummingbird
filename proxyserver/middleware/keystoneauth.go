@@ -90,7 +90,7 @@ func (ka *keystoneAuth) setProjectDomainID(r *http.Request, pathParts map[string
 		}
 	}
 	if pathParts["object"] != "" || (pathParts["container"] != "" && r.Method != "PUT") ||
-		common.StringInSlice(r.Method, []string{"PUT", "POST"}) {
+		!common.StringInSlice(r.Method, []string{"PUT", "POST"}) {
 		return
 	}
 	tenantID := identityMap["tenantID"]

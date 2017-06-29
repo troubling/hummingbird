@@ -36,6 +36,7 @@ type ProxyServer struct {
 	logger            srv.LowLevelLogger
 	logLevel          zap.AtomicLevel
 	mc                ring.MemcacheRing
+	accountAutoCreate bool
 	proxyDirectClient *client.ProxyDirectClient
 }
 
@@ -146,10 +147,10 @@ func GetServer(serverconf conf.Config, flags *flag.FlagSet) (string, int, srv.Se
 	bindIP := serverconf.GetDefault("DEFAULT", "bind_ip", "0.0.0.0")
 	bindPort := serverconf.GetInt("DEFAULT", "bind_port", 8080)
 
-	logLevelString := serverconf.GetDefault("proxy-server", "log_level", "INFO")
+	logLevelString := serverconf.GetDefault("app:proxy-server", "log_level", "INFO")
 	server.logLevel = zap.NewAtomicLevel()
 	server.logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
-
+	server.accountAutoCreate = serverconf.GetBool("app:proxy-server", "account_autocreate", false)
 	if server.logger, err = srv.SetupLogger("proxy-server", &server.logLevel, flags); err != nil {
 		return "", 0, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
@@ -159,9 +160,10 @@ func GetServer(serverconf conf.Config, flags *flag.FlagSet) (string, int, srv.Se
 		return "", 0, nil, nil, fmt.Errorf("Error setting up proxyDirectClient: %v", err)
 	}
 	info := map[string]interface{}{
-		"version":          common.Version,
-		"strict_cors_mode": true,
-		"policies":         policies.GetPolicyInfo(),
+		"version":            common.Version,
+		"strict_cors_mode":   true,
+		"policies":           policies.GetPolicyInfo(),
+		"account_autocreate": server.accountAutoCreate,
 	}
 	for k, v := range DEFAULT_CONSTRAINTS {
 		info[k] = v
