@@ -136,10 +136,6 @@ func (server *ProxyServer) ContainerPutHandler(writer http.ResponseWriter, reque
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	if _, err := ctx.GetAccountInfo(vars["account"]); err != nil {
-		srv.StandardResponse(writer, 404)
-		return
-	}
 	if err := cleanACLs(request); err != nil {
 		srv.SimpleErrorResponse(writer, 400, err.Error())
 		return
@@ -149,6 +145,17 @@ func (server *ProxyServer) ContainerPutHandler(writer http.ResponseWriter, reque
 			srv.StandardResponse(writer, s)
 			return
 		}
+	}
+	_, err := ctx.GetAccountInfo(vars["account"])
+	if err != nil {
+		if server.accountAutoCreate {
+			ctx.AutoCreateAccount(vars["account"], request.Header)
+			_, err = ctx.GetAccountInfo(vars["account"])
+		}
+	}
+	if err != nil {
+		srv.StandardResponse(writer, 404)
+		return
 	}
 	if status, str := CheckContainerPut(request, vars["container"]); status != http.StatusOK {
 		writer.Header().Set("Content-Type", "text/html; charset=UTF-8")

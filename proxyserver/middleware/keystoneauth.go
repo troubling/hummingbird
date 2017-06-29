@@ -62,7 +62,6 @@ func (ka *keystoneAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	w.Header().Set("X-Account-Project-Domain-Id", identityMap["projectDomainID"])
 }
 
 func (ka *keystoneAuth) accountMatchesTenant(account string, tenantID string) bool {
@@ -90,7 +89,7 @@ func (ka *keystoneAuth) setProjectDomainID(r *http.Request, pathParts map[string
 		}
 	}
 	if pathParts["object"] != "" || (pathParts["container"] != "" && r.Method != "PUT") ||
-		common.StringInSlice(r.Method, []string{"PUT", "POST"}) {
+		!common.StringInSlice(r.Method, []string{"PUT", "POST"}) {
 		return
 	}
 	tenantID := identityMap["tenantID"]

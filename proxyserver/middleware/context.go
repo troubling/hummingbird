@@ -33,10 +33,9 @@ import (
 )
 
 var (
-	autoCreateAccounts = true // TODO; figure out how to plumb this in as a config
-	serverInfo         = make(map[string]interface{})
-	sil                sync.Mutex
-	excludeHeaders     = []string{
+	serverInfo     = make(map[string]interface{})
+	sil            sync.Mutex
+	excludeHeaders = []string{
 		"X-Account-Sysmeta-",
 		"X-Container-Sysmeta-",
 		"X-Object-Sysmeta-",
@@ -139,11 +138,6 @@ func (ctx *ProxyContext) GetAccountInfo(account string) (*AccountInfo, error) {
 	}
 	if ai == nil {
 		resp := ctx.C.HeadAccount(account, nil)
-		if resp.StatusCode == http.StatusNotFound && autoCreateAccounts {
-			resp.Body.Close()
-			ctx.C.PutAccount(account, http.Header{"X-Timestamp": []string{common.GetTimestamp()}})
-			resp = ctx.C.HeadAccount(account, nil)
-		}
 		resp.Body.Close()
 		if resp.StatusCode/100 != 2 {
 			return nil, fmt.Errorf("%d error retrieving info for account %s", resp.StatusCode, account)
@@ -178,6 +172,20 @@ func (ctx *ProxyContext) InvalidateAccountInfo(account string) {
 	key := fmt.Sprintf("account/%s", account)
 	delete(ctx.accountInfoCache, key)
 	ctx.Cache.Delete(key)
+}
+
+func (ctx *ProxyContext) AutoCreateAccount(account string, headers http.Header) {
+	h := http.Header{"X-Timestamp": []string{common.GetTimestamp()},
+		"X-Trans-Id": []string{ctx.TxId}}
+	for key := range headers {
+		if strings.HasPrefix(key, "X-Account-Sysmeta-") {
+			h[key] = []string{headers.Get(key)}
+		}
+	}
+	resp := ctx.C.PutAccount(account, h)
+	if resp.StatusCode/100 == 2 {
+		ctx.InvalidateAccountInfo(account)
+	}
 }
 
 func (ctx *ProxyContext) newSubrequest(method, urlStr string, body io.Reader, req *http.Request, source string) (*http.Request, error) {

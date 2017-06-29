@@ -46,6 +46,11 @@ func (server *ProxyServer) AccountGetHandler(writer http.ResponseWriter, request
 		}
 	}
 	resp := ctx.C.GetAccount(vars["account"], options, request.Header)
+	if resp.StatusCode == http.StatusNotFound && server.accountAutoCreate {
+		resp.Body.Close()
+		ctx.AutoCreateAccount(vars["account"], request.Header)
+		resp = ctx.C.GetAccount(vars["account"], options, request.Header)
+	}
 	for k := range resp.Header {
 		writer.Header().Set(k, resp.Header.Get(k))
 	}
@@ -68,6 +73,11 @@ func (server *ProxyServer) AccountHeadHandler(writer http.ResponseWriter, reques
 		}
 	}
 	resp := ctx.C.HeadAccount(vars["account"], request.Header)
+	if resp.StatusCode == http.StatusNotFound && server.accountAutoCreate {
+		resp.Body.Close()
+		ctx.AutoCreateAccount(vars["account"], request.Header)
+		resp = ctx.C.HeadAccount(vars["account"], request.Header)
+	}
 	for k := range resp.Header {
 		writer.Header().Set(k, resp.Header.Get(k))
 	}
@@ -96,6 +106,11 @@ func (server *ProxyServer) AccountPostHandler(writer http.ResponseWriter, reques
 	}
 	defer ctx.InvalidateAccountInfo(vars["account"])
 	resp := ctx.C.PostAccount(vars["account"], request.Header)
+	if resp.StatusCode == http.StatusNotFound && server.accountAutoCreate {
+		resp.Body.Close()
+		ctx.AutoCreateAccount(vars["account"], request.Header)
+		resp = ctx.C.PostAccount(vars["account"], request.Header)
+	}
 	resp.Body.Close()
 	srv.StandardResponse(writer, resp.StatusCode)
 }
