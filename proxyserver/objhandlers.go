@@ -16,7 +16,6 @@
 package proxyserver
 
 import (
-	"fmt"
 	"mime"
 	"net/http"
 	"path/filepath"
@@ -198,9 +197,9 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 		request.Header.Set("Content-Type", contentType)
 	}
 	if status, str := CheckObjPut(request, vars["obj"]); status != http.StatusOK {
-		writer.Header().Set("Content-Type", "text/html; charset=UTF-8")
+		writer.Header().Set("Content-Type", "text/plain")
 		writer.WriteHeader(status)
-		writer.Write([]byte(fmt.Sprintf("<html><h1>%s</h1><p>%s</p></html>", http.StatusText(status), str)))
+		writer.Write([]byte(str))
 		return
 	}
 	resp := ctx.C.PutObject(vars["account"], vars["container"], vars["obj"], request.Header, request.Body)
