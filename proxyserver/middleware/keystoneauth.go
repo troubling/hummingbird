@@ -62,7 +62,6 @@ func (ka *keystoneAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	w.Header().Set("X-Account-Project-Domain-Id", identityMap["projectDomainID"])
 }
 
 func (ka *keystoneAuth) accountMatchesTenant(account string, tenantID string) bool {
