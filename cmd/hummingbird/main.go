@@ -32,6 +32,7 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/fs"
+	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/containerserver"
 	"github.com/troubling/hummingbird/objectserver"
@@ -318,6 +319,14 @@ func main() {
 		accountReplicatorFlags.PrintDefaults()
 	}
 
+	ringBuilderFlags := flag.NewFlagSet("ring builder", flag.ExitOnError)
+	ringBuilderFlags.Usage = func() {
+		fmt.Fprintf(os.Stderr, "hummingbird ringbuilder [COMMAND] [ARGS]\n")
+		fmt.Fprintf(os.Stderr, "  Builds a swift style ring.  Commands are:\n")
+		fmt.Fprintf(os.Stderr, "    create: create a new ring\n")
+		ringBuilderFlags.PrintDefaults()
+	}
+
 	/* main flag parser, which doesn't do much */
 
 	flag.Usage = func() {
@@ -422,6 +431,9 @@ func main() {
 		objectserver.RestoreDevice(flag.Args()[1:])
 	case "rescueparts":
 		objectserver.RescueParts(flag.Args()[1:])
+	case "ring-builder":
+		ringBuilderFlags.Parse(flag.Args()[1:])
+		ring.BuildCmd(ringBuilderFlags)
 	default:
 		flag.Usage()
 	}

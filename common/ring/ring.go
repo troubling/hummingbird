@@ -62,6 +62,10 @@ type Device struct {
 	ReplicationPort int     `json:"replication_port"`
 	Weight          float64 `json:"weight"`
 	Zone            int     `json:"zone"`
+
+	// The following fields are for RingBuilder
+	Parts       int `json:"parts"`
+	PartsWanted int `json:"parts_wanted"`
 }
 
 type ringData struct {
