@@ -16,7 +16,9 @@
 package middleware
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -106,4 +108,14 @@ func ReferrerAllowed(referrer string, referrerACL []string) bool {
 		}
 	}
 	return allow
+}
+
+func AuthorizeUnconfirmedIdentity(r *http.Request, obj string, referrers []string, roles []string) (bool, error) {
+	if ReferrerAllowed(r.Referer(), referrers) {
+		if obj != "" || common.StringInSlice(".rlistings", roles) {
+			return true, nil
+		}
+		return false, nil
+	}
+	return false, errors.New("unable to confirm identity")
 }

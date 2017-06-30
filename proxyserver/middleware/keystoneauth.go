@@ -16,7 +16,6 @@
 package middleware
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -55,13 +54,6 @@ func (ka *keystoneAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx.RemoteUsers = []string{identityMap["tenantName"]}
 	ctx.Authorize = ka.authorize
 	ctx.addSubrequestCopy(keystoneSubrequestCopy)
-	userRoles := common.SliceFromCSV(identityMap["roles"])
-	for _, r := range userRoles {
-		if ka.resellerAdminRole == strings.ToLower(r) {
-			ctx.ResellerRequest = true
-			break
-		}
-	}
 }
 
 func (ka *keystoneAuth) accountMatchesTenant(account string, tenantID string) bool {
@@ -203,7 +195,7 @@ func (ka *keystoneAuth) authorize(r *http.Request) (bool, int) {
 		return true, http.StatusOK
 	}
 
-	isAuthorized, authErr := ka.authorizeUnconfirmedIdentity(r, pathParts["object"], referrers, roles)
+	isAuthorized, authErr := AuthorizeUnconfirmedIdentity(r, pathParts["object"], referrers, roles)
 
 	if isAuthorized {
 		return true, http.StatusOK
@@ -294,22 +286,12 @@ func (ka *keystoneAuth) authorizeAnonymous(r *http.Request) (bool, int) {
 	}
 
 	referrers, roles := ParseACL(ctx.ACL)
-	isAuthorized, _ = ka.authorizeUnconfirmedIdentity(r, pathParts["object"], referrers, roles)
+	isAuthorized, _ = AuthorizeUnconfirmedIdentity(r, pathParts["object"], referrers, roles)
 
 	if !isAuthorized {
 		return false, s
 	}
 	return true, http.StatusOK
-}
-
-func (ka *keystoneAuth) authorizeUnconfirmedIdentity(r *http.Request, obj string, referrers []string, roles []string) (bool, error) {
-	if ReferrerAllowed(r.Referer(), referrers) {
-		if obj != "" || common.StringInSlice(".rlistings", roles) {
-			return true, nil
-		}
-		return false, nil
-	}
-	return false, errors.New("unable to confirm identity")
 }
 
 func keystoneSubrequestCopy(dst, src *http.Request) {
