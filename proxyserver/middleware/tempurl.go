@@ -173,7 +173,7 @@ func tempurl(next http.Handler) http.Handler {
 			if ar && ((scope == SCOPE_ACCOUNT && a == account) || (scope == SCOPE_CONTAINER && c == container)) {
 				return true, http.StatusOK
 			}
-			return false, http.StatusForbidden
+			return false, http.StatusUnauthorized
 		}
 
 		next.ServeHTTP(
