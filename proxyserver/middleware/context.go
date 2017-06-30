@@ -314,6 +314,13 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 				}
 			}
 		}
+		if status == http.StatusUnauthorized && w.Header().Get("Www-Authenticate") == "" {
+			if account != "" {
+				w.Header().Set("Www-Authenticate", fmt.Sprintf("Swift realm=\"%s\"", common.Urlencode(account)))
+			} else {
+				w.Header().Set("Www-Authenticate", "Swift realm=\"unknown\"")
+			}
+		}
 		ctx.responseSent = true
 		ctx.status = status
 		return status
