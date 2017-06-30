@@ -408,7 +408,7 @@ func (db *sqliteAccount) ListContainers(limit int, marker string, endMarker stri
 				return nil, err
 			} else {
 				whole, nans := math.Modf(f)
-				record.LastModified = time.Unix(int64(whole), int64(nans*1.0e9)).Format("2006-01-02T15:04:05.000000")
+				record.LastModified = time.Unix(int64(whole), int64(nans*1.0e9)).In(common.GMT).Format("2006-01-02T15:04:05.000000")
 			}
 			point = record.Name
 			if delimiter != "" {
