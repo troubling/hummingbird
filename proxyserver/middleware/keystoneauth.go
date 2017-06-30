@@ -54,13 +54,6 @@ func (ka *keystoneAuth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx.RemoteUsers = []string{identityMap["tenantName"]}
 	ctx.Authorize = ka.authorize
 	ctx.addSubrequestCopy(keystoneSubrequestCopy)
-	userRoles := common.SliceFromCSV(identityMap["roles"])
-	for _, r := range userRoles {
-		if ka.resellerAdminRole == strings.ToLower(r) {
-			ctx.ResellerRequest = true
-			break
-		}
-	}
 }
 
 func (ka *keystoneAuth) accountMatchesTenant(account string, tenantID string) bool {

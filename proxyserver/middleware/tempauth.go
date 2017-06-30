@@ -32,7 +32,7 @@ type testUser struct {
 	Password  string
 	Roles     []string
 	Url       string
-	AccountId string
+	AccountID string
 }
 
 type tempAuth struct {
@@ -71,8 +71,8 @@ func (ta *tempAuth) getUserGroups(tu *testUser) []string {
 		for _, r := range ta.resellers {
 			groups = append(groups, r+tu.Account)
 		}
-		if tu.AccountId != "" && !common.StringInSlice(tu.AccountId, groups) {
-			groups = append(groups, tu.AccountId)
+		if tu.AccountID != "" && !common.StringInSlice(tu.AccountID, groups) {
+			groups = append(groups, tu.AccountID)
 		}
 	}
 	return groups
@@ -281,7 +281,7 @@ func NewTempAuth(config conf.Section) (func(http.Handler) http.Handler, error) {
 			continue
 		}
 		url := ""
-		accountId := reseller + account
+		accountID := reseller + account
 		groups := []string{}
 		if vallen > 1 {
 			urlSpot := 0
@@ -290,14 +290,14 @@ func NewTempAuth(config conf.Section) (func(http.Handler) http.Handler, error) {
 				urlSpot = 1
 				url = s
 				urlParts := strings.Split(url, "/")
-				accountId = urlParts[len(urlParts)-1]
+				accountID = urlParts[len(urlParts)-1]
 			}
 			for _, group := range valparts[1 : vallen-urlSpot] {
 				groups = append(groups, group)
 			}
 		}
 
-		users = append(users, testUser{account, user, valparts[0], groups, url, accountId})
+		users = append(users, testUser{account, user, valparts[0], groups, url, accountID})
 	}
 	RegisterInfo("tempauth", map[string]interface{}{"account_acls": false})
 	return func(next http.Handler) http.Handler {

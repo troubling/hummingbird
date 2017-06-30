@@ -81,7 +81,6 @@ type ProxyContext struct {
 	Authorize        AuthorizeFunc
 	RemoteUsers      []string
 	StorageOwner     bool
-	ResellerRequest  bool
 	ACL              string
 	subrequestCopy   subrequestCopy
 	Logger           srv.LowLevelLogger

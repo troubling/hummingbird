@@ -51,7 +51,7 @@ func TestGetUserGroups(t *testing.T) {
 		Account:   "test",
 		Username:  "tester",
 		Password:  "testing",
-		AccountId: "SERVICE_test",
+		AccountID: "SERVICE_test",
 		Roles:     []string{".admin"}}
 	groups = ta.getUserGroups(&tu)
 	require.Equal(t, 4, len(groups))
@@ -60,7 +60,7 @@ func TestGetUserGroups(t *testing.T) {
 		Account:   "test",
 		Username:  "tester",
 		Password:  "testing",
-		AccountId: "MOO_test",
+		AccountID: "MOO_test",
 		Roles:     []string{".admin"}}
 	groups = ta.getUserGroups(&tu)
 	require.Equal(t, 5, len(groups))
