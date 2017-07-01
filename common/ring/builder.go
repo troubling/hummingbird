@@ -143,6 +143,27 @@ type RingBuilder struct {
 	replica2Part2Dev    [][]uint
 }
 
+type minMax struct {
+	min float64
+	max float64
+}
+
+type replicaPlan struct {
+	min    float64
+	target float64
+	max    float64
+}
+
+type devReplica struct {
+	dev     *RingBuilderDevice
+	replica int
+}
+
+type partReplicas struct {
+	part     uint
+	replicas []uint
+}
+
 func NewRingBuilder(partPower int, replicas float64, minPartHours int) (*RingBuilder, error) {
 	if partPower > 32 {
 		return nil, fmt.Errorf("Part Power must be at most 32 (was %d)", partPower)
@@ -172,11 +193,6 @@ func NewRingBuilder(partPower int, replicas float64, minPartHours int) (*RingBui
 	builder.replica2Part2Dev = make([][]uint, int(replicas))
 	for i := 0; i < int(replicas); i++ {
 		builder.replica2Part2Dev[i] = make([]uint, 0, builder.Parts)
-		/*
-			for j := 0; j < builder.Parts; j++ {
-				builder.replica2Part2Dev[i][j] = NONE_DEV
-			}
-		*/
 	}
 
 	return builder, nil
@@ -197,7 +213,6 @@ func NewRingBuilderFromFile(builderPath string) (*RingBuilder, error) {
 	_, err = f.Read(buff)
 	rbp := RingBuilderPickle{}
 	err = pickle.Unmarshal(buff, &rbp)
-	fmt.Printf("\n%+v\n", rbp)
 	if err != nil {
 		return nil, err
 	}
@@ -403,9 +418,11 @@ func (b *RingBuilder) buildWeightedReplicasByTier() map[string]float64 {
 	// Test that the for every level of the tier that the sum of weightedReplicas is very close to the total number of replicas for the ring
 	weights := [4]float64{0.0, 0.0, 0.0, 0.0}
 	for t, w := range weightedReplicasByTier {
-		weights[strings.Count(t, ";")] += w
+		if t != "" {
+			weights[strings.Count(t, ";")] += w
+		}
 	}
-	fmt.Printf("Replicas: %f - %v\n", b.Replicas, weights)
+	//fmt.Println(weights)
 	// TODO: Add check here
 
 	return weightedReplicasByTier
@@ -414,8 +431,8 @@ func (b *RingBuilder) buildWeightedReplicasByTier() map[string]float64 {
 // buildTier2Children wraps buildTierTree to exclude zero-weight devices.
 func (b *RingBuilder) buildTier2Children() map[string][]string {
 	weightedDevs := make([]*RingBuilderDevice, 0)
-	for i, d := range b.Devs {
-		if d != nil && d.Weight > 0.0 {
+	for i, _ := range b.Devs {
+		if b.Devs[i] != nil && b.Devs[i].Weight > 0.0 {
 			weightedDevs = append(weightedDevs, b.Devs[i])
 		}
 	}
@@ -459,11 +476,6 @@ func (b *RingBuilder) buildMaxReplicasByTier() map[string]float64 {
 	return walkTree("", b.Replicas)
 }
 
-type minMax struct {
-	min float64
-	max float64
-}
-
 // buildWantedReplicasByTier returns a map of tier -> replicanths for all tiers in the ring based on unique as possible (full dispersion) with respect to their weights and device counts.
 func (b *RingBuilder) buildWantedReplicasByTier() (map[string]float64, error) {
 	weightedReplicas := b.buildWeightedReplicasByTier()
@@ -484,10 +496,9 @@ func (b *RingBuilder) buildWantedReplicasByTier() (map[string]float64, error) {
 		}
 		for _, t := range dev.Tiers {
 			if _, ok := numDevices[t]; !ok {
-				numDevices[t] = 1
-			} else {
-				numDevices[t] += 1
+				numDevices[t] = 0
 			}
+			numDevices[t] += 1
 		}
 		numDevices[""] += 1
 	}
@@ -500,10 +511,10 @@ func (b *RingBuilder) buildWantedReplicasByTier() (map[string]float64, error) {
 		if replicanths > float64(numDevices[tier]) {
 			return errors.New(fmt.Sprintf("More replicanths (%f) than devices (%d) in tier (%s)\n", replicanths, numDevices[tier], tier))
 		}
+		wantedReplicas[tier] = replicanths
 		if len(tier2Children[tier]) == 0 {
 			return nil
 		}
-		wantedReplicas[tier] = replicanths
 		subTiers := make([]string, len(tier2Children[tier]))
 		copy(subTiers, tier2Children[tier])
 		sort.Strings(subTiers)
@@ -531,7 +542,7 @@ func (b *RingBuilder) buildWantedReplicasByTier() (map[string]float64, error) {
 				}
 				toPlace[t] = replicas
 			}
-			remaining := float64(replicanths)
+			remaining = replicanths
 			for _, v := range toPlace {
 				remaining -= v
 			}
@@ -543,14 +554,15 @@ func (b *RingBuilder) buildWantedReplicasByTier() (map[string]float64, error) {
 					}
 				}
 			} else if remaining > 1e-10 {
-				tiersToSpread := tiersToSpread[:0]
+				tiersToSpread = tiersToSpread[:0]
 				for _, t := range subTiers {
-					if float64(numDevices[t]) > toPlace[t] && float64(numDevices[t]) < dispersedReplicas[t].max {
+					if float64(numDevices[t]) > toPlace[t] && toPlace[t] < dispersedReplicas[t].max {
 						tiersToSpread = append(tiersToSpread, t)
 					}
 				}
 				if len(tiersToSpread) == 0 {
 					deviceLimited = true
+					tiersToSpread = tiersToSpread[:0]
 					for _, t := range subTiers {
 						if toPlace[t] < float64(numDevices[t]) {
 							tiersToSpread = append(tiersToSpread, t)
@@ -578,6 +590,13 @@ func (b *RingBuilder) buildWantedReplicasByTier() (map[string]float64, error) {
 	err := placeReplicas("", b.Replicas)
 
 	// TODO: And belts and supsenders paranoia
+	weights := [4]float64{0.0, 0.0, 0.0, 0.0}
+	for t, w := range wantedReplicas {
+		if t != "" {
+			weights[strings.Count(t, ";")] += w
+		}
+	}
+	//fmt.Println(weights)
 	if err != nil {
 		return nil, err
 	} else {
@@ -639,13 +658,14 @@ func (b *RingBuilder) buildTargetReplicasByTier() (map[string]float64, error) {
 		targetReplicas[tier] = m*overload + weighted
 	}
 	// TODO: Add belt and suspenders paranoia
+	weights := [4]float64{0.0, 0.0, 0.0, 0.0}
+	for t, w := range targetReplicas {
+		if t != "" {
+			weights[strings.Count(t, ";")] += w
+		}
+	}
+	//fmt.Println(weights)
 	return targetReplicas, nil
-}
-
-type replicaPlan struct {
-	min    float64
-	target float64
-	max    float64
 }
 
 // buildReplicaPlan wraps buildTargetReplicasByTier to include pre-calculated min and max values for each tier
@@ -688,10 +708,26 @@ func (b *RingBuilder) buildTierTree(devs []*RingBuilderDevice) map[string][]stri
 		for _, tier := range b.tiersForDev(dev) {
 			parts := strings.Split(tier, ";")
 			if len(parts) == 1 {
-				tier2Children[""] = append(tier2Children[""], tier)
+				found := false
+				for _, t := range tier2Children[""] {
+					if t == tier {
+						found = true
+					}
+				}
+				if !found {
+					tier2Children[""] = append(tier2Children[""], tier)
+				}
 			} else {
 				t := strings.Join(parts[0:len(parts)-1], ";")
-				tier2Children[t] = append(tier2Children[t], tier)
+				found := false
+				for _, t2 := range tier2Children[t] {
+					if t2 == tier {
+						found = true
+					}
+				}
+				if !found {
+					tier2Children[t] = append(tier2Children[t], tier)
+				}
 			}
 		}
 	}
@@ -708,11 +744,11 @@ func (b *RingBuilder) setPartsWanted(repPlan map[string]replicaPlan) {
 	var placeParts func(string, int)
 	placeParts = func(tier string, parts int) {
 		partsByTier[tier] = parts
-		if len(tier2Children[tier]) == 0 {
-			return
-		}
 		subTiers := make([]string, len(tier2Children[tier]))
 		copy(subTiers, tier2Children[tier])
+		if len(subTiers) == 0 {
+			return
+		}
 		sort.Strings(subTiers)
 		toPlace := make(map[string]int)
 		for _, t := range subTiers {
@@ -741,6 +777,13 @@ func (b *RingBuilder) setPartsWanted(repPlan map[string]replicaPlan) {
 	placeParts("", totalParts)
 
 	// TODO: Add belts and suspenders paranoia
+	parts := [4]int{0, 0, 0, 0}
+	for t, p := range partsByTier {
+		if t != "" {
+			parts[strings.Count(t, ";")] += p
+		}
+	}
+	//fmt.Println(parts)
 
 	for next, dev := devIterator(b.Devs); dev != nil; dev = next() {
 		if dev.Weight <= 0.0 {
@@ -765,7 +808,6 @@ func (b *RingBuilder) adjustReplica2Part2DevSize(toAssign map[uint][]uint) {
 	removedParts := 0
 	newParts := 0
 
-	fmt.Println("PARTS: ", b.Parts)
 	desiredLengths := make([]int, int(wholeReplicas))
 	for i, _ := range desiredLengths {
 		desiredLengths[i] = b.Parts
@@ -854,11 +896,6 @@ func (b *RingBuilder) replicasForPart(part int) []int {
 		}
 	}
 	return replicas
-}
-
-type devReplica struct {
-	dev     *RingBuilderDevice
-	replica int
 }
 
 // gatherPartsForDispersion updates the map of partition -> [replicas] to be reassigned from insufficiently-far-apart replicas.
@@ -1039,11 +1076,6 @@ func (b *RingBuilder) gatherPartsForBalance(assignParts map[uint][]uint, repPlan
 	}
 }
 
-type partReplicas struct {
-	part     uint
-	replicas []uint
-}
-
 // For an existing ring data set, partitions are reassigned similar to the initial assignment.
 //
 // The devices are ordered by how many partitions they still want and keps in that order throughout the process.
@@ -1058,9 +1090,9 @@ func (b *RingBuilder) reassignParts(reassignParts []partReplicas, repPlan map[st
 		wanted := int(math.Max(float64(dev.PartsWanted), 0))
 		for _, tier := range dev.Tiers {
 			partsAvailableInTier[tier] += wanted
-			if dev.Weight > 0.0 {
-				availableDevs = append(availableDevs, dev)
-			}
+		}
+		if dev.Weight > 0.0 {
+			availableDevs = append(availableDevs, dev)
 		}
 	}
 	sort.Slice(availableDevs, func(i, j int) bool {
@@ -1072,8 +1104,8 @@ func (b *RingBuilder) reassignParts(reassignParts []partReplicas, repPlan map[st
 	})
 	tier2Devs := make(map[string][]*RingBuilderDevice)
 	maxTierDepth := 0
-	for i, dev := range availableDevs {
-		for _, tier := range dev.Tiers {
+	for i, _ := range availableDevs {
+		for _, tier := range availableDevs[i].Tiers {
 			tier2Devs[tier] = append(tier2Devs[tier], availableDevs[i])
 			tierDepth := strings.Count(tier, ";") + 1
 			if tierDepth > maxTierDepth {
@@ -1100,7 +1132,6 @@ func (b *RingBuilder) reassignParts(reassignParts []partReplicas, repPlan map[st
 				}
 			})
 			tier2Children[tier] = childTiers
-			// Ugh not sure what to do about tier2ChildrenSortKey here
 			for _, tier := range childTiers {
 				newTiersList = append(newTiersList, tier)
 			}
@@ -1118,9 +1149,6 @@ func (b *RingBuilder) reassignParts(reassignParts []partReplicas, repPlan map[st
 		replicasAtTier := make(map[string]int)
 		for _, dev := range b.devsForPart(int(part)) {
 			for _, tier := range dev.Tiers {
-				if _, ok := replicasAtTier[tier]; !ok {
-					replicasAtTier[tier] = 0
-				}
 				replicasAtTier[tier] += 1
 			}
 		}
@@ -1144,25 +1172,23 @@ func (b *RingBuilder) reassignParts(reassignParts []partReplicas, repPlan map[st
 					return errors.New(fmt.Sprintf("no home for %s/%s %+v", part, replica, data))
 				}
 
+				curTier := candidates[0]
 				for _, t := range candidates {
-					if tier == "" || partsAvailableInTier[t] > partsAvailableInTier[tier] {
-						tier = t
+					if partsAvailableInTier[t] > partsAvailableInTier[curTier] {
+						curTier = t
 					}
 				}
+				tier = curTier
 				depth += 1
 			}
 
 			dev := tier2Devs[tier][len(tier2Devs[tier])-1]
 			dev.PartsWanted -= 1
 			dev.Parts += 1
-			for _, tier := range dev.Tiers {
-				partsAvailableInTier[tier] -= 1
-				if _, ok := replicasAtTier[tier]; !ok {
-					replicasAtTier[tier] = 0
-				}
-				replicasAtTier[tier] += 1
+			for _, t := range dev.Tiers {
+				partsAvailableInTier[t] -= 1
+				replicasAtTier[t] += 1
 			}
-			fmt.Println(replica, part, len(b.replica2Part2Dev), len(b.replica2Part2Dev[replica]))
 			b.replica2Part2Dev[replica][part] = uint(dev.Id)
 			// TODO: Add debug logging
 			fmt.Printf("Placed %d/%d onto dev %d\n", part, replica, dev.Id)
@@ -1251,8 +1277,9 @@ GATHER:
 		for p, r := range assignParts {
 			assignPartsList = append(assignPartsList, partReplicas{p, r})
 		}
-		// range on a map is already random, so we don't have to shuffle assingPartsList
-		// reset assingParts map for next iteration
+		// range on a map is already random, so we don't have to shuffle assignPartsList
+		// reset assignParts map for next iteration
+		// NOTE: It isn't clear to me why this is done...
 		assignParts = make(map[uint][]uint)
 
 		numPartReplicas := 0
@@ -1301,7 +1328,36 @@ func (b *RingBuilder) SetReplicas(newReplicaCount float64) {
 }
 
 // TODO: GetRing (not sure what this should look like yet)
-func (b *RingBuilder) GetRing() {
+func (b *RingBuilder) GetRing() hashRing {
+	data := ringData{
+		ReplicaCount: int(b.Replicas),
+		PartShift:    uint64(32 - b.PartPower),
+	}
+	for i, _ := range b.Devs {
+		data.Devs = append(data.Devs, Device{
+			Id:              int(b.Devs[i].Id),
+			Device:          b.Devs[i].Device,
+			Ip:              b.Devs[i].Ip,
+			Meta:            b.Devs[i].Meta,
+			Port:            int(b.Devs[i].Port),
+			Region:          int(b.Devs[i].Region),
+			ReplicationIp:   b.Devs[i].ReplicationIp,
+			ReplicationPort: int(b.Devs[i].ReplicationPort),
+			Weight:          b.Devs[i].Weight,
+			Zone:            int(b.Devs[i].Zone),
+		})
+	}
+	data.replica2part2devId = make([][]uint16, len(b.replica2Part2Dev))
+	for i := range b.replica2Part2Dev {
+		data.replica2part2devId[i] = make([]uint16, len(b.replica2Part2Dev[i]))
+		for j := range b.replica2Part2Dev[i] {
+			data.replica2part2devId[i][j] = uint16(b.replica2Part2Dev[i][j])
+		}
+	}
+	r := hashRing{}
+	r.data.Store(&data)
+
+	return r
 }
 
 // AddDev adds a device to the ring
@@ -1382,8 +1438,15 @@ func Rebalance(builderPath string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Changed: %d Balance: %f Removed: %d", changed, balance, removed)
+	// TODO: Add DEBUG logging
+	fmt.Printf("Changed: %d Balance: %f Removed: %d\n", changed, balance, removed)
 	err = builder.Save(builderPath)
+	if err != nil {
+		return err
+	}
+	ringFile := strings.TrimSuffix(builderPath, ".builder") + ".ring.gz"
+	r := builder.GetRing()
+	err = r.Save(ringFile)
 	if err != nil {
 		return err
 	}
@@ -1421,8 +1484,6 @@ func AddDevice(builderPath string, id, region, zone int64, ip string, port int64
 }
 
 func BuildCmd(flags *flag.FlagSet) {
-	fmt.Println(flags)
-	fmt.Println(flags.Args())
 	args := flags.Args()
 	if len(args) < 1 {
 		flags.Usage()
@@ -1455,7 +1516,6 @@ func BuildCmd(flags *flag.FlagSet) {
 		}
 		err = CreateRing(args[1], partPower, replicas, minPartHours)
 		if err != nil {
-			fmt.Println("ERROR")
 			fmt.Println(err)
 			return
 		}
@@ -1466,7 +1526,6 @@ func BuildCmd(flags *flag.FlagSet) {
 		}
 		err := Rebalance(args[1])
 		if err != nil {
-			fmt.Println("ERROR")
 			fmt.Println(err)
 			return
 		}
