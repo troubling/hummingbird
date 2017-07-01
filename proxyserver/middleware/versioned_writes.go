@@ -181,21 +181,23 @@ func (v *versionedWrites) versionedObjectName(object string, ts string) string {
 	return v.versionedObjectPrefix(object) + ts
 }
 
-func (v *versionedWrites) containerListing(writer http.ResponseWriter, ctx *ProxyContext, path string) (listing []mySegItem, err error) {
-	request, err := http.NewRequest("GET", path, http.NoBody)
+func (v *versionedWrites) containerListing(writer http.ResponseWriter, req *http.Request, path string) (listing []mySegItem, err error) {
+	ctx := GetProxyContext(req)
+	request, err := ctx.newSubrequest("GET", path, http.NoBody, req, "VW")
 	if err != nil {
 		return listing, err
 	}
 	lw := &listingWriter{ResponseWriter: writer}
-	ctx.Subrequest(lw, request, "VW", false)
+	ctx.serveHTTPSubrequest(lw, request)
 	if err = json.Unmarshal(lw.buffer.Bytes(), &listing); err != nil {
 		return listing, err
 	}
 	return listing, nil
 }
 
-func (v *versionedWrites) putDeletedMarker(writer http.ResponseWriter, ctx *ProxyContext, path string) (http.Header, int) {
-	request, err := http.NewRequest("PUT", path, http.NoBody)
+func (v *versionedWrites) putDeletedMarker(writer http.ResponseWriter, req *http.Request, path string) (http.Header, int) {
+	ctx := GetProxyContext(req)
+	request, err := ctx.newSubrequest("PUT", path, http.NoBody, req, "VW")
 	if err != nil {
 		ctx.Logger.Error("putDeletedMarker PUT error", zap.Error(err))
 		return nil, 500
@@ -204,12 +206,13 @@ func (v *versionedWrites) putDeletedMarker(writer http.ResponseWriter, ctx *Prox
 	request.ContentLength = 0
 
 	vow := NewVersionedObjectWriter()
-	ctx.Subrequest(vow, request, "VW", false)
+	ctx.serveHTTPSubrequest(vow, request)
 	return vow.Header(), vow.status
 }
 
-func (v *versionedWrites) putVersionedObj(writer http.ResponseWriter, ctx *ProxyContext, path string, body io.ReadCloser, header http.Header) (http.Header, int) {
-	request, err := http.NewRequest("PUT", path, body)
+func (v *versionedWrites) putVersionedObj(writer http.ResponseWriter, req *http.Request, path string, body io.ReadCloser, header http.Header) (http.Header, int) {
+	ctx := GetProxyContext(req)
+	request, err := ctx.newSubrequest("PUT", path, body, req, "VW")
 	if err != nil {
 		ctx.Logger.Error("putVersionedObj PUT error", zap.Error(err))
 		return nil, 400
@@ -217,14 +220,14 @@ func (v *versionedWrites) putVersionedObj(writer http.ResponseWriter, ctx *Proxy
 
 	CopyItemsExclude(request.Header, header, []string{"X-Timestamp"})
 	vow := NewVersionedObjectWriter()
-	ctx.Subrequest(vow, request, "VW", false)
+	ctx.serveHTTPSubrequest(vow, request)
 	return vow.Header(), vow.status
 }
 
 func (v *versionedWrites) copyObject(writer http.ResponseWriter, request *http.Request, dest string, src string) bool {
 	ctx := GetProxyContext(request)
 	pipe := &PipeResponse{}
-	srcBody, srcHeader, srcStatus := pipe.Get(src, request, "VW")
+	srcBody, srcHeader, srcStatus := pipe.Get(src, request, "VW", nil)
 	if srcBody != nil {
 		defer srcBody.Close()
 	}
@@ -236,7 +239,7 @@ func (v *versionedWrites) copyObject(writer http.ResponseWriter, request *http.R
 		ctx.Logger.Info("copyObject srcStatus", zap.Int("status", srcStatus))
 		return false
 	}
-	_, destStatus := v.putVersionedObj(writer, ctx, dest, srcBody, srcHeader)
+	_, destStatus := v.putVersionedObj(writer, request, dest, srcBody, srcHeader)
 	if destStatus/100 != 2 {
 		ctx.Logger.Info("copyObject destStatus", zap.Int("status", destStatus))
 		return false
@@ -246,15 +249,21 @@ func (v *versionedWrites) copyObject(writer http.ResponseWriter, request *http.R
 
 func (v *versionedWrites) copyCurrent(writer http.ResponseWriter, request *http.Request, account string, versionContainer string, object string) (bool, int) {
 	ctx := GetProxyContext(request)
-	ci := ctx.C.GetContainerInfo(account, versionContainer)
-	ctx.ACL = ci.WriteACL
-	if ctx.Authorize != nil && !ctx.Authorize(request) {
-		return false, 401
+	if ci, err := ctx.C.GetContainerInfo(account, versionContainer); err != nil {
+		// No container info?
+		return false, 400
+	} else {
+		ctx.ACL = ci.WriteACL
+		if ctx.Authorize != nil {
+			if ok, st := ctx.Authorize(request); !ok {
+				return false, st
+			}
+		}
 	}
 
 	pipe := &PipeResponse{}
 
-	srcBody, srcHeader, srcStatus := pipe.Get(request.URL.Path, request, "VW")
+	srcBody, srcHeader, srcStatus := pipe.Get(request.URL.Path, request, "VW", nil)
 	if srcBody != nil {
 		defer srcBody.Close()
 	}
@@ -285,7 +294,7 @@ func (v *versionedWrites) copyCurrent(writer http.ResponseWriter, request *http.
 	}
 	versObjName := v.versionedObjectName(object, ts)
 	path := fmt.Sprintf("/v1/%s/%s/%s", account, versionContainer, versObjName)
-	_, destStatus := v.putVersionedObj(writer, ctx, path, srcBody, srcHeader)
+	_, destStatus := v.putVersionedObj(writer, request, path, srcBody, srcHeader)
 	if destStatus/100 != 2 {
 		ctx.Logger.Info(fmt.Sprintf("Bad status in copyCurrent PUT: %v", srcStatus))
 		return false, destStatus
@@ -294,46 +303,47 @@ func (v *versionedWrites) copyCurrent(writer http.ResponseWriter, request *http.
 }
 
 func (v *versionedWrites) handleObjectDeleteHistory(writer http.ResponseWriter, request *http.Request, account string, versionsContainer string, object string) {
-	ctx := GetProxyContext(request)
 	ok, status := v.copyCurrent(writer, request, account, versionsContainer, object)
 	if !ok || returnIfStatusError(writer, status) {
 		return
 	}
 	versObjectName := v.versionedObjectName(object, common.GetTimestamp())
 	markerPath := fmt.Sprintf("/v1/%s/%s/%s", account, versionsContainer, versObjectName)
-	_, status = v.putDeletedMarker(writer, ctx, markerPath)
+	_, status = v.putDeletedMarker(writer, request, markerPath)
 	if returnIfStatusError(writer, status) {
 		return
 	}
 	v.next.ServeHTTP(writer, request)
 }
 
-func (v *versionedWrites) deleteObject(writer http.ResponseWriter, ctx *ProxyContext, path string) (http.Header, int) {
-	request, err := http.NewRequest("DELETE", path, http.NoBody)
+func (v *versionedWrites) deleteObject(writer http.ResponseWriter, req *http.Request, path string) (http.Header, int) {
+	ctx := GetProxyContext(req)
+	request, err := ctx.newSubrequest("DELETE", path, http.NoBody, req, "VW")
 	if err != nil {
 		ctx.Logger.Error("deleteObject error", zap.Error(err))
 		return nil, 500
 	}
 	vow := NewVersionedObjectWriter()
-	ctx.Subrequest(vow, request, "VW", false)
+	ctx.serveHTTPSubrequest(vow, request)
 	return vow.Header(), vow.status
 }
 
-func (v *versionedWrites) headObject(writer http.ResponseWriter, ctx *ProxyContext, path string) (http.Header, int) {
-	request, err := http.NewRequest("HEAD", path, http.NoBody)
+func (v *versionedWrites) headObject(writer http.ResponseWriter, req *http.Request, path string) (http.Header, int) {
+	ctx := GetProxyContext(req)
+	request, err := ctx.newSubrequest("HEAD", path, http.NoBody, req, "VW")
 	if err != nil {
 		ctx.Logger.Error("headObject error", zap.Error(err))
 		return nil, 500
 	}
 	vow := NewVersionedObjectWriter()
-	ctx.Subrequest(vow, request, "VW", false)
+	ctx.serveHTTPSubrequest(vow, request)
 	return vow.Header(), vow.status
 }
 
 func (v *versionedWrites) handleObjectDeleteStack(writer http.ResponseWriter, request *http.Request, account string, container string, versionsContainer string, object string) {
 	ctx := GetProxyContext(request)
 	listingPath := fmt.Sprintf("/v1/%s/%s?format=json&prefix=%s&reverse=on", account, versionsContainer, v.versionedObjectPrefix(object))
-	listing, err := v.containerListing(writer, ctx, listingPath)
+	listing, err := v.containerListing(writer, request, listingPath)
 	if err != nil {
 		srv.SimpleErrorResponse(writer, 500, "Failed to get versions container listing")
 		return
@@ -352,11 +362,18 @@ func (v *versionedWrites) handleObjectDeleteStack(writer http.ResponseWriter, re
 		previousVersion := listing[versionIndex]
 		if !authed {
 			ctx := GetProxyContext(request)
-			ci := ctx.C.GetContainerInfo(account, container)
-			ctx.ACL = ci.WriteACL
-			if ctx.Authorize != nil && !ctx.Authorize(request) {
-				srv.StandardResponse(writer, 401)
+			if ci, err := ctx.C.GetContainerInfo(account, container); err != nil {
+				// No container
+				srv.StandardResponse(writer, 400)
 				return
+			} else {
+				ctx.ACL = ci.WriteACL
+				if ctx.Authorize != nil {
+					if ok, st := ctx.Authorize(request); !ok {
+						srv.StandardResponse(writer, st)
+						return
+					}
+				}
 			}
 			authed = true
 		}
@@ -373,7 +390,7 @@ func (v *versionedWrites) handleObjectDeleteStack(writer http.ResponseWriter, re
 			}
 		} else {
 			if headStatus == -1 {
-				_, headStatus = v.headObject(writer, ctx, request.URL.Path)
+				_, headStatus = v.headObject(writer, request, request.URL.Path)
 			}
 			if headStatus != http.StatusNotFound {
 				// Object exists, just let it get deleted.
@@ -389,7 +406,7 @@ func (v *versionedWrites) handleObjectDeleteStack(writer http.ResponseWriter, re
 				restorePath := fmt.Sprintf("/v1/%s/%s/%s", account, versionsContainer, versionToRestore.Name)
 				if v.copyObject(writer, request, request.URL.Path, restorePath) {
 					// Successfully restored, so delete the history version
-					_, status := v.deleteObject(writer, ctx, restorePath)
+					_, status := v.deleteObject(writer, request, restorePath)
 					if status != http.StatusNotFound && returnIfStatusError(writer, status) {
 						ctx.Logger.Info("VW deleteObject failure", zap.Int("status", status))
 						return
@@ -427,7 +444,7 @@ func (v *versionedWrites) handleObjectPut(writer http.ResponseWriter, request *h
 func (v *versionedWrites) handleObject(writer http.ResponseWriter, request *http.Request) {
 	_, account, container, object := getPathParts(request)
 	ctx := GetProxyContext(request)
-	ci := ctx.C.GetContainerInfo(account, container)
+	ci, _ := ctx.C.GetContainerInfo(account, container)
 	if ci == nil {
 		v.next.ServeHTTP(writer, request)
 		return
