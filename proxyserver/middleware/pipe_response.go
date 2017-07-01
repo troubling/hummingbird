@@ -65,9 +65,9 @@ func NewPipeResponseWriter(writer *io.PipeWriter, done chan bool, logger srv.Low
 	}
 }
 
-func (p *PipeResponse) Get(path string, request *http.Request, source string, AuthorizeFunc auth) (io.ReadCloser, http.Header, int) {
+func (p *PipeResponse) Get(path string, request *http.Request, source string, auth AuthorizeFunc) (io.ReadCloser, http.Header, int) {
 	ctx := GetProxyContext(request)
-	subRequest, err := http.NewRequest("GET", path, nil)
+	subRequest, err := ctx.newSubrequest("GET", path, nil, request, source)
 	if err != nil {
 		ctx.Logger.Error("getSourceObject GET error", zap.Error(err))
 		return nil, nil, 400
@@ -86,7 +86,7 @@ func (p *PipeResponse) Get(path string, request *http.Request, source string, Au
 	writer := NewPipeResponseWriter(pipeWriter, done, ctx.Logger)
 	go func() {
 		defer writer.Close()
-		ctx.Subrequest(writer, subRequest, source, false)
+		ctx.serveHTTPSubrequest(writer, subRequest)
 	}()
 	<-done
 

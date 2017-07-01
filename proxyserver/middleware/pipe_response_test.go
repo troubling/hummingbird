@@ -23,7 +23,7 @@ func TestGet(t *testing.T) {
 
 	p := &PipeResponse{}
 
-	body, header, code := p.Get("/ver/a/c/o", dummy, "test")
+	body, header, code := p.Get("/ver/a/c/o", dummy, "test", nil)
 
 	require.Equal(t, 200, code)
 	buf := make([]byte, 1024)
