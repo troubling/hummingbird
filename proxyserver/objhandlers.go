@@ -152,6 +152,12 @@ func (server *ProxyServer) ObjectPostHandler(writer http.ResponseWriter, request
 			return
 		}
 	}
+	if status, str := CheckMetadata(request, "Object"); status != http.StatusOK {
+		writer.Header().Set("Content-Type", "text/plain")
+		writer.WriteHeader(status)
+		writer.Write([]byte(str))
+		return
+	}
 	resp := ctx.C.PostObject(vars["account"], vars["container"], vars["obj"], request.Header)
 	resp.Body.Close()
 	srv.StandardResponse(writer, resp.StatusCode)

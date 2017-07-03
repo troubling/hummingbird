@@ -160,10 +160,11 @@ func GetServer(serverconf conf.Config, flags *flag.FlagSet) (string, int, srv.Se
 		return "", 0, nil, nil, fmt.Errorf("Error setting up proxyDirectClient: %v", err)
 	}
 	info := map[string]interface{}{
-		"version":            common.Version,
-		"strict_cors_mode":   true,
-		"policies":           policies.GetPolicyInfo(),
-		"account_autocreate": server.accountAutoCreate,
+		"version":                  common.Version,
+		"strict_cors_mode":         true,
+		"policies":                 policies.GetPolicyInfo(),
+		"account_autocreate":       server.accountAutoCreate,
+		"allow_account_management": true,
 	}
 	for k, v := range DEFAULT_CONSTRAINTS {
 		info[k] = v
