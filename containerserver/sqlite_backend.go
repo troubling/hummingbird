@@ -326,7 +326,7 @@ func updateRecord(rec *ObjectListingRecord) error {
 		return err
 	}
 	whole, nans := math.Modf(f)
-	rec.LastModified = time.Unix(int64(whole), int64(nans*1.0e9)).Format("2006-01-02T15:04:05.000000")
+	rec.LastModified = time.Unix(int64(whole), int64(nans*1.0e9)).In(common.GMT).Format("2006-01-02T15:04:05.000000")
 
 	rec.ContentType, rec.Size, err = common.ParseContentTypeForSlo(
 		rec.ContentType, rec.Size)

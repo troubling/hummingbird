@@ -19,6 +19,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/troubling/hummingbird/common"
 )
 
 type variable struct {
@@ -190,10 +192,17 @@ func (r *router) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	request = SetVars(request, vars)
 	handler.ServeHTTP(writer, request)
 }
+func routerNotFound(w http.ResponseWriter, r *http.Request) {
+	if pm, err := common.ParseProxyPath(r.URL.Path); err == nil && pm["account"] == "" {
+		SimpleErrorResponse(w, http.StatusPreconditionFailed, "Bad URL")
+	} else {
+		SimpleErrorResponse(w, http.StatusNotFound, "")
+	}
+}
 
 func NewRouter() *router {
 	return &router{
-		NotFoundHandler:         http.HandlerFunc(http.NotFound),
+		NotFoundHandler:         http.HandlerFunc(routerNotFound),
 		MethodNotAllowedHandler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "Method Not Allowed", 405) }),
 	}
 }

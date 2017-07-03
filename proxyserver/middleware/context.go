@@ -80,7 +80,7 @@ type ProxyContext struct {
 	C                client.ProxyClient
 	Authorize        AuthorizeFunc
 	RemoteUsers      []string
-	ResellerRequest  bool
+	StorageOwner     bool
 	ACL              string
 	subrequestCopy   subrequestCopy
 	Logger           srv.LowLevelLogger
@@ -312,6 +312,13 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 				if strings.HasPrefix(k, ex) {
 					delete(w.Header(), k)
 				}
+			}
+		}
+		if status == http.StatusUnauthorized && w.Header().Get("Www-Authenticate") == "" {
+			if account != "" {
+				w.Header().Set("Www-Authenticate", fmt.Sprintf("Swift realm=\"%s\"", common.Urlencode(account)))
+			} else {
+				w.Header().Set("Www-Authenticate", "Swift realm=\"unknown\"")
 			}
 		}
 		ctx.responseSent = true
