@@ -141,6 +141,7 @@ type RingBuilder struct {
 	lastPartGatherStart int
 	partMovedBitmap     []byte
 	replica2Part2Dev    [][]uint
+	Debug               bool
 }
 
 type minMax struct {
@@ -164,7 +165,7 @@ type partReplicas struct {
 	replicas []uint
 }
 
-func NewRingBuilder(partPower int, replicas float64, minPartHours int) (*RingBuilder, error) {
+func NewRingBuilder(partPower int, replicas float64, minPartHours int, debug bool) (*RingBuilder, error) {
 	if partPower > 32 {
 		return nil, fmt.Errorf("Part Power must be at most 32 (was %d)", partPower)
 	}
@@ -184,6 +185,7 @@ func NewRingBuilder(partPower int, replicas float64, minPartHours int) (*RingBui
 		lastPartMovesEpoch: 0,
 		Dispersion:         0.0,
 		Overload:           0.0,
+		Debug:              debug,
 	}
 
 	// NOTE: In the python version, these were lazy created.
@@ -198,7 +200,7 @@ func NewRingBuilder(partPower int, replicas float64, minPartHours int) (*RingBui
 	return builder, nil
 }
 
-func NewRingBuilderFromFile(builderPath string) (*RingBuilder, error) {
+func NewRingBuilderFromFile(builderPath string, debug bool) (*RingBuilder, error) {
 
 	f, err := os.Open(builderPath)
 	if err != nil {
@@ -228,6 +230,7 @@ func NewRingBuilderFromFile(builderPath string) (*RingBuilder, error) {
 		Dispersion:          rbp.Dispersion,
 		lastPartMovesEpoch:  rbp.LastPartMovesEpoch,
 		lastPartGatherStart: int(rbp.LastPartGatherStart),
+		Debug:               debug,
 	}
 	builder.lastPartGatherStart = 0
 	builder.lastPartMoves = rbp.LastPartMoves.Data
@@ -255,6 +258,13 @@ func NewRingBuilderFromFile(builderPath string) (*RingBuilder, error) {
 	}
 
 	return builder, nil
+}
+
+// debug prints a debug message if debug is enabled
+func (b *RingBuilder) debug(msg string) {
+	if b.Debug {
+		fmt.Println(msg)
+	}
 }
 
 // Save serializes this RingBuilder instance to disk
@@ -407,9 +417,6 @@ func (b *RingBuilder) buildWeightedReplicasByTier() map[string]float64 {
 		assignedReplicanths := weightedReplicasForDev[dev.Id]
 		devTier := b.tiersForDev(dev)
 		for _, tier := range devTier {
-			if _, ok := weightedReplicasByTier[tier]; !ok {
-				weightedReplicasByTier[tier] = 0.0
-			}
 			weightedReplicasByTier[tier] += assignedReplicanths
 		}
 
@@ -495,9 +502,6 @@ func (b *RingBuilder) buildWantedReplicasByTier() (map[string]float64, error) {
 			continue
 		}
 		for _, t := range dev.Tiers {
-			if _, ok := numDevices[t]; !ok {
-				numDevices[t] = 0
-			}
 			numDevices[t] += 1
 		}
 		numDevices[""] += 1
@@ -576,8 +580,7 @@ func (b *RingBuilder) buildWantedReplicasByTier() (map[string]float64, error) {
 
 		}
 		for _, t := range subTiers {
-			// TODO: change to DEBUG Logging
-			fmt.Printf("Planning %f on %s\n", toPlace[t], t)
+			b.debug(fmt.Sprintf("Planning %f on %s", toPlace[t], t))
 			err := placeReplicas(t, toPlace[t])
 			if err != nil {
 				return err
@@ -620,8 +623,7 @@ func (b *RingBuilder) GetRequiredOverload(weighted map[string]float64, wanted ma
 			}
 		}
 		required := (wanted[tier] - weighted[tier]) / weighted[tier]
-		// TODO: replace with debug logging
-		fmt.Printf("%s wants %f and is weighted for %f so therefore requires %f overload\n", tier, wanted[tier], weighted[tier], required)
+		b.debug(fmt.Sprintf("%s wants %f and is weighted for %f so therefore requires %f overload", tier, wanted[tier], weighted[tier], required))
 		if required > maxOverload {
 			maxOverload = required
 		}
@@ -650,8 +652,7 @@ func (b *RingBuilder) buildTargetReplicasByTier() (map[string]float64, error) {
 	} else {
 		overload = math.Min(b.Overload, maxOverload)
 	}
-	// TODO: replace with debug logging
-	fmt.Printf("Using effective overload of %f\n", overload)
+	b.debug(fmt.Sprintf("Using effective overload of %f", overload))
 	targetReplicas := make(map[string]float64)
 	for tier, weighted := range weightedReplicas {
 		m := (wantedReplicas[tier] - weighted) / maxOverload
@@ -858,8 +859,7 @@ func (b *RingBuilder) adjustReplica2Part2DevSize(toAssign map[uint][]uint) {
 			b.replica2Part2Dev = append(b.replica2Part2Dev, extra)
 		}
 	}
-	// TODO: Replace with debug logger
-	fmt.Printf("%d new parts and %d removed parts from replica-count change.\n", newParts, removedParts)
+	b.debug(fmt.Sprintf("%d new parts and %d removed parts from replica-count change.", newParts, removedParts))
 }
 
 // gatherPartsFromFailedDevices updates the map of partition -> replicas to be reassigned from removed devices.
@@ -910,9 +910,6 @@ func (b *RingBuilder) gatherPartsForDispersion(assignParts map[uint][]uint, repP
 		devs4Part := b.devsForPart(part)
 		for _, dev := range devs4Part {
 			for _, tier := range dev.Tiers {
-				if _, ok := replicasAtTier[tier]; !ok {
-					replicasAtTier[tier] = 0
-				}
 				replicasAtTier[tier] += 1
 			}
 		}
@@ -948,8 +945,7 @@ func (b *RingBuilder) gatherPartsForDispersion(assignParts map[uint][]uint, repP
 			dev.PartsWanted += 1
 			dev.Parts -= 1
 			assignParts[uint(part)] = append(assignParts[uint(part)], uint(replica))
-			// TODO: replace with debug logging
-			fmt.Printf("Gathered %d/%d from dev %d [dispersion]\n", part, replica, dev.Id)
+			b.debug(fmt.Sprintf("Gathered %d/%d from dev %d [dispersion]", part, replica, dev.Id))
 			b.replica2Part2Dev[replica][part] = NONE_DEV
 			for _, tier := range dev.Tiers {
 				replicasAtTier[tier] -= 1
@@ -975,9 +971,6 @@ func (b *RingBuilder) gatherPartsForBalanceCanDisperse(assignParts map[uint][]ui
 			}
 			dev := b.Devs[devId]
 			for _, tier := range dev.Tiers {
-				if _, ok := replicasAtTier[tier]; !ok {
-					replicasAtTier[tier] = 0
-				}
 				replicasAtTier[tier] += 1
 			}
 			if dev.PartsWanted < 0 {
@@ -1005,8 +998,7 @@ func (b *RingBuilder) gatherPartsForBalanceCanDisperse(assignParts map[uint][]ui
 			dev.PartsWanted += 1
 			dev.Parts -= 1
 			assignParts[uint(part)] = append(assignParts[uint(part)], uint(replica))
-			// TODO: Add debug logging
-			fmt.Printf("Gathered %d/%d from dev %d [weight disperse]\n", part, replica, dev.Id)
+			b.debug(fmt.Sprintf("Gathered %d/%d from dev %d [weight disperse]", part, replica, dev.Id))
 			b.replica2Part2Dev[replica][part] = NONE_DEV
 			for _, tier := range dev.Tiers {
 				replicasAtTier[tier] -= 1
@@ -1052,8 +1044,7 @@ func (b *RingBuilder) gatherPartsForBalanceForced(assignParts map[uint][]uint, s
 		dev.PartsWanted += 1
 		dev.Parts -= 1
 		assignParts[uint(part)] = append(assignParts[uint(part)], uint(replica))
-		// TODO: Add debug logging
-		fmt.Printf("Gathered %d/%d from dev %d [weight forced]\n", part, replica, dev.Id)
+		b.debug(fmt.Sprintf("Gathered %d/%d from dev %d [weight forced]", part, replica, dev.Id))
 		b.replica2Part2Dev[replica][part] = NONE_DEV
 		b.setPartMoved(uint(part))
 
@@ -1066,8 +1057,7 @@ func (b *RingBuilder) gatherPartsForBalance(assignParts map[uint][]uint, repPlan
 	quarterTurn := b.Parts / 4
 	randomHalf := rand.Intn(b.Parts / 2)
 	start := (b.lastPartGatherStart + quarterTurn + randomHalf) % b.Parts
-	// TODO: Add debug log
-	fmt.Printf("Gather start is %d (Last start was %d)\n", start, b.lastPartGatherStart)
+	b.debug(fmt.Sprintf("Gather start is %d (Last start was %d)", start, b.lastPartGatherStart))
 	b.lastPartGatherStart = start
 
 	b.gatherPartsForBalanceCanDisperse(assignParts, start, repPlan)
@@ -1190,8 +1180,7 @@ func (b *RingBuilder) reassignParts(reassignParts []partReplicas, repPlan map[st
 				replicasAtTier[t] += 1
 			}
 			b.replica2Part2Dev[replica][part] = uint(dev.Id)
-			// TODO: Add debug logging
-			fmt.Printf("Placed %d/%d onto dev %d\n", part, replica, dev.Id)
+			b.debug(fmt.Sprintf("Placed %d/%d onto dev %d", part, replica, dev.Id))
 		}
 	}
 	return nil
@@ -1248,6 +1237,12 @@ func (b *RingBuilder) Rebalance() (int, float64, int, error) {
 		return 0, 0.0, 0, errors.New(fmt.Sprintf("Replica count of %f requires more than %d devices.", b.Replicas, numDevices))
 	}
 
+	oldReplica2Part2Dev := make([][]uint, len(b.replica2Part2Dev))
+	for i := range b.replica2Part2Dev {
+		oldReplica2Part2Dev[i] = make([]uint, len(b.replica2Part2Dev[i]))
+		copy(oldReplica2Part2Dev[i], b.replica2Part2Dev[i])
+	}
+
 	b.updateLastPartMoves()
 
 	repPlan, err := b.buildReplicaPlan()
@@ -1286,10 +1281,9 @@ GATHER:
 		for _, pr := range assignPartsList {
 			numPartReplicas += len(pr.replicas)
 		}
-		// TODO: Add debug logging
-		fmt.Printf("Gathered %d parts.\n", numPartReplicas)
+		b.debug(fmt.Sprintf("Gathered %d parts.", numPartReplicas))
 		b.reassignParts(assignPartsList, repPlan)
-		fmt.Printf("Assigned %d parts.\n", numPartReplicas)
+		b.debug(fmt.Sprintf("Assigned %d parts.", numPartReplicas))
 
 		for next, dev := devIterator(b.Devs); dev != nil; dev = next() {
 			if dev.PartsWanted >= 0 {
@@ -1299,13 +1293,22 @@ GATHER:
 		finishStatus = "Finished"
 		break
 	}
-	// TODO: Add debug logging
-	fmt.Printf("%s rebalance plan after %d attempts.\n", finishStatus, gatherCount+1)
+	b.debug(fmt.Sprintf("%s rebalance plan after %d attempts.", finishStatus, gatherCount+1))
 	b.DevsChanged = false
 	b.Version += 1
 	// NOTE/TODO?: Dispersion graph isn't currently implemented
 
-	return 0, b.GetBalance(), removedDevs, nil
+	// Figure out how many parts moved
+	changedParts := 0
+	for repId := range b.replica2Part2Dev {
+		for partId, devId := range b.replica2Part2Dev[repId] {
+			if partId >= len(oldReplica2Part2Dev[repId]) || devId != oldReplica2Part2Dev[repId][partId] {
+				changedParts += 1
+			}
+		}
+	}
+
+	return changedParts, b.GetBalance(), removedDevs, nil
 }
 
 // ChangeMinPartHours changes the value used to decide if a given partition can be moved again.  This restriction is to give the overall system enough time to settl a partition to its new location before moving it to yet another location.  While no data would be lost if a partition is moved several times quickly, it could make the data unreachable for a short period of time.
@@ -1404,8 +1407,8 @@ func (b *RingBuilder) AddDev(dev *RingBuilderDevice) (int64, error) {
 // CreateRing creates a ring builder file.
 //   builderpath must include the filename of the the builder to create.
 //   A backup folder will also be created in the back with a backup of the original builder.
-func CreateRing(builderPath string, partPower int, replicas float64, minPartHours int) error {
-	builder, err := NewRingBuilder(partPower, replicas, minPartHours)
+func CreateRing(builderPath string, partPower int, replicas float64, minPartHours int, debug bool) error {
+	builder, err := NewRingBuilder(partPower, replicas, minPartHours, debug)
 	if err != nil {
 		return err
 	}
@@ -1429,8 +1432,8 @@ func CreateRing(builderPath string, partPower int, replicas float64, minPartHour
 }
 
 // Rebalance attempts to rebalance the ring by reassigning partitions that haven't been recently reassigned.
-func Rebalance(builderPath string) error {
-	builder, err := NewRingBuilderFromFile(builderPath)
+func Rebalance(builderPath string, debug bool) error {
+	builder, err := NewRingBuilderFromFile(builderPath, debug)
 	if err != nil {
 		return err
 	}
@@ -1438,7 +1441,6 @@ func Rebalance(builderPath string) error {
 	if err != nil {
 		return err
 	}
-	// TODO: Add DEBUG logging
 	fmt.Printf("Changed: %d Balance: %f Removed: %d\n", changed, balance, removed)
 	err = builder.Save(builderPath)
 	if err != nil {
@@ -1456,8 +1458,8 @@ func Rebalance(builderPath string) error {
 // AddDevice adds a device to the builder filer
 //   builderpath must include the filename of the builder file.
 //   Returns the id of the device in the ring.
-func AddDevice(builderPath string, id, region, zone int64, ip string, port int64, replicationIp string, replicationPort int64, device string, weight float64) (int64, error) {
-	builder, err := NewRingBuilderFromFile(builderPath)
+func AddDevice(builderPath string, id, region, zone int64, ip string, port int64, replicationIp string, replicationPort int64, device string, weight float64, debug bool) (int64, error) {
+	builder, err := NewRingBuilderFromFile(builderPath, debug)
 	if err != nil {
 		return -1, err
 	}
@@ -1489,6 +1491,7 @@ func BuildCmd(flags *flag.FlagSet) {
 		flags.Usage()
 		return
 	}
+	debug := flags.Lookup("debug").Value.String() == "true"
 	cmd := args[0]
 	switch cmd {
 	case "help":
@@ -1498,6 +1501,7 @@ func BuildCmd(flags *flag.FlagSet) {
 	case "create":
 		if len(args) < 5 {
 			flags.Usage()
+			return
 		}
 		partPower, err := strconv.Atoi(args[2])
 		if err != nil {
@@ -1514,7 +1518,7 @@ func BuildCmd(flags *flag.FlagSet) {
 			fmt.Println(err)
 			return
 		}
-		err = CreateRing(args[1], partPower, replicas, minPartHours)
+		err = CreateRing(args[1], partPower, replicas, minPartHours, debug)
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -1523,8 +1527,9 @@ func BuildCmd(flags *flag.FlagSet) {
 	case "rebalance":
 		if len(args) < 1 {
 			flags.Usage()
+			return
 		}
-		err := Rebalance(args[1])
+		err := Rebalance(args[1], debug)
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -1537,9 +1542,17 @@ func BuildCmd(flags *flag.FlagSet) {
 		var ip, replicationIp, device string
 		var weight float64
 
+		if len(args) < 4 {
+			flags.Usage()
+			return
+		}
 		deviceStr := args[2]
 		rx := regexp.MustCompile(`^(?:r(?P<region>\d+))?z(?P<zone>\d+)-(?P<ip>[\d\.]+):(?P<port>\d+)(?:R(?P<replication_ip>[\d\.]+):(?P<replication_port>\d+))?\/(?P<device>[^_]+)(?:_(?P<metadata>.+))?$`)
 		matches := rx.FindAllStringSubmatch(deviceStr, -1)
+		if len(matches) == 0 {
+			flags.Usage()
+			return
+		}
 		if matches[0][1] != "" {
 			region, err = strconv.ParseInt(matches[0][1], 0, 64)
 			if err != nil {
@@ -1577,7 +1590,7 @@ func BuildCmd(flags *flag.FlagSet) {
 			fmt.Println(err)
 			return
 		}
-		id, err := AddDevice(args[1], -1, region, zone, ip, port, replicationIp, replicationPort, device, weight)
+		id, err := AddDevice(args[1], -1, region, zone, ip, port, replicationIp, replicationPort, device, weight, debug)
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -1586,7 +1599,7 @@ func BuildCmd(flags *flag.FlagSet) {
 		}
 	case "load":
 		path := args[1]
-		builder, err := NewRingBuilderFromFile(path)
+		builder, err := NewRingBuilderFromFile(path, debug)
 		fmt.Printf("%+v\n", builder)
 		if err != nil {
 			fmt.Println(err)
