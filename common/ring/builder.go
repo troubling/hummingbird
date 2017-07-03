@@ -1330,8 +1330,7 @@ func (b *RingBuilder) SetReplicas(newReplicaCount float64) {
 	b.Replicas = newReplicaCount
 }
 
-// TODO: GetRing (not sure what this should look like yet)
-func (b *RingBuilder) GetRing() hashRing {
+func (b *RingBuilder) GetRing() *hashRing {
 	data := ringData{
 		ReplicaCount: int(b.Replicas),
 		PartShift:    uint64(32 - b.PartPower),
@@ -1357,7 +1356,7 @@ func (b *RingBuilder) GetRing() hashRing {
 			data.replica2part2devId[i][j] = uint16(b.replica2Part2Dev[i][j])
 		}
 	}
-	r := hashRing{}
+	r := &hashRing{}
 	r.data.Store(&data)
 
 	return r
