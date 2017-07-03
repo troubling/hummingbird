@@ -299,7 +299,7 @@ func (b *RingBuilder) Save(builderPath string) error {
 		}
 	}
 	rbp.Devs = make([]RingBuilderDevicePickle, len(b.Devs))
-	for i, _ := range b.Devs {
+	for i := range b.Devs {
 		rbp.Devs[i] = RingBuilderDevicePickle{
 			ReplicationPort: b.Devs[i].ReplicationPort,
 			Meta:            b.Devs[i].Meta,
@@ -438,7 +438,7 @@ func (b *RingBuilder) buildWeightedReplicasByTier() map[string]float64 {
 // buildTier2Children wraps buildTierTree to exclude zero-weight devices.
 func (b *RingBuilder) buildTier2Children() map[string][]string {
 	weightedDevs := make([]*RingBuilderDevice, 0)
-	for i, _ := range b.Devs {
+	for i := range b.Devs {
 		if b.Devs[i] != nil && b.Devs[i].Weight > 0.0 {
 			weightedDevs = append(weightedDevs, b.Devs[i])
 		}
@@ -810,7 +810,7 @@ func (b *RingBuilder) adjustReplica2Part2DevSize(toAssign map[uint][]uint) {
 	newParts := 0
 
 	desiredLengths := make([]int, int(wholeReplicas))
-	for i, _ := range desiredLengths {
+	for i := range desiredLengths {
 		desiredLengths[i] = b.Parts
 	}
 	if fractionalReplicas > 0.0 {
@@ -1094,7 +1094,7 @@ func (b *RingBuilder) reassignParts(reassignParts []partReplicas, repPlan map[st
 	})
 	tier2Devs := make(map[string][]*RingBuilderDevice)
 	maxTierDepth := 0
-	for i, _ := range availableDevs {
+	for i := range availableDevs {
 		for _, tier := range availableDevs[i].Tiers {
 			tier2Devs[tier] = append(tier2Devs[tier], availableDevs[i])
 			tierDepth := strings.Count(tier, ";") + 1
@@ -1159,7 +1159,7 @@ func (b *RingBuilder) reassignParts(reassignParts []partReplicas, repPlan map[st
 					for _, t := range tier2Children[tier] {
 						data[t] = fmt.Sprintf("%v - MAX: %v", replicasAtTier[t], repPlan[t].max)
 					}
-					return errors.New(fmt.Sprintf("no home for %s/%s %+v", part, replica, data))
+					return errors.New(fmt.Sprintf("no home for %d/%d %+v", part, replica, data))
 				}
 
 				curTier := candidates[0]
@@ -1336,7 +1336,7 @@ func (b *RingBuilder) GetRing() hashRing {
 		ReplicaCount: int(b.Replicas),
 		PartShift:    uint64(32 - b.PartPower),
 	}
-	for i, _ := range b.Devs {
+	for i := range b.Devs {
 		data.Devs = append(data.Devs, Device{
 			Id:              int(b.Devs[i].Id),
 			Device:          b.Devs[i].Device,

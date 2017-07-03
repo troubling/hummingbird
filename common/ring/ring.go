@@ -364,7 +364,7 @@ func (r *hashRing) Save(filename string) error {
 	gz.Write(dataBuf)
 	// Write replica2part2devId
 	d := r.getData()
-	for i, _ := range d.replica2part2devId {
+	for i := range d.replica2part2devId {
 		if err := binary.Write(gz, binary.LittleEndian, d.replica2part2devId[i]); err != nil {
 			return err
 		}
