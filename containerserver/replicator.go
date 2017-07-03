@@ -565,18 +565,16 @@ func (r *Replicator) Run() {
 	r.reportStats()
 }
 
-func (r *Replicator) GetHandler() http.Handler {
-	router := srv.NewRouter()
-	router.Get("/debug/*_", http.DefaultServeMux)
-	return router
-}
-
 func (r *Replicator) startWebServer() {
 	for {
 		if sock, err := srv.RetryListen("127.0.0.1", 0); err != nil {
 			r.logger.Error("Listen failed", zap.Error(err))
 		} else {
-			http.Serve(sock, r.GetHandler())
+			http.Serve(sock, func() http.Handler {
+				router := srv.NewRouter()
+				router.Get("/debug/*_", http.DefaultServeMux)
+				return router
+			}())
 		}
 	}
 }
