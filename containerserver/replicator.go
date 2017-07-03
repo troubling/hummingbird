@@ -24,6 +24,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -524,6 +525,7 @@ func (r *Replicator) runLoopCheck(reportTimer <-chan time.Time) {
 
 // RunForever runs the replicator in a forever-loop.
 func (r *Replicator) RunForever() {
+	go r.startWebServer()
 	reportTimer := time.NewTimer(time.Minute * 15)
 	r.verifyDevices()
 	for {
@@ -561,6 +563,22 @@ func (r *Replicator) Run() {
 		}
 	}
 	r.reportStats()
+}
+
+func (r *Replicator) GetHandler() http.Handler {
+	router := srv.NewRouter()
+	router.Get("/debug/*_", http.DefaultServeMux)
+	return router
+}
+
+func (r *Replicator) startWebServer() {
+	for {
+		if sock, err := srv.RetryListen("127.0.0.1", 0); err != nil {
+			r.logger.Error("Listen failed", zap.Error(err))
+		} else {
+			http.Serve(sock, r.GetHandler())
+		}
+	}
 }
 
 // GetReplicator uses the config settings and command-line flags to configure and return a replicator daemon struct.
