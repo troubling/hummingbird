@@ -24,6 +24,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -524,6 +525,7 @@ func (r *Replicator) runLoopCheck(reportTimer <-chan time.Time) {
 
 // RunForever runs the replicator in a forever-loop.
 func (r *Replicator) RunForever() {
+	go http.ListenAndServe("127.0.0.1:0", nil)
 	reportTimer := time.NewTimer(time.Minute * 15)
 	r.verifyDevices()
 	for {
