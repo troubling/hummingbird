@@ -638,6 +638,7 @@ func TestReportStats(t *testing.T) {
 					"rsync": 1, "diff": 0, "remove": 7,
 					"empty": 0, "remote_merge": 0, "diff_capped": 0,
 				},
+				lifetimeStats: map[string]int64{},
 			},
 			"sdb": {
 				runStarted: time.Now().Add(-15 * time.Minute),
@@ -647,6 +648,7 @@ func TestReportStats(t *testing.T) {
 					"rsync": 0, "diff": 1, "remove": 3,
 					"empty": 0, "remote_merge": 0, "diff_capped": 0,
 				},
+				lifetimeStats: map[string]int64{},
 			},
 		},
 	}
@@ -689,6 +691,7 @@ func TestRunLoop(t *testing.T) {
 					"attempted": 0, "success": 0, "failure": 0, "no_change": 0, "hashmatch": 0,
 					"rsync": 0, "diff": 0, "remove": 0, "empty": 0, "remote_merge": 0, "diff_capped": 0,
 				},
+				lifetimeStats: map[string]int64{},
 			},
 			"sdb": {
 				runStarted:  time.Now().Add(-15 * time.Minute),
@@ -697,6 +700,7 @@ func TestRunLoop(t *testing.T) {
 					"attempted": 0, "success": 0, "failure": 0, "no_change": 0, "hashmatch": 0,
 					"rsync": 0, "diff": 0, "remove": 0, "empty": 0, "remote_merge": 0, "diff_capped": 0,
 				},
+				lifetimeStats: map[string]int64{},
 			},
 		},
 		sendStat: make(chan statUpdate, 1),
