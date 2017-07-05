@@ -336,6 +336,42 @@ func LoadRing(path string, prefix string, suffix string) (Ring, error) {
 	return ring, nil
 }
 
+// save serializes the hashRing to disk
+func (r *hashRing) Save(filename string) error {
+	// NOTE: the swift ringbuilder puts a time in, do we really need this?
+	fp, err := os.Create(filename)
+	defer fp.Close()
+	if err != nil {
+		return err
+	}
+	gz := gzip.NewWriter(fp)
+	defer gz.Close()
+	// Write out the magic string
+	_, err = gz.Write([]byte("R1NG"))
+	// Write out the version (1)
+	ringVersion := uint16(1)
+	binary.Write(gz, binary.BigEndian, &ringVersion)
+	// Generate the json data
+	data := r.getData()
+	dataBuf, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	json_len := uint32(len(dataBuf))
+	// Write out the json length
+	binary.Write(gz, binary.BigEndian, &json_len)
+	// Write the json
+	gz.Write(dataBuf)
+	// Write replica2part2devId
+	d := r.getData()
+	for i := range d.replica2part2devId {
+		if err := binary.Write(gz, binary.LittleEndian, d.replica2part2devId[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // GetRing returns the current ring given the ring_type ("account", "container", "object"),
 // hash path prefix, and hash path suffix. An error is raised if the requested ring does
 // not exist.

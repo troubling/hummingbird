@@ -161,7 +161,7 @@ func pickleobj(o interface{}, buf *bytes.Buffer, scratch []byte) error {
 				if err := pickleobj(v.Field(1).Interface(), buf, scratch); err != nil {
 					return err
 				}
-				buf.WriteByte('l') // TUPLE
+				buf.WriteByte('t') // TUPLE
 				buf.WriteByte('R') // REDUCE
 				return nil
 			}
