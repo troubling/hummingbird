@@ -24,6 +24,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -86,6 +87,7 @@ type replicationDevice struct {
 	cancel        chan struct{}
 	dev           *ring.Device
 	stats         map[string]int64
+	lifetimeStats map[string]int64
 	lastCheckin   time.Time
 	runStarted    time.Time
 	deviceStarted time.Time
@@ -399,29 +401,31 @@ func newReplicationDevice(dev *ring.Device, r *Replicator) *replicationDevice {
 		deviceStarted: time.Now(),
 		dev:           dev,
 		stats: map[string]int64{
-			"attempted":             0,
-			"success":               0,
-			"failure":               0,
-			"no_change":             0,
-			"hashmatch":             0,
-			"rsync":                 0,
-			"diff":                  0,
-			"remove":                0,
-			"empty":                 0,
-			"remote_merge":          0,
-			"diff_capped":           0,
-			"lifetime_attempted":    0,
-			"lifetime_success":      0,
-			"lifetime_failure":      0,
-			"lifetime_no_change":    0,
-			"lifetime_hashmatch":    0,
-			"lifetime_rsync":        0,
-			"lifetime_diff":         0,
-			"lifetime_remove":       0,
-			"lifetime_empty":        0,
-			"lifetime_remote_merge": 0,
-			"lifetime_diff_capped":  0,
-			"lifetime_passes":       0,
+			"attempted":    0,
+			"success":      0,
+			"failure":      0,
+			"no_change":    0,
+			"hashmatch":    0,
+			"rsync":        0,
+			"diff":         0,
+			"remove":       0,
+			"empty":        0,
+			"remote_merge": 0,
+			"diff_capped":  0,
+		},
+		lifetimeStats: map[string]int64{
+			"attempted":    0,
+			"success":      0,
+			"failure":      0,
+			"no_change":    0,
+			"hashmatch":    0,
+			"rsync":        0,
+			"diff":         0,
+			"remove":       0,
+			"empty":        0,
+			"remote_merge": 0,
+			"diff_capped":  0,
+			"passes":       0,
 		},
 	}
 	rd.i = rd
@@ -508,9 +512,9 @@ func (r *Replicator) runLoopCheck(reportTimer <-chan time.Time) {
 			rd.lastCheckin = time.Now()
 			for k, v := range rd.stats {
 				rd.stats[k] = 0
-				rd.stats["lifetime_"+k] += v
+				rd.lifetimeStats[k] += v
 			}
-			rd.stats["lifetime_passes"]++
+			rd.lifetimeStats["passes"]++
 		}
 	case update := <-r.sendStat:
 		if rd, ok := r.runningDevices[update.device]; ok {
@@ -524,6 +528,7 @@ func (r *Replicator) runLoopCheck(reportTimer <-chan time.Time) {
 
 // RunForever runs the replicator in a forever-loop.
 func (r *Replicator) RunForever() {
+	go http.ListenAndServe("127.0.0.1:0", nil)
 	reportTimer := time.NewTimer(time.Minute * 15)
 	r.verifyDevices()
 	for {
