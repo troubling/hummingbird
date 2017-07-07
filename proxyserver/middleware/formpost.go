@@ -35,6 +35,7 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/uber-go/tally"
 )
 
 const (
@@ -137,129 +138,131 @@ func formpostAuthorizer(scope int, account, container string) func(r *http.Reque
 	}
 }
 
-func formpost(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Method != "POST" {
-			next.ServeHTTP(writer, request)
-			return
-		}
-
-		contentType, params, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
-		if err != nil || contentType != "multipart/form-data" || params["boundary"] == "" {
-			next.ServeHTTP(writer, request)
-			return
-		}
-
-		apiReq, account, container, _ := getPathParts(request)
-		if !apiReq || account == "" || container == "" {
-			srv.StandardResponse(writer, 401)
-			return
-		}
-
-		ctx := GetProxyContext(request)
-		if ctx.Authorize != nil {
-			next.ServeHTTP(writer, request)
-			return
-		}
-
-		validated := false
-		attrs := map[string]string{
-			"redirect":       "",
-			"max_file_size":  "0",
-			"max_file_count": "0",
-			"expires":        "0",
-		}
-		mr := multipart.NewReader(request.Body, params["boundary"])
-		var maxFileCount, fileCount, maxFileSize int64
-		for {
-			p, err := mr.NextPart()
-			if err == io.EOF {
-				break
-			} else if err != nil {
-				formpostRespond(writer, 400, "invalid request", attrs["redirect"])
+func formpost(formpostRequestsMetric tally.Counter) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			if request.Method != "POST" {
+				next.ServeHTTP(writer, request)
 				return
 			}
-			if fn := p.FileName(); fn == "" {
-				data, err := ioutil.ReadAll(&io.LimitedReader{R: p, N: 8192})
-				if err != nil {
-					formpostRespond(writer, 400, "error reading form value", attrs["redirect"])
-					return
-				}
-				if len(attrs) > 64 {
-					formpostRespond(writer, 400, "too many form post values", attrs["redirect"])
-					return
-				}
-				attrs[p.FormName()] = string(data)
-			} else {
-				if !validated {
-					if maxFileCount, err = strconv.ParseInt(attrs["max_file_count"], 10, 64); err != nil || maxFileCount <= 0 {
-						formpostRespond(writer, 400, "max_file_count not valid", attrs["redirect"])
-						return
-					}
-					if maxFileSize, err = strconv.ParseInt(attrs["max_file_size"], 10, 64); err != nil || maxFileSize < 0 {
-						formpostRespond(writer, 400, "max_file_size not valid", attrs["redirect"])
-						return
-					}
-					scope := authenticateFormpost(ctx, account, container, request.URL.Path, attrs)
-					switch scope {
-					case FP_EXPIRED:
-						formpostRespond(writer, 401, "request expired", attrs["redirect"])
-						return
-					case FP_INVALID:
-						formpostRespond(writer, 401, "invalid signature", attrs["redirect"])
-						return
-					case FP_ERROR:
-						formpostRespond(writer, 400, "invalid request", attrs["redirect"])
-						return
-					default:
-						ctx.RemoteUsers = []string{".formpost"}
-						ctx.Authorize = formpostAuthorizer(scope, account, container)
-						validated = true
-					}
-				}
 
-				fileCount++
-				if fileCount > maxFileCount {
-					formpostRespond(writer, 400, "max file count exceeded", attrs["redirect"])
-					return
-				}
-
-				path := request.URL.Path
-				if !strings.HasSuffix(path, "/") && strings.Count(path, "/") < 4 {
-					path += "/"
-				}
-				path += fn
-				neww := httptest.NewRecorder()
-				flr := &fpLimitReader{Reader: p, l: maxFileSize}
-				newreq, err := ctx.newSubrequest("PUT", path, flr, request, "formpost")
-				if err != nil {
-					formpostRespond(writer, 500, "internal server error", attrs["redirect"])
-					return
-				}
-				newreq.Header.Set("X-Delete-At", attrs["x_delete_at"])
-				newreq.Header.Set("X-Delete-After", attrs["x_delete_after"])
-				if attrs["content-type"] != "" {
-					newreq.Header.Set("Content-Type", attrs["content-type"])
-				} else {
-					newreq.Header.Set("Content-Type", "application/octet-stream")
-				}
-				ctx.serveHTTPSubrequest(neww, newreq)
-				if flr.overRead() {
-					formpostRespond(writer, 400, "max_file_size exceeded", attrs["redirect"])
-					return
-				}
-				if neww.Code/100 != 2 {
-					formpostRespond(writer, neww.Code, "upload error", attrs["redirect"])
-					return
-				}
+			contentType, params, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
+			if err != nil || contentType != "multipart/form-data" || params["boundary"] == "" {
+				next.ServeHTTP(writer, request)
+				return
 			}
-			p.Close()
-		}
-		formpostRespond(writer, 201, "Success.", attrs["redirect"])
-	})
+
+			apiReq, account, container, _ := getPathParts(request)
+			if !apiReq || account == "" || container == "" {
+				srv.StandardResponse(writer, 401)
+				return
+			}
+
+			ctx := GetProxyContext(request)
+			if ctx.Authorize != nil {
+				next.ServeHTTP(writer, request)
+				return
+			}
+
+			validated := false
+			attrs := map[string]string{
+				"redirect":       "",
+				"max_file_size":  "0",
+				"max_file_count": "0",
+				"expires":        "0",
+			}
+			mr := multipart.NewReader(request.Body, params["boundary"])
+			var maxFileCount, fileCount, maxFileSize int64
+			for {
+				p, err := mr.NextPart()
+				if err == io.EOF {
+					break
+				} else if err != nil {
+					formpostRespond(writer, 400, "invalid request", attrs["redirect"])
+					return
+				}
+				if fn := p.FileName(); fn == "" {
+					data, err := ioutil.ReadAll(&io.LimitedReader{R: p, N: 8192})
+					if err != nil {
+						formpostRespond(writer, 400, "error reading form value", attrs["redirect"])
+						return
+					}
+					if len(attrs) > 64 {
+						formpostRespond(writer, 400, "too many form post values", attrs["redirect"])
+						return
+					}
+					attrs[p.FormName()] = string(data)
+				} else {
+					if !validated {
+						if maxFileCount, err = strconv.ParseInt(attrs["max_file_count"], 10, 64); err != nil || maxFileCount <= 0 {
+							formpostRespond(writer, 400, "max_file_count not valid", attrs["redirect"])
+							return
+						}
+						if maxFileSize, err = strconv.ParseInt(attrs["max_file_size"], 10, 64); err != nil || maxFileSize < 0 {
+							formpostRespond(writer, 400, "max_file_size not valid", attrs["redirect"])
+							return
+						}
+						scope := authenticateFormpost(ctx, account, container, request.URL.Path, attrs)
+						switch scope {
+						case FP_EXPIRED:
+							formpostRespond(writer, 401, "request expired", attrs["redirect"])
+							return
+						case FP_INVALID:
+							formpostRespond(writer, 401, "invalid signature", attrs["redirect"])
+							return
+						case FP_ERROR:
+							formpostRespond(writer, 400, "invalid request", attrs["redirect"])
+							return
+						default:
+							ctx.RemoteUsers = []string{".formpost"}
+							ctx.Authorize = formpostAuthorizer(scope, account, container)
+							validated = true
+						}
+					}
+
+					fileCount++
+					if fileCount > maxFileCount {
+						formpostRespond(writer, 400, "max file count exceeded", attrs["redirect"])
+						return
+					}
+
+					path := request.URL.Path
+					if !strings.HasSuffix(path, "/") && strings.Count(path, "/") < 4 {
+						path += "/"
+					}
+					path += fn
+					neww := httptest.NewRecorder()
+					flr := &fpLimitReader{Reader: p, l: maxFileSize}
+					newreq, err := ctx.newSubrequest("PUT", path, flr, request, "formpost")
+					if err != nil {
+						formpostRespond(writer, 500, "internal server error", attrs["redirect"])
+						return
+					}
+					newreq.Header.Set("X-Delete-At", attrs["x_delete_at"])
+					newreq.Header.Set("X-Delete-After", attrs["x_delete_after"])
+					if attrs["content-type"] != "" {
+						newreq.Header.Set("Content-Type", attrs["content-type"])
+					} else {
+						newreq.Header.Set("Content-Type", "application/octet-stream")
+					}
+					ctx.serveHTTPSubrequest(neww, newreq)
+					if flr.overRead() {
+						formpostRespond(writer, 400, "max_file_size exceeded", attrs["redirect"])
+						return
+					}
+					if neww.Code/100 != 2 {
+						formpostRespond(writer, neww.Code, "upload error", attrs["redirect"])
+						return
+					}
+				}
+				p.Close()
+			}
+			formpostRespond(writer, 201, "Success.", attrs["redirect"])
+		})
+	}
 }
 
-func NewFormPost(config conf.Section) (func(http.Handler) http.Handler, error) {
+func NewFormPost(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
 	RegisterInfo("formpost", map[string]interface{}{})
-	return formpost, nil
+	return formpost(metricsScope.Counter("formpost_requests")), nil
 }

@@ -29,6 +29,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -65,6 +66,8 @@ func (t *TestServer) Do(method string, path string, body io.ReadCloser) (*http.R
 	return http.DefaultClient.Do(req)
 }
 
+var testObjectServers uint64 = 0
+
 func makeObjectServer(settings ...string) (*TestServer, error) {
 	driveRoot, err := ioutil.TempDir("", "")
 	if err != nil {
@@ -82,7 +85,7 @@ func makeObjectServer(settings ...string) (*TestServer, error) {
 	if err != nil {
 		return nil, err
 	}
-	ts := httptest.NewServer(server.GetHandler(conf))
+	ts := httptest.NewServer(server.GetHandler(conf, fmt.Sprintf("test_object_%d", atomic.AddUint64(&testObjectServers, 1))))
 	u, err := url.Parse(ts.URL)
 	if err != nil {
 		return nil, err

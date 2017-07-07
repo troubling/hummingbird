@@ -24,6 +24,7 @@ import (
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
@@ -115,7 +116,7 @@ func (r *ratelimiter) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 	r.next.ServeHTTP(writer, request)
 }
 
-func NewRatelimiter(config conf.Section) (func(http.Handler) http.Handler, error) {
+func NewRatelimiter(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
 
 	accLimit := int64(config.GetInt("account_db_max_writes_per_sec", 0))
 	contLimit := int64(config.GetInt("container_db_max_writes_per_sec", 0))

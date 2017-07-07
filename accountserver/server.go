@@ -20,6 +20,7 @@ import (
 	"encoding/xml"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	_ "net/http/pprof" // install pprof http handlers
@@ -29,11 +30,14 @@ import (
 	"time"
 
 	"github.com/justinas/alice"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/middleware"
+	"github.com/uber-go/tally"
+	promreporter "github.com/uber-go/tally/prometheus"
 	"go.uber.org/zap"
 )
 
@@ -53,6 +57,7 @@ type AccountServer struct {
 	updateClient     *http.Client
 	autoCreatePrefix string
 	policyList       conf.PolicyList
+	metricsCloser    io.Closer
 }
 
 func formatTimestamp(ts string) (string, error) {
@@ -70,7 +75,14 @@ func formatTimestamp(ts string) (string, error) {
 	return ret, nil
 }
 
+func (server *AccountServer) Type() string {
+	return "account"
+}
+
 func (server *AccountServer) Finalize() {
+	if server.metricsCloser != nil {
+		server.metricsCloser.Close()
+	}
 }
 
 // AccountGetHandler handles GET and HEAD requests for an account.
@@ -484,9 +496,17 @@ func (server *AccountServer) updateDeviceLocks(seconds int64) {
 }
 
 // GetHandler returns the server's http handler - it sets up routes and instantiates middleware.
-func (server *AccountServer) GetHandler(config conf.Config) http.Handler {
+func (server *AccountServer) GetHandler(config conf.Config, metricsPrefix string) http.Handler {
+	var metricsScope tally.Scope
+	metricsScope, server.metricsCloser = tally.NewRootScope(tally.ScopeOptions{
+		Prefix:         metricsPrefix,
+		Tags:           map[string]string{},
+		CachedReporter: promreporter.NewReporter(promreporter.Options{}),
+		Separator:      promreporter.DefaultSeparator,
+	}, time.Second)
 	commonHandlers := alice.New(server.LogRequest, middleware.RecoverHandler, middleware.ValidateRequest, server.AcquireDevice)
 	router := srv.NewRouter()
+	router.Get("/metrics", prometheus.Handler())
 	router.Get("/loglevel", server.logLevel)
 	router.Put("/loglevel", server.logLevel)
 	router.Get("/healthcheck", commonHandlers.ThenFunc(server.HealthcheckHandler))
@@ -506,7 +526,7 @@ func (server *AccountServer) GetHandler(config conf.Config) http.Handler {
 	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Invalid path: %s", r.URL.Path), http.StatusBadRequest)
 	})
-	return alice.New(middleware.GrepObject).Then(router)
+	return alice.New(middleware.Metrics(metricsScope)).Append(middleware.GrepObject).Then(router)
 }
 
 // GetServer parses configs and command-line flags, returning a configured server object and the ip and port it should bind on.

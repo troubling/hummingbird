@@ -189,6 +189,12 @@ func (ctx *ProxyContext) AutoCreateAccount(account string, headers http.Header) 
 }
 
 func (ctx *ProxyContext) newSubrequest(method, urlStr string, body io.Reader, req *http.Request, source string) (*http.Request, error) {
+	if source == "" {
+		panic("Programmer error: You must supply the source with newSubrequest. If you want the subrequest to be treated a user request (billing, quotas, etc.) you can set the source to \"-\"")
+	}
+	if source == "-" {
+		source = ""
+	}
 	subreq, err := http.NewRequest(method, urlStr, body)
 	if err != nil {
 		return nil, err

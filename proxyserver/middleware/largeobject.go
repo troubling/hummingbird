@@ -34,6 +34,7 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/uber-go/tally"
 )
 
 var maxManifestSize = 1024 * 1024 * 2 // TODO add a check for this
@@ -179,7 +180,11 @@ func needToRefetchManifest(sw *xloIdentifyWriter, request *http.Request) bool {
 }
 
 type xloMiddleware struct {
-	next http.Handler
+	next                    http.Handler
+	dloGetRequestsMetric    tally.Counter
+	sloGetRequestsMetric    tally.Counter
+	sloPutRequestsMetric    tally.Counter
+	sloDeleteRequestsMetric tally.Counter
 }
 
 func (xlo *xloMiddleware) feedOutSegments(sw *xloIdentifyWriter, request *http.Request, manifest []segItem, reqRange common.HttpRange, status int) {
@@ -375,6 +380,7 @@ func (xlo *xloMiddleware) byteFeeder(sw *xloIdentifyWriter, request *http.Reques
 }
 
 func (xlo *xloMiddleware) handleDloGet(sw *xloIdentifyWriter, request *http.Request) {
+	xlo.dloGetRequestsMetric.Inc(1)
 	pathMap, err := common.ParseProxyPath(request.URL.Path)
 	if err != nil || pathMap["object"] == "" {
 		srv.SimpleErrorResponse(sw.ResponseWriter, 400, fmt.Sprintf(
@@ -396,6 +402,7 @@ func (xlo *xloMiddleware) handleDloGet(sw *xloIdentifyWriter, request *http.Requ
 }
 
 func (xlo *xloMiddleware) handleSloGet(sw *xloIdentifyWriter, request *http.Request) {
+	xlo.sloGetRequestsMetric.Inc(1)
 	// next has already been called and this is an SLO
 	//TODO: what does comment at slo.py#624 mean?
 	contentType, _, _ := common.ParseContentTypeForSlo(sw.Header().Get("Content-Type"), 0)
@@ -489,6 +496,7 @@ func parsePutSloManifest(body io.ReadCloser) (manifest []sloPutManifest, errs []
 }
 
 func (xlo *xloMiddleware) handleSloPut(writer http.ResponseWriter, request *http.Request) {
+	xlo.sloPutRequestsMetric.Inc(1)
 	pathMap, err := common.ParseProxyPath(request.URL.Path)
 	if err != nil || pathMap["object"] == "" {
 		srv.SimpleErrorResponse(writer, 400, fmt.Sprintf(
@@ -657,6 +665,7 @@ func (xlo *xloMiddleware) deleteAllSegments(w http.ResponseWriter, request *http
 }
 
 func (xlo *xloMiddleware) handleSloDelete(writer http.ResponseWriter, request *http.Request) {
+	xlo.sloDeleteRequestsMetric.Inc(1)
 	pathMap, err := common.ParseProxyPath(request.URL.Path)
 	if err != nil || pathMap["object"] == "" {
 		srv.SimpleErrorResponse(writer, 400, fmt.Sprintf(
@@ -735,10 +744,20 @@ func (xlo *xloMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Re
 	xlo.next.ServeHTTP(writer, request)
 }
 
-func NewXlo(config conf.Section) (func(http.Handler) http.Handler, error) {
+func NewXlo(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
 	RegisterInfo("slo", map[string]interface{}{"max_manifest_segments": 1000, "max_manifest_size": 2097152, "min_segment_size": 1048576})
 	RegisterInfo("dlo", map[string]interface{}{"max_segments": 10000})
+	dloGetRequestsMetric := metricsScope.Counter("dlo_GET_requests")
+	sloGetRequestsMetric := metricsScope.Counter("slo_GET_requests")
+	sloPutRequestsMetric := metricsScope.Counter("slo_PUT_requests")
+	sloDeleteRequestsMetric := metricsScope.Counter("slo_DELETE_requests")
 	return func(next http.Handler) http.Handler {
-		return &xloMiddleware{next: next}
+		return &xloMiddleware{
+			next:                    next,
+			dloGetRequestsMetric:    dloGetRequestsMetric,
+			sloGetRequestsMetric:    sloGetRequestsMetric,
+			sloPutRequestsMetric:    sloPutRequestsMetric,
+			sloDeleteRequestsMetric: sloDeleteRequestsMetric,
+		}
 	}, nil
 }

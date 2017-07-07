@@ -27,6 +27,7 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
@@ -443,6 +444,6 @@ func (c *copyMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Req
 	c.next.ServeHTTP(writer, request)
 }
 
-func NewCopyMiddleware(config conf.Section) (func(http.Handler) http.Handler, error) {
+func NewCopyMiddleware(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
 	return func(next http.Handler) http.Handler { return &copyMiddleware{next: next} }, nil
 }

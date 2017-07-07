@@ -17,10 +17,12 @@ package containerserver
 
 import (
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
@@ -60,6 +62,8 @@ func createTestDatabase(timestamp string) (*sqliteContainer, string, func(), err
 	return db.(*sqliteContainer), dbFile, cleanup, nil
 }
 
+var testServerCount uint64 = 0
+
 func makeTestServer() (http.Handler, func(), error) {
 	dir, err := ioutil.TempDir("", "")
 	if err != nil {
@@ -83,7 +87,7 @@ func makeTestServer() (http.Handler, func(), error) {
 	cleanup := func() {
 		os.RemoveAll(dir)
 	}
-	return server.GetHandler(*new(conf.Config)), cleanup, nil
+	return server.GetHandler(*new(conf.Config), fmt.Sprintf("test_container_%d", atomic.AddUint64(&testServerCount, 1))), cleanup, nil
 }
 
 func makeTestServer2() (*ContainerServer, http.Handler, func(), error) {
@@ -108,7 +112,7 @@ func makeTestServer2() (*ContainerServer, http.Handler, func(), error) {
 	cleanup := func() {
 		os.RemoveAll(dir)
 	}
-	return server, server.GetHandler(*new(conf.Config)), cleanup, nil
+	return server, server.GetHandler(*new(conf.Config), fmt.Sprintf("test_container_%d", atomic.AddUint64(&testServerCount, 1))), cleanup, nil
 }
 
 type fakeDatabase struct{}

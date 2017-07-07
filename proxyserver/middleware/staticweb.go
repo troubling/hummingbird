@@ -30,17 +30,21 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/uber-go/tally"
 )
 
-func NewStaticWeb(config conf.Section) (func(http.Handler) http.Handler, error) {
+func NewStaticWeb(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
 	RegisterInfo("staticweb", map[string]interface{}{})
-	return staticWeb, nil
+	return staticWeb(metricsScope), nil
 }
 
-func staticWeb(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		(&staticWebHandler{next: next}).ServeHTTP(writer, request)
-	})
+func staticWeb(metricsScope tally.Scope) func(next http.Handler) http.Handler {
+	requestsMetric := metricsScope.Counter("staticweb_requests")
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			(&staticWebHandler{next: next, requestsMetric: requestsMetric}).ServeHTTP(writer, request)
+		})
+	}
 }
 
 type staticWebHandler struct {
@@ -55,6 +59,7 @@ type staticWebHandler struct {
 	webListingsLabel string
 	webListingsCSS   string
 	webDirType       string
+	requestsMetric   tally.Counter
 }
 
 func (s *staticWebHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -91,16 +96,17 @@ func (s *staticWebHandler) ServeHTTP(writer http.ResponseWriter, request *http.R
 	if s.webDirType == "" {
 		s.webDirType = "application/directory"
 	}
-	if s.object != "" {
-		s.handleObject(writer, request)
-		return
-	}
 	s.ctx.ACL = ci.ReadACL
 	if s.ctx.Authorize != nil {
 		if ok, st := s.ctx.Authorize(request); !ok {
 			srv.StandardResponse(writer, st)
 			return
 		}
+	}
+	s.requestsMetric.Inc(1)
+	if s.object != "" {
+		s.handleObject(writer, request)
+		return
 	}
 	s.handleDirectory(writer, request)
 }

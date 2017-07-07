@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
@@ -328,7 +329,7 @@ func removeAuthHeaders(r *http.Request) {
 	}
 }
 
-func NewAuthToken(config conf.Section) (func(http.Handler) http.Handler, error) {
+func NewAuthToken(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
 	return func(next http.Handler) http.Handler {
 		return &authToken{
 			next:      next,

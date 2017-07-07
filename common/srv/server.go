@@ -249,7 +249,8 @@ func DumpGoroutinesStackTrace(pid int) {
 }
 
 type Server interface {
-	GetHandler(conf.Config) http.Handler
+	Type() string
+	GetHandler(config conf.Config, metricsPrefix string) http.Handler
 	Finalize() // This is called before stoping gracefully so that a server can clean up before closing
 }
 
@@ -273,6 +274,12 @@ func RunServers(GetServer func(conf.Config, *flag.FlagSet) (string, int, Server,
 			fmt.Fprintf(os.Stderr, "%v\n", err)
 			os.Exit(1)
 		}
+		var metricsPrefix string
+		if len(configs) == 1 {
+			metricsPrefix = fmt.Sprintf("hb_%s", server.Type())
+		} else {
+			metricsPrefix = fmt.Sprintf("hb_%s_%s_%d", server.Type(), strings.Replace(ip, ".", "_", -1), port)
+		}
 		sock, err := RetryListen(ip, port)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error listening: %v\n", err)
@@ -281,7 +288,7 @@ func RunServers(GetServer func(conf.Config, *flag.FlagSet) (string, int, Server,
 		}
 		srv := HummingbirdServer{
 			Server: http.Server{
-				Handler:      server.GetHandler(config),
+				Handler:      server.GetHandler(config, metricsPrefix),
 				ReadTimeout:  24 * time.Hour,
 				WriteTimeout: 24 * time.Hour,
 			},

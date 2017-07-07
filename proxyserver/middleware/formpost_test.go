@@ -35,6 +35,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/troubling/hummingbird/client"
+	"github.com/troubling/hummingbird/common"
 )
 
 func makeFormpostRequest(t *testing.T, body, boundary string, next http.Handler) *httptest.ResponseRecorder {
@@ -55,7 +56,7 @@ func makeFormpostRequest(t *testing.T, body, boundary string, next http.Handler)
 		},
 	}
 	newr = newr.WithContext(context.WithValue(newr.Context(), "proxycontext", ctx))
-	formpost(next).ServeHTTP(neww, newr)
+	formpost(common.NewTestScope().Counter("test_formpost"))(next).ServeHTTP(neww, newr)
 	return neww
 }
 
