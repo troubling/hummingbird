@@ -18,7 +18,7 @@ import (
 	"github.com/troubling/hummingbird/common/ring"
 )
 
-const PostQuorumTimeoutMs = 50
+const PostQuorumTimeoutMs = 100
 
 func mkquery(options map[string]string) string {
 	query := ""
@@ -29,6 +29,19 @@ func mkquery(options map[string]string) string {
 		return "?" + strings.TrimRight(query, "&")
 	}
 	return ""
+}
+
+func addUpdateHeaders(prefix string, headers http.Header, devices []*ring.Device, i, replicas int) {
+	if i < len(devices) {
+		host := ""
+		device := ""
+		for ; i < len(devices); i += replicas {
+			host += fmt.Sprintf("%s:%d,", devices[i].Ip, devices[i].Port)
+			device += devices[i].Device + ","
+		}
+		headers.Set(prefix+"-Host", strings.TrimRight(host, ","))
+		headers.Set(prefix+"-Device", strings.TrimRight(device, ","))
+	}
 }
 
 type ProxyDirectClient struct {
@@ -334,6 +347,7 @@ func (c *ProxyDirectClient) PutContainer(account string, container string, heade
 		policyIndex = policy.Index
 	}
 	reqs := make([]*http.Request, 0)
+	containerReplicaCount := int(c.ContainerRing.ReplicaCount())
 	for i, device := range c.ContainerRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", device.Ip, device.Port, device.Device, partition,
 			common.Urlencode(account), common.Urlencode(container))
@@ -341,11 +355,10 @@ func (c *ProxyDirectClient) PutContainer(account string, container string, heade
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
-		req.Header.Set("X-Account-Partition", strconv.FormatUint(accountPartition, 10))
-		req.Header.Set("X-Account-Host", fmt.Sprintf("%s:%d", accountDevices[i].Ip, accountDevices[i].Port))
-		req.Header.Set("X-Account-Device", accountDevices[i].Device)
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(policyIndex))
 		req.Header.Set("X-Backend-Storage-Policy-Default", strconv.Itoa(policyDefault))
+		req.Header.Set("X-Account-Partition", strconv.FormatUint(accountPartition, 10))
+		addUpdateHeaders("X-Account", req.Header, accountDevices, i, containerReplicaCount)
 		reqs = append(reqs, req)
 	}
 	return c.quorumResponse(reqs...)
@@ -461,6 +474,7 @@ func (c *ProxyDirectClient) DeleteContainer(account string, container string, he
 	accountPartition := c.AccountRing.GetPartition(account, "", "")
 	accountDevices := c.AccountRing.GetNodes(accountPartition)
 	reqs := make([]*http.Request, 0)
+	containerReplicaCount := int(c.ContainerRing.ReplicaCount())
 	for i, device := range c.ContainerRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", device.Ip, device.Port, device.Device, partition,
 			common.Urlencode(account), common.Urlencode(container))
@@ -469,8 +483,7 @@ func (c *ProxyDirectClient) DeleteContainer(account string, container string, he
 			req.Header.Set(key, headers.Get(key))
 		}
 		req.Header.Set("X-Account-Partition", strconv.FormatUint(accountPartition, 10))
-		req.Header.Set("X-Account-Host", fmt.Sprintf("%s:%d", accountDevices[i].Ip, accountDevices[i].Port))
-		req.Header.Set("X-Account-Device", accountDevices[i].Device)
+		addUpdateHeaders("X-Account", req.Header, accountDevices, i, containerReplicaCount)
 		reqs = append(reqs, req)
 	}
 	return c.quorumResponse(reqs...)
@@ -570,6 +583,7 @@ func (oc *standardObjectClient) putObject(obj string, headers http.Header, src i
 	containerDevices := oc.proxyDirectClient.ContainerRing.GetNodes(containerPartition)
 	var writers []*io.PipeWriter
 	reqs := make([]*http.Request, 0)
+	objectReplicaCount := int(oc.objectRing.ReplicaCount())
 	for i, device := range oc.objectRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", device.Ip, device.Port, device.Device, partition,
 			common.Urlencode(oc.account), common.Urlencode(oc.container), common.Urlencode(obj))
@@ -588,10 +602,9 @@ func (oc *standardObjectClient) putObject(obj string, headers http.Header, src i
 		if req.Header.Get("Content-Type") == "" {
 			req.Header.Set("Content-Type", "application/octet-stream")
 		}
-		req.Header.Set("X-Container-Partition", strconv.FormatUint(containerPartition, 10))
-		req.Header.Set("X-Container-Host", fmt.Sprintf("%s:%d", containerDevices[i].Ip, containerDevices[i].Port))
-		req.Header.Set("X-Container-Device", containerDevices[i].Device)
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(oc.policy))
+		req.Header.Set("X-Container-Partition", strconv.FormatUint(containerPartition, 10))
+		addUpdateHeaders("X-Container", req.Header, containerDevices, i, objectReplicaCount)
 		req.Header.Set("Expect", "100-Continue")
 		reqs = append(reqs, req)
 	}
@@ -615,6 +628,7 @@ func (oc *standardObjectClient) postObject(obj string, headers http.Header) *htt
 	containerPartition := oc.proxyDirectClient.ContainerRing.GetPartition(oc.account, oc.container, "")
 	containerDevices := oc.proxyDirectClient.ContainerRing.GetNodes(containerPartition)
 	reqs := make([]*http.Request, 0)
+	objectReplicaCount := int(oc.objectRing.ReplicaCount())
 	for i, device := range oc.objectRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", device.Ip, device.Port, device.Device, partition,
 			common.Urlencode(oc.account), common.Urlencode(oc.container), common.Urlencode(obj))
@@ -622,10 +636,9 @@ func (oc *standardObjectClient) postObject(obj string, headers http.Header) *htt
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
-		req.Header.Set("X-Container-Partition", strconv.FormatUint(containerPartition, 10))
-		req.Header.Set("X-Container-Host", fmt.Sprintf("%s:%d", containerDevices[i].Ip, containerDevices[i].Port))
-		req.Header.Set("X-Container-Device", containerDevices[i].Device)
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(oc.policy))
+		req.Header.Set("X-Container-Partition", strconv.FormatUint(containerPartition, 10))
+		addUpdateHeaders("X-Container", req.Header, containerDevices, i, objectReplicaCount)
 		reqs = append(reqs, req)
 	}
 	return oc.proxyDirectClient.quorumResponse(reqs...)
@@ -693,6 +706,7 @@ func (oc *standardObjectClient) deleteObject(obj string, headers http.Header) *h
 	containerPartition := oc.proxyDirectClient.ContainerRing.GetPartition(oc.account, oc.container, "")
 	containerDevices := oc.proxyDirectClient.ContainerRing.GetNodes(containerPartition)
 	reqs := make([]*http.Request, 0)
+	objectReplicaCount := int(oc.objectRing.ReplicaCount())
 	for i, device := range oc.objectRing.GetNodes(partition) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", device.Ip, device.Port, device.Device, partition,
 			common.Urlencode(oc.account), common.Urlencode(oc.container), common.Urlencode(obj))
@@ -703,10 +717,9 @@ func (oc *standardObjectClient) deleteObject(obj string, headers http.Header) *h
 		if req.Header.Get("Content-Type") == "" {
 			req.Header.Set("Content-Type", "application/octet-stream")
 		}
-		req.Header.Set("X-Container-Partition", strconv.FormatUint(containerPartition, 10))
-		req.Header.Set("X-Container-Host", fmt.Sprintf("%s:%d", containerDevices[i].Ip, containerDevices[i].Port))
-		req.Header.Set("X-Container-Device", containerDevices[i].Device)
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(oc.policy))
+		req.Header.Set("X-Container-Partition", strconv.FormatUint(containerPartition, 10))
+		addUpdateHeaders("X-Container", req.Header, containerDevices, i, objectReplicaCount)
 		reqs = append(reqs, req)
 	}
 	return oc.proxyDirectClient.quorumResponse(reqs...)
