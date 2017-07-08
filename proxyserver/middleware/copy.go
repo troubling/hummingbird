@@ -28,7 +28,6 @@ import (
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/uber-go/tally"
-	"go.uber.org/zap"
 )
 
 type CopyWriter struct {
