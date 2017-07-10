@@ -43,7 +43,7 @@ type Object struct {
 func (obj *Object) Put() bool {
 	resp := obj.c.PutObject(obj.container, obj.name, nil, bytes.NewReader(obj.data))
 	resp.Body.Close()
-	return resp.StatusCode/100 != 2
+	return resp.StatusCode/100 == 2
 }
 
 func (obj *Object) Get() bool {
