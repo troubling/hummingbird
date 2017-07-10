@@ -39,21 +39,20 @@ Prerequisites: Go 1.8
 1. Ensure you can now use the new `go` binary:
 
         $ go version
-        go version go1.8.1 linux/amd64
+        go version go1.8 linux/amd64
 
 Installing Hummingbird
 ----------------------
 
-1.  Cretate a directory for the Hummingbird code in GOPATH.  It's easiest to
-symlink it into a folder structure within GOPATH:
+1.  Create a directory for the Hummingbird code in GOPATH, and checkout the code.
 
         mkdir -p $GOPATH/src/github.com/troubling
-        ln -s ~/hummingbird $GOPATH/src/github.com/troubling/hummingbird
-
-1.  Check out the source code:
-
         cd $GOPATH/src/github.com/troubling
         git clone git@github.com:troubling/hummingbird.git
+
+1. (Optional) Create a symlink of the directory in $HOME for convenience.
+
+        ln -s $GOPATH/src/github.com/troubling/hummingbird ~/hummingbird
 
 1. Compile, test, and install Hummingbird. A Makefile is
 provided to make this simpler:
