@@ -744,17 +744,19 @@ func (c *directClient) PostAccount(headers map[string]string) *http.Response {
 	return c.pc.PostAccount(c.account, common.Map2Headers(headers))
 }
 
-func (c *directClient) GetAccount(marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ContainerRecord, *http.Response) {
+func (c *directClient) GetAccount(marker string, endMarker string, limit int, prefix string, delimiter string, reverse bool, headers map[string]string) ([]ContainerRecord, *http.Response) {
 	options := map[string]string{
 		"format":     "json",
 		"marker":     marker,
 		"end_marker": endMarker,
 		"prefix":     prefix,
 		"delimiter":  delimiter,
-		"reverse":    reverse,
 	}
 	if limit != 0 {
 		options["limit"] = strconv.Itoa(limit)
+	}
+	if reverse {
+		options["reverse"] = "true"
 	}
 	resp := c.pc.GetAccount(c.account, options, common.Map2Headers(headers))
 	if resp.StatusCode/100 != 2 {
@@ -767,6 +769,23 @@ func (c *directClient) GetAccount(marker string, endMarker string, limit int, pr
 	}
 	resp.Body.Close()
 	return accountListing, resp
+}
+
+func (c *directClient) GetAccountRaw(marker string, endMarker string, limit int, prefix string, delimiter string, reverse bool, headers map[string]string) *http.Response {
+	options := map[string]string{
+		"format":     "json",
+		"marker":     marker,
+		"end_marker": endMarker,
+		"prefix":     prefix,
+		"delimiter":  delimiter,
+	}
+	if limit != 0 {
+		options["limit"] = strconv.Itoa(limit)
+	}
+	if reverse {
+		options["reverse"] = "true"
+	}
+	return c.pc.GetAccount(c.account, options, common.Map2Headers(headers))
 }
 
 func (c *directClient) HeadAccount(headers map[string]string) *http.Response {
@@ -785,17 +804,19 @@ func (c *directClient) PostContainer(container string, headers map[string]string
 	return c.pc.PostContainer(c.account, container, common.Map2Headers(headers))
 }
 
-func (c *directClient) GetContainer(container string, marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ObjectRecord, *http.Response) {
+func (c *directClient) GetContainer(container string, marker string, endMarker string, limit int, prefix string, delimiter string, reverse bool, headers map[string]string) ([]ObjectRecord, *http.Response) {
 	options := map[string]string{
 		"format":     "json",
 		"marker":     marker,
 		"end_marker": endMarker,
 		"prefix":     prefix,
 		"delimiter":  delimiter,
-		"reverse":    reverse,
 	}
 	if limit != 0 {
 		options["limit"] = strconv.Itoa(limit)
+	}
+	if reverse {
+		options["reverse"] = "true"
 	}
 	resp := c.pc.GetContainer(c.account, container, options, common.Map2Headers(headers))
 	if resp.StatusCode/100 != 2 {
@@ -808,6 +829,23 @@ func (c *directClient) GetContainer(container string, marker string, endMarker s
 	}
 	resp.Body.Close()
 	return containerListing, resp
+}
+
+func (c *directClient) GetContainerRaw(container string, marker string, endMarker string, limit int, prefix string, delimiter string, reverse bool, headers map[string]string) *http.Response {
+	options := map[string]string{
+		"format":     "json",
+		"marker":     marker,
+		"end_marker": endMarker,
+		"prefix":     prefix,
+		"delimiter":  delimiter,
+	}
+	if limit != 0 {
+		options["limit"] = strconv.Itoa(limit)
+	}
+	if reverse {
+		options["reverse"] = "true"
+	}
+	return c.pc.GetContainer(c.account, container, options, common.Map2Headers(headers))
 }
 
 func (c *directClient) HeadContainer(container string, headers map[string]string) *http.Response {
