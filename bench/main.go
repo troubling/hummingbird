@@ -58,7 +58,7 @@ func (obj *Object) Get() bool {
 }
 
 func (obj *Object) Delete() bool {
-	return obj.c.DeleteObject(obj.container, obj.name, nil) == nil
+	return obj.c.DeleteObject(obj.container, obj.name, nil).StatusCode/100 == 2
 }
 
 func DoJobs(name string, work []func() bool, concurrency int) {
@@ -172,7 +172,7 @@ func RunBench(args []string) {
 	if resp != nil {
 		msg, _ := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
-		fmt.Println("Error creating client:", msg)
+		fmt.Println("Error creating client:", string(msg))
 		os.Exit(1)
 	}
 	numContainers := concurrency
@@ -180,7 +180,7 @@ func RunBench(args []string) {
 		numContainers = 1
 	}
 	for i := 0; i < numContainers; i++ {
-		if err := cli.PutContainer(fmt.Sprintf("%d-%s", i, salt), nil); err != nil {
+		if resp := cli.PutContainer(fmt.Sprintf("%d-%s", i, salt), nil); resp.StatusCode/100 != 2 {
 			fmt.Println("Error putting container:", err)
 			os.Exit(1)
 		}
@@ -219,7 +219,7 @@ func RunBench(args []string) {
 		}
 		DoJobs("DELETE", work, concurrency)
 		for i := 0; i < numContainers; i++ {
-			if err := cli.DeleteContainer(fmt.Sprintf("%d-%s", i, salt), nil); err != nil {
+			if resp := cli.DeleteContainer(fmt.Sprintf("%d-%s", i, salt), nil); resp.StatusCode/100 != 2 {
 				fmt.Println("Error deleting container:", err)
 				os.Exit(1)
 			}
