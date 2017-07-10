@@ -166,8 +166,16 @@ func (c *userClient) authenticatev1() *http.Response {
 	if err != nil {
 		return ResponseStub(http.StatusBadRequest, err.Error())
 	}
-	req.Header.Set("X-Auth-User", c.username)
-	req.Header.Set("X-Auth-Key", c.apikey)
+	au := c.username
+	if c.tenant != "" {
+		au = c.tenant + ":" + c.username
+	}
+	req.Header.Set("X-Auth-User", au)
+	ak := c.apikey
+	if ak == "" {
+		ak = c.password
+	}
+	req.Header.Set("X-Auth-Key", ak)
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return ResponseStub(http.StatusBadRequest, err.Error())
@@ -177,7 +185,7 @@ func (c *userClient) authenticatev1() *http.Response {
 	}
 	c.ServiceURL = resp.Header.Get("X-Storage-Url")
 	c.AuthToken = resp.Header.Get("X-Auth-Token")
-	if c.ServiceURL == "" || c.AuthToken != "" {
+	if c.ServiceURL == "" || c.AuthToken == "" {
 		resp.Body.Close()
 		return ResponseStub(http.StatusInternalServerError, "Response did not have X-Storage-Url or X-Auth-Token headers.")
 	}
