@@ -22,13 +22,15 @@ import (
 
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/uber-go/tally"
 )
 
-func Recover(w http.ResponseWriter, r *http.Request, msg string) {
+func Recover(w http.ResponseWriter, r *http.Request, msg string, recoversMetric tally.Counter) {
 	if err := recover(); err != nil {
 		transactionId := r.Header.Get("X-Trans-Id")
 		if ctx := GetProxyContext(r); ctx != nil {
 			ctx.Logger.Error(msg, zap.Any("err", err), zap.String("txn", transactionId))
+			recoversMetric.Inc(1)
 			// if we haven't set a status code yet, we can send a 500 response.
 			if started, _ := ctx.Response(); !started {
 				srv.StandardResponse(w, http.StatusInternalServerError)
@@ -37,11 +39,12 @@ func Recover(w http.ResponseWriter, r *http.Request, msg string) {
 	}
 }
 
-func NewCatchError(config conf.Section) (func(http.Handler) http.Handler, error) {
+func NewCatchError(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
+	recoversMetric := metricsScope.Counter("recovers")
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(
 			func(w http.ResponseWriter, r *http.Request) {
-				defer Recover(w, r, "PANIC")
+				defer Recover(w, r, "PANIC", recoversMetric)
 				next.ServeHTTP(w, r)
 			},
 		)

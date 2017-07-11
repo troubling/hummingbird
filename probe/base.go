@@ -28,6 +28,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
@@ -126,6 +127,8 @@ func (e *Environment) ObjExists(server int, timestamp string, policy int) bool {
 	return resp.Header.Get("X-Timestamp") == timestamp
 }
 
+var environments uint64 = 0
+
 // NewEnvironment creates a new environment.  Arguments should be a series of key, value pairs that are added to the object server configuration file.
 func NewEnvironment(settings ...string) *Environment {
 	oldGetRing := objectserver.GetRing
@@ -193,7 +196,7 @@ func NewEnvironment(settings ...string) *Environment {
 		if err != nil {
 			log.Fatal(err)
 		}
-		ts.Config.Handler = server.GetHandler(conf)
+		ts.Config.Handler = server.GetHandler(conf, fmt.Sprintf("probe_%d_%d", atomic.AddUint64(&environments, 1), i))
 
 		replicator, _, err := objectserver.NewReplicator(conf, &flag.FlagSet{})
 		if err != nil {

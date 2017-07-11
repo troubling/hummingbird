@@ -19,9 +19,10 @@ import (
 	"net/http"
 
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/uber-go/tally"
 )
 
-func NewHealthcheck(config conf.Section) (func(http.Handler) http.Handler, error) {
+func NewHealthcheck(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(
 			func(writer http.ResponseWriter, request *http.Request) {

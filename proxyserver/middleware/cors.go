@@ -23,6 +23,7 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/uber-go/tally"
 )
 
 type corsMiddleware struct {
@@ -89,7 +90,7 @@ func (cm *corsMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Re
 	cm.next.ServeHTTP(writer, request)
 }
 
-func NewCors(config conf.Section) (func(http.Handler) http.Handler, error) {
+func NewCors(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
 	return func(next http.Handler) http.Handler {
 		return &corsMiddleware{
 			next: next,

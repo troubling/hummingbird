@@ -62,7 +62,7 @@ func TestMultiRange(t *testing.T) {
 		}
 	})
 	section := conf.Section{}
-	mrh, err := NewMultirange(section)
+	mrh, err := NewMultirange(section, common.NewTestScope())
 	require.Nil(t, err)
 	h := mrh(handler)
 
@@ -118,7 +118,7 @@ func TestMultiRangeNotFound(t *testing.T) {
 		srv.StandardResponse(writer, http.StatusNotFound)
 	})
 	section := conf.Section{}
-	mrh, err := NewMultirange(section)
+	mrh, err := NewMultirange(section, common.NewTestScope())
 	require.Nil(t, err)
 	h := mrh(handler)
 

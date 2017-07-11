@@ -26,6 +26,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/troubling/hummingbird/common"
 )
 
 var simplePutManifest = `[{"path":"/hat/a"},{"size_bytes":3,"path":"/hat/b"},{"etag":"68053af2923e00204c3ca7c6a3150cf7","size_bytes":3,"path":"hat/c"}]`
@@ -41,6 +42,17 @@ var superManifest = `[
 
 var simpleDloManifest = `[{"hash":"202cb962ac59075b964b07152d234b70","last_modified":"2017-05-22T17:24:03.00000","bytes":3,"name":"dlo-a","content_type":"application/octet-stream"},{"hash":"250cf8b51c773f3f8dc8b4be867a9a02","last_modified":"2017-05-22T17:24:04.00000","bytes":3,"name":"dlo-b","content_type":"application/octet-stream"},{"hash":"68053af2923e00204c3ca7c6a3150cf7","last_modified":"2017-05-22T17:24:04.00000","bytes":3,"name":"dlo-c","content_type":"application/octet-stream"}]`
 
+func newTestXLOMiddleware(next http.Handler) *xloMiddleware {
+	testScope := common.NewTestScope()
+	return &xloMiddleware{
+		next:                    next,
+		dloGetRequestsMetric:    testScope.Counter("test_largeobject_dlo_get"),
+		sloGetRequestsMetric:    testScope.Counter("test_largeobject_slo_get"),
+		sloPutRequestsMetric:    testScope.Counter("test_largeobject_slo_put"),
+		sloDeleteRequestsMetric: testScope.Counter("test_largeobject_slo_delete"),
+	}
+}
+
 func TestGetRegular(t *testing.T) {
 	next := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method == "GET" {
@@ -48,7 +60,7 @@ func TestGetRegular(t *testing.T) {
 			writer.Write([]byte("not a slo"))
 		}
 	})
-	sm := xloMiddleware{next: next}
+	sm := newTestXLOMiddleware(next)
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "v/a/c/o", nil)
 	require.Nil(t, err)
@@ -70,7 +82,7 @@ func TestGetMultipartManifest(t *testing.T) {
 			writer.Write([]byte(simpleManifest))
 		}
 	})
-	sm := xloMiddleware{next: next}
+	sm := newTestXLOMiddleware(next)
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "/v/a/c/o?multipart-manifest=get", nil)
 	require.Nil(t, err)
@@ -131,7 +143,7 @@ func TestGetSlo(t *testing.T) {
 			}
 		}
 	})
-	sm := xloMiddleware{next: next}
+	sm := newTestXLOMiddleware(next)
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "/v1/a/c/o", nil)
 	require.Nil(t, err)
@@ -177,7 +189,7 @@ func TestGetSloRangeRequest(t *testing.T) {
 			}
 		}
 	})
-	sm := xloMiddleware{next: next}
+	sm := newTestXLOMiddleware(next)
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "/v1/a/c/o", nil)
 	require.Nil(t, err)
@@ -228,11 +240,11 @@ func TestGetRangedSlo(t *testing.T) {
 			}
 		}
 	})
-	sm := xloMiddleware{next: next}
+	sm := newTestXLOMiddleware(next)
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "/v1/a/c/o", nil)
 	require.Nil(t, err)
-	fakeContext := NewFakeProxyContext(&sm)
+	fakeContext := NewFakeProxyContext(sm)
 	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", fakeContext))
 
 	sm.ServeHTTP(w, req)
@@ -289,11 +301,11 @@ func TestGetSuperSlo(t *testing.T) {
 			}
 		}
 	})
-	sm := xloMiddleware{next: next}
+	sm := newTestXLOMiddleware(next)
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "/v1/a/c/o", nil)
 	require.Nil(t, err)
-	fakeContext := NewFakeProxyContext(&sm)
+	fakeContext := NewFakeProxyContext(sm)
 	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", fakeContext))
 
 	sm.ServeHTTP(w, req)
@@ -340,7 +352,7 @@ func TestPutSlo(t *testing.T) {
 			}
 		}
 	})
-	sm := xloMiddleware{next: next}
+	sm := newTestXLOMiddleware(next)
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("PUT", "/v1/a/c/o?multipart-manifest=put", bytes.NewBuffer([]byte(simplePutManifest)))
 	req.Header.Set("Content-Type", "app/html")
@@ -396,7 +408,7 @@ func TestDeleteSlo(t *testing.T) {
 			}
 		}
 	})
-	sm := xloMiddleware{next: next}
+	sm := newTestXLOMiddleware(next)
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("DELETE", "/v1/a/c/o?multipart-manifest=delete", nil)
 	req.Header.Set("Content-Length", "0")
@@ -448,7 +460,7 @@ func TestGetDlo(t *testing.T) {
 			}
 		}
 	})
-	sm := xloMiddleware{next: next}
+	sm := newTestXLOMiddleware(next)
 	w := httptest.NewRecorder()
 
 	req, err := http.NewRequest("GET", "/v1/a/c/o", nil)

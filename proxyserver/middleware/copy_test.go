@@ -53,7 +53,7 @@ func TestGetSourceObject(t *testing.T) {
 
 func TestPut(t *testing.T) {
 	section := conf.Section{}
-	c, err := NewCopyMiddleware(section)
+	c, err := NewCopyMiddleware(section, common.NewTestScope())
 	require.Nil(t, err)
 
 	passthrough := NewPassthroughFunc(t, Simple200GetResponseFunc, Simple200PutResponseFunc)
@@ -76,7 +76,7 @@ func TestPut(t *testing.T) {
 
 func TestPutAllNewMeta(t *testing.T) {
 	section := conf.Section{}
-	c, err := NewCopyMiddleware(section)
+	c, err := NewCopyMiddleware(section, common.NewTestScope())
 	require.Nil(t, err)
 
 	passthrough := NewPassthroughFunc(t, Simple200GetResponseFunc, AllNewMetaPutResponseFunc)
@@ -103,7 +103,7 @@ func TestPutAllNewMeta(t *testing.T) {
 
 func TestCopy(t *testing.T) {
 	section := conf.Section{}
-	c, err := NewCopyMiddleware(section)
+	c, err := NewCopyMiddleware(section, common.NewTestScope())
 	require.Nil(t, err)
 
 	passthrough := NewPassthroughFunc(t, Simple200GetResponseFunc, Simple200PutResponseFunc)
@@ -288,7 +288,7 @@ func TestPostAsCopy(t *testing.T) {
 	config, err := conf.StringConfig(configString)
 	require.Nil(t, err)
 	section := config.GetSection("filter:copy")
-	c, err := NewCopyMiddleware(section)
+	c, err := NewCopyMiddleware(section, common.NewTestScope())
 	require.Nil(t, err)
 
 	passthrough := NewPassthroughFunc(t, PostAsCopyPostResponseFunc, Simple200GetResponseFunc, PostAsCopyPutResponseFunc)
