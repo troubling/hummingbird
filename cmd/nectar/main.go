@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/gholt/brimtext"
@@ -18,13 +19,13 @@ import (
 
 var (
 	globalFlags               = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
-	globalFlagAuthURL         = globalFlags.String("A", "", "|<url>| URL to auth system, example: http://127.0.0.1:8080/auth/v1.0")
-	globalFlagAuthTenant      = globalFlags.String("T", "", "|<tenant>| Tenant name for auth system, example: test - Not all auth systems need this")
-	globalFlagAuthUser        = globalFlags.String("U", "", "|<user>| User name for auth system, example: tester - Some auth systems allow tenant:user format here, example: test:tester")
-	globalFlagAuthKey         = globalFlags.String("K", "", "|<key>| Key for auth system, example: testing - Some auth systems use passwords instead, see -P")
-	globalFlagAuthPassword    = globalFlags.String("P", "", "|<password>| Password for auth system, example: testing - Some auth system use keys instead, see -K")
-	globalFlagStorageRegion   = globalFlags.String("R", "", "|<region>| Storage region to use if set, otherwise uses the default")
-	globalFlagInternalStorage = globalFlags.Bool("I", false, "Internal storage URL resolution, such as Rackspace ServiceNet")
+	globalFlagAuthURL         = globalFlags.String("A", os.Getenv("AUTH_URL"), "|<url>| URL to auth system, example: http://127.0.0.1:8080/auth/v1.0 - Env: AUTH_URL")
+	globalFlagAuthTenant      = globalFlags.String("T", os.Getenv("AUTH_TENANT"), "|<tenant>| Tenant name for auth system, example: test - Not all auth systems need this. Env: AUTH_TENANT")
+	globalFlagAuthUser        = globalFlags.String("U", os.Getenv("AUTH_USER"), "|<user>| User name for auth system, example: tester - Some auth systems allow tenant:user format here, example: test:tester - Env: AUTH_USER")
+	globalFlagAuthKey         = globalFlags.String("K", os.Getenv("AUTH_KEY"), "|<key>| Key for auth system, example: testing - Some auth systems use passwords instead, see -P - Env: AUTH_KEY")
+	globalFlagAuthPassword    = globalFlags.String("P", os.Getenv("AUTH_PASSWORD"), "|<password>| Password for auth system, example: testing - Some auth system use keys instead, see -K - Env: AUTH_PASSWORD")
+	globalFlagStorageRegion   = globalFlags.String("R", os.Getenv("STORAGE_REGION"), "|<region>| Storage region to use if set, otherwise uses the default. Env: STORAGE_REGION")
+	globalFlagInternalStorage *bool              // defined in init()
 	globalFlagHeaders         = stringListFlag{} // defined in init()
 )
 
@@ -46,6 +47,8 @@ var (
 )
 
 func init() {
+	b, _ := strconv.ParseBool(os.Getenv("STORAGE_INTERNAL"))
+	globalFlagInternalStorage = globalFlags.Bool("I", b, "Internal storage URL resolution, such as Rackspace ServiceNet. Env: STORAGE_INTERNAL")
 	globalFlags.Var(&globalFlagHeaders, "H", "|<name>:[value]| Sets a header to be sent with the request. Useful mostly for PUTs and POSTs, allowing you to set metadata. This option can be specified multiple times for additional headers.")
 	var flagbuf bytes.Buffer
 	globalFlags.SetOutput(&flagbuf)
@@ -57,19 +60,18 @@ func help(flags *flag.FlagSet, err error) {
 	if err == flag.ErrHelp || err == nil {
 		fmt.Fprintln(os.Stderr, os.Args[0], `[options] <subcommand> ...`)
 		fmt.Fprintln(os.Stderr, brimtext.Wrap(`
-Tool for accessing a Hummingbird/Swift cluster. The following global options are available:
+Tool for accessing a Hummingbird/Swift cluster. Some global options can also be set via environment variables. These will be noted at the end of the description with Env: NAME. The following global options are available:
         `, 0, "  ", "  "))
 		helpFlags(globalFlags)
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, brimtext.Wrap(`
-The following subcommands are available:
-        `, 0, "", ""))
+The following subcommands are available:`, 0, "", ""))
 		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "delete [container] [object]")
+		fmt.Fprintln(os.Stderr, "\ndelete [container] [object]")
 		fmt.Fprintln(os.Stderr, brimtext.Wrap(`
 Performs a DELETE request. A DELETE, as probably expected, is used to remove the target.
         `, 0, "  ", "  "))
-		fmt.Fprintln(os.Stderr, "get [options] [container] [object]")
+		fmt.Fprintln(os.Stderr, "\nget [options] [container] [object]")
 		fmt.Fprintln(os.Stderr, brimtext.Wrap(`
 Performs a GET request. A GET on an account or container will output the listing of containers or objects, respectively. A GET on an object will output the content of the object to standard output.
         `, 0, "  ", "  "))
