@@ -138,8 +138,6 @@ func (c *ProxyDirectClient) firstResponse(reqs ...*http.Request) (resp *http.Res
 
 	for _, req := range reqs {
 		go func(r *http.Request) {
-			cancel := make(chan struct{})
-			r.Cancel = cancel
 			response, err := c.client.Do(r)
 			if err != nil {
 				response = nil
@@ -147,7 +145,9 @@ func (c *ProxyDirectClient) firstResponse(reqs ...*http.Request) (resp *http.Res
 			select {
 			case success <- response:
 			case <-returned:
-				close(cancel)
+				if response != nil {
+					response.Body.Close()
+				}
 			}
 		}(req)
 
@@ -411,6 +411,7 @@ func (c *ProxyDirectClient) GetContainerInfo(account string, container string, m
 	}
 	if ci == nil {
 		resp := c.HeadContainer(account, container, nil)
+		resp.Body.Close()
 		if resp.StatusCode/100 != 2 {
 			return nil, fmt.Errorf("%d error retrieving info for container %s/%s", resp.StatusCode, account, container)
 		}
