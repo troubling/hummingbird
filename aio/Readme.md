@@ -84,43 +84,33 @@ Storage
 
 The following instructions will setup a loopback device and format it as XFS.  You could also adapt this to use local storage as well.
 
-1.  Create the file for the loopback device and setup xfs:
+1.  Create a loopback xfs filesystem for Hummingbird to use:
 
-        sudo mkdir /srv
-        sudo truncate -s 1GB /srv/swift-disk
-        sudo mkfs.xfs /srv/swift-disk
+        sudo mkdir -p /srv/hb
+        sudo truncate -s 5GB /srv/hb-disk
+        sudo mkfs.xfs /srv/hb-disk
+        sudo mount -o loop /srv/hb-disk /srv/hb
+        sudo mkdir -p /srv/hb/1/sdb1 /srv/hb/2/sdb2 /srv/hb/3/sdb3 /srv/hb/4/sdb4 \
+        sudo chown -R "${USER}:${USER}" /srv/*
 
-1. Edit `/etc/fstab` and add `/srv/swift-disk /mnt/sdb1 xfs loop,noatime,nodiratime,nobarrier,logbufs=8 0 0` to the end of it.
-
-1. Create the mountpoint and the individualized links:
-
-        sudo mkdir /mnt/sdb1
-        sudo mount /mnt/sdb1
-        sudo mkdir /mnt/sdb1/1 /mnt/sdb1/2 /mnt/sdb1/3 /mnt/sdb1/4
-        sudo chown ${USER}:${USER} /mnt/sdb1/*
-        for x in {1..4}; do sudo ln -s /mnt/sdb1/$x /srv/$x; done
-        sudo mkdir -p /srv/1/node/sdb1 /srv/1/node/sdb5 \
-            /srv/2/node/sdb2 /srv/2/node/sdb6 \
-            /srv/3/node/sdb3 /srv/3/node/sdb7 \
-            /srv/4/node/sdb4 /srv/4/node/sdb8 \
-        for x in {1..4}; do sudo chown -R ${USER}:${USER} /srv/$x/; done
+1. Edit `/etc/fstab` and add `/srv/hb-disk /srv/hb xfs loop,noatime,nodiratime,nobarrier,logbufs=8 0 0` to the end of it.
 
 Configuration
 -------------
 
-1.  If you will be running Hummingbird as a user other than root, then you will need to create `/var/run/hummingbird` with proper permissions.  Hummingbird's PID files will be stored in this directory:
+1.  Create the run, log, config, and cache directories.
 
         sudo mkdir -p /var/run/hummingbird
         sudo chown -R ${USER}:${USER} /var/run/hummingbird
-
-1.  Create the log, config, cache directories and copy over the provided aio config files:
-
         sudo mkdir -p /var/log/hummingbird
         sudo chown -R ${USER}:${USER} /var/log/hummingbird
         sudo mkdir -p /var/cache/swift /var/cache/swift2 /var/cache/swift3 /var/cache/swift4
         sudo chown -R ${USER}:${USER} /var/cache/swift*
         sudo mkdir -p /etc/hummingbird
         sudo chown -R ${USER}:${USER} /etc/hummingbird
+
+1.  Copy over the provided aio config files:
+
         cp -r ~/hummingbird/aio/etc/hummingbird /etc/hummingbird
         find /etc/hummingbird -name \*.conf | xargs sed -i "s/<user-name>/${USER}/"
 
