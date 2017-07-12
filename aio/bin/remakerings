@@ -1,26 +1,45 @@
 #!/bin/bash
+set -e
 
 cd /etc/hummingbird
 
-rm -f *.builder *.ring.gz backups/*
+rm -f *.builder *.ring.gz backups/*.builder backups/*.ring.gz
 
-hummingbird ring-builder create ./object.builder 10 3 1
-hummingbird ring-builder add ./object.builder r1z1-127.0.0.1:6010R127.0.0.1:8010/sdb1 1
-hummingbird ring-builder add ./object.builder r1z2-127.0.0.1:6020R127.0.0.1:8020/sdb2 1
-hummingbird ring-builder add ./object.builder r1z3-127.0.0.1:6030R127.0.0.1:8030/sdb3 1
-hummingbird ring-builder add ./object.builder r1z4-127.0.0.1:6040R127.0.0.1:8040/sdb4 1
-hummingbird ring-builder rebalance ./object.builder
+hummingbird ring-builder object.builder create 10 3 1
+hummingbird ring-builder object.builder add r1z1-127.0.0.1:6010R127.0.0.1:8010/sdb1 1
+hummingbird ring-builder object.builder add r1z2-127.0.0.1:6020R127.0.0.1:8020/sdb2 1
+hummingbird ring-builder object.builder add r1z3-127.0.0.1:6030R127.0.0.1:8030/sdb3 1
+hummingbird ring-builder object.builder add r1z4-127.0.0.1:6040R127.0.0.1:8040/sdb4 1
+hummingbird ring-builder object.builder rebalance
 
-hummingbird ring-builder create ./container.builder 10 3 1
-hummingbird ring-builder add ./container.builder r1z1-127.0.0.1:6011/sdb1 1
-hummingbird ring-builder add ./container.builder r1z2-127.0.0.1:6021/sdb2 1
-hummingbird ring-builder add ./container.builder r1z3-127.0.0.1:6031/sdb3 1
-hummingbird ring-builder add ./container.builder r1z4-127.0.0.1:6041/sdb4 1
-hummingbird ring-builder rebalance ./container.builder
+hummingbird ring-builder object-1.builder create 10 2 1
+hummingbird ring-builder object-1.builder add r1z1-127.0.0.1:6010R127.0.0.1:8010/sdb1 1
+hummingbird ring-builder object-1.builder add r1z2-127.0.0.1:6020R127.0.0.1:8020/sdb2 1
+hummingbird ring-builder object-1.builder add r1z3-127.0.0.1:6030R127.0.0.1:8030/sdb3 1
+hummingbird ring-builder object-1.builder add r1z4-127.0.0.1:6040R127.0.0.1:8040/sdb4 1
+hummingbird ring-builder object-1.builder rebalance
 
-hummingbird ring-builder create ./account.builder 10 3 1
-hummingbird ring-builder add ./account.builder r1z1-127.0.0.1:6012/sdb1 1
-hummingbird ring-builder add ./account.builder r1z2-127.0.0.1:6022/sdb2 1
-hummingbird ring-builder add ./account.builder r1z3-127.0.0.1:6032/sdb3 1
-hummingbird ring-builder add ./account.builder r1z4-127.0.0.1:6042/sdb4 1
-hummingbird ring-builder rebalance ./account.builder
+hummingbird ring-builder object-2.builder create 10 6 1
+hummingbird ring-builder object-2.builder add r1z1-127.0.0.1:6010R127.0.0.1:8010/sdb1 1
+hummingbird ring-builder object-2.builder add r1z1-127.0.0.1:6010R127.0.0.1:8010/sdb5 1
+hummingbird ring-builder object-2.builder add r1z2-127.0.0.1:6020R127.0.0.1:8020/sdb2 1
+hummingbird ring-builder object-2.builder add r1z2-127.0.0.1:6020R127.0.0.1:8020/sdb6 1
+hummingbird ring-builder object-2.builder add r1z3-127.0.0.1:6030R127.0.0.1:8030/sdb3 1
+hummingbird ring-builder object-2.builder add r1z3-127.0.0.1:6030R127.0.0.1:8030/sdb7 1
+hummingbird ring-builder object-2.builder add r1z4-127.0.0.1:6040R127.0.0.1:8040/sdb4 1
+hummingbird ring-builder object-2.builder add r1z4-127.0.0.1:6040R127.0.0.1:8040/sdb8 1
+hummingbird ring-builder object-2.builder rebalance
+
+hummingbird ring-builder container.builder create 10 3 1
+hummingbird ring-builder container.builder add r1z1-127.0.0.1:6011/sdb1 1
+hummingbird ring-builder container.builder add r1z2-127.0.0.1:6021/sdb2 1
+hummingbird ring-builder container.builder add r1z3-127.0.0.1:6031/sdb3 1
+hummingbird ring-builder container.builder add r1z4-127.0.0.1:6041/sdb4 1
+hummingbird ring-builder container.builder rebalance
+
+hummingbird ring-builder account.builder create 10 3 1
+hummingbird ring-builder account.builder add r1z1-127.0.0.1:6012/sdb1 1
+hummingbird ring-builder account.builder add r1z2-127.0.0.1:6022/sdb2 1
+hummingbird ring-builder account.builder add r1z3-127.0.0.1:6032/sdb3 1
+hummingbird ring-builder account.builder add r1z4-127.0.0.1:6042/sdb4 1
+hummingbird ring-builder account.builder rebalance
