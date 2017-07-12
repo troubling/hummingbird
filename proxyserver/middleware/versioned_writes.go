@@ -28,6 +28,7 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
@@ -536,7 +537,7 @@ func (v *versionedWrites) ServeHTTP(writer http.ResponseWriter, request *http.Re
 	}
 }
 
-func NewVersionedWrites(config conf.Section) (func(http.Handler) http.Handler, error) {
+func NewVersionedWrites(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
 	return func(next http.Handler) http.Handler {
 		return &versionedWrites{
 			next:    next,
