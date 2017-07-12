@@ -28,7 +28,6 @@ import (
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/uber-go/tally"
-	"go.uber.org/zap"
 )
 
 type CopyWriter struct {
@@ -91,78 +90,6 @@ func getHeaderContainerObjectName(request *http.Request, header string) (string,
 		return "", "", errors.New(fmt.Sprintf("Invalid %s", header))
 	}
 	return name, parts[2], nil
-}
-
-type PipeResponseWriter struct {
-	w      *io.PipeWriter
-	status int
-	header http.Header
-	done   chan bool
-	Logger srv.LowLevelLogger
-}
-
-func (w *PipeResponseWriter) Write(stuff []byte) (int, error) {
-	written, err := w.w.Write(stuff)
-	if err != nil {
-		w.Logger.Error("PipeResponseWriter Write() error", zap.Error(err))
-	}
-	return written, err
-}
-
-func (w *PipeResponseWriter) Header() http.Header {
-	return w.header
-}
-
-func (w *PipeResponseWriter) WriteHeader(status int) {
-	w.status = status
-	w.done <- true
-}
-
-func (w *PipeResponseWriter) Close() {
-	w.w.Close()
-}
-
-func NewPipeResponseWriter(writer *io.PipeWriter, done chan bool, logger srv.LowLevelLogger) *PipeResponseWriter {
-	header := make(map[string][]string)
-	return &PipeResponseWriter{
-		w:      writer,
-		header: header,
-		done:   done,
-		Logger: logger,
-	}
-}
-
-func (c *copyMiddleware) getSourceObject(object string, request *http.Request, post bool) (io.ReadCloser, http.Header, int) {
-	ctx := GetProxyContext(request)
-	subRequest, err := ctx.newSubrequest("GET", object, nil, request, "copy")
-	if err != nil {
-		ctx.Logger.Error("getSourceObject GET error", zap.Error(err))
-		return nil, nil, 400
-	}
-	if request.FormValue("multipart-manifest") == "get" {
-		subRequest.URL.RawQuery = "multipart-manifest=get&format=raw"
-	}
-	copyItems(subRequest.Header, request.Header)
-	// FIXME. Are we going to do X-Newest?
-	subRequest.Header.Set("X-Newest", "true")
-	subRequest.Header.Del("X-Backend-Storage-Policy-Index")
-	if post {
-		// POST doesn't need to auth the internal GET; if they issued a POST
-		// and it was authorized and we happen to need to do a GET+PUT for our
-		// own reasons, that's fine.
-		GetProxyContext(subRequest).Authorize = func(r *http.Request) (bool, int) { return true, http.StatusOK }
-	}
-
-	pipeReader, pipeWriter := io.Pipe()
-	done := make(chan bool)
-	writer := NewPipeResponseWriter(pipeWriter, done, ctx.Logger)
-	go func() {
-		ctx.serveHTTPSubrequest(writer, subRequest)
-		writer.Close()
-	}()
-	<-done
-
-	return pipeReader, writer.Header(), writer.status
 }
 
 func (c *copyMiddleware) handlePostAsCopy(writer *CopyWriter, request *http.Request) {
@@ -234,7 +161,7 @@ func copyItemsWithPrefix(dest, src http.Header, prefix string) {
 
 // TODO: This seems like it might copy headers it shouldn't.
 // Also, shouldn't it be called copyHeaders instead?
-func copyItems(dest, src http.Header) {
+func CopyItems(dest, src http.Header) {
 	for k, v := range src {
 		dest.Del(k)
 		for _, v1 := range v {
@@ -259,7 +186,7 @@ func excludeContains(exclude []string, k string) bool {
 	return false
 }
 
-func copyItemsExclude(dest, src http.Header, exclude []string) {
+func CopyItemsExclude(dest, src http.Header, exclude []string) {
 	for k, v := range src {
 		if !excludeContains(exclude, k) {
 			dest.Del(k)
@@ -286,11 +213,18 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 	srcPath := fmt.Sprintf("/v1/%s/%s/%s", srcAccountName, srcContainer, srcObject)
 
 	post := writer.origReqMethod == "POST"
+	var auth AuthorizeFunc
 	if !post {
 		writer.Logger.Info(fmt.Sprintf("Copying object from %s to %s", srcPath, request.URL.Path))
+	} else {
+		// POST doesn't need to auth the internal GET; if they issued a POST
+		// and it was authorized and we happen to need to do a GET+PUT for our
+		// own reasons, that's fine.
+		auth = func(r *http.Request) (bool, int) { return true, http.StatusOK }
 	}
 
-	srcBody, srcHeader, srcStatus := c.getSourceObject(common.Urlencode(srcPath), request, post)
+	pipe := &PipeResponse{}
+	srcBody, srcHeader, srcStatus := pipe.Get(common.Urlencode(srcPath), request, "copy", auth)
 	if srcBody != nil {
 		defer srcBody.Close()
 	}
@@ -307,7 +241,7 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 	}
 
 	origHeader := make(map[string][]string)
-	copyItems(origHeader, request.Header)
+	CopyItems(origHeader, request.Header)
 	if post {
 		// Post-as-copy: ignore new sysmeta, copy existing sysmeta
 		RemoveItemsWithPrefix(request.Header, "X-Object-Sysmeta-")
@@ -323,9 +257,9 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 		// copied below and timestamps.
 		exclude := []string{"X-Static-Large-Object", "X-Object-Manifest",
 			"Etag", "Content-Type", "X-Timestamp", "X-Backend-Timestamp"}
-		copyItemsExclude(request.Header, srcHeader, exclude)
+		CopyItemsExclude(request.Header, srcHeader, exclude)
 		// now update with original req headers
-		copyItems(request.Header, origHeader)
+		CopyItems(request.Header, origHeader)
 	}
 
 	values, err := url.ParseQuery(request.URL.RawQuery)
