@@ -538,6 +538,7 @@ func (v *versionedWrites) ServeHTTP(writer http.ResponseWriter, request *http.Re
 }
 
 func NewVersionedWrites(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
+	RegisterInfo("versioned_writes", map[string]interface{}{"allowed_flags": []string{CLIENT_VERSIONS_LOC, CLIENT_HISTORY_LOC}})
 	return func(next http.Handler) http.Handler {
 		return &versionedWrites{
 			next:    next,
