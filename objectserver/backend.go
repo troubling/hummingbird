@@ -349,7 +349,7 @@ func GetHashes(driveRoot string, device string, partition string, recalculate []
 				os.Truncate(invalidFile, 0)
 				return hashes, nil
 			}
-			logger.Error("Made recursive call to GetHashes.", zap.String("partitionDir", partitionDir))
+			logger.Debug("Making recursive call to GetHashes.", zap.String("partitionDir", partitionDir))
 			partitionLock.Close()
 			return GetHashes(driveRoot, device, partition, recalculate, reclaimAge, policy, logger)
 		}
