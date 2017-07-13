@@ -127,7 +127,11 @@ func (ta *tempAuth) handleGetToken(writer http.ResponseWriter, request *http.Req
 		token = ta.reseller + common.UUID()
 		now := time.Now().Unix()
 		ctx.Cache.Set("auth:"+token, &cachedAuth{Expires: now + 86400, Groups: userGroups}, 86400)
-		ctx.Cache.Set("authuser:"+user, &token, 86400)
+		err := ctx.Cache.Set("authuser:"+user, &token, 86400)
+		if err != nil {
+			srv.SimpleErrorResponse(writer, 500, fmt.Sprintf("Error setting token"))
+			return
+		}
 	}
 
 	ctx.RemoteUsers = []string{user}
