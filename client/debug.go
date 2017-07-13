@@ -9,27 +9,23 @@ import (
 )
 
 type autoCloseResponses struct {
-	transport http.RoundTripper
+	http.RoundTripper
 }
 
 func (a *autoCloseResponses) RoundTrip(req *http.Request) (*http.Response, error) {
-	resp, err := a.transport.RoundTrip(req)
-	resp.Body = &autoClosingBody{delegate: resp.Body, timer: time.AfterFunc(time.Minute, func() { autoCloseReport(req, resp) })}
+	resp, err := a.RoundTripper.RoundTrip(req)
+	resp.Body = &autoClosingBody{ReadCloser: resp.Body, timer: time.AfterFunc(time.Minute, func() { autoCloseReport(req, resp) })}
 	return resp, err
 }
 
 type autoClosingBody struct {
-	delegate io.ReadCloser
-	timer    *time.Timer
-}
-
-func (a *autoClosingBody) Read(buf []byte) (int, error) {
-	return a.delegate.Read(buf)
+	io.ReadCloser
+	timer *time.Timer
 }
 
 func (a *autoClosingBody) Close() error {
 	a.timer.Stop()
-	return a.delegate.Close()
+	return a.ReadCloser.Close()
 }
 
 func autoCloseReport(req *http.Request, resp *http.Response) {
