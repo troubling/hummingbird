@@ -40,6 +40,24 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+var xSourceCodeHeader = func(w http.ResponseWriter, skip int) {}
+
+func init() {
+	if ok, _ := strconv.ParseBool(os.Getenv("X_SOURCE_CODE_HEADER")); ok {
+		xSourceCodeHeader = func(w http.ResponseWriter, skip int) {
+			if _, f, n, ok := runtime.Caller(skip); ok {
+				v := w.Header().Get("X-Source-Code")
+				if v != "" {
+					v += fmt.Sprintf(" %s:%d", f, n)
+				} else {
+					v = fmt.Sprintf("%s:%d", f, n)
+				}
+				w.Header().Set("X-Source-Code", v)
+			}
+		}
+	}
+}
+
 var responseTemplate = "<html><h1>%s</h1><p>%s</p></html>"
 
 var responseBodies = map[int]string{
@@ -127,6 +145,7 @@ func StandardResponse(w http.ResponseWriter, statusCode int) {
 	body := responseBodies[statusCode]
 	w.Header().Set("Content-Type", "text/html; charset=UTF-8")
 	w.Header().Set("Content-Length", strconv.FormatInt(int64(len(body)), 10))
+	xSourceCodeHeader(w, 2)
 	w.WriteHeader(statusCode)
 	w.Write([]byte(body))
 }
@@ -134,6 +153,7 @@ func StandardResponse(w http.ResponseWriter, statusCode int) {
 func SimpleErrorResponse(w http.ResponseWriter, statusCode int, body string) {
 	w.Header().Set("Content-Type", "text/html; charset=UTF-8")
 	w.Header().Set("Content-Length", strconv.FormatInt(int64(len(body)), 10))
+	xSourceCodeHeader(w, 2)
 	w.WriteHeader(statusCode)
 	w.Write([]byte(body))
 }
@@ -148,6 +168,7 @@ func CustomErrorResponse(w http.ResponseWriter, statusCode int, vars map[string]
 		}
 	}
 	w.Header().Set("Content-Length", strconv.FormatInt(int64(len(body)), 10))
+	xSourceCodeHeader(w, 2)
 	w.WriteHeader(statusCode)
 	w.Write([]byte(body))
 }
