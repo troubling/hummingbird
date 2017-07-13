@@ -32,11 +32,14 @@ import (
 	"time"
 
 	"github.com/justinas/alice"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/middleware"
+	"github.com/uber-go/tally"
+	promreporter "github.com/uber-go/tally/prometheus"
 	"go.uber.org/zap"
 )
 
@@ -56,10 +59,18 @@ type ObjectServer struct {
 	objEngines       map[int]ObjectEngine
 	updateTimeout    time.Duration
 	asyncWG          sync.WaitGroup // Used to wait on async goroutines
+	metricsCloser    io.Closer
+}
+
+func (server *ObjectServer) Type() string {
+	return "object"
 }
 
 func (server *ObjectServer) Finalize() {
 	server.asyncWG.Wait()
+	if server.metricsCloser != nil {
+		server.metricsCloser.Close()
+	}
 }
 
 func (server *ObjectServer) newObject(req *http.Request, vars map[string]string, needData bool) (Object, error) {
@@ -588,9 +599,17 @@ func (server *ObjectServer) updateDeviceLocks(seconds int64) {
 	}
 }
 
-func (server *ObjectServer) GetHandler(config conf.Config) http.Handler {
+func (server *ObjectServer) GetHandler(config conf.Config, metricsPrefix string) http.Handler {
+	var metricsScope tally.Scope
+	metricsScope, server.metricsCloser = tally.NewRootScope(tally.ScopeOptions{
+		Prefix:         metricsPrefix,
+		Tags:           map[string]string{},
+		CachedReporter: promreporter.NewReporter(promreporter.Options{}),
+		Separator:      promreporter.DefaultSeparator,
+	}, time.Second)
 	commonHandlers := alice.New(server.LogRequest, middleware.RecoverHandler, middleware.ValidateRequest, server.AcquireDevice)
 	router := srv.NewRouter()
+	router.Get("/metrics", prometheus.Handler())
 	router.Get("/loglevel", server.logLevel)
 	router.Put("/loglevel", server.logLevel)
 	router.Get("/healthcheck", commonHandlers.ThenFunc(server.HealthcheckHandler))
@@ -608,7 +627,7 @@ func (server *ObjectServer) GetHandler(config conf.Config) http.Handler {
 	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Invalid path: %s", r.URL.Path), http.StatusBadRequest)
 	})
-	return alice.New(middleware.GrepObject).Then(router)
+	return alice.New(middleware.Metrics(metricsScope)).Append(middleware.GrepObject).Then(router)
 }
 
 func GetServer(serverconf conf.Config, flags *flag.FlagSet) (bindIP string, bindPort int, serv srv.Server, logger srv.LowLevelLogger, err error) {
@@ -670,16 +689,5 @@ func GetServer(serverconf conf.Config, flags *flag.FlagSet) (bindIP string, bind
 	if deviceLockUpdateSeconds > 0 {
 		go server.updateDeviceLocks(deviceLockUpdateSeconds)
 	}
-
-	statsdHost := serverconf.GetDefault("app:object-server", "log_statsd_host", "")
-	if statsdHost != "" {
-		statsdPort := serverconf.GetInt("app:object-server", "log_statsd_port", 8125)
-		// Go metrics collection pause interval in seconds
-		statsdPause := serverconf.GetInt("app:object-server", "statsd_collection_pause", 10)
-		basePrefix := serverconf.GetDefault("app:object-server", "log_statsd_metric_prefix", "")
-		prefix := basePrefix + ".go.objectserver"
-		go common.CollectRuntimeMetrics(statsdHost, statsdPort, statsdPause, prefix)
-	}
-
 	return bindIP, bindPort, server, server.logger, nil
 }

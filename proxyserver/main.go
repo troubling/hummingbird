@@ -18,8 +18,10 @@ package proxyserver
 import (
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
@@ -29,6 +31,9 @@ import (
 	"github.com/troubling/hummingbird/proxyserver/middleware"
 
 	"github.com/justinas/alice"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/uber-go/tally"
+	promreporter "github.com/uber-go/tally/prometheus"
 	"go.uber.org/zap"
 )
 
@@ -38,13 +43,29 @@ type ProxyServer struct {
 	mc                ring.MemcacheRing
 	accountAutoCreate bool
 	proxyDirectClient *client.ProxyDirectClient
+	metricsCloser     io.Closer
+}
+
+func (server *ProxyServer) Type() string {
+	return "proxy"
 }
 
 func (server *ProxyServer) Finalize() {
+	if server.metricsCloser != nil {
+		server.metricsCloser.Close()
+	}
 }
 
-func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
+func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) http.Handler {
+	var metricsScope tally.Scope
+	metricsScope, server.metricsCloser = tally.NewRootScope(tally.ScopeOptions{
+		Prefix:         metricsPrefix,
+		Tags:           map[string]string{},
+		CachedReporter: promreporter.NewReporter(promreporter.Options{}),
+		Separator:      promreporter.DefaultSeparator,
+	}, time.Second)
 	router := srv.NewRouter()
+	router.Get("/metrics", prometheus.Handler())
 	router.Get("/loglevel", server.logLevel)
 	router.Put("/loglevel", server.logLevel)
 	router.Get("/v1/:account/:container/*obj", http.HandlerFunc(server.ObjectGetHandler))
@@ -82,13 +103,13 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 
 	tempAuth := config.GetBool("proxy-server", "tempauth_enabled", true)
 	var middlewares []struct {
-		construct func(config conf.Section) (func(http.Handler) http.Handler, error)
+		construct func(conf.Section, tally.Scope) (func(http.Handler) http.Handler, error)
 		section   string
 	}
 	// TODO: make this all dynamical and stuff
 	if tempAuth {
 		middlewares = []struct {
-			construct func(config conf.Section) (func(http.Handler) http.Handler, error)
+			construct func(conf.Section, tally.Scope) (func(http.Handler) http.Handler, error)
 			section   string
 		}{
 			{middleware.NewCatchError, "filter:catch_errors"},
@@ -106,7 +127,7 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 		}
 	} else {
 		middlewares = []struct {
-			construct func(config conf.Section) (func(http.Handler) http.Handler, error)
+			construct func(conf.Section, tally.Scope) (func(http.Handler) http.Handler, error)
 			section   string
 		}{
 			{middleware.NewCatchError, "filter:catch_errors"},
@@ -126,7 +147,7 @@ func (server *ProxyServer) GetHandler(config conf.Config) http.Handler {
 	}
 	pipeline := alice.New(middleware.NewContext(server.mc, server.logger, server.proxyDirectClient))
 	for _, m := range middlewares {
-		mid, err := m.construct(config.GetSection(m.section))
+		mid, err := m.construct(config.GetSection(m.section), metricsScope)
 		if err != nil {
 			// TODO: propagate error upwards instead of panicking
 			panic("Unable to construct middleware")

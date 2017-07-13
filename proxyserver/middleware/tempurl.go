@@ -28,6 +28,7 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/uber-go/tally"
 )
 
 const (
@@ -90,112 +91,117 @@ func checkhmac(key, sig []byte, method, path string, expires time.Time) bool {
 	}
 }
 
-func tempurl(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Method == "OPTIONS" {
-			next.ServeHTTP(writer, request)
-			return
-		}
-		ctx := GetProxyContext(request)
-		if ctx.Authorize != nil {
-			next.ServeHTTP(writer, request)
-			return
-		}
-		q := request.URL.Query()
-		sig := q.Get("temp_url_sig")
-		exps := q.Get("temp_url_expires")
-		_, inline := q["inline"]
+func tempurl(requestsMetric tally.Counter) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			if request.Method == "OPTIONS" {
+				next.ServeHTTP(writer, request)
+				return
+			}
+			ctx := GetProxyContext(request)
+			if ctx.Authorize != nil {
+				next.ServeHTTP(writer, request)
+				return
+			}
+			q := request.URL.Query()
+			sig := q.Get("temp_url_sig")
+			exps := q.Get("temp_url_expires")
+			_, inline := q["inline"]
 
-		if sig == "" && exps == "" {
-			next.ServeHTTP(writer, request)
-			return
-		} else if sig == "" || exps == "" {
-			srv.StandardResponse(writer, 401)
-			return
-		}
-
-		expires, err := common.ParseDate(exps)
-		if err != nil || time.Now().After(expires) {
-			srv.StandardResponse(writer, 401)
-			return
-		}
-
-		sigb, err := hex.DecodeString(sig)
-		if err != nil {
-			srv.StandardResponse(writer, 401)
-			return
-		}
-
-		apiReq, account, container, obj := getPathParts(request)
-		if !apiReq || account == "" || container == "" {
-			srv.StandardResponse(writer, 401)
-			return
-		}
-
-		if bh := request.Header.Get("X-Object-Manifest"); bh != "" && (request.Method == "PUT" || request.Method == "POST") {
-			srv.StandardResponse(writer, 400)
-			return
-		}
-
-		path := ""
-		if _, hasPrefix := q["temp_url_prefix"]; hasPrefix {
-			prefix := q.Get("temp_url_prefix")
-			if !strings.HasPrefix(obj, prefix) {
+			if sig == "" && exps == "" {
+				next.ServeHTTP(writer, request)
+				return
+			} else if sig == "" || exps == "" {
 				srv.StandardResponse(writer, 401)
 				return
 			}
-			path = fmt.Sprintf("prefix:/v1/%s/%s/%s", account, container, prefix)
-		} else {
-			path = fmt.Sprintf("/v1/%s/%s/%s", account, container, obj)
-		}
 
-		scope := SCOPE_INVALID
-		if ai, err := ctx.GetAccountInfo(account); err == nil {
-			if key, ok := ai.Metadata["Temp-Url-Key"]; ok && checkhmac([]byte(key), sigb, request.Method, path, expires) {
-				scope = SCOPE_ACCOUNT
-			} else if key, ok := ai.Metadata["Temp-Url-Key-2"]; ok && checkhmac([]byte(key), sigb, request.Method, path, expires) {
-				scope = SCOPE_ACCOUNT
-			} else if ci, err := ctx.C.GetContainerInfo(account, container); err == nil {
-				if key, ok := ci.Metadata["Temp-Url-Key"]; ok && checkhmac([]byte(key), sigb, request.Method, path, expires) {
-					scope = SCOPE_CONTAINER
-				} else if key, ok := ci.Metadata["Temp-Url-Key-2"]; ok && checkhmac([]byte(key), sigb, request.Method, path, expires) {
-					scope = SCOPE_CONTAINER
+			requestsMetric.Inc(1)
+
+			expires, err := common.ParseDate(exps)
+			if err != nil || time.Now().After(expires) {
+				srv.StandardResponse(writer, 401)
+				return
+			}
+
+			sigb, err := hex.DecodeString(sig)
+			if err != nil {
+				srv.StandardResponse(writer, 401)
+				return
+			}
+
+			apiReq, account, container, obj := getPathParts(request)
+			if !apiReq || account == "" || container == "" {
+				srv.StandardResponse(writer, 401)
+				return
+			}
+
+			if bh := request.Header.Get("X-Object-Manifest"); bh != "" && (request.Method == "PUT" || request.Method == "POST") {
+				srv.StandardResponse(writer, 400)
+				return
+			}
+
+			path := ""
+			if _, hasPrefix := q["temp_url_prefix"]; hasPrefix {
+				prefix := q.Get("temp_url_prefix")
+				if !strings.HasPrefix(obj, prefix) {
+					srv.StandardResponse(writer, 401)
+					return
+				}
+				path = fmt.Sprintf("prefix:/v1/%s/%s/%s", account, container, prefix)
+			} else {
+				path = fmt.Sprintf("/v1/%s/%s/%s", account, container, obj)
+			}
+
+			scope := SCOPE_INVALID
+			if ai, err := ctx.GetAccountInfo(account); err == nil {
+				if key, ok := ai.Metadata["Temp-Url-Key"]; ok && checkhmac([]byte(key), sigb, request.Method, path, expires) {
+					scope = SCOPE_ACCOUNT
+				} else if key, ok := ai.Metadata["Temp-Url-Key-2"]; ok && checkhmac([]byte(key), sigb, request.Method, path, expires) {
+					scope = SCOPE_ACCOUNT
+				} else if ci, err := ctx.C.GetContainerInfo(account, container); err == nil {
+					if key, ok := ci.Metadata["Temp-Url-Key"]; ok && checkhmac([]byte(key), sigb, request.Method, path, expires) {
+						scope = SCOPE_CONTAINER
+					} else if key, ok := ci.Metadata["Temp-Url-Key-2"]; ok && checkhmac([]byte(key), sigb, request.Method, path, expires) {
+						scope = SCOPE_CONTAINER
+					}
 				}
 			}
-		}
-		if scope == SCOPE_INVALID {
-			srv.StandardResponse(writer, 401)
-			return
-		}
-		ctx.RemoteUsers = []string{".tempurl"}
-		ctx.Authorize = func(r *http.Request) (bool, int) {
-			ar, a, c, _ := getPathParts(r)
-			if ar && ((scope == SCOPE_ACCOUNT && a == account) || (scope == SCOPE_CONTAINER && c == container)) {
-				return true, http.StatusOK
+			if scope == SCOPE_INVALID {
+				srv.StandardResponse(writer, 401)
+				return
 			}
-			return false, http.StatusUnauthorized
-		}
+			ctx.RemoteUsers = []string{".tempurl"}
+			ctx.Authorize = func(r *http.Request) (bool, int) {
+				ar, a, c, _ := getPathParts(r)
+				if ar && ((scope == SCOPE_ACCOUNT && a == account) || (scope == SCOPE_CONTAINER && c == container)) {
+					return true, http.StatusOK
+				}
+				return false, http.StatusUnauthorized
+			}
 
-		next.ServeHTTP(
-			&tuWriter{
-				ResponseWriter: writer,
-				method:         request.Method,
-				obj:            obj,
-				filename:       q.Get("filename"),
-				expires:        expires.Format(time.RFC1123),
-				inline:         inline,
-			},
-			request,
-		)
-	})
+			next.ServeHTTP(
+				&tuWriter{
+					ResponseWriter: writer,
+					method:         request.Method,
+					obj:            obj,
+					filename:       q.Get("filename"),
+					expires:        expires.Format(time.RFC1123),
+					inline:         inline,
+				},
+				request,
+			)
+		})
+	}
 }
 
-func NewTempURL(config conf.Section) (func(http.Handler) http.Handler, error) {
+func NewTempURL(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
 	RegisterInfo("tempurl", map[string]interface{}{
 		"methods":                 []string{"GET", "HEAD", "PUT", "POST", "DELETE"},
 		"incoming_remove_headers": []string{"x-timestamp"},
 		"incoming_allow_headers":  []string{},
 		"outgoing_remove_headers": []string{"x-object-meta-*"}, "outgoing_allow_headers": []string{"x-object-meta-public-*"},
 	})
-	return tempurl, nil
+	requestsMetric := metricsScope.Counter("tempurl_requests")
+	return tempurl(requestsMetric), nil
 }

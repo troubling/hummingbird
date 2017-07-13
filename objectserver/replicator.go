@@ -1007,14 +1007,5 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv
 	if serverconf.GetBool("object-replicator", "vm_test_mode", false) { // slow down the replicator in saio mode
 		replicator.partSleepTime = time.Duration(serverconf.GetInt("object-replicator", "ms_per_part", 500)) * time.Millisecond
 	}
-	statsdHost := serverconf.GetDefault("object-replicator", "log_statsd_host", "")
-	if statsdHost != "" {
-		statsdPort := serverconf.GetInt("object-replicator", "log_statsd_port", 8125)
-		// Go metrics collection pause interval in seconds
-		statsdPause := serverconf.GetInt("object-replicator", "statsd_collection_pause", 10)
-		basePrefix := serverconf.GetDefault("object-replicator", "log_statsd_metric_prefix", "")
-		prefix := basePrefix + ".go.objectreplicator"
-		go common.CollectRuntimeMetrics(statsdHost, statsdPort, statsdPause, prefix)
-	}
 	return replicator, replicator.logger, nil
 }

@@ -89,6 +89,9 @@ func (c *ProxyDirectClient) quorumResponse(reqs ...*http.Request) *http.Response
 		go func(req *http.Request) {
 			var entry *http.Response
 			if resp, err := c.client.Do(req); err != nil {
+				if resp != nil {
+					resp.Body.Close()
+				}
 				entry = ResponseStub(http.StatusInternalServerError, err.Error())
 			} else {
 				entry = StubResponse(resp)
@@ -138,16 +141,19 @@ func (c *ProxyDirectClient) firstResponse(reqs ...*http.Request) (resp *http.Res
 
 	for _, req := range reqs {
 		go func(r *http.Request) {
-			cancel := make(chan struct{})
-			r.Cancel = cancel
 			response, err := c.client.Do(r)
 			if err != nil {
+				if response != nil {
+					response.Body.Close()
+				}
 				response = nil
 			}
 			select {
 			case success <- response:
 			case <-returned:
-				close(cancel)
+				if response != nil {
+					response.Body.Close()
+				}
 			}
 		}(req)
 
@@ -160,6 +166,8 @@ func (c *ProxyDirectClient) firstResponse(reqs ...*http.Request) (resp *http.Res
 					resp.Header.Set("Etag", strings.Trim(etag, "\""))
 				}
 				return resp
+			} else if resp != nil {
+				resp.Body.Close()
 			}
 		case <-time.After(time.Second):
 		}
@@ -411,6 +419,7 @@ func (c *ProxyDirectClient) GetContainerInfo(account string, container string, m
 	}
 	if ci == nil {
 		resp := c.HeadContainer(account, container, nil)
+		resp.Body.Close()
 		if resp.StatusCode/100 != 2 {
 			return nil, fmt.Errorf("%d error retrieving info for container %s/%s", resp.StatusCode, account, container)
 		}

@@ -181,7 +181,7 @@ func RunBench(args []string) {
 	}
 	for i := 0; i < numContainers; i++ {
 		if resp := cli.PutContainer(fmt.Sprintf("%d-%s", i, salt), nil); resp.StatusCode/100 != 2 {
-			fmt.Println("Error putting container:", err)
+			fmt.Println("Error putting container:", resp)
 			os.Exit(1)
 		}
 	}

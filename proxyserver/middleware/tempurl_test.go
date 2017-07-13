@@ -101,7 +101,7 @@ func TestTempurlMiddlewarePassOptions(t *testing.T) {
 		require.Equal(t, r, request)
 		served = true
 	})
-	mid := tempurl(handler)
+	mid := tempurl(common.NewTestScope().Counter("test_tempurl"))(handler)
 	mid.ServeHTTP(w, r)
 	require.True(t, served)
 }
@@ -121,7 +121,7 @@ func TestTempurlMiddlewarePassAlreadyAuthorized(t *testing.T) {
 		require.Equal(t, r, request)
 		served = true
 	})
-	mid := tempurl(handler)
+	mid := tempurl(common.NewTestScope().Counter("test_tempurl"))(handler)
 	mid.ServeHTTP(w, r)
 	require.True(t, served)
 }
@@ -136,7 +136,7 @@ func TestTempurlMiddlewarePassNoQuery(t *testing.T) {
 		require.Equal(t, r, request)
 		served = true
 	})
-	mid := tempurl(handler)
+	mid := tempurl(common.NewTestScope().Counter("test_tempurl"))(handler)
 	mid.ServeHTTP(w, r)
 	require.True(t, served)
 }
@@ -146,7 +146,7 @@ func TestTempurlMiddleware401OnlySig(t *testing.T) {
 	r = r.WithContext(context.WithValue(r.Context(), "proxycontext", &ProxyContext{}))
 	w := httptest.NewRecorder()
 	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {})
-	mid := tempurl(handler)
+	mid := tempurl(common.NewTestScope().Counter("test_tempurl"))(handler)
 	mid.ServeHTTP(w, r)
 	require.Equal(t, 401, w.Result().StatusCode)
 }
@@ -156,7 +156,7 @@ func TestTempurlMiddleware401Expired(t *testing.T) {
 	r = r.WithContext(context.WithValue(r.Context(), "proxycontext", &ProxyContext{}))
 	w := httptest.NewRecorder()
 	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {})
-	mid := tempurl(handler)
+	mid := tempurl(common.NewTestScope().Counter("test_tempurl"))(handler)
 	mid.ServeHTTP(w, r)
 	require.Equal(t, 401, w.Result().StatusCode)
 }
@@ -166,7 +166,7 @@ func TestTempurlMiddleware401BadSig(t *testing.T) {
 	r = r.WithContext(context.WithValue(r.Context(), "proxycontext", &ProxyContext{}))
 	w := httptest.NewRecorder()
 	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {})
-	mid := tempurl(handler)
+	mid := tempurl(common.NewTestScope().Counter("test_tempurl"))(handler)
 	mid.ServeHTTP(w, r)
 	require.Equal(t, 401, w.Result().StatusCode)
 }
@@ -176,7 +176,7 @@ func TestTempurlMiddleware401NoContainer(t *testing.T) {
 	r = r.WithContext(context.WithValue(r.Context(), "proxycontext", &ProxyContext{}))
 	w := httptest.NewRecorder()
 	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {})
-	mid := tempurl(handler)
+	mid := tempurl(common.NewTestScope().Counter("test_tempurl"))(handler)
 	mid.ServeHTTP(w, r)
 	require.Equal(t, 401, w.Result().StatusCode)
 }
@@ -187,7 +187,7 @@ func TestTempurlMiddleware400PuttingManifest(t *testing.T) {
 	r = r.WithContext(context.WithValue(r.Context(), "proxycontext", &ProxyContext{}))
 	w := httptest.NewRecorder()
 	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {})
-	mid := tempurl(handler)
+	mid := tempurl(common.NewTestScope().Counter("test_tempurl"))(handler)
 	mid.ServeHTTP(w, r)
 	require.Equal(t, 400, w.Result().StatusCode)
 }
@@ -205,7 +205,7 @@ func TestTempurlMiddleware401NoKeys(t *testing.T) {
 	r = r.WithContext(context.WithValue(r.Context(), "proxycontext", ctx))
 	w := httptest.NewRecorder()
 	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {})
-	mid := tempurl(handler)
+	mid := tempurl(common.NewTestScope().Counter("test_tempurl"))(handler)
 	mid.ServeHTTP(w, r)
 	require.Equal(t, 401, w.Result().StatusCode)
 }
@@ -223,7 +223,7 @@ func TestTempurlMiddleware401WrongKeys(t *testing.T) {
 	r = r.WithContext(context.WithValue(r.Context(), "proxycontext", ctx))
 	w := httptest.NewRecorder()
 	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {})
-	mid := tempurl(handler)
+	mid := tempurl(common.NewTestScope().Counter("test_tempurl"))(handler)
 	mid.ServeHTTP(w, r)
 	require.Equal(t, 401, w.Result().StatusCode)
 }
@@ -252,7 +252,7 @@ func TestTempurlMiddlewareContainerKey(t *testing.T) {
 		require.True(t, ok)
 		writer.WriteHeader(200)
 	})
-	mid := tempurl(handler)
+	mid := tempurl(common.NewTestScope().Counter("test_tempurl"))(handler)
 	mid.ServeHTTP(w, r)
 	require.Equal(t, 200, w.Result().StatusCode)
 }
@@ -275,7 +275,7 @@ func TestTempurlMiddlewarePath(t *testing.T) {
 		require.True(t, ok)
 		writer.WriteHeader(200)
 	})
-	mid := tempurl(handler)
+	mid := tempurl(common.NewTestScope().Counter("test_tempurl"))(handler)
 	mid.ServeHTTP(w, r)
 	require.Equal(t, 200, w.Result().StatusCode)
 }
@@ -305,7 +305,7 @@ func TestTempurlMiddlewareAccountKey(t *testing.T) {
 		require.False(t, ok)
 		writer.WriteHeader(200)
 	})
-	mid := tempurl(handler)
+	mid := tempurl(common.NewTestScope().Counter("test_tempurl"))(handler)
 	mid.ServeHTTP(w, r)
 	require.Equal(t, 200, w.Result().StatusCode)
 }

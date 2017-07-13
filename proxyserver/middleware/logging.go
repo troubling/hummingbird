@@ -16,15 +16,18 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
-func NewRequestLogger(config conf.Section) (func(http.Handler) http.Handler, error) {
+func NewRequestLogger(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
+	requestsMetric := metricsScope.Counter("requests")
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(
 			func(writer http.ResponseWriter, request *http.Request) {
@@ -42,6 +45,11 @@ func NewRequestLogger(config conf.Section) (func(http.Handler) http.Handler, err
 					zap.String("referer", common.GetDefault(request.Header, "Referer", "-")),
 					zap.String("userAgent", common.GetDefault(request.Header, "User-Agent", "-")),
 					zap.Float64("requestTimeSeconds", time.Since(start).Seconds()))
+				if ctx.Source == "" {
+					requestsMetric.Inc(1)
+					metricsScope.Counter(request.Method + "_requests").Inc(1)
+					metricsScope.Counter(fmt.Sprintf("%d_responses", status)).Inc(1)
+				}
 			},
 		)
 	}, nil

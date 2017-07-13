@@ -27,6 +27,7 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
@@ -177,6 +178,7 @@ func (c *copyMiddleware) handlePostAsCopy(writer *CopyWriter, request *http.Requ
 	values, err := url.ParseQuery(request.URL.RawQuery)
 	if err != nil {
 		srv.StandardResponse(writer, 400)
+		return
 	}
 	values.Set("multipart-manifest", "get")
 	values.Set("format", "raw")
@@ -190,6 +192,7 @@ func (c *copyMiddleware) handleCopy(writer *CopyWriter, request *http.Request) {
 		// FIXME.
 		// swift has: body='Destination header required'
 		srv.StandardResponse(writer, 412)
+		return
 	}
 	destAccount := writer.getDestAccountName(request)
 	destContainer, destObject, err := getHeaderContainerObjectName(request, "Destination")
@@ -328,6 +331,7 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 	values, err := url.ParseQuery(request.URL.RawQuery)
 	if err != nil {
 		srv.StandardResponse(writer, 400)
+		return
 	}
 	if values.Get("multipart-manifest") == "get" {
 		if srcHeader.Get("X-Static-Large-Object") != "" {
@@ -443,6 +447,6 @@ func (c *copyMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Req
 	c.next.ServeHTTP(writer, request)
 }
 
-func NewCopyMiddleware(config conf.Section) (func(http.Handler) http.Handler, error) {
+func NewCopyMiddleware(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
 	return func(next http.Handler) http.Handler { return &copyMiddleware{next: next} }, nil
 }

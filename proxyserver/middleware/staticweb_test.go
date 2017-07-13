@@ -10,11 +10,20 @@ import (
 	"testing"
 
 	"github.com/troubling/hummingbird/client"
+	"github.com/troubling/hummingbird/common"
 	"go.uber.org/zap"
 )
 
 type testNext struct {
 	requests []*http.Request
+}
+
+func newTestStaticWebHandler(next http.Handler) (*staticWebHandler, *common.TestCounter) {
+	requestsMetric := common.NewTestScope().Counter("test_staticweb")
+	return &staticWebHandler{
+		next:           next,
+		requestsMetric: requestsMetric,
+	}, requestsMetric.(*common.TestCounter)
 }
 
 func (t *testNext) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -87,7 +96,7 @@ func (t *testNext) ServeHTTP(writer http.ResponseWriter, request *http.Request) 
 
 func TestStaticWebGetObject(t *testing.T) {
 	next := &testNext{}
-	s := &staticWebHandler{next: next}
+	s, m := newTestStaticWebHandler(next)
 	request, err := http.NewRequest("GET", "/v1/a/c/o001", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -103,6 +112,9 @@ func TestStaticWebGetObject(t *testing.T) {
 	resp := rec.Result()
 	if resp.StatusCode != 200 {
 		t.Fatal(resp.StatusCode)
+	}
+	if m.Value() != 1 {
+		t.Fatal(m.Value())
 	}
 	if len(next.requests) != 2 {
 		for _, r := range next.requests {
@@ -124,7 +136,7 @@ func TestStaticWebGetObject(t *testing.T) {
 
 func TestStaticWebGetObjectNotThere(t *testing.T) {
 	next := &testNext{}
-	s := &staticWebHandler{next: next}
+	s, _ := newTestStaticWebHandler(next)
 	request, err := http.NewRequest("GET", "/v1/a/c/o002", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -163,7 +175,7 @@ func TestStaticWebGetObjectNotThere(t *testing.T) {
 
 func TestStaticWebGetSubdirRedirect(t *testing.T) {
 	next := &testNext{}
-	s := &staticWebHandler{next: next}
+	s, _ := newTestStaticWebHandler(next)
 	request, err := http.NewRequest("GET", "/v1/a/c/s001", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -206,7 +218,7 @@ func TestStaticWebGetSubdirRedirect(t *testing.T) {
 
 func TestStaticWebGetSubdir(t *testing.T) {
 	next := &testNext{}
-	s := &staticWebHandler{next: next}
+	s, _ := newTestStaticWebHandler(next)
 	request, err := http.NewRequest("GET", "/v1/a/c/s001/", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -257,7 +269,7 @@ func TestStaticWebGetSubdir(t *testing.T) {
 
 func TestStaticWebGetContainerRedirect(t *testing.T) {
 	next := &testNext{}
-	s := &staticWebHandler{next: next}
+	s, _ := newTestStaticWebHandler(next)
 	request, err := http.NewRequest("GET", "/v1/a/c", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -290,7 +302,7 @@ func TestStaticWebGetContainerRedirect(t *testing.T) {
 
 func TestStaticWebGetContainer(t *testing.T) {
 	next := &testNext{}
-	s := &staticWebHandler{next: next}
+	s, _ := newTestStaticWebHandler(next)
 	request, err := http.NewRequest("GET", "/v1/a/c/", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -335,7 +347,7 @@ func TestStaticWebGetContainer(t *testing.T) {
 
 func TestStaticWebGetWithWebIndex(t *testing.T) {
 	next := &testNext{}
-	s := &staticWebHandler{next: next}
+	s, _ := newTestStaticWebHandler(next)
 	request, err := http.NewRequest("GET", "/v1/a/c/", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -381,7 +393,7 @@ func TestStaticWebGetWithWebIndex(t *testing.T) {
 
 func TestStaticWebGetSubdirWithWebIndex(t *testing.T) {
 	next := &testNext{}
-	s := &staticWebHandler{next: next}
+	s, _ := newTestStaticWebHandler(next)
 	request, err := http.NewRequest("GET", "/v1/a/c/s002/", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -431,7 +443,7 @@ func TestStaticWebGetSubdirWithWebIndex(t *testing.T) {
 
 func TestStaticWebGetSubdirWithWebIndexRedirect(t *testing.T) {
 	next := &testNext{}
-	s := &staticWebHandler{next: next}
+	s, _ := newTestStaticWebHandler(next)
 	request, err := http.NewRequest("GET", "/v1/a/c/s002", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -469,7 +481,7 @@ func TestStaticWebGetSubdirWithWebIndexRedirect(t *testing.T) {
 
 func TestStaticWebGetContainerNoListings(t *testing.T) {
 	next := &testNext{}
-	s := &staticWebHandler{next: next}
+	s, _ := newTestStaticWebHandler(next)
 	request, err := http.NewRequest("GET", "/v1/a/c/", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -512,7 +524,7 @@ func TestStaticWebGetContainerNoListings(t *testing.T) {
 func TestStaticWebGetContainerCustomCSS(t *testing.T) {
 	// First section to show CSS reference.
 	next := &testNext{}
-	s := &staticWebHandler{next: next}
+	s, _ := newTestStaticWebHandler(next)
 	request, err := http.NewRequest("GET", "/v1/a/c/", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -554,7 +566,7 @@ func TestStaticWebGetContainerCustomCSS(t *testing.T) {
 
 	// Second section to show no CSS reference.
 	next = &testNext{}
-	s = &staticWebHandler{next: next}
+	s, _ = newTestStaticWebHandler(next)
 	request, err = http.NewRequest("GET", "/v1/a/c/", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -597,7 +609,7 @@ func TestStaticWebGetContainerCustomCSS(t *testing.T) {
 func TestStaticWebCustomErrorPages(t *testing.T) {
 	// First section for 404 test.
 	next := &testNext{}
-	s := &staticWebHandler{next: next}
+	s, _ := newTestStaticWebHandler(next)
 	request, err := http.NewRequest("GET", "/v1/a/c/error001", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -642,7 +654,7 @@ func TestStaticWebCustomErrorPages(t *testing.T) {
 
 	// First section for 401 test.
 	next = &testNext{}
-	s = &staticWebHandler{next: next}
+	s, _ = newTestStaticWebHandler(next)
 	request, err = http.NewRequest("GET", "/v1/a/c/error002", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -687,7 +699,7 @@ func TestStaticWebCustomErrorPages(t *testing.T) {
 
 func TestStaticWebNoContainerInfo(t *testing.T) {
 	next := &testNext{}
-	s := &staticWebHandler{next: next}
+	s, _ := newTestStaticWebHandler(next)
 	request, err := http.NewRequest("GET", "/v1/a/c2/", nil)
 	if err != nil {
 		t.Fatal(err)

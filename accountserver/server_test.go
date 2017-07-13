@@ -16,10 +16,12 @@
 package accountserver
 
 import (
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -29,6 +31,8 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
+
+var makeTestServerCounter uint64 = 0
 
 func makeTestServer() (http.Handler, func(), error) {
 	dir, err := ioutil.TempDir("", "")
@@ -53,7 +57,7 @@ func makeTestServer() (http.Handler, func(), error) {
 	cleanup := func() {
 		os.RemoveAll(dir)
 	}
-	return server.GetHandler(*new(conf.Config)), cleanup, nil
+	return server.GetHandler(*new(conf.Config), fmt.Sprintf("test_accountserver_%d", atomic.AddUint64(&makeTestServerCounter, 1))), cleanup, nil
 }
 
 func TestAccountGetNotFound(t *testing.T) {

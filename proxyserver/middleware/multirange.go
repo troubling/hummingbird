@@ -26,6 +26,7 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/uber-go/tally"
 )
 
 type mrw struct {
@@ -151,6 +152,6 @@ func multirange(next http.Handler) http.Handler {
 // This middleware intercepts object GET requests with multiple ranges in the Range header and
 // turns them into separate single-range requests on the backend, combining them into a multipart
 // response.  This should simplify the implementation of things like xLO and the object server.
-func NewMultirange(config conf.Section) (func(http.Handler) http.Handler, error) {
+func NewMultirange(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
 	return multirange, nil
 }

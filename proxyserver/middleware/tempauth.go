@@ -24,6 +24,7 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/uber-go/tally"
 )
 
 type testUser struct {
@@ -264,7 +265,7 @@ func (ta *tempAuth) authorize(r *http.Request) (bool, int) {
 	return false, s
 }
 
-func NewTempAuth(config conf.Section) (func(http.Handler) http.Handler, error) {
+func NewTempAuth(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
 	users := []testUser{}
 	defaultRules := map[string][]string{"require_group": {}}
 	resellerPrefixes, accountRules := conf.ReadResellerOptions(config, defaultRules)

@@ -1486,17 +1486,14 @@ func AddDevice(builderPath string, id, region, zone int64, ip string, port int64
 
 func BuildCmd(flags *flag.FlagSet) {
 	args := flags.Args()
-	if len(args) < 1 {
+	if len(args) < 2 || args[0] == "help" {
 		flags.Usage()
 		return
 	}
 	debug := flags.Lookup("debug").Value.String() == "true"
-	cmd := args[0]
+	pth := args[0]
+	cmd := args[1]
 	switch cmd {
-	case "help":
-		flags.Usage()
-		return
-
 	case "create":
 		if len(args) < 5 {
 			flags.Usage()
@@ -1517,7 +1514,7 @@ func BuildCmd(flags *flag.FlagSet) {
 			fmt.Println(err)
 			return
 		}
-		err = CreateRing(args[1], partPower, replicas, minPartHours, debug)
+		err = CreateRing(pth, partPower, replicas, minPartHours, debug)
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -1528,7 +1525,7 @@ func BuildCmd(flags *flag.FlagSet) {
 			flags.Usage()
 			return
 		}
-		err := Rebalance(args[1], debug)
+		err := Rebalance(pth, debug)
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -1589,7 +1586,7 @@ func BuildCmd(flags *flag.FlagSet) {
 			fmt.Println(err)
 			return
 		}
-		id, err := AddDevice(args[1], -1, region, zone, ip, port, replicationIp, replicationPort, device, weight, debug)
+		id, err := AddDevice(pth, -1, region, zone, ip, port, replicationIp, replicationPort, device, weight, debug)
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -1597,8 +1594,7 @@ func BuildCmd(flags *flag.FlagSet) {
 			fmt.Printf("Device %s with %.2f weight added with id %d\n", device, weight, id)
 		}
 	case "load":
-		path := args[1]
-		builder, err := NewRingBuilderFromFile(path, debug)
+		builder, err := NewRingBuilderFromFile(pth, debug)
 		fmt.Printf("%+v\n", builder)
 		if err != nil {
 			fmt.Println(err)

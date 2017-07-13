@@ -22,6 +22,7 @@ import (
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
@@ -325,7 +326,7 @@ func extractIdentity(r *http.Request) map[string]string {
 	return identity
 }
 
-func NewKeystoneAuth(config conf.Section) (func(http.Handler) http.Handler, error) {
+func NewKeystoneAuth(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
 	defaultRules := map[string][]string{"operator_roles": {"admin", "swiftoperator"},
 		"service_roles": {}}
 	resellerPrefixes, accountRules := conf.ReadResellerOptions(config, defaultRules)
