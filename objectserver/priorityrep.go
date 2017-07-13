@@ -71,6 +71,32 @@ func (d *devLimiter) waitForSomethingToFinish() {
 	<-d.somethingFinished
 }
 
+func SendPriRepJob(job *PriorityRepJob, client *http.Client) (string, bool) {
+	url := fmt.Sprintf("http://%s:%d/priorityrep", job.FromDevice.ReplicationIp, job.FromDevice.ReplicationPort+500)
+	jsonned, err := json.Marshal(job)
+	if err != nil {
+		return fmt.Sprintf("Failed to serialize job for some reason: %s", err), false
+	}
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonned))
+	if err != nil {
+		return fmt.Sprintf("Failed to create request for some reason: %s", err), false
+	}
+	req.ContentLength = int64(len(jsonned))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Sprintf("Error moving partition %d: %v",
+			job.Partition, err), false
+	}
+	resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return fmt.Sprintf("Bad status code moving partition %d: %d",
+			job.Partition, resp.StatusCode), false
+	}
+	return fmt.Sprintf("Replicating partition %d from %s/%s",
+		job.Partition, job.FromDevice.Ip, job.FromDevice.Device), true
+}
+
 // doPriRepJobs executes a list of PriorityRepJobs, limiting concurrent jobs per device to deviceMax.
 func doPriRepJobs(jobs []*PriorityRepJob, deviceMax int, client *http.Client) {
 	limiter := &devLimiter{inUse: make(map[int]int), max: deviceMax, somethingFinished: make(chan struct{}, 1)}
@@ -86,30 +112,8 @@ func doPriRepJobs(jobs []*PriorityRepJob, deviceMax int, client *http.Client) {
 			go func(job *PriorityRepJob) {
 				defer wg.Done()
 				defer limiter.finished(job)
-				url := fmt.Sprintf("http://%s:%d/priorityrep", job.FromDevice.ReplicationIp, job.FromDevice.ReplicationPort+500)
-				jsonned, err := json.Marshal(job)
-				if err != nil {
-					fmt.Println("Failed to serialize job for some reason:", err)
-					return
-				}
-				req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonned))
-				if err != nil {
-					fmt.Println("Failed to create request for some reason:", err)
-					return
-				}
-				req.ContentLength = int64(len(jsonned))
-				req.Header.Set("Content-Type", "application/json")
-				resp, err := client.Do(req)
-				if err != nil {
-					fmt.Printf("Error moving partition %d: %v\n", job.Partition, err)
-					return
-				}
-				resp.Body.Close()
-				if resp.StatusCode/100 != 2 {
-					fmt.Printf("Bad status code moving partition %d: %d\n", job.Partition, resp.StatusCode)
-				} else {
-					fmt.Printf("Replicating partition %d from %s/%s\n", job.Partition, job.FromDevice.Ip, job.FromDevice.Device)
-				}
+				res, _ := SendPriRepJob(job, client)
+				fmt.Println(res)
 			}(jobs[i])
 			jobs = append(jobs[:i], jobs[i+1:]...)
 			break
