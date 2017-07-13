@@ -5,7 +5,7 @@ sudo find /var/log/hummingbird /var/cache/swift -type f -exec rm -f {} \;
 sudo umount -f /srv/hb || /bin/true
 sudo mkdir -p /srv/hb
 sudo truncate -s 5GB /srv/hb-disk
-sudo mkfs.xfs /srv/hb-disk
+sudo mkfs.xfs -f /srv/hb-disk
 sudo mount -o loop /srv/hb-disk /srv/hb
 sudo mkdir -p /var/cache/swift /var/cache/swift2 /var/cache/swift3 \
     /var/cache/swift4 /var/run/swift /srv/hb/1/sdb1 /srv/hb/2/sdb2 \
