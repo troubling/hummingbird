@@ -1,0 +1,15 @@
+#!/bin/bash
+
+hummingbird stop all
+sudo find /var/log/hummingbird /var/cache/swift -type f -exec rm -f {} \;
+sudo umount -f /srv/hb || /bin/true
+sudo mkdir -p /srv/hb
+sudo truncate -s 5GB /srv/hb-disk
+sudo mkfs.xfs /srv/hb-disk
+sudo mount -o loop /srv/hb-disk /srv/hb
+sudo mkdir -p /var/cache/swift /var/cache/swift2 /var/cache/swift3 \
+    /var/cache/swift4 /var/run/swift /srv/hb/1/sdb1 /srv/hb/2/sdb2 \
+    /srv/hb/3/sdb3 /srv/hb/4/sdb4 /var/run/hummingbird /var/log/hummingbird
+sudo chown -R "${USER}:${USER}" /var/run/hummingbird \
+    /var/log/hummingbird /var/cache/swift* /srv/*
+sudo service memcached restart
