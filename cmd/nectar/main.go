@@ -34,6 +34,11 @@ var (
 )
 
 var (
+	downloadFlags       = flag.NewFlagSet("download", flag.ContinueOnError)
+	downloadFlagAccount = downloadFlags.Bool("a", false, "Indicates you truly wish to download the entire account; this is to prevent accidentally doing so when giving a single parameter to download.")
+)
+
+var (
 	getFlags         = flag.NewFlagSet("get", flag.ContinueOnError)
 	getFlagRaw       = getFlags.Bool("r", false, "Emit raw results")
 	getFlagNameOnly  = getFlags.Bool("n", false, "In listings, emits the names only")
@@ -58,6 +63,7 @@ func init() {
 	globalFlags.Var(&globalFlagHeaders, "H", "|<name>:[value]| Sets a header to be sent with the request. Useful mostly for PUTs and POSTs, allowing you to set metadata. This option can be specified multiple times for additional headers.")
 	var flagbuf bytes.Buffer
 	globalFlags.SetOutput(&flagbuf)
+	downloadFlags.SetOutput(&flagbuf)
 	getFlags.SetOutput(&flagbuf)
 	headFlags.SetOutput(&flagbuf)
 }
@@ -76,6 +82,11 @@ The following subcommands are available:`, 0, "", ""))
 		fmt.Println(brimtext.Wrap(`
 Performs a DELETE request. A DELETE, as probably expected, is used to remove the target.
         `, 0, "  ", "  "))
+		fmt.Println("\ndownload [options] [container] [object] <destpath>")
+		fmt.Println(brimtext.Wrap(`
+Downloads an object or objects to a local file or files. The <destpath> indicates where you want the file or files to be created. If you don't give [container] [object] the entire account will be downloaded (requires -a for confirmation). If you just give [container] that entire container will be downloaded. Perhaps obviously, if you give [container] [object] just that object will be downloaded.
+        `, 0, "  ", "  "))
+		helpFlags(downloadFlags)
 		fmt.Println("\nget [options] [container] [object]")
 		fmt.Println(brimtext.Wrap(`
 Performs a GET request. A GET on an account or container will output the listing of containers or objects, respectively. A GET on an object will output the content of the object to standard output.
@@ -111,14 +122,12 @@ Uploads local files as objects. If you don't specify [container] the name of the
 
 func fatalf(frmt string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, frmt, args...)
-	fmt.Fprintln(os.Stderr)
 	os.Exit(1)
 }
 
 func verbosef(frmt string, args ...interface{}) {
 	if *globalFlagVerbose {
 		fmt.Fprintf(os.Stderr, frmt, args...)
-		fmt.Fprintln(os.Stderr)
 	}
 }
 
@@ -150,19 +159,19 @@ func main() {
 		fatal(err)
 	}
 	if *globalFlagAuthURL == "" {
-		fatalf("No Auth URL set; use -A")
+		fatalf("No Auth URL set; use -A\n")
 	}
 	if *globalFlagAuthUser == "" {
-		fatalf("No Auth User set; use -U")
+		fatalf("No Auth User set; use -U\n")
 	}
 	if *globalFlagAuthKey == "" && *globalFlagAuthPassword == "" {
-		fatalf("No Auth Key or Password set; use -K or -P")
+		fatalf("No Auth Key or Password set; use -K or -P\n")
 	}
 	c, resp := client.NewClient(*globalFlagAuthTenant, *globalFlagAuthUser, *globalFlagAuthPassword, *globalFlagAuthKey, *globalFlagStorageRegion, *globalFlagAuthURL, *globalFlagInternalStorage)
 	if resp != nil {
 		bodyBytes, _ := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
-		fatalf("Auth responded with %d %s - %s", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+		fatalf("Auth responded with %d %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
 	}
 	cmd := ""
 	args := append([]string{}, globalFlags.Args()...)
@@ -173,6 +182,8 @@ func main() {
 	switch cmd {
 	case "delete":
 		delet(c, args)
+	case "download":
+		download(c, args)
 	case "get":
 		get(c, args)
 	case "head":
@@ -184,7 +195,7 @@ func main() {
 	case "upload":
 		upload(c, args)
 	default:
-		fatalf("Unknown command: %s", cmd)
+		fatalf("Unknown command: %s\n", cmd)
 	}
 }
 
@@ -201,7 +212,7 @@ func delet(c client.Client, args []string) {
 	if resp.StatusCode/100 != 2 {
 		bodyBytes, _ := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
-		fatalf("%d %s - %s", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+		fatalf("%d %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
 	}
 	resp.Body.Close()
 }
@@ -223,7 +234,7 @@ func get(c client.Client, args []string) {
 		if resp.StatusCode/100 != 2 {
 			bodyBytes, _ := ioutil.ReadAll(resp.Body)
 			resp.Body.Close()
-			fatalf("%d %s - %s", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+			fatalf("%d %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
 		}
 		if *getFlagRaw || object == "" {
 			data := [][]string{}
@@ -251,7 +262,7 @@ func get(c client.Client, args []string) {
 		if resp.StatusCode/100 != 2 {
 			bodyBytes, _ := ioutil.ReadAll(resp.Body)
 			resp.Body.Close()
-			fatalf("%d %s - %s", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+			fatalf("%d %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
 		}
 		if *getFlagNameOnly {
 			for _, entry := range entries {
@@ -279,7 +290,7 @@ func get(c client.Client, args []string) {
 	if resp.StatusCode/100 != 2 {
 		bodyBytes, _ := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
-		fatalf("%d %s - %s", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+		fatalf("%d %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
 	}
 	if *getFlagNameOnly {
 		for _, entry := range entries {
@@ -323,7 +334,7 @@ func head(c client.Client, args []string) {
 	bodyBytes, _ := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		fatalf("%d %s - %s", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+		fatalf("%d %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
 	}
 	data := [][]string{}
 	ks := []string{}
@@ -374,7 +385,7 @@ func put(c client.Client, args []string) {
 	if resp.StatusCode/100 != 2 {
 		bodyBytes, _ := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
-		fatalf("%d %s - %s", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+		fatalf("%d %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
 	}
 	resp.Body.Close()
 }
@@ -392,30 +403,30 @@ func post(c client.Client, args []string) {
 	if resp.StatusCode/100 != 2 {
 		bodyBytes, _ := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
-		fatalf("%d %s - %s", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+		fatalf("%d %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
 	}
 	resp.Body.Close()
 }
 
 func upload(c client.Client, args []string) {
 	if len(args) == 0 {
-		fatalf("<sourcepath> is required for upload")
+		fatalf("<sourcepath> is required for upload.\n")
 	}
 	sourcepath := args[0]
 	container, object := parsePath(args[1:])
 	if container == "" {
 		abscwd, err := filepath.Abs(".")
 		if err != nil {
-			fatal(err)
+			fatalf("Could not determine current working directory: %s\n", err)
 		}
 		container = filepath.Base(abscwd)
 	}
-	verbosef("Ensuring container %q exists.", container)
+	verbosef("Ensuring container %q exists.\n", container)
 	resp := c.PutContainer(container, globalFlagHeaders.Headers())
 	if resp.StatusCode/100 != 2 {
 		bodyBytes, _ := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
-		fatalf("PUT %s %d %s - %s", container, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+		fatalf("PUT %s - %d %s - %s\n", container, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
 	}
 	resp.Body.Close()
 	concurrency := *globalFlagConcurrency
@@ -427,40 +438,42 @@ func upload(c client.Client, args []string) {
 	wg.Add(concurrency)
 	for i := 0; i < concurrency; i++ {
 		go func() {
-			defer wg.Done()
 			for {
 				path := <-uploadChan
 				if path == "" {
 					break
 				}
-				verbosef("Uploading %q to %q %q.", path, container, object+path)
+				verbosef("Uploading %q to %q %q.\n", path, container, object+path)
 				f, err := os.Open(path)
 				if err != nil {
 					if *globalFlagContinueOnError {
-						fmt.Fprintf(os.Stderr, "ERROR Uploading %q to %q %q: %s\n", path, container, object+path, err)
+						fmt.Fprintf(os.Stderr, "Cannot open %s while attempting to upload to %s/%s: %s\n", path, container, object+path, err)
 						continue
 					} else {
-						fatal(err)
+						fatalf("Cannot open %s while attempting to upload to %s/%s: %s\n", path, container, object+path, err)
 					}
 				}
-				defer f.Close()
 				resp := c.PutObject(container, object+path, globalFlagHeaders.Headers(), f)
-				defer resp.Body.Close()
 				if resp.StatusCode/100 != 2 {
 					bodyBytes, _ := ioutil.ReadAll(resp.Body)
+					resp.Body.Close()
+					f.Close()
 					if *globalFlagContinueOnError {
-						fmt.Fprintf(os.Stderr, "ERROR with PUT %s/%s %d %s - %s\n", container, object+path, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+						fmt.Fprintf(os.Stderr, "PUT %s/%s - %d %s - %s\n", container, object+path, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
 						continue
 					} else {
-						fatalf("PUT %s/%s %d %s - %s", container, object+path, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+						fatalf("PUT %s/%s - %d %s - %s\n", container, object+path, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
 					}
 				}
+				resp.Body.Close()
+				f.Close()
 			}
+			wg.Done()
 		}()
 	}
 	fi, err := os.Stat(sourcepath)
 	if err != nil {
-		fatal(err)
+		fatalf("Could not stat %s: %s\n", sourcepath, err)
 	}
 	// This "if" is so a single file upload that happens to be a symlink will work.
 	if fi.Mode().IsRegular() {
@@ -480,6 +493,164 @@ func upload(c client.Client, args []string) {
 	}
 	close(uploadChan)
 	wg.Wait()
+}
+
+func download(c client.Client, args []string) {
+	if err := downloadFlags.Parse(args); err != nil {
+		fatal(err)
+	}
+	args = downloadFlags.Args()
+	if len(args) == 0 {
+		fatalf("<destpath> is required for download.\n")
+	}
+	destpath := args[len(args)-1]
+	container, object := parsePath(args[:len(args)-1])
+	concurrency := *globalFlagConcurrency
+	// Need at least 2 to queue object downloads while reading a container listing.
+	if concurrency < 2 {
+		concurrency = 2
+	}
+	type downloadTask struct {
+		container string
+		object    string
+		destpath  string
+	}
+	downloadChan := make(chan *downloadTask, concurrency-1)
+	var dirExistsLock sync.Mutex
+	dirExists := map[string]bool{}
+	taskWG := sync.WaitGroup{}
+	taskWG.Add(concurrency)
+	containerWG := sync.WaitGroup{}
+	for i := 0; i < concurrency; i++ {
+		go func() {
+			for {
+				task := <-downloadChan
+				if task == nil {
+					break
+				}
+				if task.object == "" {
+					entries, resp := c.GetContainer(task.container, "", "", 0, "", "", false, globalFlagHeaders.Headers())
+					if resp.StatusCode/100 != 2 {
+						bodyBytes, _ := ioutil.ReadAll(resp.Body)
+						resp.Body.Close()
+						containerWG.Done()
+						if *globalFlagContinueOnError {
+							fmt.Fprintf(os.Stderr, "GET %s - %d %s - %s\n", task.container, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+							continue
+						} else {
+							fatalf("GET %s - %d %s - %s\n", task.container, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+						}
+					}
+					resp.Body.Close()
+					for _, entry := range entries {
+						if entry.Name != "" {
+							downloadChan <- &downloadTask{container: task.container, object: entry.Name, destpath: filepath.Join(task.destpath, filepath.FromSlash(entry.Name))}
+						}
+					}
+					containerWG.Done()
+					continue
+				}
+				verbosef("Downloading %s/%s to %s.\n", task.container, task.object, task.destpath)
+				if dstdr := filepath.Dir(task.destpath); dstdr != "." {
+					dirExistsLock.Lock()
+					if !dirExists[dstdr] {
+						if err := os.MkdirAll(dstdr, 0755); err != nil {
+							if *globalFlagContinueOnError {
+								fmt.Fprintf(os.Stderr, "Could not make directory path %s: %s\n", dstdr, err)
+							} else {
+								fatalf("Could not make directory path %s: %s\n", dstdr, err)
+							}
+						}
+						dirExists[dstdr] = true
+					}
+					dirExistsLock.Unlock()
+				}
+				f, err := os.Create(task.destpath)
+				if err != nil {
+					if *globalFlagContinueOnError {
+						fmt.Fprintf(os.Stderr, "Could not create %s: %s\n", task.destpath, err)
+						continue
+					} else {
+						fatalf("Could not create %s: %s\n", task.destpath, err)
+					}
+				}
+				resp := c.GetObject(task.container, task.object, globalFlagHeaders.Headers())
+				if resp.StatusCode/100 != 2 {
+					bodyBytes, _ := ioutil.ReadAll(resp.Body)
+					resp.Body.Close()
+					f.Close()
+					if *globalFlagContinueOnError {
+						fmt.Fprintf(os.Stderr, "GET %s/%s - %d %s - %s\n", task.container, task.object, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+						continue
+					} else {
+						fatalf("GET %s/%s - %d %s - %s\n", task.container, task.object, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+					}
+				}
+				if _, err = io.Copy(f, resp.Body); err != nil {
+					resp.Body.Close()
+					f.Close()
+					if *globalFlagContinueOnError {
+						fmt.Fprintf(os.Stderr, "Could not complete content transfer from %s/%s to %s: %s\n", task.container, task.object, task.destpath, err)
+						continue
+					} else {
+						fatalf("Could not complete content transfer from %s/%s to %s: %s\n", task.container, task.object, task.destpath, err)
+					}
+				}
+				resp.Body.Close()
+				f.Close()
+			}
+			taskWG.Done()
+		}()
+	}
+	if object != "" {
+		fi, err := os.Stat(destpath)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				fatalf("Could not stat %s: %s\n", destpath, err)
+			}
+		} else if fi.IsDir() {
+			destpath = filepath.Join(destpath, object)
+		}
+		downloadChan <- &downloadTask{container: container, object: object, destpath: destpath}
+	} else if container != "" {
+		fi, err := os.Stat(destpath)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				fatalf("Could not stat %s: %s\n", destpath, err)
+			}
+		} else if !fi.IsDir() {
+			fatalf("Cannot download a container to a single file: %s\n", destpath)
+		}
+		containerWG.Add(1)
+		downloadChan <- &downloadTask{container: container, object: "", destpath: destpath}
+	} else if !*downloadFlagAccount {
+		fatalf("You must specify -a if you wish to download the entire account.\n")
+	} else {
+		fi, err := os.Stat(destpath)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				fatalf("Could not stat %s: %s\n", destpath, err)
+			}
+		} else if !fi.IsDir() {
+			fatalf("Cannot download an account to a single file: %s\n", destpath)
+		}
+		entries, resp := c.GetAccount("", "", 0, "", "", false, globalFlagHeaders.Headers())
+		if resp.StatusCode/100 != 2 {
+			bodyBytes, _ := ioutil.ReadAll(resp.Body)
+			resp.Body.Close()
+			fatalf("GET - %d %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+		}
+		resp.Body.Close()
+		for _, entry := range entries {
+			if entry.Name != "" {
+				containerWG.Add(1)
+				downloadChan <- &downloadTask{container: entry.Name, object: "", destpath: filepath.Join(destpath, entry.Name)}
+			}
+		}
+	}
+	containerWG.Wait()
+	close(downloadChan)
+	taskWG.Wait()
 }
 
 func parsePath(args []string) (string, string) {
