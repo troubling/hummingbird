@@ -50,6 +50,7 @@ script:
   - hummingbird start account
   - PATH=$PATH:~/swift-venv/bin swift-init start proxy
   - PATH=$PATH:~/swift-venv/bin nosetests -e test_unicode_metadata --with-html --html-file=/tmp/output/functional_swiftproxy.html ~/swift/test/functional
+  - PATH=$PATH:~/swift-venv/bin swift-init stop proxy
   - 
   - hbreset
   - hummingbird start main
