@@ -10,11 +10,12 @@ import (
 
 type autoCloseResponses struct {
 	http.RoundTripper
+	autoCloseAfter time.Duration
 }
 
 func (a *autoCloseResponses) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := a.RoundTripper.RoundTrip(req)
-	resp.Body = &autoClosingBody{ReadCloser: resp.Body, timer: time.AfterFunc(time.Minute, func() { autoCloseReport(req, resp) })}
+	resp.Body = &autoClosingBody{ReadCloser: resp.Body, timer: time.AfterFunc(a.autoCloseAfter, func() { autoCloseReport(req, resp) })}
 	return resp, err
 }
 
