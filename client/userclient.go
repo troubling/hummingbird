@@ -69,12 +69,16 @@ func (c *userClient) PostAccount(headers map[string]string) *http.Response {
 	return c.doRequest("POST", "", nil, headers)
 }
 
-func (c *userClient) GetAccount(marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ContainerRecord, *http.Response) {
+func (c *userClient) GetAccount(marker string, endMarker string, limit int, prefix string, delimiter string, reverse bool, headers map[string]string) ([]ContainerRecord, *http.Response) {
 	limitStr := ""
 	if limit > 0 {
 		limitStr = strconv.Itoa(limit)
 	}
-	path := mkquery(map[string]string{"marker": marker, "end_marker": endMarker, "prefix": prefix, "delimiter": delimiter, "limit": limitStr, "reverse": reverse})
+	reverseStr := ""
+	if reverse {
+		reverseStr = "true"
+	}
+	path := mkquery(map[string]string{"marker": marker, "end_marker": endMarker, "prefix": prefix, "delimiter": delimiter, "limit": limitStr, "reverse": reverseStr})
 	req, err := c.authedRequest("GET", path, nil, headers)
 	if err != nil {
 		return nil, ResponseStub(http.StatusBadRequest, err.Error())
@@ -93,6 +97,24 @@ func (c *userClient) GetAccount(marker string, endMarker string, limit int, pref
 	return accountListing, resp
 }
 
+func (c *userClient) GetAccountRaw(marker string, endMarker string, limit int, prefix string, delimiter string, reverse bool, headers map[string]string) *http.Response {
+	limitStr := ""
+	if limit > 0 {
+		limitStr = strconv.Itoa(limit)
+	}
+	reverseStr := ""
+	if reverse {
+		reverseStr = "true"
+	}
+	path := mkquery(map[string]string{"marker": marker, "end_marker": endMarker, "prefix": prefix, "delimiter": delimiter, "limit": limitStr, "reverse": reverseStr})
+	req, err := c.authedRequest("GET", path, nil, headers)
+	if err != nil {
+		return ResponseStub(http.StatusBadRequest, err.Error())
+	}
+	req.Header.Set("Accept", "application/json")
+	return c.do(req)
+}
+
 func (c *userClient) HeadAccount(headers map[string]string) *http.Response {
 	return c.doRequest("HEAD", "", nil, headers)
 }
@@ -109,12 +131,16 @@ func (c *userClient) PostContainer(container string, headers map[string]string) 
 	return c.doRequest("POST", "/"+container, nil, headers)
 }
 
-func (c *userClient) GetContainer(container string, marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ObjectRecord, *http.Response) {
+func (c *userClient) GetContainer(container string, marker string, endMarker string, limit int, prefix string, delimiter string, reverse bool, headers map[string]string) ([]ObjectRecord, *http.Response) {
 	limitStr := ""
 	if limit > 0 {
 		limitStr = strconv.Itoa(limit)
 	}
-	path := "/" + container + mkquery(map[string]string{"marker": marker, "end_marker": endMarker, "prefix": prefix, "delimiter": delimiter, "limit": limitStr, "reverse": reverse})
+	reverseStr := ""
+	if reverse {
+		reverseStr = "true"
+	}
+	path := "/" + container + mkquery(map[string]string{"marker": marker, "end_marker": endMarker, "prefix": prefix, "delimiter": delimiter, "limit": limitStr, "reverse": reverseStr})
 	req, err := c.authedRequest("GET", path, nil, headers)
 	if err != nil {
 		return nil, ResponseStub(http.StatusBadRequest, err.Error())
@@ -131,6 +157,24 @@ func (c *userClient) GetContainer(container string, marker string, endMarker str
 	}
 	resp.Body.Close()
 	return containerListing, resp
+}
+
+func (c *userClient) GetContainerRaw(container string, marker string, endMarker string, limit int, prefix string, delimiter string, reverse bool, headers map[string]string) *http.Response {
+	limitStr := ""
+	if limit > 0 {
+		limitStr = strconv.Itoa(limit)
+	}
+	reverseStr := ""
+	if reverse {
+		reverseStr = "true"
+	}
+	path := "/" + container + mkquery(map[string]string{"marker": marker, "end_marker": endMarker, "prefix": prefix, "delimiter": delimiter, "limit": limitStr, "reverse": reverseStr})
+	req, err := c.authedRequest("GET", path, nil, headers)
+	if err != nil {
+		return ResponseStub(http.StatusBadRequest, err.Error())
+	}
+	req.Header.Set("Accept", "application/json")
+	return c.do(req)
 }
 
 func (c *userClient) HeadContainer(container string, headers map[string]string) *http.Response {

@@ -51,7 +51,7 @@ func TestLocalHost(t *testing.T) {
 			c.Close()
 		}
 	}
-	section := iniFile.Section("memcache")
+	section := iniFile.Section(confSection)
 	section["dial_timeout"] = "1000"
 	section["max_free_connections_per_server"] = "3"
 	section["memcache_servers"] = buffer.String()
@@ -99,7 +99,7 @@ func TestUnixSocket(t *testing.T) {
 		}
 	}
 	time.Sleep(time.Duration(25) * time.Millisecond)
-	section := iniFile.Section("memcache")
+	section := iniFile.Section(confSection)
 	section["dial_timeout"] = "1000"
 	section["max_free_connections_per_server"] = "3"
 	section["memcache_servers"] = buffer.String()

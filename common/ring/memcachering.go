@@ -41,6 +41,7 @@ const (
 	opDelete    = byte(0x04)
 	opIncrement = byte(0x05)
 	opDecrement = byte(0x06)
+	confSection = "filter:cache"
 )
 
 type MemcacheRing interface {
@@ -79,12 +80,12 @@ func NewMemcacheRingFromConfig(config conf.Config) (*memcacheRing, error) {
 	ring.serverKeys = make([]string, 0)
 	ring.servers = make(map[string]*server)
 
-	ring.maxFreeConnectionsPerServer = config.GetInt("memcache", "max_free_connections_per_server", 100)
-	ring.connTimeout = config.GetInt("memcache", "conn_timeout", 100)
-	ring.responseTimeout = config.GetInt("memcache", "response_timeout", 100)
-	ring.nodeWeight = config.GetInt("memcache", "node_weight", 50)
-	ring.tries = config.GetInt("memcache", "tries", 5)
-	for _, s := range strings.Split(config.GetDefault("memcache", "memcache_servers", ""), ",") {
+	ring.maxFreeConnectionsPerServer = config.GetInt(confSection, "max_free_connections_per_server", 100)
+	ring.connTimeout = config.GetInt(confSection, "conn_timeout", 100)
+	ring.responseTimeout = config.GetInt(confSection, "response_timeout", 100)
+	ring.nodeWeight = config.GetInt(confSection, "node_weight", 50)
+	ring.tries = config.GetInt(confSection, "tries", 5)
+	for _, s := range strings.Split(config.GetDefault(confSection, "memcache_servers", ""), ",") {
 		err := ring.addServer(s)
 		if err != nil {
 			return nil, err

@@ -74,6 +74,7 @@ type ObjectRecord struct {
 	Bytes        int    `json:"bytes"`
 	Name         string `json:"name"`
 	ContentType  string `json:"content_type"`
+	Subdir       string `json:"subdir"`
 }
 
 // Client is an API interface to CloudFiles.
@@ -82,14 +83,16 @@ type Client interface {
 	PostAccount(headers map[string]string) *http.Response
 	// GetAccount reads the body of the response and converts it into a
 	// []ContainerRecord while also returning the response instance itself.
-	GetAccount(marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ContainerRecord, *http.Response)
+	GetAccount(marker string, endMarker string, limit int, prefix string, delimiter string, reverse bool, headers map[string]string) ([]ContainerRecord, *http.Response)
+	GetAccountRaw(marker string, endMarker string, limit int, prefix string, delimiter string, reverse bool, headers map[string]string) *http.Response
 	HeadAccount(headers map[string]string) *http.Response
 	DeleteAccount(headers map[string]string) *http.Response
 	PutContainer(container string, headers map[string]string) *http.Response
 	PostContainer(container string, headers map[string]string) *http.Response
 	// GetContainer reads the body of the response and converts it into an
 	// []ObjectRecord while also returning the response instance itself.
-	GetContainer(container string, marker string, endMarker string, limit int, prefix string, delimiter string, reverse string, headers map[string]string) ([]ObjectRecord, *http.Response)
+	GetContainer(container string, marker string, endMarker string, limit int, prefix string, delimiter string, reverse bool, headers map[string]string) ([]ObjectRecord, *http.Response)
+	GetContainerRaw(container string, marker string, endMarker string, limit int, prefix string, delimiter string, reverse bool, headers map[string]string) *http.Response
 	HeadContainer(container string, headers map[string]string) *http.Response
 	DeleteContainer(container string, headers map[string]string) *http.Response
 	PutObject(container string, obj string, headers map[string]string, src io.Reader) *http.Response
