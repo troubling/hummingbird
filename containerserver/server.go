@@ -610,7 +610,7 @@ func (server *ContainerServer) GetHandler(config conf.Config, metricsPrefix stri
 	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Invalid path: %s", r.URL.Path), http.StatusBadRequest)
 	})
-	return alice.New(middleware.Metrics(metricsScope)).Append(middleware.GrepObject).Then(router)
+	return alice.New(middleware.Metrics(&config, metricsScope)).Append(middleware.GrepObject).Then(router)
 }
 
 // GetServer parses configs and command-line flags, returning a configured server object and the ip and port it should bind on.
