@@ -152,7 +152,7 @@ func TestPriRepJobs(t *testing.T) {
 	jobs := []*PriorityRepJob{
 		{
 			Partition:  0,
-			FromDevice: &ring.Device{Device: "sda", Ip: host, Port: port - 500, ReplicationIp: host, ReplicationPort: port - 500},
+			FromDevice: &ring.Device{Device: "sda", Ip: host, Port: port, ReplicationIp: host, ReplicationPort: port},
 			ToDevices: []*ring.Device{
 				{Device: "sdb"},
 			},
