@@ -142,6 +142,7 @@ func (c *ProxyDirectClient) firstResponse(reqs ...*http.Request) (resp *http.Res
 	returned := make(chan struct{})
 	defer close(returned)
 
+	internalErrors := 0
 	for _, req := range reqs {
 		go func(r *http.Request) {
 			response, err := c.client.Do(r)
@@ -162,7 +163,9 @@ func (c *ProxyDirectClient) firstResponse(reqs ...*http.Request) (resp *http.Res
 
 		select {
 		case resp = <-success:
-			if resp != nil && (resp.StatusCode/100 == 2 || resp.StatusCode == http.StatusPreconditionFailed || resp.StatusCode == http.StatusNotModified || resp.StatusCode == http.StatusRequestedRangeNotSatisfiable) {
+			if resp == nil || resp.StatusCode/100 == 5 {
+				internalErrors++
+			} else if resp.StatusCode/100 == 2 || resp.StatusCode == http.StatusPreconditionFailed || resp.StatusCode == http.StatusNotModified || resp.StatusCode == http.StatusRequestedRangeNotSatisfiable {
 				resp = StubResponse(resp)
 				resp.Header.Set("Accept-Ranges", "bytes")
 				if etag := resp.Header.Get("Etag"); etag != "" {
@@ -174,6 +177,9 @@ func (c *ProxyDirectClient) firstResponse(reqs ...*http.Request) (resp *http.Res
 			}
 		case <-time.After(time.Second):
 		}
+	}
+	if internalErrors == len(reqs) {
+		return ResponseStub(http.StatusServiceUnavailable, "")
 	}
 	return ResponseStub(http.StatusNotFound, "")
 }
