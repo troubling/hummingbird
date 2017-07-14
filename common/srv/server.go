@@ -81,18 +81,41 @@ var responseBodies = map[int]string{
 	504: fmt.Sprintf(responseTemplate, "Gateway Timeout", "A timeout has occurred speaking to a backend server."),
 }
 
+type XSourceCodeRecorder interface {
+	AddXSourceCode(skip int)
+}
+
 type customWriter struct {
 	http.ResponseWriter
-	f func(w http.ResponseWriter, status int) int
+	xSourceCode bool
+	f           func(w http.ResponseWriter, status int) int
+}
+
+func (w *customWriter) AddXSourceCode(skip int) {
+	if w.xSourceCode {
+		if _, f, n, ok := runtime.Caller(skip + 1); ok {
+			v := w.Header().Get("X-Source-Code")
+			if v != "" {
+				v += fmt.Sprintf(" %s:%d", f, n)
+			} else {
+				v = fmt.Sprintf("%s:%d", f, n)
+			}
+			w.Header().Set("X-Source-Code", v)
+		}
+	}
 }
 
 func (w *customWriter) WriteHeader(status int) {
+	if w.xSourceCode {
+		w.AddXSourceCode(1)
+		w.Header().Set("X-Source-Code", w.Header().Get("X-Source-Code")+" - ")
+	}
 	w.ResponseWriter.WriteHeader(w.f(w.ResponseWriter, status))
 }
 
 // NewCustomWriter creates an http.ResponseWriter wrapper that calls your function on WriteHeader.
-func NewCustomWriter(w http.ResponseWriter, f func(w http.ResponseWriter, status int) int) http.ResponseWriter {
-	return &customWriter{ResponseWriter: w, f: f}
+func NewCustomWriter(config *conf.Config, w http.ResponseWriter, f func(w http.ResponseWriter, status int) int) http.ResponseWriter {
+	return &customWriter{ResponseWriter: w, xSourceCode: config.GetBool("debug", "debug_x_source_code", false), f: f}
 }
 
 // ResponseWriter that saves its status - used for logging.
@@ -106,6 +129,9 @@ type WebWriter struct {
 func (w *WebWriter) WriteHeader(status int) {
 	w.Status = status
 	w.ResponseStarted = true
+	if r, ok := w.ResponseWriter.(XSourceCodeRecorder); ok {
+		r.AddXSourceCode(1)
+	}
 	w.ResponseWriter.WriteHeader(status)
 }
 
@@ -127,7 +153,9 @@ func StandardResponse(w http.ResponseWriter, statusCode int) {
 	body := responseBodies[statusCode]
 	w.Header().Set("Content-Type", "text/html; charset=UTF-8")
 	w.Header().Set("Content-Length", strconv.FormatInt(int64(len(body)), 10))
-	conf.XSourceCodeHeader(w, 2)
+	if r, ok := w.(XSourceCodeRecorder); ok {
+		r.AddXSourceCode(1)
+	}
 	w.WriteHeader(statusCode)
 	w.Write([]byte(body))
 }
@@ -135,7 +163,9 @@ func StandardResponse(w http.ResponseWriter, statusCode int) {
 func SimpleErrorResponse(w http.ResponseWriter, statusCode int, body string) {
 	w.Header().Set("Content-Type", "text/html; charset=UTF-8")
 	w.Header().Set("Content-Length", strconv.FormatInt(int64(len(body)), 10))
-	conf.XSourceCodeHeader(w, 2)
+	if r, ok := w.(XSourceCodeRecorder); ok {
+		r.AddXSourceCode(1)
+	}
 	w.WriteHeader(statusCode)
 	w.Write([]byte(body))
 }
@@ -150,7 +180,9 @@ func CustomErrorResponse(w http.ResponseWriter, statusCode int, vars map[string]
 		}
 	}
 	w.Header().Set("Content-Length", strconv.FormatInt(int64(len(body)), 10))
-	conf.XSourceCodeHeader(w, 2)
+	if r, ok := w.(XSourceCodeRecorder); ok {
+		r.AddXSourceCode(1)
+	}
 	w.WriteHeader(statusCode)
 	w.Write([]byte(body))
 }

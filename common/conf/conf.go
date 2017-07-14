@@ -19,11 +19,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"os/user"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -135,8 +133,6 @@ func (s Section) GetLimit(key string, dfla int64, dflb int64) (int64, int64) {
 	return s.c.GetLimit(s.section, key, dfla, dflb)
 }
 
-var XSourceCodeHeader = func(w http.ResponseWriter, skip int) {}
-
 // LoadConfig loads an ini from a path.  The path should be a *.conf file or a *.conf.d directory.
 func LoadConfig(path string) (Config, error) {
 	file := Config{make(ini.File)}
@@ -159,27 +155,7 @@ func LoadConfig(path string) (Config, error) {
 		}
 		return file, nil
 	}
-	if err := file.LoadFile(path); err != nil {
-		return file, err
-	}
-	// NOTE: Since we can be loading many configs, be sure these "init" style
-	// settings are one-way settings. In other words, don't end up turning on a
-	// settings because of one config and then turning it off because of
-	// another. Just turn it on if it's set anywhere.
-	if file.GetBool("debug", "debug_x_source_code", false) {
-		XSourceCodeHeader = func(w http.ResponseWriter, skip int) {
-			if _, f, n, ok := runtime.Caller(skip); ok {
-				v := w.Header().Get("X-Source-Code")
-				if v != "" {
-					v += fmt.Sprintf(" %s:%d", f, n)
-				} else {
-					v = fmt.Sprintf("%s:%d", f, n)
-				}
-				w.Header().Set("X-Source-Code", v)
-			}
-		}
-	}
-	return file, nil
+	return file, file.LoadFile(path)
 }
 
 // LoadConfigs finds and loads any configs that exist for the given path.  Multiple configs are supported for things like SAIO setups.

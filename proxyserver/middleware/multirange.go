@@ -73,7 +73,7 @@ func multirange(next http.Handler) http.Handler {
 		subreq.Header.Set("Range", firstRange(rangeHeader))
 
 		uw := &mrw{Writer: ioutil.Discard, header: make(http.Header)}
-		subw := srv.NewCustomWriter(uw, func(w http.ResponseWriter, status int) int {
+		subw := srv.NewCustomWriter(ctx.config, uw, func(w http.ResponseWriter, status int) int {
 			if status != http.StatusPartialContent {
 				uw.err = fmt.Errorf("Bad status code %d", status)
 				uw.Writer = writer
@@ -128,7 +128,7 @@ func multirange(next http.Handler) http.Handler {
 				return // we just can't complete this request
 			}
 			uw := &mrw{Writer: ioutil.Discard, header: make(http.Header)}
-			subw := srv.NewCustomWriter(uw, func(w http.ResponseWriter, status int) int {
+			subw := srv.NewCustomWriter(ctx.config, uw, func(w http.ResponseWriter, status int) int {
 				part, err := mw.CreatePart(rng.Start, rng.End)
 				if err != nil {
 					uw.err = err
