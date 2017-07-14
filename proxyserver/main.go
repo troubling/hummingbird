@@ -176,7 +176,7 @@ func GetServer(serverconf conf.Config, flags *flag.FlagSet) (string, int, srv.Se
 		return "", 0, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 	policies := conf.LoadPolicies()
-	server.proxyDirectClient, err = client.NewProxyDirectClient(policies)
+	server.proxyDirectClient, err = client.NewProxyDirectClient(&serverconf, policies, server.logger)
 	if err != nil {
 		return "", 0, nil, nil, fmt.Errorf("Error setting up proxyDirectClient: %v", err)
 	}
