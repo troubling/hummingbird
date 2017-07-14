@@ -115,7 +115,11 @@ func (w *customWriter) WriteHeader(status int) {
 
 // NewCustomWriter creates an http.ResponseWriter wrapper that calls your function on WriteHeader.
 func NewCustomWriter(config *conf.Config, w http.ResponseWriter, f func(w http.ResponseWriter, status int) int) http.ResponseWriter {
-	return &customWriter{ResponseWriter: w, xSourceCode: config.GetBool("debug", "debug_x_source_code", false), f: f}
+	xSourceCode := false
+	if config != nil {
+		xSourceCode = config.GetBool("debug", "debug_x_source_code", false)
+	}
+	return &customWriter{ResponseWriter: w, xSourceCode: xSourceCode, f: f}
 }
 
 // ResponseWriter that saves its status - used for logging.
