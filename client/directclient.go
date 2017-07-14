@@ -52,17 +52,20 @@ type ProxyDirectClient struct {
 }
 
 func NewProxyDirectClient(policyList conf.PolicyList) (*ProxyDirectClient, error) {
+	var xport http.RoundTripper = &http.Transport{
+		DisableCompression: true,
+		Dial: (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 5 * time.Second,
+		}).Dial,
+	}
+	// Debug hook to auto-close responses and report on it. See debug.go
+	// xport = &autoCloseResponses{transport: xport}
 	c := &ProxyDirectClient{
 		policyList: policyList,
 		client: &http.Client{
-			Transport: &http.Transport{
-				DisableCompression: true,
-				Dial: (&net.Dialer{
-					Timeout:   10 * time.Second,
-					KeepAlive: 5 * time.Second,
-				}).Dial,
-			},
-			Timeout: 120 * time.Minute,
+			Transport: xport,
+			Timeout:   120 * time.Minute,
 		},
 	}
 	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
