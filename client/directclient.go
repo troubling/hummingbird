@@ -163,16 +163,17 @@ func (c *ProxyDirectClient) firstResponse(reqs ...*http.Request) (resp *http.Res
 
 		select {
 		case resp = <-success:
-			if resp == nil || resp.StatusCode/100 == 5 {
-				internalErrors++
-			} else if resp.StatusCode/100 == 2 || resp.StatusCode == http.StatusPreconditionFailed || resp.StatusCode == http.StatusNotModified || resp.StatusCode == http.StatusRequestedRangeNotSatisfiable {
-				resp = StubResponse(resp)
+			if resp != nil && (resp.StatusCode/100 == 2 || resp.StatusCode == http.StatusPreconditionFailed || resp.StatusCode == http.StatusNotModified || resp.StatusCode == http.StatusRequestedRangeNotSatisfiable) {
 				resp.Header.Set("Accept-Ranges", "bytes")
 				if etag := resp.Header.Get("Etag"); etag != "" {
 					resp.Header.Set("Etag", strings.Trim(etag, "\""))
 				}
 				return resp
-			} else if resp != nil {
+			}
+			if resp == nil || resp.StatusCode/100 == 5 {
+				internalErrors++
+			}
+			if resp != nil {
 				resp.Body.Close()
 			}
 		case <-time.After(time.Second):
