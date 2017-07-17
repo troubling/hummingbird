@@ -40,16 +40,6 @@ func (c *userClient) do(req *http.Request) *http.Response {
 	if err != nil {
 		return ResponseStub(http.StatusBadRequest, err.Error())
 	}
-	if resp.StatusCode == http.StatusUnauthorized {
-		resp.Body.Close()
-		if aResp := c.authenticate(); aResp.StatusCode/100 != 2 {
-			return aResp
-		}
-		resp, err = c.client.Do(req)
-		if err != nil {
-			return ResponseStub(http.StatusBadRequest, err.Error())
-		}
-	}
 	return resp
 }
 
