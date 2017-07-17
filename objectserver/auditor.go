@@ -220,9 +220,11 @@ func (a *Auditor) auditDevice(devPath string) {
 		objPath := filepath.Join(devPath, PolicyDir(policy.Index))
 		partitions, err := fs.ReadDirNames(objPath)
 		if err != nil {
-			a.errors++
-			a.totalErrors++
-			a.logger.Error("Error reading objects dir", zap.String("objPath", objPath))
+			if !os.IsNotExist(err) {
+				a.errors++
+				a.totalErrors++
+				a.logger.Error("Error reading objects dir", zap.String("objPath", objPath))
+			}
 			continue
 		}
 		for _, partition := range partitions {
