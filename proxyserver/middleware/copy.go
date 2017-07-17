@@ -283,7 +283,7 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 
 	if srcStatus == http.StatusOK &&
 		srcHeader.Get("X-Static-Large-Object") == "" &&
-		(srcHeader.Get("X-Object-Manifest") == "" || request.FormValue("multipart-manifest") == "get") {
+		(srcHeader.Get("X-Object-Manifest") == "" || request.URL.Query().Get("multipart-manifest") == "get") {
 		// copy source etag so that copied content is verified, unless:
 		//  - not a 200 OK response: source etag may not match the actual
 		//    content, for example with a 206 Partial Content response to a

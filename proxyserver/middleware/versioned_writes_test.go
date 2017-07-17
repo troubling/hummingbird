@@ -33,11 +33,11 @@ import (
 	"github.com/troubling/hummingbird/client"
 )
 
-var deleteMarkerRegex = regexp.MustCompile(`/v1/a/c_v/001/o\d{10}\.\d{5}`)
+var deleteMarkerRegex = regexp.MustCompile(`/v1/a/c_v/001o/\d{10}\.\d{5}`)
 
-var simpleContainerList = `[{"hash":"202cb962ac59075b964b07152d234b70","last_modified":"2017-05-22T17:24:03.00000","bytes":3,"name":"001/o0000012345.12345","content_type":"application/octet-stream"},{"hash":"250cf8b51c773f3f8dc8b4be867a9a02","last_modified":"2017-05-22T17:24:04.00000","bytes":3,"name":"001/o0000012345.12344","content_type":"application/octet-stream"},{"hash":"68053af2923e00204c3ca7c6a3150cf7","last_modified":"2017-05-22T17:24:04.00000","bytes":3,"name":"001/o0000012345.12343","content_type":"application/octet-stream"}]`
+var simpleContainerList = `[{"hash":"202cb962ac59075b964b07152d234b70","last_modified":"2017-05-22T17:24:03.00000","bytes":3,"name":"001o/0000012345.12345","content_type":"application/octet-stream"},{"hash":"250cf8b51c773f3f8dc8b4be867a9a02","last_modified":"2017-05-22T17:24:04.00000","bytes":3,"name":"001o/0000012345.12344","content_type":"application/octet-stream"},{"hash":"68053af2923e00204c3ca7c6a3150cf7","last_modified":"2017-05-22T17:24:04.00000","bytes":3,"name":"001o/0000012345.12343","content_type":"application/octet-stream"}]`
 
-var deleteMarkerContainerList = `[{"hash":"202cb962ac59075b964b07152d234b70","last_modified":"2017-05-22T17:24:03.00000","bytes":3,"name":"001/o0000012345.12345","content_type":"application/x-deleted;swift_versions_deleted=1"},{"hash":"250cf8b51c773f3f8dc8b4be867a9a02","last_modified":"2017-05-22T17:24:04.00000","bytes":3,"name":"001/o0000012345.12344","content_type":"application/octet-stream"},{"hash":"68053af2923e00204c3ca7c6a3150cf7","last_modified":"2017-05-22T17:24:04.00000","bytes":3,"name":"001/o0000012345.12343","content_type":"application/octet-stream"}]`
+var deleteMarkerContainerList = `[{"hash":"202cb962ac59075b964b07152d234b70","last_modified":"2017-05-22T17:24:03.00000","bytes":3,"name":"001o/0000012345.12345","content_type":"application/x-deleted;swift_versions_deleted=1"},{"hash":"250cf8b51c773f3f8dc8b4be867a9a02","last_modified":"2017-05-22T17:24:04.00000","bytes":3,"name":"001o/0000012345.12344","content_type":"application/octet-stream"},{"hash":"68053af2923e00204c3ca7c6a3150cf7","last_modified":"2017-05-22T17:24:04.00000","bytes":3,"name":"001o/0000012345.12343","content_type":"application/octet-stream"}]`
 
 func TestObjectPutHistory(t *testing.T) {
 	newObjectContents := "some shiny new updated contents"
@@ -53,7 +53,7 @@ func TestObjectPutHistory(t *testing.T) {
 			require.NotNil(t, request.Body)
 			require.Equal(t, newObjectContents, string(buf[:length]))
 			writer.WriteHeader(201)
-		} else if request.Method == "PUT" && request.URL.Path == "/v1/a/c_v/001/o0000012345.12345" {
+		} else if request.Method == "PUT" && request.URL.Path == "/v1/a/c_v/001o/0000012345.12345" {
 			buf := make([]byte, 1024)
 			length, _ := request.Body.Read(buf)
 			require.NotNil(t, request.Body)
@@ -106,7 +106,7 @@ func TestObjectDeleteHistory(t *testing.T) {
 		} else if request.Method == "DELETE" && request.URL.Path == "/v1/a/c/o" {
 			require.Equal(t, int64(0), request.ContentLength)
 			writer.WriteHeader(204)
-		} else if request.Method == "PUT" && request.URL.Path == "/v1/a/c_v/001/o0000012345.12345" {
+		} else if request.Method == "PUT" && request.URL.Path == "/v1/a/c_v/001o/0000012345.12345" {
 			buf := make([]byte, 1024)
 			length, _ := request.Body.Read(buf)
 			require.NotNil(t, request.Body)
@@ -169,16 +169,17 @@ func TestObjectDeleteStack(t *testing.T) {
 		} else if request.Method == "DELETE" && request.URL.Path == "/v1/a/c/o" {
 			require.Equal(t, int64(0), request.ContentLength)
 			writer.WriteHeader(204)
-		} else if request.Method == "GET" && request.URL.Path == "/v1/a/c_v/001/o0000012345.12345" {
+		} else if request.Method == "GET" && request.URL.Path == "/v1/a/c_v/001o/0000012345.12345" {
 			writer.Header().Set("X-Timestamp", "12345.12345")
 			writer.WriteHeader(200)
 			writer.Write([]byte(originalObjectContents))
-		} else if request.Method == "DELETE" && request.URL.Path == "/v1/a/c_v/001/o0000012345.12345" {
+		} else if request.Method == "DELETE" && request.URL.Path == "/v1/a/c_v/001o/0000012345.12345" {
 			writer.WriteHeader(204)
 		} else if request.Method == "PUT" && deleteMarkerRegex.MatchString(request.URL.Path) {
 			require.Equal(t, int64(0), request.ContentLength)
 			writer.WriteHeader(201)
 		} else {
+			fmt.Printf("BLAH!\n")
 			if request.Body != nil {
 				buf := make([]byte, 1024)
 				_, _ = request.Body.Read(buf)
@@ -232,13 +233,13 @@ func TestObjectDeleteStackMarker(t *testing.T) {
 		} else if request.Method == "HEAD" && request.URL.Path == "/v1/a/c/o" {
 			require.Equal(t, int64(0), request.ContentLength)
 			writer.WriteHeader(404)
-		} else if request.Method == "GET" && request.URL.Path == "/v1/a/c_v/001/o0000012345.12344" {
+		} else if request.Method == "GET" && request.URL.Path == "/v1/a/c_v/001o/0000012345.12344" {
 			writer.Header().Set("X-Timestamp", "12345.12345")
 			writer.WriteHeader(200)
 			writer.Write([]byte(originalObjectContents))
-		} else if request.Method == "DELETE" && request.URL.Path == "/v1/a/c_v/001/o0000012345.12344" {
+		} else if request.Method == "DELETE" && request.URL.Path == "/v1/a/c_v/001o/0000012345.12344" {
 			writer.WriteHeader(204)
-		} else if request.Method == "DELETE" && request.URL.Path == "/v1/a/c_v/001/o0000012345.12345" {
+		} else if request.Method == "DELETE" && request.URL.Path == "/v1/a/c_v/001o/0000012345.12345" {
 			writer.WriteHeader(204)
 		} else if request.Method == "PUT" && deleteMarkerRegex.MatchString(request.URL.Path) {
 			require.Equal(t, int64(0), request.ContentLength)

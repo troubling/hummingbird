@@ -72,7 +72,7 @@ func (p *PipeResponse) Get(path string, request *http.Request, source string, au
 		ctx.Logger.Error("getSourceObject GET error", zap.Error(err))
 		return nil, nil, 400
 	}
-	if request.FormValue("multipart-manifest") == "get" {
+	if request.URL.Query().Get("multipart-manifest") == "get" {
 		subRequest.URL.RawQuery = "multipart-manifest=get&format=raw"
 	}
 	CopyItems(subRequest.Header, request.Header)

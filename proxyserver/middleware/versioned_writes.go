@@ -40,17 +40,6 @@ const (
 	SYSMETA_VERSIONS_MODE      = "X-Container-Sysmeta-Versions-Mode"
 )
 
-// Blatantly stolen from xlo.
-type mySegItem struct {
-	Hash         string `json:"hash"`
-	LastModified string `json:"last_modified"`
-	Bytes        int64  `json:"bytes"`
-	Name         string `json:"name"`
-	ContentType  string `json:"content_type"`
-	Range        string `json:"range,omitempty"`
-	SubSlo       bool   `json:"sub_slo,omitempty"`
-}
-
 type versionedWrites struct {
 	next    http.Handler
 	enabled bool
@@ -175,14 +164,14 @@ func (v *versionedWrites) handleContainer(writer http.ResponseWriter, request *h
 }
 
 func (v *versionedWrites) versionedObjectPrefix(object string) string {
-	return fmt.Sprintf("%03x/%s", len(object), object)
+	return fmt.Sprintf("%03x%s/", len(object), object)
 }
 
 func (v *versionedWrites) versionedObjectName(object string, ts string) string {
 	return v.versionedObjectPrefix(object) + ts
 }
 
-func (v *versionedWrites) containerListing(writer http.ResponseWriter, req *http.Request, path string) (listing []mySegItem, err error) {
+func (v *versionedWrites) containerListing(writer http.ResponseWriter, req *http.Request, path string) (listing []segItem, err error) {
 	ctx := GetProxyContext(req)
 	request, err := ctx.newSubrequest("GET", path, http.NoBody, req, "VW")
 	if err != nil {
@@ -539,7 +528,7 @@ func (v *versionedWrites) ServeHTTP(writer http.ResponseWriter, request *http.Re
 }
 
 func NewVersionedWrites(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
-	RegisterInfo("versioned_writes", map[string]interface{}{"allowed_flags": []string{CLIENT_VERSIONS_LOC, CLIENT_HISTORY_LOC}})
+	RegisterInfo("versioned_writes", map[string]interface{}{"allowed_flags": []string{strings.ToLower(CLIENT_VERSIONS_LOC), strings.ToLower(CLIENT_HISTORY_LOC)}})
 	return func(next http.Handler) http.Handler {
 		return &versionedWrites{
 			next:    next,

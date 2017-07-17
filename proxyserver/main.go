@@ -124,7 +124,7 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 			{middleware.NewStaticWeb, "filter:staticweb"},
 			{middleware.NewCopyMiddleware, "filter:copy"},
 			{middleware.NewVersionedWrites, "filter:versioned_writes"},
-			{middleware.NewXlo, "fliter:slo"},
+			{middleware.NewXlo, "filter:slo"},
 		}
 	} else {
 		middlewares = []struct {
