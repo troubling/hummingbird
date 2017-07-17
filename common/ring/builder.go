@@ -77,25 +77,25 @@ type replica2Part2DevArray struct {
 
 // RingBuilderPickle is used for pickling/unpickling ringbuilder data
 type RingBuilderPickle struct {
-	LastPartGatherStart int64                     `pickle:"_last_part_gather_start"`
-	LastPartMovesEpoch  int64                     `pickle:"_last_part_moves_epoch"`
-	PartPower           int64                     `pickle:"part_power"`
-	DevsChanged         bool                      `pickle:"devs_changed"`
-	Replicas            float64                   `pickle:"replicas"`
-	MinPartHours        int64                     `pickle:"min_part_hours"`
-	Parts               int64                     `pickle:"parts"`
-	Overload            float64                   `pickle:"overload"`
-	Dispersion          float64                   `pickle:"dispersion"`
-	Version             int64                     `pickle:"version"`
-	Devs                []RingBuilderDevicePickle `pickle:"devs"`
-	RemoveDevs          []interface{}             `pickle:"_remove_devs"`
-	LastPartMoves       lastPartMovesArray        `pickle:"_last_part_moves"`
-	Replica2Part2Dev    []replica2Part2DevArray   `pickle:"_replica2part2dev"`
+	LastPartGatherStart int64                   `pickle:"_last_part_gather_start"`
+	LastPartMovesEpoch  int64                   `pickle:"_last_part_moves_epoch"`
+	PartPower           int64                   `pickle:"part_power"`
+	DevsChanged         bool                    `pickle:"devs_changed"`
+	Replicas            float64                 `pickle:"replicas"`
+	MinPartHours        int64                   `pickle:"min_part_hours"`
+	Parts               int64                   `pickle:"parts"`
+	Overload            float64                 `pickle:"overload"`
+	Dispersion          float64                 `pickle:"dispersion"`
+	Version             int64                   `pickle:"version"`
+	Devs                []*RingBuilderDevice    `pickle:"devs"`
+	RemoveDevs          []interface{}           `pickle:"_remove_devs"`
+	LastPartMoves       lastPartMovesArray      `pickle:"_last_part_moves"`
+	Replica2Part2Dev    []replica2Part2DevArray `pickle:"_replica2part2dev"`
 	//DispersionGraph     map[pickle.PickleTuple][]interface{} `pickle:"_dispersion_graph"`
 }
 
 // RingBuilderDevicePickle is used for pickling/unpickling rinbuilder data
-type RingBuilderDevicePickle struct {
+type RingBuilderDevice struct {
 	ReplicationPort int64   `pickle:"replication_port"`
 	Meta            string  `pickle:"meta"`
 	PartsWanted     int64   `pickle:"parts_wanted"`
@@ -108,22 +108,7 @@ type RingBuilderDevicePickle struct {
 	ReplicationIp   string  `pickle:"replication_ip"`
 	Parts           int64   `pickle:"parts"`
 	Id              int64   `pickle:"id"`
-}
-
-type RingBuilderDevice struct {
-	ReplicationPort int64
-	Meta            string
-	PartsWanted     int64
-	Device          string
-	Zone            int64
-	Weight          float64
-	Ip              string
-	Region          int64
-	Port            int64
-	ReplicationIp   string
-	Parts           int64
-	Id              int64
-	Tiers           [4]string
+	tiers           [4]string
 }
 
 type RingBuilder struct {
@@ -298,23 +283,7 @@ func (b *RingBuilder) Save(builderPath string) error {
 			Data:      b.replica2Part2Dev[i],
 		}
 	}
-	rbp.Devs = make([]RingBuilderDevicePickle, len(b.Devs))
-	for i := range b.Devs {
-		rbp.Devs[i] = RingBuilderDevicePickle{
-			ReplicationPort: b.Devs[i].ReplicationPort,
-			Meta:            b.Devs[i].Meta,
-			PartsWanted:     b.Devs[i].PartsWanted,
-			Device:          b.Devs[i].Device,
-			Zone:            b.Devs[i].Zone,
-			Weight:          b.Devs[i].Weight,
-			Ip:              b.Devs[i].Ip,
-			Region:          b.Devs[i].Region,
-			Port:            b.Devs[i].Port,
-			ReplicationIp:   b.Devs[i].ReplicationIp,
-			Parts:           b.Devs[i].Parts,
-			Id:              b.Devs[i].Id,
-		}
-	}
+	rbp.Devs = b.Devs
 	f.Write(pickle.PickleDumps(rbp))
 	return nil
 }
@@ -501,7 +470,7 @@ func (b *RingBuilder) buildWantedReplicasByTier() (map[string]float64, error) {
 		if dev.Weight <= 0.0 {
 			continue
 		}
-		for _, t := range dev.Tiers {
+		for _, t := range dev.tiers {
 			numDevices[t] += 1
 		}
 		numDevices[""] += 1
@@ -909,7 +878,7 @@ func (b *RingBuilder) gatherPartsForDispersion(assignParts map[uint][]uint, repP
 		replicasAtTier := make(map[string]int)
 		devs4Part := b.devsForPart(part)
 		for _, dev := range devs4Part {
-			for _, tier := range dev.Tiers {
+			for _, tier := range dev.tiers {
 				replicasAtTier[tier] += 1
 			}
 		}
@@ -922,7 +891,7 @@ func (b *RingBuilder) gatherPartsForDispersion(assignParts map[uint][]uint, repP
 				continue
 			}
 			dev := b.Devs[devId]
-			for _, tier := range dev.Tiers {
+			for _, tier := range dev.tiers {
 				if float64(replicasAtTier[tier]) > repPlan[tier].max {
 					undispersedDevReplicas = append(undispersedDevReplicas, devReplica{dev, replica})
 					break
@@ -939,7 +908,7 @@ func (b *RingBuilder) gatherPartsForDispersion(assignParts map[uint][]uint, repP
 			// The min part hour check is ignored if and only if a device has more than one replica of a part assigned to it
 			dev := dr.dev
 			replica := dr.replica
-			if !b.canPartMove(uint(part)) && !(replicasAtTier[dev.Tiers[3]] > 1) {
+			if !b.canPartMove(uint(part)) && !(replicasAtTier[dev.tiers[3]] > 1) {
 				continue
 			}
 			dev.PartsWanted += 1
@@ -947,7 +916,7 @@ func (b *RingBuilder) gatherPartsForDispersion(assignParts map[uint][]uint, repP
 			assignParts[uint(part)] = append(assignParts[uint(part)], uint(replica))
 			b.debug(fmt.Sprintf("Gathered %d/%d from dev %d [dispersion]", part, replica, dev.Id))
 			b.replica2Part2Dev[replica][part] = NONE_DEV
-			for _, tier := range dev.Tiers {
+			for _, tier := range dev.tiers {
 				replicasAtTier[tier] -= 1
 				b.setPartMoved(uint(part))
 			}
@@ -970,7 +939,7 @@ func (b *RingBuilder) gatherPartsForBalanceCanDisperse(assignParts map[uint][]ui
 				continue
 			}
 			dev := b.Devs[devId]
-			for _, tier := range dev.Tiers {
+			for _, tier := range dev.tiers {
 				replicasAtTier[tier] += 1
 			}
 			if dev.PartsWanted < 0 {
@@ -988,7 +957,7 @@ func (b *RingBuilder) gatherPartsForBalanceCanDisperse(assignParts map[uint][]ui
 		for _, dt := range overweightDevReplica {
 			dev := dt.dev
 			replica := dt.replica
-			for _, tier := range dev.Tiers {
+			for _, tier := range dev.tiers {
 				if repPlan[tier].min <= float64(replicasAtTier[tier]) && float64(replicasAtTier[tier]) < repPlan[tier].max {
 					continue OUTER
 				}
@@ -1000,7 +969,7 @@ func (b *RingBuilder) gatherPartsForBalanceCanDisperse(assignParts map[uint][]ui
 			assignParts[uint(part)] = append(assignParts[uint(part)], uint(replica))
 			b.debug(fmt.Sprintf("Gathered %d/%d from dev %d [weight disperse]", part, replica, dev.Id))
 			b.replica2Part2Dev[replica][part] = NONE_DEV
-			for _, tier := range dev.Tiers {
+			for _, tier := range dev.tiers {
 				replicasAtTier[tier] -= 1
 			}
 			b.setPartMoved(uint(part))
@@ -1078,7 +1047,7 @@ func (b *RingBuilder) reassignParts(reassignParts []partReplicas, repPlan map[st
 	availableDevs := make([]*RingBuilderDevice, 0)
 	for next, dev := devIterator(b.Devs); dev != nil; dev = next() {
 		wanted := int(math.Max(float64(dev.PartsWanted), 0))
-		for _, tier := range dev.Tiers {
+		for _, tier := range dev.tiers {
 			partsAvailableInTier[tier] += wanted
 		}
 		if dev.Weight > 0.0 {
@@ -1095,7 +1064,7 @@ func (b *RingBuilder) reassignParts(reassignParts []partReplicas, repPlan map[st
 	tier2Devs := make(map[string][]*RingBuilderDevice)
 	maxTierDepth := 0
 	for i := range availableDevs {
-		for _, tier := range availableDevs[i].Tiers {
+		for _, tier := range availableDevs[i].tiers {
 			tier2Devs[tier] = append(tier2Devs[tier], availableDevs[i])
 			tierDepth := strings.Count(tier, ";") + 1
 			if tierDepth > maxTierDepth {
@@ -1138,7 +1107,7 @@ func (b *RingBuilder) reassignParts(reassignParts []partReplicas, repPlan map[st
 		// Count up where these replicas be
 		replicasAtTier := make(map[string]int)
 		for _, dev := range b.devsForPart(int(part)) {
-			for _, tier := range dev.Tiers {
+			for _, tier := range dev.tiers {
 				replicasAtTier[tier] += 1
 			}
 		}
@@ -1175,7 +1144,7 @@ func (b *RingBuilder) reassignParts(reassignParts []partReplicas, repPlan map[st
 			dev := tier2Devs[tier][len(tier2Devs[tier])-1]
 			dev.PartsWanted -= 1
 			dev.Parts += 1
-			for _, t := range dev.Tiers {
+			for _, t := range dev.tiers {
 				partsAvailableInTier[t] -= 1
 				replicasAtTier[t] += 1
 			}
@@ -1228,7 +1197,7 @@ func (b *RingBuilder) Rebalance() (int, float64, int, error) {
 	numDevices := 0
 	for next, dev := devIterator(b.Devs); dev != nil; dev = next() {
 		// NOTE: original ringbuilder added a tiers thing, not sure if needed yet
-		dev.Tiers = b.tiersForDev(dev)
+		dev.tiers = b.tiersForDev(dev)
 		if dev.Weight > 0 {
 			numDevices += 1
 		}
