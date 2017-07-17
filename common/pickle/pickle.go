@@ -167,6 +167,9 @@ func pickleobj(o interface{}, buf *bytes.Buffer, scratch []byte) error {
 			}
 			buf.WriteByte('(') // MARK
 			for i := 0; i < v.Type().NumField(); i++ {
+				if !v.Field(i).CanInterface() {
+					continue
+				}
 				field := v.Type().Field(i)
 				if tag := field.Tag.Get("pickle"); tag != "" {
 					picklestring(tag, buf, scratch)
