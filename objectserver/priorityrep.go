@@ -72,7 +72,7 @@ func (d *devLimiter) waitForSomethingToFinish() {
 }
 
 func SendPriRepJob(job *PriorityRepJob, client *http.Client) (string, bool) {
-	url := fmt.Sprintf("http://%s:%d/priorityrep", job.FromDevice.ReplicationIp, job.FromDevice.ReplicationPort+500)
+	url := fmt.Sprintf("http://%s:%d/priorityrep", job.FromDevice.ReplicationIp, job.FromDevice.ReplicationPort)
 	jsonned, err := json.Marshal(job)
 	if err != nil {
 		return fmt.Sprintf("Failed to serialize job for some reason: %s", err), false

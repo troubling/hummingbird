@@ -306,7 +306,7 @@ func (r *Replicator) LogRequest(next http.Handler) http.Handler {
 func (r *Replicator) GetHandler() http.Handler {
 	commonHandlers := alice.New(r.LogRequest, middleware.ValidateRequest)
 	router := srv.NewRouter()
-	router.Get("/priorityrep", commonHandlers.ThenFunc(r.priorityRepHandler))
+	router.Post("/priorityrep", commonHandlers.ThenFunc(r.priorityRepHandler))
 	router.Get("/progress", commonHandlers.ThenFunc(r.ProgressReportHandler))
 	for _, policy := range conf.LoadPolicies() {
 		router.HandlePolicy("REPCONN", "/:device/:partition", policy.Index, commonHandlers.ThenFunc(r.objRepConnHandler))
