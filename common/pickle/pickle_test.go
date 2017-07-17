@@ -440,13 +440,15 @@ func TestLoadArrayDifferentProtocol(t *testing.T) {
 type arbitraryStruct struct {
 	Val1 string
 	Val2 int
+	valH int
 }
 
 func TestArbitraryStruct(t *testing.T) {
-	x := arbitraryStruct{Val1: "hello", Val2: 311}
+	x := arbitraryStruct{Val1: "hello", Val2: 311, valH: 411}
 	rt := PickleRoundTrip(t, x)
 	v2, valid := rt.(map[interface{}]interface{})
 	require.True(t, valid)
 	require.Equal(t, "hello", v2["Val1"])
 	require.Equal(t, int64(311), v2["Val2"])
+	require.Equal(t, nil, v2["valH"])
 }
