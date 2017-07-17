@@ -11,10 +11,14 @@ import (
 
 func Metrics(config *conf.Config, metricsScope tally.Scope) func(http.Handler) http.Handler {
 	requestsMetric := metricsScope.Counter("requests")
+	xSourceCode := false
+	if config != nil {
+		xSourceCode = config.GetBool("debug", "debug_x_source_code", false)
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			var status int
-			w := srv.NewCustomWriter(config, writer, func(w http.ResponseWriter, s int) int {
+			w := srv.NewCustomWriter(xSourceCode, writer, func(w http.ResponseWriter, s int) int {
 				status = s
 				return s
 			})

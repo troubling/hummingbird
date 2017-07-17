@@ -74,7 +74,7 @@ type ProxyContextMiddleware struct {
 	log               srv.LowLevelLogger
 	Cache             ring.MemcacheRing
 	proxyDirectClient *client.ProxyDirectClient
-	config            *conf.Config
+	xSourceCode       bool
 }
 
 type ProxyContext struct {
@@ -230,7 +230,7 @@ func (ctx *ProxyContext) newSubrequest(method, urlStr string, body io.Reader, re
 func (ctx *ProxyContext) serveHTTPSubrequest(writer http.ResponseWriter, subreq *http.Request) {
 	subctx := GetProxyContext(subreq)
 	// TODO: check subctx.depth
-	subwriter := srv.NewCustomWriter(ctx.config, writer, func(w http.ResponseWriter, status int) int {
+	subwriter := srv.NewCustomWriter(ctx.xSourceCode, writer, func(w http.ResponseWriter, status int) int {
 		subctx.responseSent = true
 		subctx.status = status
 		return status
@@ -310,7 +310,7 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 		}
 		wg.Wait()
 	}
-	newWriter := srv.NewCustomWriter(ctx.config, writer, func(w http.ResponseWriter, status int) int {
+	newWriter := srv.NewCustomWriter(ctx.xSourceCode, writer, func(w http.ResponseWriter, status int) int {
 		// strip out any bad headers before calling real WriteHeader
 		for k := range w.Header() {
 			if k == "X-Account-Sysmeta-Project-Domain-Id" {
@@ -338,13 +338,17 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 }
 
 func NewContext(config *conf.Config, mc ring.MemcacheRing, log srv.LowLevelLogger, proxyDirectClient *client.ProxyDirectClient) func(http.Handler) http.Handler {
+	xSourceCode := false
+	if config != nil {
+		xSourceCode = config.GetBool("debug", "debug_x_source_code", false)
+	}
 	return func(next http.Handler) http.Handler {
 		return &ProxyContextMiddleware{
 			Cache:             mc,
 			log:               log,
 			next:              next,
 			proxyDirectClient: proxyDirectClient,
-			config:            config,
+			xSourceCode:       xSourceCode,
 		}
 	}
 }
