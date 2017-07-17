@@ -23,8 +23,10 @@ import (
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/uber-go/tally"
+	"go.uber.org/zap"
 )
 
 type testUser struct {
@@ -127,8 +129,8 @@ func (ta *tempAuth) handleGetToken(writer http.ResponseWriter, request *http.Req
 		token = ta.reseller + common.UUID()
 		now := time.Now().Unix()
 		ctx.Cache.Set("auth:"+token, &cachedAuth{Expires: now + 86400, Groups: userGroups}, 86400)
-		if ctx.Cache.Set("authuser:"+user, &token, 86400) != nil {
-			ctx.Logger.Debug("Error setting tempauth token")
+		if err := ctx.Cache.Set("authuser:"+user, &token, 86400); err != nil {
+			ctx.Logger.Debug("Error setting tempauth token", zap.Error(err))
 			srv.SimpleErrorResponse(writer, 500, "Error setting token")
 			return
 		}
@@ -183,8 +185,12 @@ func (ta *tempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 				if curReseller, ok := ta.getReseller(pathParts["account"]); ok && curReseller == ta.reseller {
 					var ca cachedAuth
 					if err := ctx.Cache.GetStructured("auth:"+token, &ca); err != nil {
+						s := http.StatusServiceUnavailable
+						if err == ring.CacheMiss {
+							s = http.StatusUnauthorized
+						}
 						ctx.Authorize = func(r *http.Request) (bool, int) {
-							return false, http.StatusUnauthorized
+							return false, s
 						}
 					} else {
 						if st := request.Header.Get("X-Service-Token"); st != "" {
