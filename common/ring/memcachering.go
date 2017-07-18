@@ -455,7 +455,7 @@ func (c *connection) close() error {
 
 func (c *connection) receivePacket() ([]byte, []byte, error) {
 	packet := c.packetBuf[0:24]
-	if bytes, err := c.rw.Read(packet); err != nil || bytes != 24 {
+	if _, err := io.ReadFull(c.rw, packet); err != nil {
 		c.close()
 		return nil, nil, err
 	}
@@ -467,7 +467,7 @@ func (c *connection) receivePacket() ([]byte, []byte, error) {
 		c.packetBuf = append(c.packetBuf, ' ')
 	}
 	body := c.packetBuf[0:bodyLen]
-	if bytes, err := c.rw.Read(body); err != nil || bytes != bodyLen {
+	if _, err := io.ReadFull(c.rw, body); err != nil {
 		c.close()
 		return nil, nil, err
 	}
