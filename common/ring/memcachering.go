@@ -325,10 +325,12 @@ func (it *serverIterator) value() *server {
 }
 
 func (ring *memcacheRing) loop(key string, fn func(*connection) error) error {
+	var err error
 	it := ring.newServerIterator(key)
 	for it.next() {
 		server := it.value()
-		conn, err := server.getConnection()
+		var conn *connection
+		conn, err = server.getConnection()
 		if err != nil {
 			continue
 		}
@@ -340,7 +342,7 @@ func (ring *memcacheRing) loop(key string, fn func(*connection) error) error {
 			return err
 		}
 	}
-	return fmt.Errorf("Operation failed")
+	return err
 }
 
 type server struct {
@@ -403,7 +405,7 @@ func (s *server) getConnection() (*connection, error) {
 }
 
 func (s *server) releaseConnection(conn *connection, err error) {
-	if err == nil || err != Disconnected {
+	if err == nil || err == CacheMiss {
 		s.lock.Lock()
 		defer s.lock.Unlock()
 		if int64(len(s.connections)) < s.maxFreeConnections {
@@ -414,10 +416,7 @@ func (s *server) releaseConnection(conn *connection, err error) {
 	conn.close()
 }
 
-var (
-	Disconnected = fmt.Errorf("Disconnected from memcache server")
-	CacheMiss    = fmt.Errorf("Server cache miss")
-)
+var CacheMiss = fmt.Errorf("Server cache miss")
 
 type connection struct {
 	conn       net.Conn
@@ -435,7 +434,7 @@ func newConnection(address string, connTimeout time.Duration, requestTimeout tim
 	}
 	conn, err := net.DialTimeout(domain, address, connTimeout)
 	if err != nil {
-		return nil, Disconnected
+		return nil, err
 	}
 	if c, ok := conn.(*net.TCPConn); ok {
 		c.SetNoDelay(true)
@@ -456,7 +455,7 @@ func (c *connection) receivePacket() ([]byte, []byte, error) {
 	packet := c.packetBuf[0:24]
 	if bytes, err := c.rw.Read(packet); err != nil || bytes != 24 {
 		c.close()
-		return nil, nil, Disconnected
+		return nil, nil, err
 	}
 	keyLen := binary.BigEndian.Uint16(packet[2:4])
 	extrasLen := packet[4]
@@ -468,7 +467,7 @@ func (c *connection) receivePacket() ([]byte, []byte, error) {
 	body := c.packetBuf[0:bodyLen]
 	if bytes, err := c.rw.Read(body); err != nil || bytes != bodyLen {
 		c.close()
-		return nil, nil, Disconnected
+		return nil, nil, err
 	}
 	switch status {
 	case 0:
@@ -499,7 +498,7 @@ func (c *connection) sendPacket(opcode byte, key []byte, value []byte, extras []
 	packet = append(append(append(packet, extras...), key...), value...)
 	if _, err := c.rw.Write(packet); err != nil || c.rw.Flush() != nil {
 		c.close()
-		return Disconnected
+		return err
 	}
 	return nil
 }
