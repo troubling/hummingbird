@@ -129,7 +129,7 @@ func getPathParts(request *http.Request) (bool, string, string, string) {
 }
 
 func (ctx *ProxyContext) GetAccountInfo(account string) (*AccountInfo, error) {
-	key := fmt.Sprintf("account/%s", account)
+	key := fmt.Sprintf("hb/account/%s", account)
 	ai := ctx.accountInfoCache[key]
 	if ai == nil {
 		if err := ctx.Cache.GetStructured(key, &ai); err != nil {
@@ -169,7 +169,7 @@ func (ctx *ProxyContext) GetAccountInfo(account string) (*AccountInfo, error) {
 }
 
 func (ctx *ProxyContext) InvalidateAccountInfo(account string) {
-	key := fmt.Sprintf("account/%s", account)
+	key := fmt.Sprintf("hb/account/%s", account)
 	delete(ctx.accountInfoCache, key)
 	ctx.Cache.Delete(key)
 }

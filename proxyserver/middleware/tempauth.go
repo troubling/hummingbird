@@ -109,9 +109,9 @@ func (ta *tempAuth) handleGetToken(writer http.ResponseWriter, request *http.Req
 	}
 	var prevToken string
 	userGroups := ta.getUserGroups(tUser)
-	if err := ctx.Cache.GetStructured("authuser:"+user, &prevToken); err == nil {
+	if err := ctx.Cache.GetStructured("hb/authuser:"+user, &prevToken); err == nil {
 		var ca cachedAuth
-		if err = ctx.Cache.GetStructured("auth:"+prevToken, &ca); err == nil {
+		if err = ctx.Cache.GetStructured("hb/auth:"+prevToken, &ca); err == nil {
 			if ca.Expires > time.Now().Unix() && len(userGroups) == len(ca.Groups) {
 				eq := true
 				for i, r := range userGroups {
@@ -128,8 +128,8 @@ func (ta *tempAuth) handleGetToken(writer http.ResponseWriter, request *http.Req
 	if token == "" {
 		token = ta.reseller + common.UUID()
 		now := time.Now().Unix()
-		ctx.Cache.Set("auth:"+token, &cachedAuth{Expires: now + 86400, Groups: userGroups}, 86400)
-		if err := ctx.Cache.Set("authuser:"+user, &token, 86400); err != nil {
+		ctx.Cache.Set("hb/auth:"+token, &cachedAuth{Expires: now + 86400, Groups: userGroups}, 86400)
+		if err := ctx.Cache.Set("hb/authuser:"+user, &token, 86400); err != nil {
 			ctx.Logger.Debug("Error setting tempauth token", zap.Error(err))
 			srv.SimpleErrorResponse(writer, 500, "Error setting token")
 			return
@@ -184,7 +184,7 @@ func (ta *tempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 			if token != "" && strings.HasPrefix(token, ta.reseller) {
 				if curReseller, ok := ta.getReseller(pathParts["account"]); ok && curReseller == ta.reseller {
 					var ca cachedAuth
-					if err := ctx.Cache.GetStructured("auth:"+token, &ca); err != nil {
+					if err := ctx.Cache.GetStructured("hb/auth:"+token, &ca); err != nil {
 						s := http.StatusServiceUnavailable
 						if err == ring.CacheMiss {
 							s = http.StatusUnauthorized
@@ -195,7 +195,7 @@ func (ta *tempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 					} else {
 						if st := request.Header.Get("X-Service-Token"); st != "" {
 							var caSt cachedAuth
-							if err := ctx.Cache.GetStructured("auth:"+st, &caSt); err == nil {
+							if err := ctx.Cache.GetStructured("hb/auth:"+st, &caSt); err == nil {
 								for _, g := range caSt.Groups {
 									ca.Groups = append(ca.Groups, g)
 								}
