@@ -1280,6 +1280,38 @@ GATHER:
 	return changedParts, b.GetBalance(), removedDevs, nil
 }
 
+func (b *RingBuilder) SearchDevs(region, zone int64, ip string, port int64, repIp string, repPort int64, device string, weight float64) []*RingBuilderDevice {
+	foundDevs := make([]*RingBuilderDevice, 0)
+	for next, dev := devIterator(b.Devs); dev != nil; dev = next() {
+		if region >= 0 && region != dev.Region {
+			continue
+		}
+		if zone >= 0 && zone != dev.Zone {
+			continue
+		}
+		if ip != "" && ip != dev.Ip {
+			continue
+		}
+		if port >= 0 && port != dev.Port {
+			continue
+		}
+		if repIp != "" && repIp != dev.ReplicationIp {
+			continue
+		}
+		if repPort >= 0 && repPort != dev.ReplicationPort {
+			continue
+		}
+		if device != "" && device != dev.Device {
+			continue
+		}
+		if weight >= 0.0 && weight != dev.Weight {
+			continue
+		}
+		foundDevs = append(foundDevs, dev)
+	}
+	return foundDevs
+}
+
 // ChangeMinPartHours changes the value used to decide if a given partition can be moved again.  This restriction is to give the overall system enough time to settl a partition to its new location before moving it to yet another location.  While no data would be lost if a partition is moved several times quickly, it could make the data unreachable for a short period of time.
 //
 // This should be set to at least the average full partition replication time.  Starting it at 24 hours and then lowering it to what the replicator reprots as the longest partition cycle is best.
@@ -1453,6 +1485,15 @@ func AddDevice(builderPath string, id, region, zone int64, ip string, port int64
 	return id, nil
 }
 
+func Search(builderPath string, region, zone int64, ip string, port int64, repIp string, repPort int64, device string, weight float64) ([]*RingBuilderDevice, error) {
+	builder, err := NewRingBuilderFromFile(builderPath, false)
+	if err != nil {
+		return nil, err
+	}
+	devs := builder.SearchDevs(region, zone, ip, port, repIp, repPort, device, weight)
+	return devs, nil
+}
+
 func BuildCmd(flags *flag.FlagSet) {
 	args := flags.Args()
 	if len(args) < 2 || args[0] == "help" {
@@ -1497,8 +1538,37 @@ func BuildCmd(flags *flag.FlagSet) {
 		err := Rebalance(pth, debug)
 		if err != nil {
 			fmt.Println(err)
+		}
+		return
+
+	case "search":
+		searchFlags := flag.NewFlagSet("search", flag.ExitOnError)
+		region := searchFlags.Int64("region", -1, "Device region.")
+		zone := searchFlags.Int64("zone", -1, "Device zone.")
+		ip := searchFlags.String("ip", "", "Device ip address.")
+		port := searchFlags.Int64("port", -1, "Device port.")
+		repIp := searchFlags.String("replication-ip", "", "Device replication address.")
+		repPort := searchFlags.Int64("replication-port", -1, "Device replication port.")
+		device := searchFlags.String("device", "", "Device name.")
+		weight := searchFlags.Float64("weight", -1.0, "Device weight.")
+		if err := searchFlags.Parse(args[2:]); err != nil {
+			fmt.Println(err)
+		}
+		devs, err := Search(pth, *region, *zone, *ip, *port, *repIp, *repPort, *device, *weight)
+		if err != nil {
+			fmt.Println(err)
 			return
 		}
+		if len(devs) == 0 {
+			fmt.Println("No matching devices found.")
+			return
+		}
+		fmt.Println("Devices:    id  region  zone      ip address  port  replication ip  replication port      name weight partitions meta")
+		for _, dev := range devs {
+			fmt.Printf("         %5d %7d %5d %15s %5d %15s %17d %9s %6.02f %7d %s\n", dev.Id, dev.Region, dev.Zone, dev.Ip, dev.Port, dev.ReplicationIp, dev.ReplicationPort, dev.Device, dev.Weight, dev.Parts, dev.Meta)
+		}
+		return
+
 	case "add":
 		// TODO: Add config option version of add function
 		// TODO: Add support for multiple adds in a single command
@@ -1538,6 +1608,7 @@ func BuildCmd(flags *flag.FlagSet) {
 			fmt.Println(err)
 			return
 		}
+
 		if matches[0][5] != "" {
 			replicationIp = matches[0][5]
 			replicationPort, err = strconv.ParseInt(matches[0][6], 0, 64)

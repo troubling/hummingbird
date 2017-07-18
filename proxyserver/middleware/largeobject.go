@@ -337,17 +337,19 @@ func (xlo *xloMiddleware) byteFeeder(sw *xloIdentifyWriter, request *http.Reques
 		xloContentLength = xloContentLengthGen
 	}
 	reqRangeStr := request.Header.Get("Range")
+	validReqRange := false
 	reqRange := common.HttpRange{Start: 0, End: xloContentLength}
 	if reqRangeStr != "" {
 		if ranges, err := common.ParseRange(reqRangeStr, xloContentLength); err == nil {
-			xloContentLength = 0
-			if len(ranges) != 1 {
+			if len(ranges) > 1 {
 				sw.ResponseWriter.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", xloContentLength))
 				srv.SimpleErrorResponse(sw.ResponseWriter, http.StatusRequestedRangeNotSatisfiable, "invalid multi range")
 				return
+			} else if len(ranges) == 1 {
+				reqRange = ranges[0]
+				xloContentLength += reqRange.End - reqRange.Start
+				validReqRange = true
 			}
-			reqRange = ranges[0]
-			xloContentLength += reqRange.End - reqRange.Start
 		} else {
 			sw.ResponseWriter.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", xloContentLength))
 			srv.SimpleErrorResponse(sw.ResponseWriter, http.StatusRequestedRangeNotSatisfiable, "invalid range")
@@ -372,7 +374,7 @@ func (xlo *xloMiddleware) byteFeeder(sw *xloIdentifyWriter, request *http.Reques
 	sw.Header().Set("Content-Type", sw.Header().Get("Content-Type"))
 	sw.Header().Set("Etag", fmt.Sprintf("\"%s\"", xloEtag))
 	status := http.StatusOK
-	if reqRangeStr != "" {
+	if validReqRange {
 		sw.Header().Set("Content-Range", fmt.Sprintf("%d-%d/%s", reqRange.Start, reqRange.End, xloContentLengthStr))
 		status = http.StatusPartialContent
 	}
