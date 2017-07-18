@@ -70,16 +70,16 @@ type VersionedObjectWriter struct {
 	status int
 }
 
-func (vcw *VersionedObjectWriter) Write(stuff []byte) (int, error) {
+func (vow *VersionedObjectWriter) Write(stuff []byte) (int, error) {
 	return len(stuff), nil
 }
 
-func (vcw *VersionedObjectWriter) Header() http.Header {
-	return vcw.header
+func (vow *VersionedObjectWriter) Header() http.Header {
+	return vow.header
 }
 
-func (vcw *VersionedObjectWriter) WriteHeader(status int) {
-	vcw.status = status
+func (vow *VersionedObjectWriter) WriteHeader(status int) {
+	vow.status = status
 }
 
 func NewVersionedObjectWriter() *VersionedObjectWriter {
@@ -265,10 +265,6 @@ func (v *versionedWrites) copyCurrent(writer http.ResponseWriter, request *http.
 	if srcBody != nil {
 		defer srcBody.Close()
 	}
-	// Silently ignore manifest and 404
-	if srcHeader.Get("X-Object-Manifest") != "" {
-		return true, 200
-	}
 	if srcStatus == http.StatusNotFound {
 		return true, 200
 	}
@@ -426,14 +422,9 @@ func (v *versionedWrites) handleObjectDeleteStack(writer http.ResponseWriter, re
 		break
 	}
 	v.next.ServeHTTP(writer, request)
-	return
 }
 
 func (v *versionedWrites) handleObjectPut(writer http.ResponseWriter, request *http.Request, account, container, versionsContainer, object string) {
-	if request.Header.Get("X-Object-Manifest") != "" {
-		v.next.ServeHTTP(writer, request)
-		return
-	}
 	ok, status := v.copyCurrent(writer, request, account, container, versionsContainer, object)
 	if !ok && returnIfStatusError(writer, status) {
 		return
