@@ -324,8 +324,10 @@ func (it *serverIterator) value() *server {
 	return it.ring.servers[serverString]
 }
 
+var noServersError = errors.New("no memcache servers in ring")
+
 func (ring *memcacheRing) loop(key string, fn func(*connection) error) error {
-	var err error
+	err := noServersError
 	it := ring.newServerIterator(key)
 	for it.next() {
 		server := it.value()
