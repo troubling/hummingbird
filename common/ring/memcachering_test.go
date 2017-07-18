@@ -67,7 +67,7 @@ func TestUnixSocket(t *testing.T) {
 	var buffer bytes.Buffer
 	iniFile := conf.Config{File: make(ini.File)}
 	for i := 0; i < 4; i++ {
-		sock := fmt.Sprintf("/tmp/test-memecachering-%d", i)
+		sock := fmt.Sprintf("/tmp/test-memcachering-%d", i)
 		defer os.Remove(sock)
 
 		if err := os.Remove(sock); err != nil {
