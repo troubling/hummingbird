@@ -86,6 +86,9 @@ func (ta *tempAuth) handleGetToken(writer http.ResponseWriter, request *http.Req
 		return
 	}
 	user := request.Header.Get("X-Auth-User")
+	if user == "" {
+		user = request.Header.Get("X-Storage-User")
+	}
 	parts := strings.Split(user, ":")
 	if len(parts) != 2 {
 		srv.StandardResponse(writer, 401)
@@ -94,6 +97,9 @@ func (ta *tempAuth) handleGetToken(writer http.ResponseWriter, request *http.Req
 	account := parts[0]
 	user = parts[1]
 	password := request.Header.Get("X-Auth-Key")
+	if password == "" {
+		password = request.Header.Get("X-Storage-Pass")
+	}
 	tUser := ta.getUser(account, user, password)
 	if tUser == nil {
 		srv.StandardResponse(writer, 401)
