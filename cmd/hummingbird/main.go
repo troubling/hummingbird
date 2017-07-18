@@ -322,11 +322,11 @@ func main() {
 	ringBuilderFlags := flag.NewFlagSet("ring builder", flag.ExitOnError)
 	ringBuilderFlags.Bool("debug", false, "Run in debug mode")
 	ringBuilderFlags.Usage = func() {
-		fmt.Fprintf(os.Stderr, "hummingbird ring-builder command\n")
+		fmt.Fprintf(os.Stderr, "hummingbird ring <builder_file> command\n")
 		fmt.Fprintf(os.Stderr, "  Builds a swift style ring.  Commands are:\n")
-		fmt.Fprintf(os.Stderr, "    create <builder_file> <part_power> <replicas> <min_part_hours> (create a new ring)\n")
-		fmt.Fprintf(os.Stderr, "    add <builder_file> <device> <weight> (add a new device to the ring)\n")
-		fmt.Fprintf(os.Stderr, "    rebalance <builder_file> (rebalance the ring)\n")
+		fmt.Fprintf(os.Stderr, "    create <part_power> <replicas> <min_part_hours> (create a new ring)\n")
+		fmt.Fprintf(os.Stderr, "    add <device> <weight> (add a new device to the ring)\n")
+		fmt.Fprintf(os.Stderr, "    rebalance (rebalance the ring)\n")
 		fmt.Fprintf(os.Stderr, "  <device> is of the form: [r<region>]z<zone>-<ip>:<port>[R<r_ip>:<r_port>]/<device_name>_<meta>\n")
 		ringBuilderFlags.PrintDefaults()
 	}
@@ -437,7 +437,7 @@ func main() {
 		objectserver.RestoreDevice(flag.Args()[1:])
 	case "rescueparts":
 		objectserver.RescueParts(flag.Args()[1:])
-	case "ring-builder":
+	case "ring":
 		ringBuilderFlags.Parse(flag.Args()[1:])
 		ring.BuildCmd(ringBuilderFlags)
 	default:
