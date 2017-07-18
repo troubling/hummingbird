@@ -21,6 +21,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -63,6 +64,10 @@ func TestLocalHost(t *testing.T) {
 }
 
 func TestUnixSocket(t *testing.T) {
+	if ok, err := strconv.ParseBool(os.Getenv("TEST_LONG")); !ok || err != nil {
+		t.Log("Skipping TestUnixSocket; set TEST_LONG=true to run")
+		return
+	}
 	// construct ini and start memcache servers
 	var buffer bytes.Buffer
 	iniFile := conf.Config{File: make(ini.File)}
