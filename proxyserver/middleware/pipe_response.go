@@ -18,6 +18,7 @@ package middleware
 import (
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/troubling/hummingbird/common/srv"
 	"go.uber.org/zap"
@@ -37,7 +38,9 @@ type PipeResponseWriter struct {
 func (w *PipeResponseWriter) Write(stuff []byte) (int, error) {
 	written, err := w.w.Write(stuff)
 	if err != nil {
-		w.Logger.Error("PipeResponseWriter Write() error", zap.Error(err))
+		if !strings.Contains(err.Error(), "closed pipe") {
+			w.Logger.Error("PipeResponseWriter Write() error", zap.Error(err))
+		}
 	}
 	return written, err
 }
