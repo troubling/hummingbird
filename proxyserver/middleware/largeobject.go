@@ -356,7 +356,7 @@ func (xlo *xloMiddleware) byteFeeder(sw *xloIdentifyWriter, request *http.Reques
 	if reqRangeStr != "" {
 		if ranges, err := common.ParseRange(reqRangeStr, xloContentLength); err == nil {
 			xloContentLength = 0
-			if len(ranges) != 1 {
+			if len(ranges) > 1 {
 				sw.ResponseWriter.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", xloContentLength))
 				srv.SimpleErrorResponse(sw.ResponseWriter, http.StatusRequestedRangeNotSatisfiable, "invalid multi range")
 				return
