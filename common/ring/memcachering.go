@@ -17,19 +17,19 @@ package ring
 
 import (
 	"bufio"
-	"crypto/md5"
 	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/dchest/siphash"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 )
@@ -64,6 +64,8 @@ type memcacheRing struct {
 	maxFreeConnectionsPerServer int64
 	tries                       int64
 	nodeWeight                  int64
+	siphashK0                   uint64
+	siphashK1                   uint64
 }
 
 func NewMemcacheRing(confPath string) (*memcacheRing, error) {
@@ -98,21 +100,25 @@ func NewMemcacheRingFromConfig(config conf.Config) (*memcacheRing, error) {
 	if int64(len(ring.servers)) < ring.tries {
 		ring.tries = int64(len(ring.servers))
 	}
+	siphashK := config.GetDefault(confSection, "siphash_secret_key", "00000000000000000000000000000000")
+	if len(siphashK) != 32 {
+		return nil, fmt.Errorf("invalid [filter:cache] siphash_secret_key: %q", siphashK)
+	}
+	var err error
+	ring.siphashK0, err = strconv.ParseUint(siphashK[:16], 16, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid [filter:cache] siphash_secret_key: %q : %s", siphashK, err)
+	}
+	ring.siphashK1, err = strconv.ParseUint(siphashK[16:], 16, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid [filter:cache] siphash_secret_key: %q : %s", siphashK, err)
+	}
 	return ring, nil
 }
 
-func hashKey(s string) string {
-	h := md5.New()
-	io.WriteString(h, s)
-	return hex.EncodeToString(h.Sum(nil))
-}
-
-func hashKeyToBytes(s string) []byte {
-	h := md5.New()
-	io.WriteString(h, s)
-	buf := make([]byte, 32)
-	hex.Encode(buf, h.Sum(nil))
-	return buf
+func (ring *memcacheRing) hashKey(s string) string {
+	k0, k1 := siphash.Hash128(ring.siphashK0, ring.siphashK1, []byte(s))
+	return fmt.Sprintf("%016x%016x", k0, k1)
 }
 
 func (ring *memcacheRing) addServer(serverString string) error {
@@ -122,7 +128,7 @@ func (ring *memcacheRing) addServer(serverString string) error {
 	}
 	ring.servers[serverString] = server
 	for i := 0; int64(i) < ring.nodeWeight; i++ {
-		ring.ring[hashKey(fmt.Sprintf("%s-%d", serverString, i))] = serverString
+		ring.ring[ring.hashKey(fmt.Sprintf("%s-%d", serverString, i))] = serverString
 	}
 	return nil
 }
@@ -141,7 +147,7 @@ func (ring *memcacheRing) Decr(key string, delta int64, timeout int) (int64, err
 
 func (ring *memcacheRing) Delete(key string) error {
 	fn := func(conn *connection) error {
-		_, _, err := conn.roundTripPacket(opDelete, hashKeyToBytes(key), nil, nil)
+		_, _, err := conn.roundTripPacket(opDelete, ring.hashKey(key), nil, nil)
 		if err != nil && err != CacheMiss {
 			return err
 		}
@@ -152,7 +158,7 @@ func (ring *memcacheRing) Delete(key string) error {
 
 func (ring *memcacheRing) GetStructured(key string, val interface{}) error {
 	fn := func(conn *connection) error {
-		value, extras, err := conn.roundTripPacket(opGet, hashKeyToBytes(key), nil, nil)
+		value, extras, err := conn.roundTripPacket(opGet, ring.hashKey(key), nil, nil)
 		if err != nil {
 			return err
 		}
@@ -174,7 +180,7 @@ func (ring *memcacheRing) Get(key string) (interface{}, error) {
 	}
 	ret := &Return{}
 	fn := func(conn *connection) error {
-		value, extras, err := conn.roundTripPacket(opGet, hashKeyToBytes(key), nil, nil)
+		value, extras, err := conn.roundTripPacket(opGet, ring.hashKey(key), nil, nil)
 		if err != nil {
 			return err
 		}
@@ -199,7 +205,7 @@ func (ring *memcacheRing) GetMulti(serverKey string, keys []string) (map[string]
 	fn := func(conn *connection) error {
 		ret.value = make(map[string]interface{})
 		for _, key := range keys {
-			if err := conn.sendPacket(opGet, hashKeyToBytes(key), nil, nil); err != nil {
+			if err := conn.sendPacket(opGet, ring.hashKey(key), nil, nil); err != nil {
 				return err
 			}
 		}
@@ -244,7 +250,7 @@ func (ring *memcacheRing) Incr(key string, delta int64, timeout int) (int64, err
 	binary.BigEndian.PutUint64(extras[8:16], uint64(dfl))
 	binary.BigEndian.PutUint32(extras[16:20], uint32(timeout))
 	fn := func(conn *connection) error {
-		value, _, err := conn.roundTripPacket(op, hashKeyToBytes(key), nil, extras)
+		value, _, err := conn.roundTripPacket(op, ring.hashKey(key), nil, extras)
 		if err != nil {
 			return err
 		}
@@ -263,7 +269,7 @@ func (ring *memcacheRing) Set(key string, value interface{}, timeout int) error 
 	binary.BigEndian.PutUint32(extras[0:4], uint32(jsonFlag))
 	binary.BigEndian.PutUint32(extras[4:8], uint32(timeout))
 	fn := func(conn *connection) error {
-		_, _, err = conn.roundTripPacket(opSet, hashKeyToBytes(key), serl, extras)
+		_, _, err = conn.roundTripPacket(opSet, ring.hashKey(key), serl, extras)
 		return err
 	}
 	return ring.loop(key, fn)
@@ -279,7 +285,7 @@ func (ring *memcacheRing) SetMulti(serverKey string, values map[string]interface
 			extras := make([]byte, 8)
 			binary.BigEndian.PutUint32(extras[0:4], uint32(jsonFlag))
 			binary.BigEndian.PutUint32(extras[4:8], uint32(timeout))
-			if err = conn.sendPacket(opSet, hashKeyToBytes(key), serl, extras); err != nil {
+			if err = conn.sendPacket(opSet, ring.hashKey(key), serl, extras); err != nil {
 				return err
 			}
 		}
@@ -301,7 +307,7 @@ type serverIterator struct {
 }
 
 func (ring *memcacheRing) newServerIterator(key string) *serverIterator {
-	return &serverIterator{ring, hashKey(key), -1, make([]string, 0)}
+	return &serverIterator{ring, ring.hashKey(key), -1, make([]string, 0)}
 }
 
 func (it *serverIterator) next() bool {
@@ -324,8 +330,10 @@ func (it *serverIterator) value() *server {
 	return it.ring.servers[serverString]
 }
 
+var noServersError = errors.New("no memcache servers in ring")
+
 func (ring *memcacheRing) loop(key string, fn func(*connection) error) error {
-	var err error
+	err := noServersError
 	it := ring.newServerIterator(key)
 	for it.next() {
 		server := it.value()
@@ -453,7 +461,7 @@ func (c *connection) close() error {
 
 func (c *connection) receivePacket() ([]byte, []byte, error) {
 	packet := c.packetBuf[0:24]
-	if bytes, err := c.rw.Read(packet); err != nil || bytes != 24 {
+	if _, err := io.ReadFull(c.rw, packet); err != nil {
 		c.close()
 		return nil, nil, err
 	}
@@ -465,7 +473,7 @@ func (c *connection) receivePacket() ([]byte, []byte, error) {
 		c.packetBuf = append(c.packetBuf, ' ')
 	}
 	body := c.packetBuf[0:bodyLen]
-	if bytes, err := c.rw.Read(body); err != nil || bytes != bodyLen {
+	if _, err := io.ReadFull(c.rw, body); err != nil {
 		c.close()
 		return nil, nil, err
 	}
@@ -479,14 +487,15 @@ func (c *connection) receivePacket() ([]byte, []byte, error) {
 	}
 }
 
-func (c *connection) roundTripPacket(opcode byte, key []byte, value []byte, extras []byte) ([]byte, []byte, error) {
-	if err := c.sendPacket(opcode, key, value, extras); err != nil {
+func (c *connection) roundTripPacket(opcode byte, hashKey string, value []byte, extras []byte) ([]byte, []byte, error) {
+	if err := c.sendPacket(opcode, hashKey, value, extras); err != nil {
 		return nil, nil, err
 	}
 	return c.receivePacket()
 }
 
-func (c *connection) sendPacket(opcode byte, key []byte, value []byte, extras []byte) error {
+func (c *connection) sendPacket(opcode byte, hashKey string, value []byte, extras []byte) error {
+	key := []byte(hashKey)
 	c.conn.SetDeadline(time.Now().Add(c.reqTimeout))
 	packet := c.packetBuf[0:24]
 	packet[0], packet[1], packet[4], packet[5] = 0x80, opcode, byte(len(extras)), 0

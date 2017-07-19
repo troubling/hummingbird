@@ -38,7 +38,7 @@ func TestOptionsHandler(t *testing.T) {
 	r := httptest.NewRequest("OPTIONS", "/v1/a/c/o", nil)
 	ctx := &middleware.ProxyContext{
 		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
-			"container/a/c": {Metadata: map[string]string{"Access-Control-Allow-Origin": "there.com"}},
+			"hb/container/a/c": {Metadata: map[string]string{"Access-Control-Allow-Origin": "there.com"}},
 		}),
 	}
 	r = r.WithContext(context.WithValue(r.Context(), "proxycontext", ctx))
@@ -74,7 +74,7 @@ func TestOptionsHandlerStar(t *testing.T) {
 	r := httptest.NewRequest("OPTIONS", "/v1/a/c/o", nil)
 	ctx := &middleware.ProxyContext{
 		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
-			"container/a/c": {Metadata: map[string]string{"Access-Control-Allow-Origin": "*"}},
+			"hb/container/a/c": {Metadata: map[string]string{"Access-Control-Allow-Origin": "*"}},
 		}),
 	}
 	r = r.WithContext(context.WithValue(r.Context(), "proxycontext", ctx))
@@ -97,7 +97,7 @@ func TestOptionsHandlerNotSetup(t *testing.T) {
 	r := httptest.NewRequest("OPTIONS", "/v1/a/c/o", nil)
 	ctx := &middleware.ProxyContext{
 		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
-			"container/a/c": {Metadata: map[string]string{}},
+			"hb/container/a/c": {Metadata: map[string]string{}},
 		}),
 	}
 	r = r.WithContext(context.WithValue(r.Context(), "proxycontext", ctx))

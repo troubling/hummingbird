@@ -110,49 +110,49 @@ func TestNoToken(t *testing.T) {
 
 }
 
-type mockTokenMemacacheRing struct {
+type mockTokenMemcacheRing struct {
 	MockValues map[string]interface{}
 }
 
-func (mr *mockTokenMemacacheRing) Decr(key string, delta int64, timeout int) (int64, error) {
+func (mr *mockTokenMemcacheRing) Decr(key string, delta int64, timeout int) (int64, error) {
 	return int64(0), nil
 }
 
-func (mr *mockTokenMemacacheRing) Delete(key string) error {
+func (mr *mockTokenMemcacheRing) Delete(key string) error {
 	return nil
 }
 
-func (mr *mockTokenMemacacheRing) Get(key string) (interface{}, error) {
+func (mr *mockTokenMemcacheRing) Get(key string) (interface{}, error) {
 	if val, ok := mr.MockValues[key]; ok {
 		return val, nil
 	}
 	return nil, errors.New("Some error")
 }
 
-func (mr *mockTokenMemacacheRing) GetStructured(key string, val interface{}) error {
+func (mr *mockTokenMemcacheRing) GetStructured(key string, val interface{}) error {
 	return nil
 }
 
-func (mr *mockTokenMemacacheRing) GetMulti(serverKey string, keys []string) (map[string]interface{}, error) {
+func (mr *mockTokenMemcacheRing) GetMulti(serverKey string, keys []string) (map[string]interface{}, error) {
 	return nil, nil
 }
 
-func (mr *mockTokenMemacacheRing) Incr(key string, delta int64, timeout int) (int64, error) {
+func (mr *mockTokenMemcacheRing) Incr(key string, delta int64, timeout int) (int64, error) {
 	return int64(0), nil
 }
 
-func (mr *mockTokenMemacacheRing) Set(key string, value interface{}, timeout int) error {
+func (mr *mockTokenMemcacheRing) Set(key string, value interface{}, timeout int) error {
 	mr.MockValues[key] = value
 	return nil
 }
 
-func (mr *mockTokenMemacacheRing) SetMulti(serverKey string, values map[string]interface{}, timeout int) error {
+func (mr *mockTokenMemcacheRing) SetMulti(serverKey string, values map[string]interface{}, timeout int) error {
 	return nil
 }
 
 func TestExpiredToken(t *testing.T) {
 	rec := httptest.NewRecorder()
-	fakeCache := mockTokenMemacacheRing{MockValues: make(map[string]interface{})}
+	fakeCache := mockTokenMemcacheRing{MockValues: make(map[string]interface{})}
 	fakeContext := &ProxyContext{
 		Logger:                 zap.NewNop(),
 		ProxyContextMiddleware: &ProxyContextMiddleware{Cache: &fakeCache},
@@ -230,7 +230,7 @@ func TestExpiredToken(t *testing.T) {
 
 func TestUnscopedToken(t *testing.T) {
 	rec := httptest.NewRecorder()
-	fakeCache := mockTokenMemacacheRing{MockValues: make(map[string]interface{})}
+	fakeCache := mockTokenMemcacheRing{MockValues: make(map[string]interface{})}
 	fakeContext := &ProxyContext{
 		Logger:                 zap.NewNop(),
 		ProxyContextMiddleware: &ProxyContextMiddleware{Cache: &fakeCache},
@@ -302,7 +302,7 @@ func TestUnscopedToken(t *testing.T) {
 
 func TestProjectScopedToken(t *testing.T) {
 	rec := httptest.NewRecorder()
-	fakeCache := mockTokenMemacacheRing{MockValues: make(map[string]interface{})}
+	fakeCache := mockTokenMemcacheRing{MockValues: make(map[string]interface{})}
 	fakeContext := &ProxyContext{
 		Logger:                 zap.NewNop(),
 		ProxyContextMiddleware: &ProxyContextMiddleware{Cache: &fakeCache},
@@ -376,7 +376,7 @@ func TestProjectScopedToken(t *testing.T) {
 
 func TestDomainScopedToken(t *testing.T) {
 	rec := httptest.NewRecorder()
-	fakeCache := mockTokenMemacacheRing{MockValues: make(map[string]interface{})}
+	fakeCache := mockTokenMemcacheRing{MockValues: make(map[string]interface{})}
 	fakeContext := &ProxyContext{
 		Logger:                 zap.NewNop(),
 		ProxyContextMiddleware: &ProxyContextMiddleware{Cache: &fakeCache},
@@ -442,7 +442,7 @@ func TestGetCachedToken(t *testing.T) {
 	require.Nil(t, err)
 	req.Header.Set("X-Auth-Token", "abcd")
 	val := token{ExpiresAt: time.Now().Add(5 * time.Second), IssuedAt: time.Now()}
-	fakeCache := mockTokenMemacacheRing{MockValues: map[string]interface{}{"abcd": val}}
+	fakeCache := mockTokenMemcacheRing{MockValues: map[string]interface{}{"hb/abcd": val}}
 	fakeContext := &ProxyContext{
 		Logger:                 zap.NewNop(),
 		ProxyContextMiddleware: &ProxyContextMiddleware{Cache: &fakeCache},
@@ -470,7 +470,7 @@ func TestWriteCachedToken(t *testing.T) {
 	req, err := http.NewRequest("GET", "/someurl", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Auth-Token", "abcd")
-	fakeCache := mockTokenMemacacheRing{MockValues: make(map[string]interface{})}
+	fakeCache := mockTokenMemcacheRing{MockValues: make(map[string]interface{})}
 	fakeContext := &ProxyContext{
 		Logger:                 zap.NewNop(),
 		ProxyContextMiddleware: &ProxyContextMiddleware{Cache: &fakeCache},
@@ -503,7 +503,7 @@ func TestWriteCachedToken(t *testing.T) {
 	var tok token
 	var tokint interface{}
 	var ok bool
-	if tokint, ok = fakeCache.MockValues["abcd"]; !ok {
+	if tokint, ok = fakeCache.MockValues["hb/abcd"]; !ok {
 		t.Fatal("token was not cached")
 	}
 	if tok, ok = tokint.(token); !ok {
