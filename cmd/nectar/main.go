@@ -212,7 +212,7 @@ func delet(c client.Client, args []string) {
 	if resp.StatusCode/100 != 2 {
 		bodyBytes, _ := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
-		fatalf("%d %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+		fatalf("%d %s - %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes), resp.Header.Get("X-Source-Code"))
 	}
 	resp.Body.Close()
 }
@@ -234,7 +234,7 @@ func get(c client.Client, args []string) {
 		if resp.StatusCode/100 != 2 {
 			bodyBytes, _ := ioutil.ReadAll(resp.Body)
 			resp.Body.Close()
-			fatalf("%d %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+			fatalf("%d %s - %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes), resp.Header.Get("X-Source-Code"))
 		}
 		if *getFlagRaw || object == "" {
 			data := [][]string{}
@@ -262,7 +262,7 @@ func get(c client.Client, args []string) {
 		if resp.StatusCode/100 != 2 {
 			bodyBytes, _ := ioutil.ReadAll(resp.Body)
 			resp.Body.Close()
-			fatalf("%d %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+			fatalf("%d %s - %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes), resp.Header.Get("X-Source-Code"))
 		}
 		if *getFlagNameOnly {
 			for _, entry := range entries {
@@ -290,7 +290,7 @@ func get(c client.Client, args []string) {
 	if resp.StatusCode/100 != 2 {
 		bodyBytes, _ := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
-		fatalf("%d %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+		fatalf("%d %s - %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes), resp.Header.Get("X-Source-Code"))
 	}
 	if *getFlagNameOnly {
 		for _, entry := range entries {
@@ -334,7 +334,7 @@ func head(c client.Client, args []string) {
 	bodyBytes, _ := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		fatalf("%d %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+		fatalf("%d %s - %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes), resp.Header.Get("X-Source-Code"))
 	}
 	data := [][]string{}
 	ks := []string{}
@@ -385,7 +385,7 @@ func put(c client.Client, args []string) {
 	if resp.StatusCode/100 != 2 {
 		bodyBytes, _ := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
-		fatalf("%d %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+		fatalf("%d %s - %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes), resp.Header.Get("X-Source-Code"))
 	}
 	resp.Body.Close()
 }
@@ -403,7 +403,7 @@ func post(c client.Client, args []string) {
 	if resp.StatusCode/100 != 2 {
 		bodyBytes, _ := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
-		fatalf("%d %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+		fatalf("%d %s - %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes), resp.Header.Get("X-Source-Code"))
 	}
 	resp.Body.Close()
 }
@@ -426,7 +426,7 @@ func upload(c client.Client, args []string) {
 	if resp.StatusCode/100 != 2 {
 		bodyBytes, _ := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
-		fatalf("PUT %s - %d %s - %s\n", container, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+		fatalf("PUT %s - %d %s - %s - %s\n", container, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes), resp.Header.Get("X-Source-Code"))
 	}
 	resp.Body.Close()
 	concurrency := *globalFlagConcurrency
@@ -459,10 +459,10 @@ func upload(c client.Client, args []string) {
 					resp.Body.Close()
 					f.Close()
 					if *globalFlagContinueOnError {
-						fmt.Fprintf(os.Stderr, "PUT %s/%s - %d %s - %s\n", container, object+path, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+						fmt.Fprintf(os.Stderr, "PUT %s/%s - %d %s - %s - %s\n", container, object+path, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes), resp.Header.Get("X-Source-Code"))
 						continue
 					} else {
-						fatalf("PUT %s/%s - %d %s - %s\n", container, object+path, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+						fatalf("PUT %s/%s - %d %s - %s - %s\n", container, object+path, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes), resp.Header.Get("X-Source-Code"))
 					}
 				}
 				resp.Body.Close()
@@ -535,10 +535,10 @@ func download(c client.Client, args []string) {
 						resp.Body.Close()
 						containerWG.Done()
 						if *globalFlagContinueOnError {
-							fmt.Fprintf(os.Stderr, "GET %s - %d %s - %s\n", task.container, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+							fmt.Fprintf(os.Stderr, "GET %s - %d %s - %s - %s\n", task.container, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes), resp.Header.Get("X-Source-Code"))
 							continue
 						} else {
-							fatalf("GET %s - %d %s - %s\n", task.container, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+							fatalf("GET %s - %d %s - %s - %s\n", task.container, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes), resp.Header.Get("X-Source-Code"))
 						}
 					}
 					resp.Body.Close()
@@ -580,10 +580,10 @@ func download(c client.Client, args []string) {
 					resp.Body.Close()
 					f.Close()
 					if *globalFlagContinueOnError {
-						fmt.Fprintf(os.Stderr, "GET %s/%s - %d %s - %s\n", task.container, task.object, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+						fmt.Fprintf(os.Stderr, "GET %s/%s - %d %s - %s - %s\n", task.container, task.object, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes), resp.Header.Get("X-Source-Code"))
 						continue
 					} else {
-						fatalf("GET %s/%s - %d %s - %s\n", task.container, task.object, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+						fatalf("GET %s/%s - %d %s - %s - %s\n", task.container, task.object, resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes), resp.Header.Get("X-Source-Code"))
 					}
 				}
 				if _, err = io.Copy(f, resp.Body); err != nil {
@@ -638,7 +638,7 @@ func download(c client.Client, args []string) {
 		if resp.StatusCode/100 != 2 {
 			bodyBytes, _ := ioutil.ReadAll(resp.Body)
 			resp.Body.Close()
-			fatalf("GET - %d %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes))
+			fatalf("GET - %d %s - %s - %s\n", resp.StatusCode, http.StatusText(resp.StatusCode), string(bodyBytes), resp.Header.Get("X-Source-Code"))
 		}
 		resp.Body.Close()
 		for _, entry := range entries {

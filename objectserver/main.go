@@ -627,7 +627,7 @@ func (server *ObjectServer) GetHandler(config conf.Config, metricsPrefix string)
 	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Invalid path: %s", r.URL.Path), http.StatusBadRequest)
 	})
-	return alice.New(middleware.Metrics(metricsScope)).Append(middleware.GrepObject).Then(router)
+	return alice.New(middleware.Metrics(&config, metricsScope)).Append(middleware.GrepObject).Then(router)
 }
 
 func GetServer(serverconf conf.Config, flags *flag.FlagSet) (bindIP string, bindPort int, serv srv.Server, logger srv.LowLevelLogger, err error) {
