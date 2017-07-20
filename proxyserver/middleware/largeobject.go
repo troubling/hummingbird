@@ -426,12 +426,12 @@ func (xlo *xloMiddleware) handleSloGet(sw *xloIdentifyWriter, request *http.Requ
 	}
 	sloEtag := sw.Header().Get("X-Object-Sysmeta-Slo-Etag")
 	savedContentLength := sw.Header().Get("X-Object-Sysmeta-Slo-Size")
-	isConditional := ((request.Header.Get("If-Match") != "" ||
-		request.Header.Get("If-None-Match") != "") &&
-		(sw.status == 304 || sw.status == 412))
 
-	if (request.Method == "HEAD" || isConditional) && (sloEtag != "" || savedContentLength != "") {
-		sw.Header().Set("Content-Length", savedContentLength)
+	if (request.Method == "HEAD" ||
+		sw.status == 304 || sw.status == 412) && (sloEtag != "" || savedContentLength != "") {
+		if request.Method == "HEAD" {
+			sw.Header().Set("Content-Length", savedContentLength)
+		}
 		sw.Header().Set("Etag", fmt.Sprintf("\"%s\"", sloEtag))
 		sw.ResponseWriter.WriteHeader(sw.status)
 		return
