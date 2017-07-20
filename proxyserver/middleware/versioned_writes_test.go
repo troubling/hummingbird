@@ -77,13 +77,13 @@ func TestObjectPutHistory(t *testing.T) {
 		},
 		Logger: zap.NewNop(),
 		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
-			"hb/container/a/c": {
+			"container/a/c": {
 				SysMetadata: map[string]string{
 					"Versions-Location": "c_v",
 					"Versions-Mode":     "history",
 				},
 			},
-			"hb/container/a/c_v": {},
+			"container/a/c_v": {},
 		}),
 	}
 
@@ -134,13 +134,13 @@ func TestObjectDeleteHistory(t *testing.T) {
 		},
 		Logger: zap.NewNop(),
 		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
-			"hb/container/a/c": {
+			"container/a/c": {
 				SysMetadata: map[string]string{
 					"Versions-Location": "c_v",
 					"Versions-Mode":     "history",
 				},
 			},
-			"hb/container/a/c_v": {},
+			"container/a/c_v": {},
 		}),
 	}
 
@@ -198,13 +198,13 @@ func TestObjectDeleteStack(t *testing.T) {
 		},
 		Logger: zap.NewNop(),
 		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
-			"hb/container/a/c": {
+			"container/a/c": {
 				SysMetadata: map[string]string{
 					"Versions-Location": "c_v",
 					"Versions-Mode":     "stack",
 				},
 			},
-			"hb/container/a/c_v": {},
+			"container/a/c_v": {},
 		}),
 	}
 
@@ -263,13 +263,13 @@ func TestObjectDeleteStackMarker(t *testing.T) {
 		},
 		Logger: zap.NewNop(),
 		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
-			"hb/container/a/c": {
+			"container/a/c": {
 				SysMetadata: map[string]string{
 					"Versions-Location": "c_v",
 					"Versions-Mode":     "stack",
 				},
 			},
-			"hb/container/a/c_v": {},
+			"container/a/c_v": {},
 		}),
 	}
 
