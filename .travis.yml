@@ -59,6 +59,7 @@ script:
       --exclude-test=test.functional.test_account.TestAccount.test_unicode_metadata `# violates rfc specifying 7-bit clean headers, go server rejects.` \
       --exclude-test=test.functional.test_container.TestContainer.test_unicode_metadata \
       --exclude-test=test.functional.tests.TestFile.testBadHeaders `# Go's http server returns 400 not 501 for Transfer-Encoding: gzip,chunked` \
+      --exclude-test=test.functional.tests.TestFileUTF8.testBadHeaders \
       --exclude-test=test.functional.tests.TestFile.testGetResponseHeaders `# silly checking for Connection: header.  Let the server do its job.` \
       --exclude-test=test.functional.tests.TestFileUTF8.testGetResponseHeaders \
       --exclude-test=test.functional.test_slo.TestSlo.test_slo_typo_etag `# these slo fields are optional and we can't easily detect typos.` \
