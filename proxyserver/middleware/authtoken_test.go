@@ -442,7 +442,7 @@ func TestGetCachedToken(t *testing.T) {
 	require.Nil(t, err)
 	req.Header.Set("X-Auth-Token", "abcd")
 	val := token{ExpiresAt: time.Now().Add(5 * time.Second), IssuedAt: time.Now()}
-	fakeCache := mockTokenMemcacheRing{MockValues: map[string]interface{}{"hb/abcd": val}}
+	fakeCache := mockTokenMemcacheRing{MockValues: map[string]interface{}{"abcd": val}}
 	fakeContext := &ProxyContext{
 		Logger:                 zap.NewNop(),
 		ProxyContextMiddleware: &ProxyContextMiddleware{Cache: &fakeCache},
@@ -503,7 +503,7 @@ func TestWriteCachedToken(t *testing.T) {
 	var tok token
 	var tokint interface{}
 	var ok bool
-	if tokint, ok = fakeCache.MockValues["hb/abcd"]; !ok {
+	if tokint, ok = fakeCache.MockValues["abcd"]; !ok {
 		t.Fatal("token was not cached")
 	}
 	if tok, ok = tokint.(token); !ok {

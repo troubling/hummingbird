@@ -198,7 +198,7 @@ func NewProxyClient(pdc *ProxyDirectClient, mc ring.MemcacheRing, lc map[string]
 }
 
 func (c *proxyClient) invalidateContainerInfo(account string, container string) {
-	key := fmt.Sprintf("hb/container/%s/%s", account, container)
+	key := fmt.Sprintf("container/%s/%s", account, container)
 	if c.lc != nil {
 		delete(c.lc, key)
 	}
@@ -417,7 +417,7 @@ func (c *ProxyDirectClient) GetContainer(account string, container string, optio
 var NilContainerInfo = &ContainerInfo{}
 
 func (c *ProxyDirectClient) GetContainerInfo(account string, container string, mc ring.MemcacheRing, lc map[string]*ContainerInfo) (*ContainerInfo, error) {
-	key := fmt.Sprintf("hb/container/%s/%s", account, container)
+	key := fmt.Sprintf("container/%s/%s", account, container)
 	var ci *ContainerInfo
 	if lc != nil {
 		ci = lc[key]
