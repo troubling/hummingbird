@@ -184,7 +184,7 @@ func (at *authToken) fetchAndValidateToken(ctx *ProxyContext, authToken string) 
 	}
 	var tok *token
 	tokenValid := false
-	if cachedToken, err := ctx.Cache.Get("hb/" + authToken); err == nil {
+	if cachedToken, err := ctx.Cache.Get(authToken); err == nil {
 		ctx.Logger.Debug("Found cache token",
 			zap.String("token", authToken))
 		if t, ok := cachedToken.(token); ok {
@@ -207,7 +207,7 @@ func (at *authToken) fetchAndValidateToken(ctx *ProxyContext, authToken string) 
 			if expiresIn := tok.ExpiresAt.Sub(time.Now()); expiresIn < time.Duration(at.cacheTime)*time.Second {
 				ttl = int(expiresIn / time.Second)
 			}
-			ctx.Cache.Set("hb/"+authToken, *tok, ttl)
+			ctx.Cache.Set(authToken, *tok, ttl)
 		}
 	}
 	return tok, tokenValid

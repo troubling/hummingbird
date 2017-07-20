@@ -359,7 +359,7 @@ func (xlo *xloMiddleware) byteFeeder(sw *xloIdentifyWriter, request *http.Reques
 	if reqRangeStr != "" {
 		if ranges, err := common.ParseRange(reqRangeStr, xloContentLength); err == nil {
 			xloContentLength = 0
-			if len(ranges) != 1 {
+			if len(ranges) > 1 {
 				sw.ResponseWriter.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", xloContentLength))
 				srv.SimpleErrorResponse(sw.ResponseWriter, http.StatusRequestedRangeNotSatisfiable, "invalid multi range")
 				return
@@ -709,6 +709,10 @@ func isValidDloHeader(manifest string) bool {
 }
 
 func (xlo *xloMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	if ctx := GetProxyContext(request); ctx != nil && ctx.Source == "VW" {
+		xlo.next.ServeHTTP(writer, request)
+		return
+	}
 	xloFuncName := request.URL.Query().Get("multipart-manifest")
 	if request.Method == "PUT" && request.Header.Get("X-Object-Manifest") != "" {
 		if !isValidDloHeader(request.Header.Get("X-Object-Manifest")) {
