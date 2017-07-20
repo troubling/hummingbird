@@ -64,6 +64,8 @@ func TestGetRegular(t *testing.T) {
 	w := httptest.NewRecorder()
 	req, err := http.NewRequest("GET", "v/a/c/o", nil)
 	require.Nil(t, err)
+	fakeContext := NewFakeProxyContext(next)
+	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", fakeContext))
 
 	sm.ServeHTTP(w, req)
 	resp := w.Result()
@@ -103,6 +105,7 @@ func TestGetMultipartManifest(t *testing.T) {
 	w = httptest.NewRecorder()
 	req, err = http.NewRequest("GET", "/v/a/c/o?multipart-manifest=get&format=raw", nil)
 	require.Nil(t, err)
+	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", fakeContext))
 
 	sm.ServeHTTP(w, req)
 	nresp := w.Result()

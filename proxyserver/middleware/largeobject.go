@@ -706,6 +706,10 @@ func isValidDloHeader(manifest string) bool {
 }
 
 func (xlo *xloMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	if ctx := GetProxyContext(request); ctx != nil && ctx.Source == "VW" {
+		xlo.next.ServeHTTP(writer, request)
+		return
+	}
 	xloFuncName := request.URL.Query().Get("multipart-manifest")
 	if request.Method == "PUT" && request.Header.Get("X-Object-Manifest") != "" {
 		if !isValidDloHeader(request.Header.Get("X-Object-Manifest")) {
