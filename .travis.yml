@@ -65,10 +65,9 @@ script:
       --exclude-test=test.functional.test_slo.TestSlo.test_slo_typo_etag `# these slo fields are optional and we can't easily detect typos.` \
       --exclude-test=test.functional.test_slo.TestSlo.test_slo_typo_size \
       --exclude-test=test.functional.test_slo.TestSloUTF8.test_slo_typo_etag \
-      --exclude-test=test.functional.test_slo.TestSloUTF8.test_slo_typo_size \
-      `# we're not gating on this yet.` || true
+      --exclude-test=test.functional.test_slo.TestSloUTF8.test_slo_typo_size
   - 
-  - echo "<html><body><h1>Files</h1><ul>$(for file in `find /tmp/output -type f -printf "%f\n" | sort`; do echo "<li><a href='$file'>$file</a></li>"; done)</ul></body></html>" > /tmp/output/index.html
+  - echo "<html><body><h1>Files</h1><ul>$(for file in `find /tmp/output -type f -printf "%P\n" | sort`; do echo "<li><a href='$file'>$file</a></li>"; done)</ul></body></html>" > /tmp/output/index.html
 
 deploy:
   skip_cleanup: true
