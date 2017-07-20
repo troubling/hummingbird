@@ -47,10 +47,10 @@ func makeFormpostRequest(t *testing.T, body, boundary string, next http.Handler)
 	ctx := &ProxyContext{
 		Logger: zap.NewNop(),
 		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
-			"hb/container/AUTH_test/container": {Metadata: map[string]string{"Temp-Url-Key": "mykey"}},
+			"container/AUTH_test/container": {Metadata: map[string]string{"Temp-Url-Key": "mykey"}},
 		}),
 		accountInfoCache: map[string]*AccountInfo{
-			"hb/account/AUTH_test": {Metadata: map[string]string{"Temp-Url-Key": "mykey"}}},
+			"account/AUTH_test": {Metadata: map[string]string{"Temp-Url-Key": "mykey"}}},
 		ProxyContextMiddleware: &ProxyContextMiddleware{
 			next: next,
 		},
@@ -165,13 +165,13 @@ func TestAuthenticateFormpost(t *testing.T) {
 	ctx := &ProxyContext{
 		Logger: zap.NewNop(),
 		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
-			"hb/container/a/c": {Metadata: map[string]string{
+			"container/a/c": {Metadata: map[string]string{
 				"Temp-Url-Key":   "containerkey",
 				"Temp-Url-Key-2": "containerkey2",
 			}},
 		}),
 		accountInfoCache: map[string]*AccountInfo{
-			"hb/account/a": {Metadata: map[string]string{
+			"account/a": {Metadata: map[string]string{
 				"Temp-Url-Key":   "accountkey",
 				"Temp-Url-Key-2": "accountkey2",
 			}}},

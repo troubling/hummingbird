@@ -91,11 +91,11 @@ func (r *ratelimiter) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 	var ratekey string
 	if pathParts["object"] == "" {
 		ratekey = fmt.Sprintf(
-			"hb/ratelimit/%s", pathParts["account"])
+			"ratelimit/%s", pathParts["account"])
 		limit = r.accountLimit
 	} else {
 		ratekey = fmt.Sprintf(
-			"hb/ratelimit/%s/%s", pathParts["account"], pathParts["container"])
+			"ratelimit/%s/%s", pathParts["account"], pathParts["container"])
 		limit = r.containerLimit
 	}
 	if limit > 0 {

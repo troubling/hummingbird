@@ -335,7 +335,7 @@ func TestServeHTTP(t *testing.T) {
 	authReq.Header.Set("X-Auth-Token", "AUTH_abcde")
 	ca := cachedAuth{Groups: []string{"hat"}, Expires: time.Now().Unix() + 100}
 	caM, _ := json.Marshal(ca)
-	fakeMr.MockGetStructured = map[string][]byte{"hb/auth:AUTH_abcde": caM}
+	fakeMr.MockGetStructured = map[string][]byte{"auth:AUTH_abcde": caM}
 	ta.ServeHTTP(fakeWriter, authReq)
 	ctx := GetProxyContext(authReq)
 	require.False(t, ctx.Authorize == nil)
