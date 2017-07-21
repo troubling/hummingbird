@@ -41,14 +41,13 @@ type AtomicFileWriter interface {
 
 // LockPath locks a directory with a timeout.
 func LockPath(directory string, timeout time.Duration) (*os.File, error) {
-	lockfile := filepath.Join(directory, ".lock")
-	file, err := os.OpenFile(lockfile, os.O_RDWR|os.O_CREATE, 0660)
+	file, err := os.Open(directory)
 	if err != nil {
 		if os.IsNotExist(err) && os.MkdirAll(directory, 0755) == nil {
-			file, err = os.OpenFile(lockfile, os.O_RDWR|os.O_CREATE, 0660)
+			file, err = os.Open(directory)
 		}
 		if err != nil {
-			return nil, errors.New(fmt.Sprintf("Unable to open lock file (%v)", err))
+			return nil, errors.New(fmt.Sprintf("Unable to lock %s: %s", directory, err))
 		}
 	}
 	success := make(chan error)
