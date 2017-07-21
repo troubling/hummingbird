@@ -87,6 +87,18 @@ func (s *staticWebHandler) ServeHTTP(writer http.ResponseWriter, request *http.R
 		s.next.ServeHTTP(writer, request)
 		return
 	}
+	// If no staticweb-related metadata exists, treat as a plain public container.
+	anythingSet := false
+	for _, h := range []string{"Web-Index", "Web-Error", "Web-Listings", "Web-Listings-Label", "Web-Listings-Css", "Web-Directory-Type"} {
+		if _, ok := ci.Metadata[h]; ok {
+			anythingSet = true
+			break
+		}
+	}
+	if !anythingSet {
+		s.next.ServeHTTP(writer, request)
+		return
+	}
 	s.webIndex = strings.TrimSpace(ci.Metadata["Web-Index"])
 	s.webError = strings.TrimSpace(ci.Metadata["Web-Error"])
 	s.webListings = common.LooksTrue(strings.TrimSpace(ci.Metadata["Web-Listings"]))
@@ -137,11 +149,7 @@ func (s *staticWebHandler) handleObject(writer http.ResponseWriter, request *htt
 
 func (s *staticWebHandler) handleDirectory(writer http.ResponseWriter, request *http.Request) {
 	if s.webIndex == "" && !s.webListings {
-		if common.LooksTrue(request.Header.Get("X-Web-Mode")) {
-			s.handleError(writer, request, http.StatusNotFound, nil)
-			return
-		}
-		s.next.ServeHTTP(writer, request)
+		s.handleError(writer, request, http.StatusNotFound, nil)
 		return
 	}
 	if !strings.HasSuffix(request.URL.Path, "/") {
@@ -383,21 +391,16 @@ func (s *staticWebHandler) handleError(writer http.ResponseWriter, request *http
 		srv.StandardResponse(writer, status)
 		return
 	}
-	subreq, err := s.ctx.newSubrequest("GET", fmt.Sprintf("/v1/%s/%s/%d%s", url.PathEscape(s.account), url.PathEscape(s.container), status, s.webError), nil, request, "staticweb")
-	if err != nil {
+	subBody, subHeader, subStatus := PipedGet(fmt.Sprintf("/v1/%s/%s/%d%s", url.PathEscape(s.account), url.PathEscape(s.container), status, s.webError), request, "staticweb", nil)
+	if subBody != nil {
+		defer subBody.Close()
+	}
+	if subStatus/100 != 2 {
 		srv.StandardResponse(writer, status)
 		return
 	}
-	subrec := httptest.NewRecorder()
-	s.ctx.serveHTTPSubrequest(subrec, subreq)
-	subresp := subrec.Result()
-	defer subresp.Body.Close()
-	if subresp.StatusCode/100 != 2 {
-		srv.StandardResponse(writer, status)
-		return
-	}
-	writer.Header().Set("Content-Type", subresp.Header.Get("Content-Type"))
-	writer.Header().Set("Content-Length", subresp.Header.Get("Content-Length"))
+	writer.Header().Set("Content-Type", subHeader.Get("Content-Type"))
+	writer.Header().Set("Content-Length", subHeader.Get("Content-Length"))
 	writer.WriteHeader(status)
-	io.Copy(writer, subresp.Body)
+	io.Copy(writer, subBody)
 }

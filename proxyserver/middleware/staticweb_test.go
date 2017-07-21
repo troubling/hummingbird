@@ -104,7 +104,7 @@ func TestStaticWebGetObject(t *testing.T) {
 	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", &ProxyContext{
 		ProxyContextMiddleware: &ProxyContextMiddleware{next: s},
 		Logger:                 zap.NewNop(),
-		C:                      client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{}}}),
+		C:                      client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{"Web-Index": "index.html"}}}),
 		accountInfoCache:       map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
 	}))
 	rec := httptest.NewRecorder()
@@ -635,7 +635,7 @@ func TestStaticWebCustomErrorPages(t *testing.T) {
 		t.Fatal(resp.StatusCode)
 	}
 	if body != "404errorpage" {
-		t.Fatal("")
+		t.Fatal(body)
 	}
 	if len(next.requests) != 2 {
 		for _, r := range next.requests {

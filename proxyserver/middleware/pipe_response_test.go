@@ -20,11 +20,7 @@ func TestGet(t *testing.T) {
 	dummy, err := http.NewRequest("GET", "/someurl", nil)
 	dummy = dummy.WithContext(context.WithValue(dummy.Context(), "proxycontext", fakeContext))
 	require.Nil(t, err)
-
-	p := &PipeResponse{}
-
-	body, header, code := p.Get("/ver/a/c/o", dummy, "test", nil)
-
+	body, header, code := PipedGet("/ver/a/c/o", dummy, "test", nil)
 	require.Equal(t, 200, code)
 	buf := make([]byte, 1024)
 	num, err := body.Read(buf)
