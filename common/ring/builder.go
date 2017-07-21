@@ -16,6 +16,7 @@
 package ring
 
 import (
+	"bufio"
 	"errors"
 	"flag"
 	"fmt"
@@ -30,6 +31,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gholt/brimtext"
 	"github.com/troubling/hummingbird/common/pickle"
 )
 
@@ -1280,7 +1282,7 @@ GATHER:
 	return changedParts, b.GetBalance(), removedDevs, nil
 }
 
-func (b *RingBuilder) SearchDevs(region, zone int64, ip string, port int64, repIp string, repPort int64, device string, weight float64) []*RingBuilderDevice {
+func (b *RingBuilder) SearchDevs(region, zone int64, ip string, port int64, repIp string, repPort int64, device string, weight float64, meta string) []*RingBuilderDevice {
 	foundDevs := make([]*RingBuilderDevice, 0)
 	for next, dev := devIterator(b.Devs); dev != nil; dev = next() {
 		if region >= 0 && region != dev.Region {
@@ -1305,6 +1307,9 @@ func (b *RingBuilder) SearchDevs(region, zone int64, ip string, port int64, repI
 			continue
 		}
 		if weight >= 0.0 && weight != dev.Weight {
+			continue
+		}
+		if meta != "" && strings.Contains(dev.Meta, meta) {
 			continue
 		}
 		foundDevs = append(foundDevs, dev)
@@ -1485,13 +1490,36 @@ func AddDevice(builderPath string, id, region, zone int64, ip string, port int64
 	return id, nil
 }
 
-func Search(builderPath string, region, zone int64, ip string, port int64, repIp string, repPort int64, device string, weight float64) ([]*RingBuilderDevice, error) {
+func Search(builderPath string, region, zone int64, ip string, port int64, repIp string, repPort int64, device string, weight float64, meta string) ([]*RingBuilderDevice, error) {
 	builder, err := NewRingBuilderFromFile(builderPath, false)
 	if err != nil {
 		return nil, err
 	}
-	devs := builder.SearchDevs(region, zone, ip, port, repIp, repPort, device, weight)
+	devs := builder.SearchDevs(region, zone, ip, port, repIp, repPort, device, weight, meta)
 	return devs, nil
+}
+
+func SetWeight(builderPath string, devs []*RingBuilderDevice, weight float64) error {
+	builder, err := NewRingBuilderFromFile(builderPath, false)
+	if err != nil {
+		return err
+	}
+	for _, dev := range devs {
+		builder.Devs[dev.Id].Weight = weight
+	}
+	builder.Save(builderPath)
+	return nil
+
+}
+
+func PrintDevs(devs []*RingBuilderDevice) {
+	data := make([][]string, 0)
+	data = append(data, []string{"ID", "REGION", "ZONE", "IP ADDRESS", "PORT", "REPLICATION IP", "REPLICATION PORT", "NAME", "WEIGHT", "PARTITIONS", "META"})
+	data = append(data, nil)
+	for _, dev := range devs {
+		data = append(data, []string{strconv.FormatInt(dev.Id, 10), strconv.FormatInt(dev.Region, 10), strconv.FormatInt(dev.Zone, 10), dev.Ip, strconv.FormatInt(dev.Port, 10), dev.ReplicationIp, strconv.FormatInt(dev.ReplicationPort, 10), dev.Device, strconv.FormatFloat(dev.Weight, 'f', -1, 64), strconv.FormatInt(dev.Parts, 10), dev.Meta})
+	}
+	fmt.Println(brimtext.Align(data, brimtext.NewSimpleAlignOptions()))
 }
 
 func BuildCmd(flags *flag.FlagSet) {
@@ -1551,10 +1579,11 @@ func BuildCmd(flags *flag.FlagSet) {
 		repPort := searchFlags.Int64("replication-port", -1, "Device replication port.")
 		device := searchFlags.String("device", "", "Device name.")
 		weight := searchFlags.Float64("weight", -1.0, "Device weight.")
+		meta := searchFlags.String("meta", "", "Metadata.")
 		if err := searchFlags.Parse(args[2:]); err != nil {
 			fmt.Println(err)
 		}
-		devs, err := Search(pth, *region, *zone, *ip, *port, *repIp, *repPort, *device, *weight)
+		devs, err := Search(pth, *region, *zone, *ip, *port, *repIp, *repPort, *device, *weight, *meta)
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -1563,11 +1592,66 @@ func BuildCmd(flags *flag.FlagSet) {
 			fmt.Println("No matching devices found.")
 			return
 		}
-		fmt.Println("Devices:    id  region  zone      ip address  port  replication ip  replication port      name weight partitions meta")
-		for _, dev := range devs {
-			fmt.Printf("         %5d %7d %5d %15s %5d %15s %17d %9s %6.02f %7d %s\n", dev.Id, dev.Region, dev.Zone, dev.Ip, dev.Port, dev.ReplicationIp, dev.ReplicationPort, dev.Device, dev.Weight, dev.Parts, dev.Meta)
-		}
+		PrintDevs(devs)
 		return
+
+	case "set_weight":
+		weightFlags := flag.NewFlagSet("set_weight", flag.ExitOnError)
+		region := weightFlags.Int64("region", -1, "Device region.")
+		zone := weightFlags.Int64("zone", -1, "Device zone.")
+		ip := weightFlags.String("ip", "", "Device ip address.")
+		port := weightFlags.Int64("port", -1, "Device port.")
+		repIp := weightFlags.String("replication-ip", "", "Device replication address.")
+		repPort := weightFlags.Int64("replication-port", -1, "Device replication port.")
+		device := weightFlags.String("device", "", "Device name.")
+		weight := weightFlags.Float64("weight", -1.0, "Device weight.")
+		meta := weightFlags.String("meta", "", "Metadata.")
+		yes := weightFlags.Bool("yes", false, "Force yes.")
+		if err := weightFlags.Parse(args[2:]); err != nil {
+			fmt.Println(err)
+			return
+		}
+		args := weightFlags.Args()
+		if len(args) < 1 {
+			weightFlags.Usage()
+			return
+		}
+		newWeight, err := strconv.ParseFloat(args[0], 64)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		devs, err := Search(pth, *region, *zone, *ip, *port, *repIp, *repPort, *device, *weight, *meta)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		if len(devs) == 0 {
+			fmt.Println("No matching devices found.")
+			return
+		} else {
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Println("Search matched the following devices:")
+			PrintDevs(devs)
+			if !*yes {
+				fmt.Printf("Are you sure you want to update the weight to %.2f for these %d devices (y/n)? ", newWeight, len(devs))
+				resp, err := reader.ReadString('\n')
+				if err != nil {
+					fmt.Println(err)
+					return
+				}
+				if resp[0] != 'y' && resp[0] != 'Y' {
+					fmt.Println("No devices updated.")
+					return
+				}
+			}
+			err := SetWeight(pth, devs, newWeight)
+			if err != nil {
+				fmt.Println(err)
+			} else {
+				fmt.Println("Weight updated successfully.")
+			}
+		}
 
 	case "add":
 		// TODO: Add config option version of add function
