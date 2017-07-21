@@ -336,9 +336,6 @@ func (xlo *xloMiddleware) byteFeeder(sw *xloIdentifyWriter, request *http.Reques
 		xloEtag = fmt.Sprintf("%x", xloEtagGen.Sum(nil))
 		xloContentLength = xloContentLengthGen
 	}
-	reqRangeStr := request.Header.Get("Range")
-	reqRange := common.HttpRange{Start: 0, End: xloContentLength}
-	status := http.StatusOK
 	if request.Header.Get("If-Match") != "" {
 		ifMatches := common.ParseIfMatch(request.Header.Get("If-Match"))
 		if !ifMatches[strings.Trim(xloEtag, "\"")] {
@@ -353,6 +350,15 @@ func (xlo *xloMiddleware) byteFeeder(sw *xloIdentifyWriter, request *http.Reques
 			return
 		}
 	}
+	if (request.Header.Get("If-Unmodified-Since") != "" && sw.status == 412) ||
+		(request.Header.Get("If-Modified-Since") != "" && sw.status == 304) {
+		sw.Header().Set("Etag", fmt.Sprintf("\"%s\"", xloEtag))
+		sw.ResponseWriter.WriteHeader(sw.status)
+		return
+	}
+	reqRangeStr := request.Header.Get("Range")
+	reqRange := common.HttpRange{Start: 0, End: xloContentLength}
+	status := http.StatusOK
 	if reqRangeStr != "" {
 		if ranges, err := common.ParseRange(reqRangeStr, xloContentLength); err == nil {
 			xloContentLength = 0
