@@ -1282,7 +1282,7 @@ GATHER:
 	return changedParts, b.GetBalance(), removedDevs, nil
 }
 
-func (b *RingBuilder) SearchDevs(region, zone int64, ip string, port int64, repIp string, repPort int64, device string, weight float64) []*RingBuilderDevice {
+func (b *RingBuilder) SearchDevs(region, zone int64, ip string, port int64, repIp string, repPort int64, device string, weight float64, meta string) []*RingBuilderDevice {
 	foundDevs := make([]*RingBuilderDevice, 0)
 	for next, dev := devIterator(b.Devs); dev != nil; dev = next() {
 		if region >= 0 && region != dev.Region {
@@ -1307,6 +1307,9 @@ func (b *RingBuilder) SearchDevs(region, zone int64, ip string, port int64, repI
 			continue
 		}
 		if weight >= 0.0 && weight != dev.Weight {
+			continue
+		}
+		if meta != "" && strings.Contains(dev.Meta, meta) {
 			continue
 		}
 		foundDevs = append(foundDevs, dev)
@@ -1487,12 +1490,12 @@ func AddDevice(builderPath string, id, region, zone int64, ip string, port int64
 	return id, nil
 }
 
-func Search(builderPath string, region, zone int64, ip string, port int64, repIp string, repPort int64, device string, weight float64) ([]*RingBuilderDevice, error) {
+func Search(builderPath string, region, zone int64, ip string, port int64, repIp string, repPort int64, device string, weight float64, meta string) ([]*RingBuilderDevice, error) {
 	builder, err := NewRingBuilderFromFile(builderPath, false)
 	if err != nil {
 		return nil, err
 	}
-	devs := builder.SearchDevs(region, zone, ip, port, repIp, repPort, device, weight)
+	devs := builder.SearchDevs(region, zone, ip, port, repIp, repPort, device, weight, meta)
 	return devs, nil
 }
 
@@ -1576,10 +1579,11 @@ func BuildCmd(flags *flag.FlagSet) {
 		repPort := searchFlags.Int64("replication-port", -1, "Device replication port.")
 		device := searchFlags.String("device", "", "Device name.")
 		weight := searchFlags.Float64("weight", -1.0, "Device weight.")
+		meta := searchFlags.String("meta", "", "Metadata.")
 		if err := searchFlags.Parse(args[2:]); err != nil {
 			fmt.Println(err)
 		}
-		devs, err := Search(pth, *region, *zone, *ip, *port, *repIp, *repPort, *device, *weight)
+		devs, err := Search(pth, *region, *zone, *ip, *port, *repIp, *repPort, *device, *weight, *meta)
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -1601,6 +1605,8 @@ func BuildCmd(flags *flag.FlagSet) {
 		repPort := weightFlags.Int64("replication-port", -1, "Device replication port.")
 		device := weightFlags.String("device", "", "Device name.")
 		weight := weightFlags.Float64("weight", -1.0, "Device weight.")
+		meta := weightFlags.String("meta", "", "Metadata.")
+		yes := weightFlags.Bool("yes", false, "Force yes.")
 		if err := weightFlags.Parse(args[2:]); err != nil {
 			fmt.Println(err)
 			return
@@ -1615,7 +1621,7 @@ func BuildCmd(flags *flag.FlagSet) {
 			fmt.Println(err)
 			return
 		}
-		devs, err := Search(pth, *region, *zone, *ip, *port, *repIp, *repPort, *device, *weight)
+		devs, err := Search(pth, *region, *zone, *ip, *port, *repIp, *repPort, *device, *weight, *meta)
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -1627,22 +1633,23 @@ func BuildCmd(flags *flag.FlagSet) {
 			reader := bufio.NewReader(os.Stdin)
 			fmt.Println("Search matched the following devices:")
 			PrintDevs(devs)
-			fmt.Printf("Are you sure you want to update the weight to %.2f for these %d devices (y/n)? ", newWeight, len(devs))
-			resp, err := reader.ReadString('\n')
-			if err != nil {
-				fmt.Println(err)
-				return
-			}
-			if resp[0] == 'y' || resp[0] == 'Y' {
-				err := SetWeight(pth, devs, newWeight)
+			if !*yes {
+				fmt.Printf("Are you sure you want to update the weight to %.2f for these %d devices (y/n)? ", newWeight, len(devs))
+				resp, err := reader.ReadString('\n')
 				if err != nil {
 					fmt.Println(err)
-				} else {
-					fmt.Println("Weight updated successfully.")
+					return
 				}
+				if resp[0] != 'y' && resp[0] != 'Y' {
+					fmt.Println("No devices updated.")
+					return
+				}
+			}
+			err := SetWeight(pth, devs, newWeight)
+			if err != nil {
+				fmt.Println(err)
 			} else {
-				fmt.Println("No devices updated.")
-				return
+				fmt.Println("Weight updated successfully.")
 			}
 		}
 
