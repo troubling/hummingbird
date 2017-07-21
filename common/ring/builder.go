@@ -228,24 +228,6 @@ func NewRingBuilderFromFile(builderPath string, debug bool) (*RingBuilder, error
 	builder.partMovedBitmap = make([]byte, maxInt(int(math.Exp2(float64(builder.PartPower-3))), 1))
 	builder.Devs = make([]*RingBuilderDevice, len(rbp.Devs))
 	copy(builder.Devs, rbp.Devs)
-	/*
-		for _, dev := range rbp.Devs {
-			builder.Devs = append(builder.Devs, &RingBuilderDevice{
-				ReplicationPort: dev.ReplicationPort,
-				Meta:            dev.Meta,
-				PartsWanted:     dev.PartsWanted,
-				Device:          dev.Device,
-				Zone:            dev.Zone,
-				Weight:          dev.Weight,
-				Ip:              dev.Ip,
-				Region:          dev.Region,
-				Port:            dev.Port,
-				ReplicationIp:   dev.ReplicationIp,
-				Parts:           dev.Parts,
-				Id:              dev.Id,
-			})
-		}
-	*/
 	builder.removedDevs = make([]*RingBuilderDevice, len(rbp.RemoveDevs))
 	copy(builder.removedDevs, rbp.RemoveDevs)
 
@@ -866,17 +848,17 @@ func (b *RingBuilder) gatherPartsFromFailedDevices(assignParts map[uint][]uint) 
 	// First we gather partitions from removed devices.  Since removed devices usually indicate device failures, we have no choice but to reassing these partitions.  However, we mark them as moves so later choices will skip other replicas of the same partition if possible.
 	// TODO: Implement this to support removing devices
 	if len(b.removedDevs) > 0 {
-		devsWithParts := make([]*RingBuilderDevice, 0)
-		for i, dev := range b.removedDevs {
+		devsWithParts := make([]uint, 0)
+		for _, dev := range b.removedDevs {
 			if dev.Parts > 0 {
-				devsWithParts = append(devsWithParts, b.removedDevs[i])
+				devsWithParts = append(devsWithParts, uint(dev.Id))
 			}
 		}
 		if len(devsWithParts) > 0 {
 			for replica, part2Dev := range b.replica2Part2Dev {
 				for part, devId := range part2Dev {
-					for _, dev := range b.removedDevs {
-						if devId == uint(dev.Id) {
+					for _, d := range devsWithParts {
+						if devId == d {
 							b.replica2Part2Dev[replica][part] = NONE_DEV
 							b.setPartMoved(uint(part))
 							assignParts[uint(part)] = append(assignParts[uint(part)], uint(replica))
