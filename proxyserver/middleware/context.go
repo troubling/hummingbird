@@ -63,6 +63,7 @@ type AccountInfo struct {
 	ObjectBytes    int64
 	Metadata       map[string]string
 	SysMetadata    map[string]string
+	StatusCode     int `json:"status"`
 }
 
 type AuthorizeFunc func(r *http.Request) (bool, int)
@@ -136,15 +137,20 @@ func (ctx *ProxyContext) GetAccountInfo(account string) (*AccountInfo, error) {
 			ai = nil
 		}
 	}
+	if ai != nil && ai.StatusCode != 0 && ai.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("%d error retrieving info for account %s", ai.StatusCode, account)
+	}
 	if ai == nil {
 		resp := ctx.C.HeadAccount(account, nil)
 		resp.Body.Close()
 		if resp.StatusCode/100 != 2 {
+			ctx.Cache.Set(key, &AccountInfo{StatusCode: resp.StatusCode}, 30)
 			return nil, fmt.Errorf("%d error retrieving info for account %s", resp.StatusCode, account)
 		}
 		ai = &AccountInfo{
 			Metadata:    make(map[string]string),
 			SysMetadata: make(map[string]string),
+			StatusCode:  resp.StatusCode,
 		}
 		var err error
 		if ai.ContainerCount, err = strconv.ParseInt(resp.Header.Get("X-Account-Container-Count"), 10, 64); err != nil {
