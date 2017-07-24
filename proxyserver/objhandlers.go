@@ -194,7 +194,7 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 			return
 		}
 	}
-	if request.Header.Get("Content-Type") == "" {
+	if request.Header.Get("Content-Type") == "" || common.LooksTrue(request.Header.Get("X-Detect-Content-Type")) {
 		contentType := mime.TypeByExtension(filepath.Ext(vars["obj"]))
 		contentType = strings.Split(contentType, ";")[0] // remove any charset it tried to foist on us
 		if contentType == "" {
