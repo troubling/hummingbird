@@ -19,6 +19,7 @@ import (
 )
 
 const PostQuorumTimeoutMs = 100
+const postPutTimeout = time.Second * 30
 
 func mkquery(options map[string]string) string {
 	query := ""
@@ -58,6 +59,7 @@ func NewProxyDirectClient(policyList conf.PolicyList) (*ProxyDirectClient, error
 			Timeout:   10 * time.Second,
 			KeepAlive: 5 * time.Second,
 		}).Dial,
+		ExpectContinueTimeout: 10 * time.Minute, // TODO: this should probably be like infinity.
 	}
 	// Debug hook to auto-close responses and report on it. See debug.go
 	// xport = &autoCloseResponses{transport: xport}
@@ -83,67 +85,204 @@ func NewProxyDirectClient(policyList conf.PolicyList) (*ProxyDirectClient, error
 	return c, nil
 }
 
-func (c *ProxyDirectClient) quorumResponse(reqs ...*http.Request) *http.Response {
-	// this is based on swift's best_response function.
-	responses := make(chan *http.Response)
-	cancel := make(chan struct{})
-	defer close(cancel)
-	for _, req := range reqs {
-		go func(req *http.Request) {
-			var entry *http.Response
-			if resp, err := c.client.Do(req); err != nil {
-				if resp != nil {
-					resp.Body.Close()
-				}
-				entry = ResponseStub(http.StatusInternalServerError, err.Error())
-			} else {
-				entry = StubResponse(resp)
-			}
-			select {
-			case responses <- entry:
-			case <-cancel:
-			}
-		}(req)
-	}
-	quorum := int(math.Ceil(float64(len(reqs)) / 2.0))
-	responseClasses := []int{0, 0, 0, 0, 0, 0}
-	responseCount := 0
-	var chosenResponse *http.Response
-	for response := range responses {
-		responseCount++
-		class := response.StatusCode / 100
-		if class <= 5 {
-			responseClasses[class]++
-			if responseClasses[class] >= quorum {
-				chosenResponse = response
-				break
-			}
-		}
-	}
-	// Give any pending requests *some* chance to finish. This will increase
-	// the likelihood that a read immediately after a write will get the latest
-	// information, as we'll force the caller to wait until all backends have
-	// responded, with a timeout limit.
-	timeout := time.After(PostQuorumTimeoutMs * time.Millisecond)
-waiting:
-	for responseCount < len(reqs) {
-		select {
-		case <-responses:
-			responseCount++
-		case <-timeout:
-			break waiting
-		}
-	}
-	return chosenResponse
+type respRec struct {
+	i int
+	r *http.Response
+	d *ring.Device
 }
 
-func (c *ProxyDirectClient) firstResponse(reqs ...*http.Request) (resp *http.Response) {
+// quorumer launches requests and does bookkeeping to target quorum on writes.
+//
+// I'm hoping that it's a good hook for implementing write affinity and if we end
+// up having to log when an object can't be written to multiple regions or whatever.
+type quorumer interface {
+	start()
+	addResponse(int, *http.Response)
+	quorumMet(int) bool
+	launchUntilQuorumPossible() bool
+	getResponse(time.Duration) *http.Response
+}
+
+type stdQuorumer struct {
+	q                   int
+	makeRequest         func(int, *ring.Device) *http.Response
+	devs                []*ring.Device
+	more                ring.MoreNodes
+	responses           []*http.Response
+	failures            []int
+	responseClassCounts []int
+	requestCount        int
+	replicaCount        int
+	responsec           chan *respRec
+	cancel              chan struct{}
+}
+
+func (q *stdQuorumer) launchRequest() bool {
+	// step through primaries, then go to handoffs.
+	launch := func(index int, dev *ring.Device) {
+		resp := q.makeRequest(index, dev)
+		select {
+		case q.responsec <- &respRec{i: index, r: resp, d: dev}:
+		case <-q.cancel:
+		}
+	}
+	if q.requestCount < len(q.devs) {
+		go launch(q.requestCount, q.devs[q.requestCount])
+	} else {
+		var index int // assign handoffs the index of a failed primary, so we send update headers.
+		index, q.failures = q.failures[len(q.failures)-1], q.failures[:len(q.failures)-1]
+		dev := q.more.Next()
+		if dev == nil {
+			return false
+		}
+		go launch(index, dev)
+	}
+	q.requestCount++
+	return true
+}
+
+func (q *stdQuorumer) start() {
+	for q.requestCount < q.replicaCount {
+		q.launchRequest()
+	}
+}
+
+func (q *stdQuorumer) addResponse(index int, resp *http.Response) {
+	q.responses = append(q.responses, resp)
+	if resp.StatusCode >= 500 || resp.StatusCode < 0 {
+		q.failures = append(q.failures, index)
+		return
+	}
+	q.responseClassCounts[resp.StatusCode/100]++
+}
+
+func (q *stdQuorumer) launchUntilQuorumPossible() bool {
+	// if quorum has become impossible, launch requests until it's possible again.
+	for q.requestCount < q.replicaCount*2 {
+		for responseClass := 2; responseClass < 5; responseClass++ {
+			if (q.responseClassCounts[responseClass]+q.requestCount)-len(q.responses) >= q.q {
+				return true
+			}
+		}
+		if !q.launchRequest() {
+			break
+		}
+	}
+	return false
+}
+
+func (q *stdQuorumer) quorumMet(writers int) bool {
+	if writers >= q.replicaCount {
+		return true
+	}
+	if writers >= q.q && (len(q.responses)+writers) >= q.replicaCount*2 {
+		return true
+	}
+	for responseClass := 2; responseClass < 5; responseClass++ {
+		if q.responseClassCounts[responseClass] >= q.q {
+			return true
+		}
+	}
+	return false
+}
+
+func (q *stdQuorumer) getResponse(timeout time.Duration) *http.Response {
+	getResponseTimeout := time.After(timeout)
+	for {
+		// see if quorum has already been met
+		for _, r := range q.responses {
+			if q.responseClassCounts[r.StatusCode/100] >= q.q {
+				// Give pending requests a chance to finish, to improve consistency of read-after-write.
+				finalizeTimeout := time.After(PostQuorumTimeoutMs * time.Millisecond)
+				for q.requestCount > len(q.responses) {
+					select {
+					case resp := <-q.responsec:
+						q.addResponse(resp.i, resp.r)
+					case <-finalizeTimeout:
+						return r
+					}
+				}
+				return r
+			}
+		}
+		// bail out if quorum isn't possible
+		quorumPossible := false
+		for _, c := range q.responseClassCounts {
+			if (c+q.requestCount)-len(q.responses) >= q.q {
+				quorumPossible = true
+			}
+		}
+		if !quorumPossible {
+			return ResponseStub(http.StatusServiceUnavailable, "The service is currently unavailable.")
+		}
+		// if we haven't made quorum, but it's still possible, then there
+		// are outstanding requests we need to wait on.
+		select {
+		case response := <-q.responsec:
+			q.addResponse(response.i, response.r)
+		case <-getResponseTimeout:
+			return ResponseStub(http.StatusServiceUnavailable, "The service is currently unavailable.")
+		}
+	}
+}
+
+func newQuorumer(r ring.Ring, partition uint64, responsec chan *respRec, cancel chan struct{}, makeRequest func(index int, dev *ring.Device) *http.Response) quorumer {
+	return &stdQuorumer{
+		makeRequest:         makeRequest,
+		q:                   int(math.Ceil(float64(r.ReplicaCount()) / 2.0)),
+		replicaCount:        int(r.ReplicaCount()),
+		devs:                r.GetNodes(partition),
+		more:                r.GetMoreNodes(partition),
+		responseClassCounts: make([]int, 6),
+		cancel:              cancel,
+		responsec:           responsec,
+	}
+}
+
+// quorumResponse returns with a response representative of a quorum of nodes.
+//
+// This is analogous to swift's best_response function.
+func (c *ProxyDirectClient) quorumResponse(r ring.Ring, partition uint64, devToRequest func(int, *ring.Device) (*http.Request, error)) *http.Response {
+	responses := make(chan *respRec)
+	cancel := make(chan struct{})
+	defer close(cancel)
+	q := newQuorumer(r, partition, responses, cancel, func(index int, dev *ring.Device) *http.Response {
+		if req, err := devToRequest(index, dev); err != nil {
+			return ResponseStub(http.StatusInternalServerError, err.Error())
+		} else if r, err := c.client.Do(req); err != nil {
+			return ResponseStub(http.StatusInternalServerError, err.Error())
+		} else {
+			return StubResponse(r)
+		}
+	})
+	q.start()
+	return q.getResponse(postPutTimeout)
+}
+
+func (c *ProxyDirectClient) firstResponse(r ring.Ring, partition uint64, devToRequest func(*ring.Device) (*http.Request, error)) (resp *http.Response) {
 	success := make(chan *http.Response)
 	returned := make(chan struct{})
 	defer close(returned)
+	devs := r.GetNodes(partition)
+	more := r.GetMoreNodes(partition)
 
 	internalErrors := 0
-	for _, req := range reqs {
+	for requestCount := 0; requestCount < int(r.ReplicaCount()+2); requestCount++ {
+		var dev *ring.Device
+		if requestCount < len(devs) {
+			dev = devs[requestCount]
+		} else {
+			dev = more.Next()
+			if dev == nil {
+				break
+			}
+		}
+		req, err := devToRequest(dev)
+		if err != nil {
+			internalErrors++
+			continue
+		}
+
 		go func(r *http.Request) {
 			response, err := c.client.Do(r)
 			if err != nil {
@@ -163,7 +302,8 @@ func (c *ProxyDirectClient) firstResponse(reqs ...*http.Request) (resp *http.Res
 
 		select {
 		case resp = <-success:
-			if resp != nil && (resp.StatusCode/100 == 2 || resp.StatusCode == http.StatusPreconditionFailed || resp.StatusCode == http.StatusNotModified || resp.StatusCode == http.StatusRequestedRangeNotSatisfiable) {
+			if resp != nil && (resp.StatusCode/100 == 2 || resp.StatusCode == http.StatusPreconditionFailed ||
+				resp.StatusCode == http.StatusNotModified || resp.StatusCode == http.StatusRequestedRangeNotSatisfiable) {
 				resp.Header.Set("Accept-Ranges", "bytes")
 				if etag := resp.Header.Get("Etag"); etag != "" {
 					resp.Header.Set("Etag", strings.Trim(etag, "\""))
@@ -179,10 +319,11 @@ func (c *ProxyDirectClient) firstResponse(reqs ...*http.Request) (resp *http.Res
 		case <-time.After(time.Second):
 		}
 	}
-	if internalErrors == len(reqs) {
+	if internalErrors >= int(r.ReplicaCount()) {
 		return ResponseStub(http.StatusServiceUnavailable, "")
+	} else {
+		return ResponseStub(http.StatusNotFound, "")
 	}
-	return ResponseStub(http.StatusNotFound, "")
 }
 
 type proxyClient struct {
@@ -264,78 +405,80 @@ func (c *proxyClient) ObjectRingFor(account string, container string) (ring.Ring
 
 func (c *ProxyDirectClient) PutAccount(account string, headers http.Header) *http.Response {
 	partition := c.AccountRing.GetPartition(account, "", "")
-	reqs := make([]*http.Request, 0)
-	for _, device := range c.AccountRing.GetNodes(partition) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", device.Ip, device.Port, device.Device, partition, common.Urlencode(account))
-		req, _ := http.NewRequest("PUT", url, nil)
+	return c.quorumResponse(c.AccountRing, partition, func(i int, dev *ring.Device) (*http.Request, error) {
+		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", dev.Ip, dev.Port, dev.Device, partition, common.Urlencode(account))
+		req, err := http.NewRequest("PUT", url, nil)
+		if err != nil {
+			return nil, err
+		}
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
-		reqs = append(reqs, req)
-	}
-	return c.quorumResponse(reqs...)
+		return req, nil
+	})
 }
 
 func (c *ProxyDirectClient) PostAccount(account string, headers http.Header) *http.Response {
 	partition := c.AccountRing.GetPartition(account, "", "")
-	reqs := make([]*http.Request, 0)
-	for _, device := range c.AccountRing.GetNodes(partition) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", device.Ip, device.Port, device.Device, partition, common.Urlencode(account))
-		req, _ := http.NewRequest("POST", url, nil)
+	return c.quorumResponse(c.AccountRing, partition, func(i int, dev *ring.Device) (*http.Request, error) {
+		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", dev.Ip, dev.Port, dev.Device, partition, common.Urlencode(account))
+		req, err := http.NewRequest("POST", url, nil)
+		if err != nil {
+			return nil, err
+		}
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
-		reqs = append(reqs, req)
-	}
-	return c.quorumResponse(reqs...)
+		return req, nil
+	})
 }
 
 func (c *ProxyDirectClient) GetAccount(account string, options map[string]string, headers http.Header) *http.Response {
 	partition := c.AccountRing.GetPartition(account, "", "")
-	reqs := make([]*http.Request, 0)
 	query := mkquery(options)
-	for _, device := range c.AccountRing.GetNodes(partition) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s%s", device.Ip, device.Port, device.Device, partition,
+	return c.firstResponse(c.AccountRing, partition, func(dev *ring.Device) (*http.Request, error) {
+		url := fmt.Sprintf("http://%s:%d/%s/%d/%s%s", dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), query)
-		req, _ := http.NewRequest("GET", url, nil)
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, err
+		}
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
-		reqs = append(reqs, req)
-	}
-	return c.firstResponse(reqs...)
+		return req, nil
+	})
 }
 
 func (c *ProxyDirectClient) HeadAccount(account string, headers http.Header) *http.Response {
 	partition := c.AccountRing.GetPartition(account, "", "")
-	reqs := make([]*http.Request, 0)
-	for _, device := range c.AccountRing.GetNodes(partition) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", device.Ip, device.Port, device.Device, partition,
+	return c.firstResponse(c.AccountRing, partition, func(dev *ring.Device) (*http.Request, error) {
+		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account))
 		req, err := http.NewRequest("HEAD", url, nil)
 		if err != nil {
-			continue
+			return nil, err
 		}
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
-		reqs = append(reqs, req)
-	}
-	return c.firstResponse(reqs...)
+		return req, nil
+	})
 }
 
 func (c *ProxyDirectClient) DeleteAccount(account string, headers http.Header) *http.Response {
 	partition := c.AccountRing.GetPartition(account, "", "")
-	reqs := make([]*http.Request, 0)
-	for _, device := range c.AccountRing.GetNodes(partition) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", device.Ip, device.Port, device.Device, partition, common.Urlencode(account))
-		req, _ := http.NewRequest("DELETE", url, nil)
+	return c.quorumResponse(c.AccountRing, partition, func(i int, dev *ring.Device) (*http.Request, error) {
+		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", dev.Ip, dev.Port, dev.Device, partition, common.Urlencode(account))
+		req, err := http.NewRequest("DELETE", url, nil)
+		if err != nil {
+			return nil, err
+		}
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
-		reqs = append(reqs, req)
-	}
-	return c.quorumResponse(reqs...)
+		return req, nil
+	})
 }
 
 func (c *ProxyDirectClient) PutContainer(account string, container string, headers http.Header) *http.Response {
@@ -364,12 +507,14 @@ func (c *ProxyDirectClient) PutContainer(account string, container string, heade
 		}
 		policyIndex = policy.Index
 	}
-	reqs := make([]*http.Request, 0)
 	containerReplicaCount := int(c.ContainerRing.ReplicaCount())
-	for i, device := range c.ContainerRing.GetNodes(partition) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", device.Ip, device.Port, device.Device, partition,
+	return c.quorumResponse(c.ContainerRing, partition, func(i int, dev *ring.Device) (*http.Request, error) {
+		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), common.Urlencode(container))
-		req, _ := http.NewRequest("PUT", url, nil)
+		req, err := http.NewRequest("PUT", url, nil)
+		if err != nil {
+			return nil, err
+		}
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
@@ -377,40 +522,41 @@ func (c *ProxyDirectClient) PutContainer(account string, container string, heade
 		req.Header.Set("X-Backend-Storage-Policy-Default", strconv.Itoa(policyDefault))
 		req.Header.Set("X-Account-Partition", strconv.FormatUint(accountPartition, 10))
 		addUpdateHeaders("X-Account", req.Header, accountDevices, i, containerReplicaCount)
-		reqs = append(reqs, req)
-	}
-	return c.quorumResponse(reqs...)
+		return req, nil
+	})
 }
 
 func (c *ProxyDirectClient) PostContainer(account string, container string, headers http.Header) *http.Response {
 	partition := c.ContainerRing.GetPartition(account, container, "")
-	reqs := make([]*http.Request, 0)
-	for _, device := range c.ContainerRing.GetNodes(partition) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", device.Ip, device.Port, device.Device, partition,
+	return c.quorumResponse(c.ContainerRing, partition, func(i int, dev *ring.Device) (*http.Request, error) {
+		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), common.Urlencode(container))
-		req, _ := http.NewRequest("POST", url, nil)
+		req, err := http.NewRequest("POST", url, nil)
+		if err != nil {
+			return nil, err
+		}
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
-		reqs = append(reqs, req)
-	}
-	return c.quorumResponse(reqs...)
+		return req, nil
+	})
 }
 
 func (c *ProxyDirectClient) GetContainer(account string, container string, options map[string]string, headers http.Header) *http.Response {
 	partition := c.ContainerRing.GetPartition(account, container, "")
-	reqs := make([]*http.Request, 0)
 	query := mkquery(options)
-	for _, device := range c.ContainerRing.GetNodes(partition) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s%s", device.Ip, device.Port, device.Device, partition,
+	return c.firstResponse(c.ContainerRing, partition, func(dev *ring.Device) (*http.Request, error) {
+		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s%s", dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), common.Urlencode(container), query)
-		req, _ := http.NewRequest("GET", url, nil)
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, err
+		}
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
-		reqs = append(reqs, req)
-	}
-	return c.firstResponse(reqs...)
+		return req, nil
+	})
 }
 
 // NilContainerInfo is useful for testing.
@@ -472,40 +618,39 @@ func (c *ProxyDirectClient) GetContainerInfo(account string, container string, m
 
 func (c *ProxyDirectClient) HeadContainer(account string, container string, headers http.Header) *http.Response {
 	partition := c.ContainerRing.GetPartition(account, container, "")
-	reqs := make([]*http.Request, 0)
-	for _, device := range c.ContainerRing.GetNodes(partition) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", device.Ip, device.Port, device.Device, partition,
+	return c.firstResponse(c.ContainerRing, partition, func(dev *ring.Device) (*http.Request, error) {
+		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), common.Urlencode(container))
 		req, err := http.NewRequest("HEAD", url, nil)
 		if err != nil {
-			continue
+			return nil, err
 		}
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
-		reqs = append(reqs, req)
-	}
-	return c.firstResponse(reqs...)
+		return req, nil
+	})
 }
 
 func (c *ProxyDirectClient) DeleteContainer(account string, container string, headers http.Header) *http.Response {
 	partition := c.ContainerRing.GetPartition(account, container, "")
 	accountPartition := c.AccountRing.GetPartition(account, "", "")
 	accountDevices := c.AccountRing.GetNodes(accountPartition)
-	reqs := make([]*http.Request, 0)
 	containerReplicaCount := int(c.ContainerRing.ReplicaCount())
-	for i, device := range c.ContainerRing.GetNodes(partition) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", device.Ip, device.Port, device.Device, partition,
+	return c.quorumResponse(c.ContainerRing, partition, func(i int, dev *ring.Device) (*http.Request, error) {
+		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), common.Urlencode(container))
-		req, _ := http.NewRequest("DELETE", url, nil)
+		req, err := http.NewRequest("DELETE", url, nil)
+		if err != nil {
+			return nil, err
+		}
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
 		req.Header.Set("X-Account-Partition", strconv.FormatUint(accountPartition, 10))
 		addUpdateHeaders("X-Account", req.Header, accountDevices, i, containerReplicaCount)
-		reqs = append(reqs, req)
-	}
-	return c.quorumResponse(reqs...)
+		return req, nil
+	})
 }
 
 func (c *ProxyDirectClient) PutObject(account string, container string, obj string, headers http.Header, src io.Reader, mc ring.MemcacheRing, lc map[string]*ContainerInfo) *http.Response {
@@ -596,140 +741,180 @@ func newObjectClient(proxyDirectClient *ProxyDirectClient, account string, conta
 	return &standardObjectClient{proxyDirectClient: proxyDirectClient, account: account, container: container, policy: ci.StoragePolicyIndex, objectRing: objectRing}
 }
 
+// putReader is a Reader proxy that sends its reader over the ready channel the first time Read is called.
+// This is important because "Expect: 100-continue" requests don't call Read unless/until they get a 100 response.
+type putReader struct {
+	io.Reader
+	cancel chan struct{}
+	ready  chan io.WriteCloser
+	w      io.WriteCloser
+}
+
+func (p *putReader) Read(b []byte) (int, error) {
+	// if Read() is called, it means we've received a 100-continue.
+	// So we notify the ready channel that we're good to go.
+	if p.ready != nil {
+		select {
+		case <-p.cancel:
+			return 0, errors.New("Request was cancelled")
+		case p.ready <- p.w:
+			p.ready = nil
+		}
+	}
+	if i, err := p.Reader.Read(b); err == nil {
+		return i, err
+	} else {
+		select {
+		case <-p.cancel:
+			return 0, errors.New("Request was cancelled")
+		default:
+			return i, err
+		}
+	}
+}
+
 func (oc *standardObjectClient) putObject(obj string, headers http.Header, src io.Reader) *http.Response {
-	partition := oc.objectRing.GetPartition(oc.account, oc.container, obj)
+	objectReplicaCount := int(oc.objectRing.ReplicaCount())
+	objectPartition := oc.objectRing.GetPartition(oc.account, oc.container, obj)
 	containerPartition := oc.proxyDirectClient.ContainerRing.GetPartition(oc.account, oc.container, "")
 	containerDevices := oc.proxyDirectClient.ContainerRing.GetNodes(containerPartition)
-	var writers []*io.PipeWriter
-	reqs := make([]*http.Request, 0)
-	objectReplicaCount := int(oc.objectRing.ReplicaCount())
-	for i, device := range oc.objectRing.GetNodes(partition) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", device.Ip, device.Port, device.Device, partition,
+	ready := make(chan io.WriteCloser)
+	cancel := make(chan struct{})
+	defer close(cancel)
+	responses := make(chan *respRec)
+	writers := make([]io.Writer, 0)
+	cWriters := make([]io.WriteCloser, 0)
+	q := newQuorumer(oc.objectRing, objectPartition, responses, cancel, func(index int, dev *ring.Device) *http.Response {
+		trp, wp := io.Pipe()
+		rp := &putReader{Reader: trp, cancel: cancel, w: wp, ready: ready}
+		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", dev.Ip, dev.Port, dev.Device, objectPartition,
 			common.Urlencode(oc.account), common.Urlencode(oc.container), common.Urlencode(obj))
-		rp, wp := io.Pipe()
-		defer wp.Close()
-		defer rp.Close()
 		req, err := http.NewRequest("PUT", url, rp)
 		if err != nil {
-			continue
+			return ResponseStub(http.StatusInternalServerError, err.Error())
 		}
-		writers = append(writers, wp)
+		req.Header.Set("Content-Type", "application/octet-stream")
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
-		// req.ContentLength = request.ContentLength // TODO
-		if req.Header.Get("Content-Type") == "" {
-			req.Header.Set("Content-Type", "application/octet-stream")
-		}
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(oc.policy))
 		req.Header.Set("X-Container-Partition", strconv.FormatUint(containerPartition, 10))
-		addUpdateHeaders("X-Container", req.Header, containerDevices, i, objectReplicaCount)
+		addUpdateHeaders("X-Container", req.Header, containerDevices, index, objectReplicaCount)
 		req.Header.Set("Expect", "100-Continue")
-		reqs = append(reqs, req)
+		// requests that get a 100-continue will wait inside Do() until we have a quorum of writers
+		if r, err := oc.proxyDirectClient.client.Do(req); err != nil {
+			return ResponseStub(http.StatusInternalServerError, err.Error())
+		} else {
+			return StubResponse(r)
+		}
+	})
+	q.start()
+	for !q.quorumMet(len(writers)) {
+		if !q.launchUntilQuorumPossible() {
+			return ResponseStub(http.StatusServiceUnavailable, "The service is currently unavailable.")
+		}
+		select {
+		case response := <-responses:
+			q.addResponse(response.i, response.r)
+		case w := <-ready:
+			defer w.Close()
+			writers = append(writers, w)
+			cWriters = append(cWriters, w)
+		}
 	}
-	go func() {
-		// TODO: Need to change up this code because MultiWriter will stop everything on any error.
-		ws := make([]io.Writer, len(writers))
-		for i, w := range writers {
-			ws[i] = w
-		}
-		mw := io.MultiWriter(ws...)
-		io.Copy(mw, src)
-		for _, writer := range writers {
-			writer.Close()
-		}
-	}()
-	return oc.proxyDirectClient.quorumResponse(reqs...)
+	// TODO: get a Copy function that only errors if we can't complete a quorum of writers.  Or something.
+	if _, err := common.Copy(src, writers...); err != nil {
+		return ResponseStub(http.StatusServiceUnavailable, "The service is currently unavailable.")
+	}
+	for _, w := range cWriters {
+		w.Close()
+	}
+	// TODO: verify that response etags match
+	return q.getResponse(postPutTimeout)
 }
 
 func (oc *standardObjectClient) postObject(obj string, headers http.Header) *http.Response {
 	partition := oc.objectRing.GetPartition(oc.account, oc.container, obj)
 	containerPartition := oc.proxyDirectClient.ContainerRing.GetPartition(oc.account, oc.container, "")
 	containerDevices := oc.proxyDirectClient.ContainerRing.GetNodes(containerPartition)
-	reqs := make([]*http.Request, 0)
 	objectReplicaCount := int(oc.objectRing.ReplicaCount())
-	for i, device := range oc.objectRing.GetNodes(partition) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", device.Ip, device.Port, device.Device, partition,
+	return oc.proxyDirectClient.quorumResponse(oc.objectRing, partition, func(i int, dev *ring.Device) (*http.Request, error) {
+		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(oc.account), common.Urlencode(oc.container), common.Urlencode(obj))
-		req, _ := http.NewRequest("POST", url, nil)
+		req, err := http.NewRequest("POST", url, nil)
+		if err != nil {
+			return nil, err
+		}
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(oc.policy))
 		req.Header.Set("X-Container-Partition", strconv.FormatUint(containerPartition, 10))
 		addUpdateHeaders("X-Container", req.Header, containerDevices, i, objectReplicaCount)
-		reqs = append(reqs, req)
-	}
-	return oc.proxyDirectClient.quorumResponse(reqs...)
+		return req, nil
+	})
 }
 
 func (oc *standardObjectClient) getObject(obj string, headers http.Header) *http.Response {
 	partition := oc.objectRing.GetPartition(oc.account, oc.container, obj)
-	nodes := oc.objectRing.GetNodes(partition)
-	reqs := make([]*http.Request, 0, len(nodes))
-	for _, device := range nodes {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", device.Ip, device.Port, device.Device, partition,
+	return oc.proxyDirectClient.firstResponse(oc.objectRing, partition, func(dev *ring.Device) (*http.Request, error) {
+		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(oc.account), common.Urlencode(oc.container), common.Urlencode(obj))
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
-			continue
+			return nil, err
 		}
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(oc.policy))
-		reqs = append(reqs, req)
-	}
-	return oc.proxyDirectClient.firstResponse(reqs...)
+		return req, nil
+	})
 }
 
 func (oc *standardObjectClient) grepObject(obj string, search string) *http.Response {
 	partition := oc.objectRing.GetPartition(oc.account, oc.container, obj)
-	nodes := oc.objectRing.GetNodes(partition)
-	reqs := make([]*http.Request, 0, len(nodes))
-	for _, device := range nodes {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s?e=%s", device.Ip, device.Port, device.Device, partition,
+	return oc.proxyDirectClient.firstResponse(oc.objectRing, partition, func(dev *ring.Device) (*http.Request, error) {
+		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s?e=%s", dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(oc.account), common.Urlencode(oc.container), common.Urlencode(obj), common.Urlencode(search))
 		req, err := http.NewRequest("GREP", url, nil)
 		if err != nil {
-			continue
+			return nil, err
 		}
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(oc.policy))
-		reqs = append(reqs, req)
-	}
-	return oc.proxyDirectClient.firstResponse(reqs...)
+		return req, nil
+	})
 }
 
 func (oc *standardObjectClient) headObject(obj string, headers http.Header) *http.Response {
 	partition := oc.objectRing.GetPartition(oc.account, oc.container, obj)
-	nodes := oc.objectRing.GetNodes(partition)
-	reqs := make([]*http.Request, 0, len(nodes))
-	for _, device := range nodes {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", device.Ip, device.Port, device.Device, partition,
+	return oc.proxyDirectClient.firstResponse(oc.objectRing, partition, func(dev *ring.Device) (*http.Request, error) {
+		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(oc.account), common.Urlencode(oc.container), common.Urlencode(obj))
 		req, err := http.NewRequest("HEAD", url, nil)
 		if err != nil {
-			continue
+			return nil, err
 		}
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(oc.policy))
-		reqs = append(reqs, req)
-	}
-	return oc.proxyDirectClient.firstResponse(reqs...)
+		return req, nil
+	})
 }
 
 func (oc *standardObjectClient) deleteObject(obj string, headers http.Header) *http.Response {
 	partition := oc.objectRing.GetPartition(oc.account, oc.container, obj)
 	containerPartition := oc.proxyDirectClient.ContainerRing.GetPartition(oc.account, oc.container, "")
 	containerDevices := oc.proxyDirectClient.ContainerRing.GetNodes(containerPartition)
-	reqs := make([]*http.Request, 0)
 	objectReplicaCount := int(oc.objectRing.ReplicaCount())
-	for i, device := range oc.objectRing.GetNodes(partition) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", device.Ip, device.Port, device.Device, partition,
+	return oc.proxyDirectClient.quorumResponse(oc.objectRing, partition, func(i int, dev *ring.Device) (*http.Request, error) {
+		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(oc.account), common.Urlencode(oc.container), common.Urlencode(obj))
-		req, _ := http.NewRequest("DELETE", url, nil)
+		req, err := http.NewRequest("DELETE", url, nil)
+		if err != nil {
+			return nil, err
+		}
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
@@ -739,9 +924,8 @@ func (oc *standardObjectClient) deleteObject(obj string, headers http.Header) *h
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(oc.policy))
 		req.Header.Set("X-Container-Partition", strconv.FormatUint(containerPartition, 10))
 		addUpdateHeaders("X-Container", req.Header, containerDevices, i, objectReplicaCount)
-		reqs = append(reqs, req)
-	}
-	return oc.proxyDirectClient.quorumResponse(reqs...)
+		return req, nil
+	})
 }
 
 func (oc *standardObjectClient) ring() (ring.Ring, *http.Response) {
