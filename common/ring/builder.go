@@ -90,13 +90,12 @@ type RingBuilderPickle struct {
 	Dispersion          float64                 `pickle:"dispersion"`
 	Version             int64                   `pickle:"version"`
 	Devs                []*RingBuilderDevice    `pickle:"devs"`
-	RemoveDevs          []interface{}           `pickle:"_remove_devs"`
+	RemoveDevs          []*RingBuilderDevice    `pickle:"_remove_devs"`
 	LastPartMoves       lastPartMovesArray      `pickle:"_last_part_moves"`
 	Replica2Part2Dev    []replica2Part2DevArray `pickle:"_replica2part2dev"`
 	//DispersionGraph     map[pickle.PickleTuple][]interface{} `pickle:"_dispersion_graph"`
 }
 
-// RingBuilderDevicePickle is used for pickling/unpickling rinbuilder data
 type RingBuilderDevice struct {
 	ReplicationPort int64   `pickle:"replication_port"`
 	Meta            string  `pickle:"meta"`
@@ -129,6 +128,7 @@ type RingBuilder struct {
 	partMovedBitmap     []byte
 	replica2Part2Dev    [][]uint
 	Debug               bool
+	removedDevs         []*RingBuilderDevice
 }
 
 type minMax struct {
@@ -226,23 +226,10 @@ func NewRingBuilderFromFile(builderPath string, debug bool) (*RingBuilder, error
 		builder.replica2Part2Dev[i] = rbp.Replica2Part2Dev[i].Data
 	}
 	builder.partMovedBitmap = make([]byte, maxInt(int(math.Exp2(float64(builder.PartPower-3))), 1))
-	builder.Devs = make([]*RingBuilderDevice, 0)
-	for _, dev := range rbp.Devs {
-		builder.Devs = append(builder.Devs, &RingBuilderDevice{
-			ReplicationPort: dev.ReplicationPort,
-			Meta:            dev.Meta,
-			PartsWanted:     dev.PartsWanted,
-			Device:          dev.Device,
-			Zone:            dev.Zone,
-			Weight:          dev.Weight,
-			Ip:              dev.Ip,
-			Region:          dev.Region,
-			Port:            dev.Port,
-			ReplicationIp:   dev.ReplicationIp,
-			Parts:           dev.Parts,
-			Id:              dev.Id,
-		})
-	}
+	builder.Devs = make([]*RingBuilderDevice, len(rbp.Devs))
+	copy(builder.Devs, rbp.Devs)
+	builder.removedDevs = make([]*RingBuilderDevice, len(rbp.RemoveDevs))
+	copy(builder.removedDevs, rbp.RemoveDevs)
 
 	return builder, nil
 }
@@ -286,6 +273,7 @@ func (b *RingBuilder) Save(builderPath string) error {
 		}
 	}
 	rbp.Devs = b.Devs
+	rbp.RemoveDevs = b.removedDevs
 	f.Write(pickle.PickleDumps(rbp))
 	return nil
 }
@@ -318,6 +306,28 @@ func (b *RingBuilder) WeightOfOnePart() float64 {
 		totalWeight += dev.Weight
 	}
 	return float64(b.Parts) * b.Replicas / totalWeight
+}
+
+// Set the weight of a device.  This should be called rather than just altering the weight directly, as the builder will need to rebuild some internal state to reflect the change.
+func (b *RingBuilder) SetDevWeight(devId int64, weight float64) error {
+	for _, dev := range b.removedDevs {
+		if devId == dev.Id {
+			return errors.New(fmt.Sprintf("Can not set weight of devId %d because it is marked for removal", devId))
+		}
+	}
+	b.Devs[devId].Weight = weight
+	b.DevsChanged = true
+	b.Version += 1
+
+	return nil
+}
+
+// Remove a device from the ring.
+func (b *RingBuilder) RemoveDev(devId int64) {
+	b.Devs[devId].Weight = 0
+	b.removedDevs = append(b.removedDevs, b.Devs[devId])
+	b.DevsChanged = true
+	b.Version += 1
 }
 
 // updateLatPartMoves updates how many hours ago each partition was moved based on the current time.  The builder won't move a partition that has been moved more recently than minPartHours.
@@ -837,6 +847,37 @@ func (b *RingBuilder) adjustReplica2Part2DevSize(toAssign map[uint][]uint) {
 func (b *RingBuilder) gatherPartsFromFailedDevices(assignParts map[uint][]uint) int {
 	// First we gather partitions from removed devices.  Since removed devices usually indicate device failures, we have no choice but to reassing these partitions.  However, we mark them as moves so later choices will skip other replicas of the same partition if possible.
 	// TODO: Implement this to support removing devices
+	if len(b.removedDevs) > 0 {
+		devsWithParts := make([]uint, 0)
+		for _, dev := range b.removedDevs {
+			if dev.Parts > 0 {
+				devsWithParts = append(devsWithParts, uint(dev.Id))
+			}
+		}
+		if len(devsWithParts) > 0 {
+			for replica, part2Dev := range b.replica2Part2Dev {
+				for part, devId := range part2Dev {
+					for _, d := range devsWithParts {
+						if devId == d {
+							b.replica2Part2Dev[replica][part] = NONE_DEV
+							b.setPartMoved(uint(part))
+							assignParts[uint(part)] = append(assignParts[uint(part)], uint(replica))
+							b.debug(fmt.Sprintf("Gathers %d/%d from dev %d [dev removed]", part, replica, devId))
+							break
+						}
+					}
+				}
+			}
+
+		}
+		for _, dev := range b.removedDevs {
+			b.debug(fmt.Sprintf("Removing dev %d", dev.Id))
+			b.Devs[dev.Id] = nil
+		}
+		removedDevs := len(b.removedDevs)
+		b.removedDevs = b.removedDevs[:0]
+		return removedDevs
+	}
 	return 0
 }
 
@@ -1341,19 +1382,21 @@ func (b *RingBuilder) GetRing() *hashRing {
 		ReplicaCount: int(b.Replicas),
 		PartShift:    uint64(32 - b.PartPower),
 	}
-	for i := range b.Devs {
-		data.Devs = append(data.Devs, Device{
-			Id:              int(b.Devs[i].Id),
-			Device:          b.Devs[i].Device,
-			Ip:              b.Devs[i].Ip,
-			Meta:            b.Devs[i].Meta,
-			Port:            int(b.Devs[i].Port),
-			Region:          int(b.Devs[i].Region),
-			ReplicationIp:   b.Devs[i].ReplicationIp,
-			ReplicationPort: int(b.Devs[i].ReplicationPort),
-			Weight:          b.Devs[i].Weight,
-			Zone:            int(b.Devs[i].Zone),
-		})
+	for i, dev := range b.Devs {
+		if dev != nil {
+			data.Devs = append(data.Devs, Device{
+				Id:              int(b.Devs[i].Id),
+				Device:          b.Devs[i].Device,
+				Ip:              b.Devs[i].Ip,
+				Meta:            b.Devs[i].Meta,
+				Port:            int(b.Devs[i].Port),
+				Region:          int(b.Devs[i].Region),
+				ReplicationIp:   b.Devs[i].ReplicationIp,
+				ReplicationPort: int(b.Devs[i].ReplicationPort),
+				Weight:          b.Devs[i].Weight,
+				Zone:            int(b.Devs[i].Zone),
+			})
+		}
 	}
 	data.replica2part2devId = make([][]uint16, len(b.replica2Part2Dev))
 	for i := range b.replica2Part2Dev {
@@ -1505,11 +1548,25 @@ func SetWeight(builderPath string, devs []*RingBuilderDevice, weight float64) er
 		return err
 	}
 	for _, dev := range devs {
-		builder.Devs[dev.Id].Weight = weight
+		err := builder.SetDevWeight(dev.Id, weight)
+		if err != nil {
+			return err
+		}
 	}
 	builder.Save(builderPath)
 	return nil
+}
 
+func RemoveDevs(builderPath string, devs []*RingBuilderDevice) error {
+	builder, err := NewRingBuilderFromFile(builderPath, false)
+	if err != nil {
+		return err
+	}
+	for _, dev := range devs {
+		builder.RemoveDev(dev.Id)
+	}
+	builder.Save(builderPath)
+	return nil
 }
 
 func PrintDevs(devs []*RingBuilderDevice) {
@@ -1653,6 +1710,53 @@ func BuildCmd(flags *flag.FlagSet) {
 			}
 		}
 
+	case "remove":
+		weightFlags := flag.NewFlagSet("set_weight", flag.ExitOnError)
+		region := weightFlags.Int64("region", -1, "Device region.")
+		zone := weightFlags.Int64("zone", -1, "Device zone.")
+		ip := weightFlags.String("ip", "", "Device ip address.")
+		port := weightFlags.Int64("port", -1, "Device port.")
+		repIp := weightFlags.String("replication-ip", "", "Device replication address.")
+		repPort := weightFlags.Int64("replication-port", -1, "Device replication port.")
+		device := weightFlags.String("device", "", "Device name.")
+		weight := weightFlags.Float64("weight", -1.0, "Device weight.")
+		meta := weightFlags.String("meta", "", "Metadata.")
+		yes := weightFlags.Bool("yes", false, "Force yes.")
+		if err := weightFlags.Parse(args[2:]); err != nil {
+			fmt.Println(err)
+			return
+		}
+		devs, err := Search(pth, *region, *zone, *ip, *port, *repIp, *repPort, *device, *weight, *meta)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		if len(devs) == 0 {
+			fmt.Println("No matching devices found.")
+			return
+		} else {
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Println("Search matched the following devices:")
+			PrintDevs(devs)
+			if !*yes {
+				fmt.Printf("Are you sure you want to remove these %d devices (y/n)? ", len(devs))
+				resp, err := reader.ReadString('\n')
+				if err != nil {
+					fmt.Println(err)
+					return
+				}
+				if resp[0] != 'y' && resp[0] != 'Y' {
+					fmt.Println("No devices removed.")
+					return
+				}
+			}
+			err := RemoveDevs(pth, devs)
+			if err != nil {
+				fmt.Println(err)
+			} else {
+				fmt.Println("Devices removed successfully.")
+			}
+		}
 	case "add":
 		// TODO: Add config option version of add function
 		// TODO: Add support for multiple adds in a single command
