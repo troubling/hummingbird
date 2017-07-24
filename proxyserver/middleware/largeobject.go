@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"mime"
 	"net/http"
 	"path/filepath"
@@ -618,31 +619,14 @@ func (xlo *xloMiddleware) handleSloPut(writer http.ResponseWriter, request *http
 		}
 	}
 	newBody, err := json.Marshal(toPutManifest)
-	putReq, err := ctx.newSubrequest("PUT", request.URL.Path, bytes.NewReader(newBody), request, "slo")
-	if err != nil {
-		ctx.Logger.Error("Creating new request", zap.Error(err))
-		srv.StandardResponse(writer, http.StatusInternalServerError)
-		return
-	}
-	for k := range request.Header {
-		if strings.HasPrefix(k, "X-Object-Meta-") {
-			putReq.Header.Set(k, request.Header.Get(k))
-		}
-	}
-	putReq.Header.Set("Content-Type", fmt.Sprintf("%s;swift_bytes=%d", contentType, totalSize))
-	putReq.Header.Set("X-Static-Large-Object", "True")
-	putReq.Header.Set("X-Object-Sysmeta-Slo-Etag", xloEtagGen)
-	putReq.Header.Set("X-Object-Sysmeta-Slo-Size", fmt.Sprintf("%d", totalSize))
-	if err != nil {
-		srv.SimpleErrorResponse(writer, 400, "could not build slo manifest")
-		return
-	}
-	putReq.Header.Set("Etag", fmt.Sprintf("%x", md5.Sum(newBody)))
-	putReq.Header.Set("Content-Length", strconv.Itoa(len(newBody)))
-	if request.Header.Get("If-None-Match") != "" {
-		putReq.Header.Set("If-None-Match", request.Header.Get("If-None-Match"))
-	}
-	ctx.serveHTTPSubrequest(writer, putReq)
+	request.Body = ioutil.NopCloser(bytes.NewReader(newBody))
+	request.Header.Set("Content-Type", fmt.Sprintf("%s;swift_bytes=%d", contentType, totalSize))
+	request.Header.Set("X-Static-Large-Object", "True")
+	request.Header.Set("X-Object-Sysmeta-Slo-Etag", xloEtagGen)
+	request.Header.Set("X-Object-Sysmeta-Slo-Size", fmt.Sprintf("%d", totalSize))
+	request.Header.Set("Etag", fmt.Sprintf("%x", md5.Sum(newBody)))
+	request.Header.Set("Content-Length", strconv.Itoa(len(newBody)))
+	xlo.next.ServeHTTP(writer, request)
 	return
 }
 
