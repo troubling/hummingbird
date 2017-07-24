@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/rand"
+	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
@@ -37,12 +38,19 @@ import (
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/middleware"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+)
+
+const (
+	tmpEmptyTime                 = 24 * time.Hour
+	replicateStatsReportInterval = 10 * time.Minute
+	replicateDeviceTimeout       = 4 * time.Hour
+	replicateIncomingTimeout     = time.Minute
+	replicateLoopSleepTime       = time.Second * 30
+	replicatePartSleepTime       = time.Millisecond * 10
 )
 
 var (
-	StatsReportInterval    = 10 * time.Minute
-	TmpEmptyTime           = 24 * time.Hour
-	ReplicateDeviceTimeout = 4 * time.Hour
 	// GetRing is a local pointer to the hummingbird function, for overriding in tests
 	GetRing = ring.GetRing
 )
@@ -132,7 +140,7 @@ func getFile(filePath string) (fp *os.File, xattrs []byte, size int64, err error
 	return fp, rawxattr, finfo.Size(), nil
 }
 
-type ReplicationDeviceStats struct {
+type DeviceStats struct {
 	Stats            map[string]int64
 	LastCheckin      time.Time
 	RunStarted       time.Time
@@ -148,7 +156,6 @@ type ReplicationDevice interface {
 	Key() string
 	Cancel()
 	PriorityReplicate(pri PriorityRepJob, timeout time.Duration) bool
-	Stats() *ReplicationDeviceStats
 }
 
 type replicationDevice struct {
@@ -168,21 +175,17 @@ type replicationDevice struct {
 	policy int
 	cancel chan struct{}
 	priRep chan PriorityRepJob
-	stats  ReplicationDeviceStats
-}
-
-func (rd *replicationDevice) Stats() *ReplicationDeviceStats {
-	return &rd.stats
 }
 
 type statUpdate struct {
+	service   string
 	deviceKey string
 	stat      string
 	value     int64
 }
 
 func (rd *replicationDevice) updateStat(stat string, amount int64) {
-	rd.r.updateStat <- statUpdate{rd.Key(), stat, amount}
+	rd.r.updateStat <- statUpdate{"object-replicator", rd.Key(), stat, amount}
 }
 
 type beginReplicationResponse struct {
@@ -522,7 +525,7 @@ func (rd *replicationDevice) cleanTemp() {
 	tempDir := TempDirPath(rd.r.deviceRoot, rd.dev.Device)
 	if tmpContents, err := ioutil.ReadDir(tempDir); err == nil {
 		for _, tmpEntry := range tmpContents {
-			if time.Since(tmpEntry.ModTime()) > TmpEmptyTime {
+			if time.Since(tmpEntry.ModTime()) > tmpEmptyTime {
 				os.RemoveAll(filepath.Join(tempDir, tmpEntry.Name()))
 			}
 		}
@@ -530,19 +533,19 @@ func (rd *replicationDevice) cleanTemp() {
 }
 
 func (rd *replicationDevice) replicatePartition(partition string) {
-	rd.r.concurrencySem <- struct{}{}
+	rd.r.replicateConcurrencySem <- struct{}{}
 	defer func() {
-		<-rd.r.concurrencySem
+		<-rd.r.replicateConcurrencySem
 	}()
 	partitioni, err := strconv.ParseUint(partition, 10, 64)
 	if err != nil {
 		return
 	}
-	nodes, handoff := rd.r.Rings[rd.policy].GetJobNodes(partitioni, rd.dev.Id)
+	nodes, handoff := rd.r.objectRings[rd.policy].GetJobNodes(partitioni, rd.dev.Id)
 	if handoff {
 		rd.i.replicateHandoff(partition, nodes)
 	} else {
-		rd.i.replicateLocal(partition, nodes, rd.r.Rings[rd.policy].GetMoreNodes(partitioni))
+		rd.i.replicateLocal(partition, nodes, rd.r.objectRings[rd.policy].GetMoreNodes(partitioni))
 	}
 	rd.updateStat("PartitionsDone", 1)
 }
@@ -590,7 +593,7 @@ func (rd *replicationDevice) Replicate() {
 			zap.Error(err))
 		return
 	} else if len(partitionList) == 0 {
-		rd.r.logger.Error("[replicateDevice] No partitions found",
+		rd.r.logger.Info("[replicateDevice] No partitions found",
 			zap.String("filepath", filepath.Join(rd.r.deviceRoot, rd.dev.Device, PolicyDir(rd.policy))))
 		return
 	}
@@ -608,6 +611,7 @@ func (rd *replicationDevice) Replicate() {
 		}
 		rd.processPriorityJobs()
 		rd.i.replicatePartition(partition)
+		time.Sleep(replicatePartSleepTime)
 	}
 	rd.updateStat("FullReplicateCount", 1)
 }
@@ -624,7 +628,7 @@ func (rd *replicationDevice) ReplicateLoop() {
 		default:
 			rd.Replicate()
 		}
-		time.Sleep(rd.r.loopSleepTime)
+		time.Sleep(replicateLoopSleepTime)
 	}
 }
 
@@ -651,13 +655,13 @@ func (rd *replicationDevice) processPriorityJobs() {
 		select {
 		case pri := <-rd.priRep:
 			func() {
-				time.Sleep(rd.r.partSleepTime)
-				rd.r.concurrencySem <- struct{}{}
+				time.Sleep(replicatePartSleepTime)
+				rd.r.replicateConcurrencySem <- struct{}{}
 				defer func() {
-					<-rd.r.concurrencySem
+					<-rd.r.replicateConcurrencySem
 				}()
 				partition := strconv.FormatUint(pri.Partition, 10)
-				_, handoff := rd.r.Rings[rd.policy].GetJobNodes(pri.Partition, pri.FromDevice.Id)
+				_, handoff := rd.r.objectRings[rd.policy].GetJobNodes(pri.Partition, pri.FromDevice.Id)
 				toDevicesArr := make([]string, len(pri.ToDevices))
 				for i, s := range pri.ToDevices {
 					toDevicesArr[i] = fmt.Sprintf("%s:%d/%s", s.Ip, s.Port, s.Device)
@@ -691,17 +695,6 @@ var newReplicationDevice = func(dev *ring.Device, policy int, r *Replicator) *re
 		policy: policy,
 		cancel: make(chan struct{}),
 		priRep: make(chan PriorityRepJob),
-		stats: ReplicationDeviceStats{
-			LastCheckin:   time.Now(),
-			DeviceStarted: time.Now(),
-			Stats: map[string]int64{
-				"PartitionsDone":   0,
-				"PartitionsTotal":  0,
-				"FilesSent":        0,
-				"BytesSent":        0,
-				"PriorityRepsDone": 0,
-			},
-		},
 	}
 	rd.i = rd
 	return rd
@@ -709,42 +702,54 @@ var newReplicationDevice = func(dev *ring.Device, policy int, r *Replicator) *re
 
 // Object replicator daemon object
 type Replicator struct {
-	checkMounts        bool
-	deviceRoot         string
-	reconCachePath     string
-	logger             srv.LowLevelLogger
-	logLevel           *zap.AtomicLevel
-	port               int
-	bindIp             string
-	Rings              map[int]replicationRing
-	runningDevices     map[string]ReplicationDevice
-	cancelCounts       map[string]int64
-	runningDevicesLock sync.Mutex
-	devices            map[string]bool
-	partitions         map[string]bool
-	concurrency        int
-	concurrencySem     chan struct{}
-	updateStat         chan statUpdate
-	reclaimAge         int64
-	quorumDelete       bool
-	reserve            int64
-	replicationMan     *ReplicationManager
-	replicateTimeout   time.Duration
-	onceDone           chan struct{}
-	onceWaiting        int64
-	loopSleepTime      time.Duration
-	partSleepTime      time.Duration
+	checkMounts         bool
+	deviceRoot          string
+	reconCachePath      string
+	port                int
+	bindIp              string
+	devices             map[string]bool
+	partitions          map[string]bool
+	quorumDelete        bool
+	reclaimAge          int64
+	reserve             int64
+	incomingLimitPerDev int64
+
+	stats                   map[string]map[string]*DeviceStats
+	runningDevices          map[string]ReplicationDevice
+	updatingDevices         map[string]*updateDevice
+	runningDevicesLock      sync.Mutex
+	logger                  srv.LowLevelLogger
+	objectRings             map[int]replicationRing
+	containerRing           ring.Ring
+	cancelCounts            map[string]int64
+	replicateConcurrencySem chan struct{}
+	updateConcurrencySem    chan struct{}
+	updateStat              chan statUpdate
+	onceDone                chan struct{}
+	onceWaiting             int64
+	client                  *http.Client
+	incomingSemLock         sync.Mutex
+	incomingSem             map[string]chan struct{}
 }
 
 func (r *Replicator) cancelStalledDevices() {
 	r.runningDevicesLock.Lock()
 	defer r.runningDevicesLock.Unlock()
 	for key, rd := range r.runningDevices {
-		stats := rd.Stats()
-		if time.Since(stats.LastCheckin) > ReplicateDeviceTimeout {
+		stats, ok := r.stats["object-replicator"][key]
+		if ok && time.Since(stats.LastCheckin) > replicateDeviceTimeout {
 			rd.Cancel()
 			r.cancelCounts[key] += 1
 			delete(r.runningDevices, key)
+			delete(r.stats["object-replicator"], key)
+		}
+	}
+	for key, ud := range r.updatingDevices {
+		stats, ok := r.stats["object-updater"][key]
+		if ok && time.Since(stats.LastCheckin) > replicateDeviceTimeout {
+			ud.cancel()
+			delete(r.updatingDevices, key)
+			delete(r.stats["object-updater"], key)
 		}
 	}
 }
@@ -753,7 +758,7 @@ func (r *Replicator) verifyRunningDevices() {
 	r.runningDevicesLock.Lock()
 	defer r.runningDevicesLock.Unlock()
 	expectedDevices := make(map[string]bool)
-	for policy, ring := range r.Rings {
+	for policy, ring := range r.objectRings {
 		ringDevices, err := ring.LocalDevices(r.port)
 		if err != nil {
 			r.logger.Error("Error getting local devices from ring", zap.Error(err))
@@ -761,13 +766,27 @@ func (r *Replicator) verifyRunningDevices() {
 		}
 		// look for devices that aren't running but should be
 		for _, dev := range ringDevices {
-			expectedDevices[deviceKey(dev, policy)] = true
+			key := deviceKey(dev, policy)
+			expectedDevices[key] = true
 			if len(r.devices) > 0 && !r.devices[dev.Device] {
 				continue
 			}
-			if _, ok := r.runningDevices[deviceKey(dev, policy)]; !ok {
-				r.runningDevices[deviceKey(dev, policy)] = newReplicationDevice(dev, policy, r)
-				go r.runningDevices[deviceKey(dev, policy)].ReplicateLoop()
+			if _, ok := r.runningDevices[key]; !ok {
+				r.runningDevices[key] = newReplicationDevice(dev, policy, r)
+				r.stats["object-replicator"][key] = &DeviceStats{
+					LastCheckin: time.Now(), DeviceStarted: time.Now(),
+					Stats: map[string]int64{"PartitionsDone": 0, "PartitionsTotal": 0,
+						"FilesSent": 0, "BytesSent": 0, "PriorityRepsDone": 0},
+				}
+				go r.runningDevices[key].ReplicateLoop()
+			}
+			if _, ok := r.updatingDevices[key]; !ok {
+				r.updatingDevices[key] = newUpdateDevice(dev, policy, r)
+				r.stats["object-updater"][key] = &DeviceStats{
+					LastCheckin: time.Now(), DeviceStarted: time.Now(),
+					Stats: map[string]int64{"Success": 0, "Failure": 0},
+				}
+				go r.updatingDevices[key].updateLoop()
 			}
 		}
 	}
@@ -778,6 +797,12 @@ func (r *Replicator) verifyRunningDevices() {
 			delete(r.runningDevices, key)
 		}
 	}
+	for key, ud := range r.updatingDevices {
+		if _, found := expectedDevices[key]; !found {
+			ud.cancel()
+			delete(r.updatingDevices, key)
+		}
+	}
 }
 
 func (r *Replicator) reportStats() {
@@ -785,8 +810,11 @@ func (r *Replicator) reportStats() {
 	defer r.runningDevicesLock.Unlock()
 	minLastPass := time.Now()
 	allHaveCompleted := true
-	for _, rd := range r.runningDevices {
-		stats := rd.Stats()
+	for key := range r.runningDevices {
+		stats, ok := r.stats["object-replicator"][key]
+		if !ok {
+			continue
+		}
 		if stats.TotalPasses <= 1 {
 			allHaveCompleted = false
 		}
@@ -809,14 +837,13 @@ func (r *Replicator) reportStats() {
 			remainingStr = fmt.Sprintf("%.0fs", remaining.Seconds())
 		}
 		r.logger.Info("Partition Replicated",
-			zap.String("Device", rd.Key()),
+			zap.String("Device", key),
 			zap.Int64("doneParts", doneParts),
 			zap.Int64("totalParts", totalParts),
 			zap.Float64("DoneParts/TotalParts", float64(100*doneParts)/float64(totalParts)),
 			zap.Float64("processingTimeSec", processingTimeSec),
 			zap.Float64("partsPerSecond", partsPerSecond),
 			zap.String("remainingStr", remainingStr))
-
 	}
 	if allHaveCompleted {
 		// this is a mess but object_replication_time (in old way) is # minutes
@@ -846,8 +873,7 @@ func (r *Replicator) getDeviceProgress() map[string]map[string]interface{} {
 	r.runningDevicesLock.Lock()
 	defer r.runningDevicesLock.Unlock()
 	deviceProgress := make(map[string]map[string]interface{})
-	for key, device := range r.runningDevices {
-		stats := device.Stats()
+	for key, stats := range r.stats["object-replicator"] {
 		deviceProgress[key] = map[string]interface{}{
 			"StartDate":          stats.DeviceStarted,
 			"LastUpdate":         stats.LastCheckin,
@@ -869,24 +895,37 @@ func (r *Replicator) runLoopCheck(reportTimer <-chan time.Time) {
 	case update := <-r.updateStat:
 		r.runningDevicesLock.Lock()
 		defer r.runningDevicesLock.Unlock()
-		if rd, ok := r.runningDevices[update.deviceKey]; ok {
-			stats := rd.Stats()
-			stats.LastCheckin = time.Now()
-			switch update.stat {
-			case "checkin":
-			case "startRun":
-				stats.RunStarted = time.Now()
-				for k := range stats.Stats {
-					stats.Stats[k] = 0
-				}
-			case "FullReplicateCount":
-				stats.LastPassDuration = time.Since(stats.RunStarted)
-				stats.LastPassDate = time.Now()
-				stats.TotalPasses++
-				stats.Stats["FullReplicateCount"] += update.value
-			default:
-				stats.Stats[update.stat] += update.value
+		stats, ok := r.stats[update.service][update.deviceKey]
+		if !ok {
+			stats = &DeviceStats{LastCheckin: time.Now(), DeviceStarted: time.Now(),
+				Stats: map[string]int64{}}
+			r.stats[update.service][update.deviceKey] = stats
+		}
+		stats.LastCheckin = time.Now()
+		switch update.stat {
+		case "checkin":
+		case "startRun":
+			stats.RunStarted = time.Now()
+			for k := range stats.Stats {
+				stats.Stats[k] = 0
 			}
+		case "FullReplicateCount", "PassComplete":
+			stats.LastPassDuration = time.Since(stats.RunStarted)
+			stats.LastPassDate = time.Now()
+			stats.TotalPasses++
+			stats.Stats[update.stat] += update.value
+
+			lf := []zapcore.Field{
+				zap.String("service", update.service),
+				zap.String("device", update.deviceKey),
+				zap.Duration("duration", stats.LastPassDuration),
+			}
+			for k, v := range stats.Stats {
+				lf = append(lf, zap.Int64(k, v))
+			}
+			r.logger.Info("Service pass complete", lf...)
+		default:
+			stats.Stats[update.stat] += update.value
 		}
 	case <-reportTimer:
 		r.cancelStalledDevices()
@@ -900,7 +939,7 @@ func (r *Replicator) runLoopCheck(reportTimer <-chan time.Time) {
 // Run replication passes in a loop until forever.
 func (r *Replicator) RunForever() {
 	go r.startWebServer()
-	reportTimer := time.NewTimer(StatsReportInterval)
+	reportTimer := time.NewTimer(replicateStatsReportInterval)
 	r.verifyRunningDevices()
 	for {
 		r.runLoopCheck(reportTimer.C)
@@ -909,7 +948,7 @@ func (r *Replicator) RunForever() {
 
 // Run a single replication pass. (NOTE: we will prob get rid of this because of priorityRepl)
 func (r *Replicator) Run() {
-	for policy, theRing := range r.Rings {
+	for policy, theRing := range r.objectRings {
 		devices, err := theRing.LocalDevices(r.port)
 		if err != nil {
 			r.logger.Error("Error getting local devices from ring", zap.Error(err))
@@ -919,11 +958,18 @@ func (r *Replicator) Run() {
 			rd := newReplicationDevice(dev, policy, r)
 			key := rd.Key()
 			r.runningDevices[key] = rd
-			r.onceWaiting++
 			go func(rd *replicationDevice) {
 				rd.Replicate()
 				r.onceDone <- struct{}{}
 			}(rd)
+
+			r.updatingDevices[key] = newUpdateDevice(dev, policy, r)
+			go func(ud *updateDevice) {
+				ud.update()
+				r.onceDone <- struct{}{}
+			}(r.updatingDevices[key])
+
+			r.onceWaiting += 2
 		}
 	}
 	for r.onceWaiting > 0 {
@@ -937,34 +983,39 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv
 		return nil, nil, fmt.Errorf("Unable to find object-replicator config section")
 	}
 	concurrency := int(serverconf.GetInt("object-replicator", "concurrency", 1))
+	updaterConcurrency := int(serverconf.GetInt("object-updater", "concurrency", 2))
 
 	logLevelString := serverconf.GetDefault("object-replicator", "log_level", "INFO")
 	logLevel := zap.NewAtomicLevel()
 	logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
 
 	replicator := &Replicator{
-		runningDevices:   make(map[string]ReplicationDevice),
-		cancelCounts:     make(map[string]int64),
-		reserve:          serverconf.GetInt("object-replicator", "fallocate_reserve", 0),
-		replicationMan:   NewReplicationManager(serverconf.GetLimit("object-replicator", "replication_limit", 3, 100)),
-		replicateTimeout: time.Minute, // TODO(redbo): does this need to be configurable?
-		reconCachePath:   serverconf.GetDefault("object-replicator", "recon_cache_path", "/var/cache/swift"),
-		checkMounts:      serverconf.GetBool("object-replicator", "mount_check", true),
-		deviceRoot:       serverconf.GetDefault("object-replicator", "devices", "/srv/node"),
-		port:             int(serverconf.GetInt("object-replicator", "bind_port", 6500)),
-		bindIp:           serverconf.GetDefault("object-replicator", "bind_ip", "0.0.0.0"),
-		quorumDelete:     serverconf.GetBool("object-replicator", "quorum_delete", false),
-		reclaimAge:       int64(serverconf.GetInt("object-replicator", "reclaim_age", int64(common.ONE_WEEK))),
-		logLevel:         &logLevel,
-		Rings:            make(map[int]replicationRing),
-		concurrency:      concurrency,
-		concurrencySem:   make(chan struct{}, concurrency),
-		updateStat:       make(chan statUpdate),
-		devices:          make(map[string]bool),
-		partitions:       make(map[string]bool),
-		onceDone:         make(chan struct{}),
-		loopSleepTime:    time.Second * 30,
-		partSleepTime:    time.Duration(serverconf.GetInt("object-replicator", "ms_per_part", 100)) * time.Millisecond,
+		reserve:             serverconf.GetInt("object-replicator", "fallocate_reserve", 0),
+		reconCachePath:      serverconf.GetDefault("object-replicator", "recon_cache_path", "/var/cache/swift"),
+		checkMounts:         serverconf.GetBool("object-replicator", "mount_check", true),
+		deviceRoot:          serverconf.GetDefault("object-replicator", "devices", "/srv/node"),
+		port:                int(serverconf.GetInt("object-replicator", "bind_port", 6500)),
+		bindIp:              serverconf.GetDefault("object-replicator", "bind_ip", "0.0.0.0"),
+		quorumDelete:        serverconf.GetBool("object-replicator", "quorum_delete", false),
+		reclaimAge:          int64(serverconf.GetInt("object-replicator", "reclaim_age", int64(common.ONE_WEEK))),
+		incomingLimitPerDev: int64(serverconf.GetInt("object-replicator", "incoming_limit", 3)),
+
+		runningDevices:          make(map[string]ReplicationDevice),
+		updatingDevices:         make(map[string]*updateDevice),
+		cancelCounts:            make(map[string]int64),
+		objectRings:             make(map[int]replicationRing),
+		replicateConcurrencySem: make(chan struct{}, concurrency),
+		updateConcurrencySem:    make(chan struct{}, updaterConcurrency),
+		updateStat:              make(chan statUpdate),
+		devices:                 make(map[string]bool),
+		partitions:              make(map[string]bool),
+		onceDone:                make(chan struct{}),
+		client:                  &http.Client{Timeout: time.Second * 60},
+		incomingSem:             make(map[string]chan struct{}),
+		stats: map[string]map[string]*DeviceStats{
+			"object-replicator": {},
+			"object-updater":    {},
+		},
 	}
 
 	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
@@ -975,9 +1026,12 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv
 		if policy.Type != "replication" {
 			continue
 		}
-		if replicator.Rings[policy.Index], err = GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index); err != nil {
+		if replicator.objectRings[policy.Index], err = GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index); err != nil {
 			return nil, nil, fmt.Errorf("Unable to load ring for Policy %d.", policy.Index)
 		}
+	}
+	if replicator.containerRing, err = GetRing("container", hashPathPrefix, hashPathSuffix, 0); err != nil {
+		return nil, nil, fmt.Errorf("Error loading container ring: %v", err)
 	}
 	if replicator.logger, err = srv.SetupLogger("object-replicator", &logLevel, flags); err != nil {
 		return nil, nil, fmt.Errorf("Error setting up logger: %v", err)
@@ -1003,9 +1057,6 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv
 		if quorumFlag != nil && quorumFlag.Value.(flag.Getter).Get() == true {
 			replicator.quorumDelete = true
 		}
-	}
-	if serverconf.GetBool("object-replicator", "vm_test_mode", false) { // slow down the replicator in saio mode
-		replicator.partSleepTime = time.Duration(serverconf.GetInt("object-replicator", "ms_per_part", 500)) * time.Millisecond
 	}
 	return replicator, replicator.logger, nil
 }

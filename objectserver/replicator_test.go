@@ -60,10 +60,9 @@ func newTestReplicatorWithFlags(settings []string, flags *flag.FlagSet) (*Replic
 		return nil, err
 	}
 	rep := replicator.(*Replicator)
-	rep.concurrencySem = make(chan struct{}, 1)
-	rep.loopSleepTime = 0
+	rep.replicateConcurrencySem = make(chan struct{}, 1)
+	rep.updateConcurrencySem = make(chan struct{}, 1)
 	rep.updateStat = make(chan statUpdate, 100)
-	rep.partSleepTime = 0
 	return rep, nil
 }
 
@@ -130,7 +129,6 @@ type mockReplicationDevice struct {
 	_Key               func() string
 	_Cancel            func()
 	_PriorityReplicate func(pri PriorityRepJob, timeout time.Duration) bool
-	_Stats             func() *ReplicationDeviceStats
 }
 
 func (d *mockReplicationDevice) Replicate() {
@@ -159,12 +157,6 @@ func (d *mockReplicationDevice) PriorityReplicate(pri PriorityRepJob, timeout ti
 		return d._PriorityReplicate(pri, timeout)
 	}
 	return true
-}
-func (d *mockReplicationDevice) Stats() *ReplicationDeviceStats {
-	if d._Stats != nil {
-		return d._Stats()
-	}
-	return &ReplicationDeviceStats{}
 }
 
 type patchableReplicationDevice struct {
@@ -290,7 +282,6 @@ func makeReplicatorWebServerWithFlags(settings []string, flags *flag.FlagSet) (*
 	if err != nil {
 		return nil, err
 	}
-	replicator.partSleepTime = 0
 	return &TestReplicatorWebServer{Server: ts, host: host, port: port, root: deviceRoot, replicator: replicator}, nil
 }
 
@@ -941,10 +932,12 @@ func TestCancelStalledDevices(t *testing.T) {
 		index   int
 		running bool
 	}
-	stats := []*ReplicationDeviceStats{
-		{LastCheckin: time.Now()},
-		{LastCheckin: time.Now()},
-		{LastCheckin: time.Now()},
+	replicator.stats = map[string]map[string]*DeviceStats{
+		"object-replicator": {
+			"sda": {LastCheckin: time.Now()},
+			"sdb": {LastCheckin: time.Now()},
+			"sdc": {LastCheckin: time.Now()},
+		},
 	}
 	mockDevices := []*repDev{
 		{index: 0, running: true},
@@ -956,9 +949,6 @@ func TestCancelStalledDevices(t *testing.T) {
 	}
 	for _, v := range mockDevices {
 		w := v
-		w._Stats = func() *ReplicationDeviceStats {
-			return stats[w.index]
-		}
 		w._Cancel = func() {
 			w.running = false
 		}
@@ -969,7 +959,7 @@ func TestCancelStalledDevices(t *testing.T) {
 		require.True(t, v.running)
 	}
 
-	stats[0].LastCheckin = time.Now().Add(-ReplicateDeviceTimeout)
+	replicator.stats["object-replicator"]["sda"].LastCheckin = time.Now().Add(-replicateDeviceTimeout)
 	replicator.runningDevices = runningDevices
 	replicator.cancelStalledDevices()
 	require.False(t, mockDevices[0].running)
@@ -1028,31 +1018,32 @@ func TestReportStats(t *testing.T) {
 	}
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
+	replicator.stats = map[string]map[string]*DeviceStats{
+		"object-replicator": {
+			"sda": &DeviceStats{
+				LastPassDuration: time.Hour,
+				RunStarted:       time.Now().Add(-time.Hour),
+				Stats: map[string]int64{
+					"PartitionsTotal": 1000,
+					"PartitionsDone":  500,
+				},
+			},
+
+			"sdb": &DeviceStats{
+				LastPassDuration: time.Hour,
+				RunStarted:       time.Now().Add(-time.Hour),
+				Stats: map[string]int64{
+					"PartitionsTotal": 100,
+					"PartitionsDone":  40,
+				},
+			},
+		},
+	}
 	replicator.runningDevices = map[string]ReplicationDevice{
 		"sda": &mockReplicationDevice{
-			_Stats: func() *ReplicationDeviceStats {
-				return &ReplicationDeviceStats{
-					LastPassDuration: time.Hour,
-					RunStarted:       time.Now().Add(-time.Hour),
-					Stats: map[string]int64{
-						"PartitionsTotal": 1000,
-						"PartitionsDone":  500,
-					},
-				}
-			},
 			_Key: func() string { return "1.1:10/sda" },
 		},
 		"sdb": &mockReplicationDevice{
-			_Stats: func() *ReplicationDeviceStats {
-				return &ReplicationDeviceStats{
-					LastPassDuration: time.Hour,
-					RunStarted:       time.Now().Add(-time.Hour),
-					Stats: map[string]int64{
-						"PartitionsTotal": 100,
-						"PartitionsDone":  40,
-					},
-				}
-			},
 			_Key: func() string { return "1.1:10/sdb" },
 		},
 	}
@@ -1061,7 +1052,7 @@ func TestReportStats(t *testing.T) {
 	replicator.reportStats()
 	want := []observer.LoggedEntry{{
 		Entry: zapcore.Entry{Level: zap.InfoLevel, Message: "Partition Replicated"},
-		Context: []zapcore.Field{zap.String("Device", "1.1:10/sda"),
+		Context: []zapcore.Field{zap.String("Device", "sda"),
 			zap.Int64("doneParts", 500),
 			zap.Int64("totalParts", 1000),
 			zap.Float64("DoneParts/TotalParts", 50.00),
@@ -1070,7 +1061,7 @@ func TestReportStats(t *testing.T) {
 			zap.String("remainingStr", "1h")},
 	}, {
 		Entry: zapcore.Entry{Level: zap.InfoLevel, Message: "Partition Replicated"},
-		Context: []zapcore.Field{zap.String("Device", "1.1:10/sdb"),
+		Context: []zapcore.Field{zap.String("Device", "sdb"),
 			zap.Int64("doneParts", 40),
 			zap.Int64("totalParts", 100),
 			zap.Float64("DoneParts/TotalParts", 40.00),
@@ -1149,29 +1140,24 @@ func TestGetDeviceProgress(t *testing.T) {
 	}
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
-	replicator.runningDevices = map[string]ReplicationDevice{
-		"sda": &mockReplicationDevice{
-			_Stats: func() *ReplicationDeviceStats {
-				return &ReplicationDeviceStats{
-					LastPassDuration: time.Hour,
-					RunStarted:       time.Now().Add(-time.Hour),
-					Stats: map[string]int64{
-						"PartitionsTotal": 1000,
-						"PartitionsDone":  500,
-					},
-				}
+	replicator.stats = map[string]map[string]*DeviceStats{
+		"object-replicator": {
+			"sda": &DeviceStats{
+				LastPassDuration: time.Hour,
+				RunStarted:       time.Now().Add(-time.Hour),
+				Stats: map[string]int64{
+					"PartitionsTotal": 1000,
+					"PartitionsDone":  500,
+				},
 			},
-		},
-		"sdb": &mockReplicationDevice{
-			_Stats: func() *ReplicationDeviceStats {
-				return &ReplicationDeviceStats{
-					LastPassDuration: time.Hour,
-					RunStarted:       time.Now().Add(-time.Hour),
-					Stats: map[string]int64{
-						"PartitionsTotal": 100,
-						"PartitionsDone":  50,
-					},
-				}
+
+			"sdb": &DeviceStats{
+				LastPassDuration: time.Hour,
+				RunStarted:       time.Now().Add(-time.Hour),
+				Stats: map[string]int64{
+					"PartitionsTotal": 100,
+					"PartitionsDone":  50,
+				},
 			},
 		},
 	}
@@ -1211,36 +1197,37 @@ func TestRunLoopStatUpdate(t *testing.T) {
 	}
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
-	stats := &ReplicationDeviceStats{
-		LastPassDuration: time.Hour,
-		RunStarted:       time.Now().Add(-time.Hour),
-		Stats: map[string]int64{
-			"PartitionsTotal": 1000,
-			"PartitionsDone":  500,
+	replicator.stats = map[string]map[string]*DeviceStats{
+		"object-replicator": {
+			"sda": &DeviceStats{
+				LastPassDuration: time.Hour,
+				RunStarted:       time.Now().Add(-time.Hour),
+				Stats: map[string]int64{
+					"PartitionsTotal": 1000,
+					"PartitionsDone":  500,
+				},
+			},
 		},
 	}
-	rd := &mockReplicationDevice{
-		_Stats: func() *ReplicationDeviceStats {
-			return stats
-		},
-	}
+	st := replicator.stats["object-replicator"]["sda"]
+	rd := &mockReplicationDevice{}
 	replicator.runningDevices = map[string]ReplicationDevice{"sda": rd}
 	replicator.updateStat = make(chan statUpdate, 1)
-	replicator.updateStat <- statUpdate{"sda", "PartitionsTotal", 1}
+	replicator.updateStat <- statUpdate{"object-replicator", "sda", "PartitionsTotal", 1}
 	replicator.runLoopCheck(make(chan time.Time))
-	require.Equal(t, int64(1001), rd.Stats().Stats["PartitionsTotal"])
-	require.Equal(t, int64(500), rd.Stats().Stats["PartitionsDone"])
-	replicator.updateStat <- statUpdate{"sda", "PartitionsDone", 1}
+	require.Equal(t, int64(1001), st.Stats["PartitionsTotal"])
+	require.Equal(t, int64(500), st.Stats["PartitionsDone"])
+	replicator.updateStat <- statUpdate{"object-replicator", "sda", "PartitionsDone", 1}
 	replicator.runLoopCheck(make(chan time.Time))
-	require.Equal(t, int64(1001), rd.Stats().Stats["PartitionsTotal"])
-	require.Equal(t, int64(501), rd.Stats().Stats["PartitionsDone"])
-	replicator.updateStat <- statUpdate{"sda", "checkin", 1}
+	require.Equal(t, int64(1001), st.Stats["PartitionsTotal"])
+	require.Equal(t, int64(501), st.Stats["PartitionsDone"])
+	replicator.updateStat <- statUpdate{"object-replicator", "sda", "checkin", 1}
 	replicator.runLoopCheck(make(chan time.Time))
-	require.True(t, time.Since(stats.LastCheckin) < time.Second)
-	replicator.updateStat <- statUpdate{"sda", "startRun", 1}
+	require.True(t, time.Since(st.LastCheckin) < time.Second)
+	replicator.updateStat <- statUpdate{"object-replicator", "sda", "startRun", 1}
 	replicator.runLoopCheck(make(chan time.Time))
-	require.True(t, time.Since(stats.RunStarted) < time.Second)
-	require.Equal(t, int64(0), rd.Stats().Stats["PartitionsTotal"])
+	require.True(t, time.Since(st.RunStarted) < time.Second)
+	require.Equal(t, int64(0), st.Stats["PartitionsTotal"])
 }
 
 func TestReplicationLocal(t *testing.T) {

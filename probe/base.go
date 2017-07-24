@@ -202,8 +202,6 @@ func NewEnvironment(settings ...string) *Environment {
 		if err != nil {
 			log.Fatal(err)
 		}
-		replicator.(*objectserver.Replicator).Rings[0] = env.ring
-		replicator.(*objectserver.Replicator).Rings[1] = env.ring
 		trs.Config.Handler = replicator.(*objectserver.Replicator).GetHandler()
 
 		replicatorServer := &TestReplicatorWebServer{Server: trs, host: host, port: port, root: driveRoot, replicator: replicator.(*objectserver.Replicator)}
