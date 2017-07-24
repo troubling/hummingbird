@@ -24,14 +24,11 @@ import (
 	"go.uber.org/zap"
 )
 
-type PipeResponse struct {
-}
-
 type PipeResponseWriter struct {
 	w      *io.PipeWriter
 	status int
 	header http.Header
-	done   chan bool
+	ready  chan struct{}
 	Logger srv.LowLevelLogger
 }
 
@@ -51,24 +48,24 @@ func (w *PipeResponseWriter) Header() http.Header {
 
 func (w *PipeResponseWriter) WriteHeader(status int) {
 	w.status = status
-	w.done <- true
+	close(w.ready)
 }
 
 func (w *PipeResponseWriter) Close() {
 	w.w.Close()
 }
 
-func NewPipeResponseWriter(writer *io.PipeWriter, done chan bool, logger srv.LowLevelLogger) *PipeResponseWriter {
+func NewPipeResponseWriter(writer *io.PipeWriter, ready chan struct{}, logger srv.LowLevelLogger) *PipeResponseWriter {
 	header := make(map[string][]string)
 	return &PipeResponseWriter{
 		w:      writer,
 		header: header,
-		done:   done,
+		ready:  ready,
 		Logger: logger,
 	}
 }
 
-func (p *PipeResponse) Get(path string, request *http.Request, source string, auth AuthorizeFunc) (io.ReadCloser, http.Header, int) {
+func PipedGet(path string, request *http.Request, source string, auth AuthorizeFunc) (io.ReadCloser, http.Header, int) {
 	ctx := GetProxyContext(request)
 	subRequest, err := ctx.newSubrequest("GET", path, nil, request, source)
 	if err != nil {
@@ -88,13 +85,13 @@ func (p *PipeResponse) Get(path string, request *http.Request, source string, au
 	}
 
 	pipeReader, pipeWriter := io.Pipe()
-	done := make(chan bool)
-	writer := NewPipeResponseWriter(pipeWriter, done, ctx.Logger)
+	ready := make(chan struct{})
+	writer := NewPipeResponseWriter(pipeWriter, ready, ctx.Logger)
 	go func() {
 		defer writer.Close()
 		ctx.serveHTTPSubrequest(writer, subRequest)
 	}()
-	<-done
+	<-ready
 
 	return pipeReader, writer.Header(), writer.status
 }

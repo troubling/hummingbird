@@ -224,8 +224,7 @@ func okAuthFunc(r *http.Request) (bool, int) { return true, http.StatusOK }
 
 func (v *versionedWrites) copyObject(writer http.ResponseWriter, request *http.Request, dest string, src string) bool {
 	ctx := GetProxyContext(request)
-	pipe := &PipeResponse{}
-	srcBody, srcHeader, srcStatus := pipe.Get(src, request, "VW", okAuthFunc)
+	srcBody, srcHeader, srcStatus := PipedGet(src, request, "VW", okAuthFunc)
 	if srcBody != nil {
 		defer srcBody.Close()
 	}
@@ -259,9 +258,7 @@ func (v *versionedWrites) copyCurrent(writer http.ResponseWriter, request *http.
 		}
 	}
 
-	pipe := &PipeResponse{}
-
-	srcBody, srcHeader, srcStatus := pipe.Get(request.URL.Path, request, "VW", okAuthFunc)
+	srcBody, srcHeader, srcStatus := PipedGet(request.URL.Path, request, "VW", okAuthFunc)
 	if srcBody != nil {
 		defer srcBody.Close()
 	}

@@ -223,8 +223,7 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 		auth = func(r *http.Request) (bool, int) { return true, http.StatusOK }
 	}
 
-	pipe := &PipeResponse{}
-	srcBody, srcHeader, srcStatus := pipe.Get(common.Urlencode(srcPath), request, "copy", auth)
+	srcBody, srcHeader, srcStatus := PipedGet(common.Urlencode(srcPath), request, "copy", auth)
 	if srcBody != nil {
 		defer srcBody.Close()
 	}
