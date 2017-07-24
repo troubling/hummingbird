@@ -99,22 +99,22 @@ type quorumer interface {
 	start()
 	addResponse(int, *http.Response)
 	quorumMet(int) bool
-	quorumPossible() bool
+	launchUntilQuorumPossible() bool
 	getResponse(time.Duration) *http.Response
 }
 
 type stdQuorumer struct {
-	q            int
-	makeRequest  func(int, *ring.Device) *http.Response
-	devs         []*ring.Device
-	more         ring.MoreNodes
-	responses    []*http.Response
-	failures     []int
-	rc           []int
-	requestCount int
-	replicaCount int
-	responsec    chan *respRec
-	cancel       chan struct{}
+	q                   int
+	makeRequest         func(int, *ring.Device) *http.Response
+	devs                []*ring.Device
+	more                ring.MoreNodes
+	responses           []*http.Response
+	failures            []int
+	responseClassCounts []int
+	requestCount        int
+	replicaCount        int
+	responsec           chan *respRec
+	cancel              chan struct{}
 }
 
 func (q *stdQuorumer) launchRequest() bool {
@@ -149,18 +149,18 @@ func (q *stdQuorumer) start() {
 
 func (q *stdQuorumer) addResponse(index int, resp *http.Response) {
 	q.responses = append(q.responses, resp)
-	if resp.StatusCode >= 500 {
+	if resp.StatusCode >= 500 || resp.StatusCode < 0 {
 		q.failures = append(q.failures, index)
-	} else if resp.StatusCode >= 0 {
-		q.rc[resp.StatusCode/100]++
+		return
 	}
+	q.responseClassCounts[resp.StatusCode/100]++
 }
 
-func (q *stdQuorumer) quorumPossible() bool {
+func (q *stdQuorumer) launchUntilQuorumPossible() bool {
 	// if quorum has become impossible, launch requests until it's possible again.
 	for q.requestCount < q.replicaCount*2 {
-		for i := 2; i < 5; i++ {
-			if (q.rc[i]+q.requestCount)-len(q.responses) >= q.q {
+		for responseClass := 2; responseClass < 5; responseClass++ {
+			if (q.responseClassCounts[responseClass]+q.requestCount)-len(q.responses) >= q.q {
 				return true
 			}
 		}
@@ -178,8 +178,8 @@ func (q *stdQuorumer) quorumMet(writers int) bool {
 	if writers >= q.q && (len(q.responses)+writers) >= q.replicaCount*2 {
 		return true
 	}
-	for i := 2; i < 5; i++ {
-		if q.rc[i] >= q.q {
+	for responseClass := 2; responseClass < 5; responseClass++ {
+		if q.responseClassCounts[responseClass] >= q.q {
 			return true
 		}
 	}
@@ -187,18 +187,18 @@ func (q *stdQuorumer) quorumMet(writers int) bool {
 }
 
 func (q *stdQuorumer) getResponse(timeout time.Duration) *http.Response {
-	end := time.After(timeout)
+	getResponseTimeout := time.After(timeout)
 	for {
 		// see if quorum has already been met
 		for _, r := range q.responses {
-			if q.rc[r.StatusCode/100] >= q.q {
+			if q.responseClassCounts[r.StatusCode/100] >= q.q {
 				// Give pending requests a chance to finish, to improve consistency of read-after-write.
-				end := time.After(PostQuorumTimeoutMs * time.Millisecond)
+				finalizeTimeout := time.After(PostQuorumTimeoutMs * time.Millisecond)
 				for q.requestCount > len(q.responses) {
 					select {
 					case resp := <-q.responsec:
 						q.addResponse(resp.i, resp.r)
-					case <-end:
+					case <-finalizeTimeout:
 						return r
 					}
 				}
@@ -207,7 +207,7 @@ func (q *stdQuorumer) getResponse(timeout time.Duration) *http.Response {
 		}
 		// bail out if quorum isn't possible
 		quorumPossible := false
-		for _, c := range q.rc {
+		for _, c := range q.responseClassCounts {
 			if (c+q.requestCount)-len(q.responses) >= q.q {
 				quorumPossible = true
 			}
@@ -220,7 +220,7 @@ func (q *stdQuorumer) getResponse(timeout time.Duration) *http.Response {
 		select {
 		case response := <-q.responsec:
 			q.addResponse(response.i, response.r)
-		case <-end:
+		case <-getResponseTimeout:
 			return ResponseStub(http.StatusServiceUnavailable, "The service is currently unavailable.")
 		}
 	}
@@ -228,14 +228,14 @@ func (q *stdQuorumer) getResponse(timeout time.Duration) *http.Response {
 
 func newQuorumer(r ring.Ring, partition uint64, responsec chan *respRec, cancel chan struct{}, makeRequest func(index int, dev *ring.Device) *http.Response) quorumer {
 	return &stdQuorumer{
-		makeRequest:  makeRequest,
-		q:            int(math.Ceil(float64(r.ReplicaCount()) / 2.0)),
-		replicaCount: int(r.ReplicaCount()),
-		devs:         r.GetNodes(partition),
-		more:         r.GetMoreNodes(partition),
-		rc:           make([]int, 6),
-		cancel:       cancel,
-		responsec:    responsec,
+		makeRequest:         makeRequest,
+		q:                   int(math.Ceil(float64(r.ReplicaCount()) / 2.0)),
+		replicaCount:        int(r.ReplicaCount()),
+		devs:                r.GetNodes(partition),
+		more:                r.GetMoreNodes(partition),
+		responseClassCounts: make([]int, 6),
+		cancel:              cancel,
+		responsec:           responsec,
 	}
 }
 
@@ -277,7 +277,6 @@ func (c *ProxyDirectClient) firstResponse(r ring.Ring, partition uint64, devToRe
 				break
 			}
 		}
-		fmt.Println(requestCount, dev)
 		req, err := devToRequest(dev)
 		if err != nil {
 			internalErrors++
@@ -742,7 +741,8 @@ func newObjectClient(proxyDirectClient *ProxyDirectClient, account string, conta
 	return &standardObjectClient{proxyDirectClient: proxyDirectClient, account: account, container: container, policy: ci.StoragePolicyIndex, objectRing: objectRing}
 }
 
-// putReader is a Reader proxy that calls its notify() function the first time Read is called.
+// putReader is a Reader proxy that sends its reader over the ready channel the first time Read is called.
+// This is important because "Expect: 100-continue" requests don't call Read unless/until they get a 100 response.
 type putReader struct {
 	io.Reader
 	cancel chan struct{}
@@ -810,7 +810,7 @@ func (oc *standardObjectClient) putObject(obj string, headers http.Header, src i
 	})
 	q.start()
 	for !q.quorumMet(len(writers)) {
-		if !q.quorumPossible() {
+		if !q.launchUntilQuorumPossible() {
 			return ResponseStub(http.StatusServiceUnavailable, "The service is currently unavailable.")
 		}
 		select {
