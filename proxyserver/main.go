@@ -147,7 +147,7 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 			{middleware.NewXlo, "filter:slo"},
 		}
 	}
-	pipeline := alice.New(middleware.NewContext(server.mc, server.logger, server.proxyDirectClient))
+	pipeline := alice.New(middleware.NewContext(&config, server.mc, server.logger, server.proxyDirectClient))
 	for _, m := range middlewares {
 		mid, err := m.construct(config.GetSection(m.section), metricsScope)
 		if err != nil {
@@ -178,7 +178,7 @@ func GetServer(serverconf conf.Config, flags *flag.FlagSet) (string, int, srv.Se
 		return "", 0, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 	policies := conf.LoadPolicies()
-	server.proxyDirectClient, err = client.NewProxyDirectClient(policies)
+	server.proxyDirectClient, err = client.NewProxyDirectClient(&serverconf, policies, server.logger)
 	if err != nil {
 		return "", 0, nil, nil, fmt.Errorf("Error setting up proxyDirectClient: %v", err)
 	}

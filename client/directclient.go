@@ -16,6 +16,8 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
+	"github.com/troubling/hummingbird/common/srv"
+	"go.uber.org/zap"
 )
 
 const PostQuorumTimeoutMs = 100
@@ -52,7 +54,7 @@ type ProxyDirectClient struct {
 	ContainerRing ring.Ring
 }
 
-func NewProxyDirectClient(policyList conf.PolicyList) (*ProxyDirectClient, error) {
+func NewProxyDirectClient(config *conf.Config, policyList conf.PolicyList, logger srv.LowLevelLogger) (*ProxyDirectClient, error) {
 	var xport http.RoundTripper = &http.Transport{
 		DisableCompression: true,
 		Dial: (&net.Dialer{
@@ -61,8 +63,15 @@ func NewProxyDirectClient(policyList conf.PolicyList) (*ProxyDirectClient, error
 		}).Dial,
 		ExpectContinueTimeout: 10 * time.Minute, // TODO: this should probably be like infinity.
 	}
-	// Debug hook to auto-close responses and report on it. See debug.go
-	// xport = &autoCloseResponses{transport: xport}
+	if config != nil {
+		autoCloseSeconds := config.GetInt("debug", "debug_http_close", 0)
+		if autoCloseSeconds != 0 {
+			xport = &autoCloseResponses{RoundTripper: xport, autoCloseAfter: time.Duration(autoCloseSeconds) * time.Second}
+			if logger != nil {
+				logger.Info("AUTO CLOSING HTTP RESPONSES IS TURNED ON", zap.Int64("debug_http_close", autoCloseSeconds))
+			}
+		}
+	}
 	c := &ProxyDirectClient{
 		policyList: policyList,
 		client: &http.Client{
@@ -1081,7 +1090,7 @@ func (c *directClient) DeleteObject(container string, obj string, headers map[st
 
 // NewDirectClient creates a new direct client with the given account name.
 func NewDirectClient(account string) (Client, error) {
-	pdc, err := NewProxyDirectClient(nil)
+	pdc, err := NewProxyDirectClient(nil, nil, nil)
 	if err != nil {
 		return nil, err
 	}

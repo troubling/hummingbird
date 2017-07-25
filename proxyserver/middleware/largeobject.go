@@ -104,6 +104,9 @@ func (sw *xloIdentifyWriter) WriteHeader(status int) {
 		sw.isSlo = true
 	}
 	if !sw.isSlo && !sw.isDlo {
+		if r, ok := sw.ResponseWriter.(srv.XSourceCodeRecorder); ok {
+			r.AddXSourceCode(1)
+		}
 		sw.ResponseWriter.WriteHeader(status)
 		return
 	}
