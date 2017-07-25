@@ -39,7 +39,18 @@ func getAffixes() (string, string) {
 	return hashPathPrefix, hashPathSuffix
 }
 
-func getRing(ringPath string, policyNum int) (ring.Ring, string) {
+func inferRingType(account, container, object string) string {
+	if object != "" {
+		return "object"
+	} else if container != "" {
+		return "container"
+	} else if account != "" {
+		return "account"
+	}
+	return ""
+}
+
+func getRing(ringPath, ringType string, policyNum int) (ring.Ring, string) {
 	prefix, suffix := getAffixes()
 	if ringPath != "" {
 		r, err := ring.LoadRing(ringPath, prefix, suffix)
@@ -59,12 +70,20 @@ func getRing(ringPath string, policyNum int) (ring.Ring, string) {
 		}
 	}
 
-	r, err := ring.GetRing("object", prefix, suffix, policyNum)
+	if ringType == "" {
+		ringType = "object"
+	}
+
+	r, err := ring.GetRing(ringType, prefix, suffix, policyNum)
 	if err != nil {
-		fmt.Printf("Unable to load object-%v ring\n", policyNum)
+		if policyNum > 0 {
+			fmt.Printf("Unable to load %v-%v ring\n", ringType, policyNum)
+		} else {
+			fmt.Printf("Unable to load %v ring\n", ringType)
+		}
 		os.Exit(1)
 	}
-	return r, "object"
+	return r, ringType
 }
 
 func policyByName(policyName string) *conf.Policy {
@@ -217,44 +236,11 @@ func printRingLocations(r ring.Ring, ringType, datadir, account, container, obje
 }
 
 func printItemLocations(r ring.Ring, ringType, account, container, object, partition string, allHandoffs bool, policy int) {
-	if account == "" && (container != "" || object != "") {
-		fmt.Println("No account specified")
-		os.Exit(1)
-	}
-	if container == "" && object != "" {
-		fmt.Println("No container specified")
-		os.Exit(1)
-	}
-	if account == "" && partition == "" {
-		fmt.Println("No target specified")
-		os.Exit(1)
-	}
 	location := ""
-	if partition != "" {
-		if policy > 0 {
-			location = fmt.Sprintf("%v-%d", ringType, policy)
-		} else {
-			location = fmt.Sprintf("%vs", ringType)
-		}
-	}
-	if account != "" && container != "" && object != "" {
-		if policy > 0 {
-			location = fmt.Sprintf("objects-%d", policy)
-		} else {
-			location = "objects"
-		}
-	}
-	if account != "" && container != "" && object == "" {
-		location = "containers"
-		if ringType != "container" {
-			fmt.Println("Warning: container specified but ring not named \"container\"")
-		}
-	}
-	if account != "" && container == "" && object == "" {
-		location = "accounts"
-		if ringType != "account" {
-			fmt.Println("Warning: account specified but ring not named \"account\"")
-		}
+	if policy > 0 {
+		location = fmt.Sprintf("%vs-%d", ringType, policy)
+	} else {
+		location = fmt.Sprintf("%vs", ringType)
 	}
 	fmt.Printf("\nAccount  \t%v\n", account)
 	fmt.Printf("Container\t%v\n", container)
@@ -263,15 +249,31 @@ func printItemLocations(r ring.Ring, ringType, account, container, object, parti
 	printRingLocations(r, ringType, location, account, container, object, partition, allHandoffs, policy)
 }
 
-func GetNodes(flags *flag.FlagSet) {
-	ringPath := flags.Arg(0)
-	account := flags.Arg(1)
-	container := flags.Arg(2)
-	object := flags.Arg(3)
+func parseArg0(arg0 string) (string, string, string) {
+	arg0 = strings.TrimPrefix(arg0, "/v1/")
+	parts := strings.SplitN(arg0, "/", 3)
+	if len(parts) == 1 {
+		return parts[0], "", ""
+	} else if len(parts) == 2 {
+		return parts[0], parts[1], ""
+	} else if len(parts) == 3 {
+		return parts[0], parts[1], parts[2]
+	}
+	return arg0, "", ""
+}
+
+func Nodes(flags *flag.FlagSet) {
+	var account, container, object string
+	if flags.NArg() == 1 {
+		account, container, object = parseArg0(flags.Arg(0))
+	} else {
+		account = flags.Arg(0)
+		container = flags.Arg(1)
+		object = flags.Arg(2)
+	}
 	partition := flags.Lookup("p").Value.(flag.Getter).Get().(string)
 	policyName := flags.Lookup("P").Value.(flag.Getter).Get().(string)
 	allHandoffs := flags.Lookup("a").Value.(flag.Getter).Get().(bool)
-
 	policy := policyByName(policyName)
 	var policyNum int
 	if policy != nil {
@@ -280,6 +282,38 @@ func GetNodes(flags *flag.FlagSet) {
 		policyNum = 0
 	}
 
-	r, ringType := getRing(ringPath, policyNum)
+	var r ring.Ring
+	var ringType string
+	inferredType := inferRingType(account, container, object)
+	ringPath := flags.Lookup("r").Value.(flag.Getter).Get().(string)
+	if ringPath != "" {
+		r, ringType = getRing(ringPath, "", policyNum)
+		if inferredType != "" && ringType != inferredType {
+			fmt.Printf("Error %v specified but ring type: %v\n", inferredType, ringType)
+			os.Exit(1)
+		}
+	} else {
+		r, ringType = getRing("", inferredType, policyNum)
+	}
+
+	if partition != "" {
+		account = ""
+		container = ""
+		object = ""
+	} else {
+		if account == "" && (container != "" || object != "") {
+			fmt.Println("No account specified")
+			os.Exit(1)
+		}
+		if container == "" && object != "" {
+			fmt.Println("No container specified")
+			os.Exit(1)
+		}
+		if account == "" {
+			fmt.Println("No target specified")
+			os.Exit(1)
+		}
+	}
+
 	printItemLocations(r, ringType, account, container, object, partition, allHandoffs, policyNum)
 }
