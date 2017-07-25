@@ -249,11 +249,15 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 	}
 
 	if request.URL.Path == "/info" {
+		if request.URL.Query().Get("swiftinfo_sig") != "" || request.URL.Query().Get("swiftinfo_expires") != "" {
+			writer.WriteHeader(403)
+			return
+		}
 		if request.Method == "GET" {
 			if data, err := serverInfoDump(); err != nil {
 				srv.StandardResponse(writer, 500)
 			} else {
-				writer.Header().Set("Content-Type", "application/json")
+				writer.Header().Set("Content-Type", "application/json; charset=UTF-8")
 				writer.WriteHeader(200)
 				writer.Write(data)
 			}
