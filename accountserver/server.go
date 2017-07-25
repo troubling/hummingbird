@@ -166,6 +166,7 @@ func (server *AccountServer) AccountGetHandler(writer http.ResponseWriter, reque
 		}
 	}
 	if request.Method == "HEAD" {
+		headers.Set("Content-Type", "text/plain; charset=utf-8")
 		writer.WriteHeader(http.StatusNoContent)
 		writer.Write([]byte(""))
 		return
