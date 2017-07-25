@@ -329,9 +329,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "    rebalance (rebalance the ring)\n")
 		fmt.Fprintf(os.Stderr, "    search <search_flags> (search for devices in the ring)\n")
 		fmt.Fprintf(os.Stderr, "    set_weight <search_flags> [-yes] <weight> (change the weight of 1 or more devices)\n")
-		fmt.Fprintf(os.Stderr, "    remove <serch_flags> [-yes] (remove device from the ring)\n")
+		fmt.Fprintf(os.Stderr, "    remove <search_flags> [-yes] (remove device from the ring)\n")
+		fmt.Fprintf(os.Stderr, "    set_info <search_flags> [-yes] <change_flags> (change device information)\n")
 		fmt.Fprintf(os.Stderr, "  <device> is of the form: [r<region>]z<zone>-<ip>:<port>[R<r_ip>:<r_port>]/<device_name>_<meta>\n")
 		fmt.Fprintf(os.Stderr, "  <search_flags> is at least one of: -region, -zone, -ip, -port, -replication-ip, replication-port, -device, -meta, -weight\n")
+		fmt.Fprintf(os.Stderr, "  <change_flags> is at least one of: -change-ip, -change-port, -change-replication-ip, -change-replication-port, -change-device, -change-meta")
 		ringBuilderFlags.PrintDefaults()
 	}
 

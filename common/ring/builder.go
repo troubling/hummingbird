@@ -1358,6 +1358,37 @@ func (b *RingBuilder) SearchDevs(region, zone int64, ip string, port int64, repI
 	return foundDevs
 }
 
+func (b *RingBuilder) UpdateDevInfo(devId int64, newIp string, newPort int64, newRepIp string, newRepPort int64, newDevice, newMeta string) error {
+	// first check to make sure another device doesn't have the ip/port/device
+	if newIp == "" {
+		newIp = b.Devs[devId].Ip
+	}
+	if newPort < 0 {
+		newPort = b.Devs[devId].Port
+	}
+	if newDevice == "" {
+		newDevice = b.Devs[devId].Device
+	}
+	for next, dev := devIterator(b.Devs); dev != nil; dev = next() {
+		if dev.Ip == newIp && dev.Port == newPort && dev.Device == newDevice {
+			return errors.New(fmt.Sprintf("Device id %d already uses %s:%d:/%s.", dev.Id, newIp, newPort, newDevice))
+		}
+	}
+	b.Devs[devId].Ip = newIp
+	b.Devs[devId].Port = newPort
+	b.Devs[devId].Device = newDevice
+	if newRepIp != "" {
+		b.Devs[devId].ReplicationIp = newRepIp
+	}
+	if newRepPort >= 0 {
+		b.Devs[devId].Port = newRepPort
+	}
+	if newMeta != "" {
+		b.Devs[devId].Meta = newMeta
+	}
+	return nil
+}
+
 // ChangeMinPartHours changes the value used to decide if a given partition can be moved again.  This restriction is to give the overall system enough time to settl a partition to its new location before moving it to yet another location.  While no data would be lost if a partition is moved several times quickly, it could make the data unreachable for a short period of time.
 //
 // This should be set to at least the average full partition replication time.  Starting it at 24 hours and then lowering it to what the replicator reprots as the longest partition cycle is best.
@@ -1569,6 +1600,21 @@ func RemoveDevs(builderPath string, devs []*RingBuilderDevice) error {
 	return nil
 }
 
+func SetInfo(builderPath string, devs []*RingBuilderDevice, newIp string, newPort int64, newRepIp string, newRepPort int64, newDevice, newMeta string) error {
+	builder, err := NewRingBuilderFromFile(builderPath, false)
+	if err != nil {
+		return err
+	}
+	for _, dev := range devs {
+		err := builder.UpdateDevInfo(dev.Id, newIp, newPort, newRepIp, newRepPort, newDevice, newMeta)
+		if err != nil {
+			return err
+		}
+	}
+	builder.Save(builderPath)
+	return nil
+}
+
 func PrintDevs(devs []*RingBuilderDevice) {
 	data := make([][]string, 0)
 	data = append(data, []string{"ID", "REGION", "ZONE", "IP ADDRESS", "PORT", "REPLICATION IP", "REPLICATION PORT", "NAME", "WEIGHT", "PARTITIONS", "META"})
@@ -1651,6 +1697,60 @@ func BuildCmd(flags *flag.FlagSet) {
 		}
 		PrintDevs(devs)
 		return
+
+	case "set_info":
+		changeFlags := flag.NewFlagSet("search", flag.ExitOnError)
+		region := changeFlags.Int64("region", -1, "Device region.")
+		zone := changeFlags.Int64("zone", -1, "Device zone.")
+		ip := changeFlags.String("ip", "", "Device ip address.")
+		port := changeFlags.Int64("port", -1, "Device port.")
+		repIp := changeFlags.String("replication-ip", "", "Device replication address.")
+		repPort := changeFlags.Int64("replication-port", -1, "Device replication port.")
+		device := changeFlags.String("device", "", "Device name.")
+		weight := changeFlags.Float64("weight", -1.0, "Device weight.")
+		meta := changeFlags.String("meta", "", "Metadata.")
+		yes := changeFlags.Bool("yes", false, "Force yes.")
+		newIp := changeFlags.String("change-ip", "", "New ip address.")
+		newPort := changeFlags.Int64("change-port", -1, "New port.")
+		newRepIp := changeFlags.String("change-replication-ip", "", "New replication ip address.")
+		newRepPort := changeFlags.Int64("change-replication-port", -1, "New replication port.")
+		newDevice := changeFlags.String("change-device", "", "New device name.")
+		newMeta := changeFlags.String("change-meta", "", "New meta data.")
+		if err := changeFlags.Parse(args[2:]); err != nil {
+			fmt.Println(err)
+			return
+		}
+		devs, err := Search(pth, *region, *zone, *ip, *port, *repIp, *repPort, *device, *weight, *meta)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		if len(devs) == 0 {
+			fmt.Println("No matching devices found.")
+			return
+		} else {
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Println("Search matched the following devices:")
+			PrintDevs(devs)
+			if !*yes {
+				fmt.Printf("Are you sure you want to update the info for these %d devices (y/n)? ", len(devs))
+				resp, err := reader.ReadString('\n')
+				if err != nil {
+					fmt.Println(err)
+					return
+				}
+				if resp[0] != 'y' && resp[0] != 'Y' {
+					fmt.Println("No devices updated.")
+					return
+				}
+			}
+			err := SetInfo(pth, devs, *newIp, *newPort, *newRepIp, *newRepPort, *newDevice, *newMeta)
+			if err != nil {
+				fmt.Println(err)
+			} else {
+				fmt.Println("Devices updated successfully.")
+			}
+		}
 
 	case "set_weight":
 		weightFlags := flag.NewFlagSet("set_weight", flag.ExitOnError)
