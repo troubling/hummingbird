@@ -72,10 +72,6 @@ func (r *FakeRing) GetNodes(partition uint64) (response []*ring.Device) {
 	}
 }
 
-func (r *FakeRing) GetNodesInOrder(partition uint64) (response []*ring.Device) {
-	return r.GetNodes(partition)
-}
-
 func (r *FakeRing) GetJobNodes(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
 	if len(r.MockDevices) > 0 {
 		switch localDevice {
