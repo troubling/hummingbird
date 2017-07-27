@@ -37,6 +37,7 @@ import (
 	"github.com/troubling/hummingbird/containerserver"
 	"github.com/troubling/hummingbird/objectserver"
 	"github.com/troubling/hummingbird/proxyserver"
+	"github.com/troubling/hummingbird/tools"
 )
 
 const (
@@ -335,6 +336,21 @@ func main() {
 		ringBuilderFlags.PrintDefaults()
 	}
 
+	nodesFlags := flag.NewFlagSet("", flag.ExitOnError)
+	nodesFlags.Bool("a", false, "Show all handoff nodes")
+	nodesFlags.String("p", "", "Show nodes for a given partition")
+	nodesFlags.String("r", "", "Specify which ring file to use")
+	nodesFlags.String("P", "", "Specify which policy to use")
+	nodesFlags.Usage = func() {
+		fmt.Fprintf(os.Stderr, "hummingbird nodes [-a] <account> [<container> [<object]]\n")
+		fmt.Fprintf(os.Stderr, "hummingbird nodes [-a] <account>[/<container[/<object>]]\n")
+		fmt.Fprintf(os.Stderr, "hummingbird nodes [-a] -P policy_name <account> <container> <object\n")
+		fmt.Fprintf(os.Stderr, "hummingbird nodes [-a] -P policy_name <account>[/<container>[/<object]]\n")
+		fmt.Fprintf(os.Stderr, "hummingbird nodes [-a] -p partition -r <ring.gz>\n")
+		fmt.Fprintf(os.Stderr, "hummingbird nodes [-a] -p partition -P policy_name\n")
+		nodesFlags.PrintDefaults()
+	}
+
 	/* main flag parser, which doesn't do much */
 
 	flag.Usage = func() {
@@ -379,6 +395,8 @@ func main() {
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, "hummingbird grep [ACCOUNT/CONTAINER/PREFIX] [SEARCH-STRING]")
 		fmt.Fprintln(os.Stderr, "  Run grep on the edge")
+		fmt.Fprintln(os.Stderr)
+		nodesFlags.Usage()
 	}
 
 	flag.Parse()
@@ -444,6 +462,9 @@ func main() {
 	case "ring":
 		ringBuilderFlags.Parse(flag.Args()[1:])
 		ring.BuildCmd(ringBuilderFlags)
+	case "nodes":
+		nodesFlags.Parse(flag.Args()[1:])
+		tools.Nodes(nodesFlags)
 	default:
 		flag.Usage()
 	}
