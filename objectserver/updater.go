@@ -121,6 +121,7 @@ func (ud *updateDevice) processAsync(async string) {
 	if ud.updateContainers(&ap) {
 		ud.updateStat("Success", 1)
 		os.Remove(async)
+		os.Remove(filepath.Dir(async))
 	} else {
 		ud.updateStat("Failure", 1)
 	}
