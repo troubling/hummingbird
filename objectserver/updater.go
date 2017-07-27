@@ -83,6 +83,7 @@ func (ud *updateDevice) updateContainers(ap *asyncPending) bool {
 	allSuccess := true
 	part := ud.r.containerRing.GetPartition(ap.Account, ap.Container, "")
 	header := common.Map2Headers(ap.Headers)
+	header.Set("User-Agent", fmt.Sprintf("object-updater %d", os.Getpid()))
 	for _, node := range ud.r.containerRing.GetNodes(part) {
 		objUrl := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", node.Ip, node.Port, node.Device, part,
 			common.Urlencode(ap.Account), common.Urlencode(ap.Container), common.Urlencode(ap.Object))
