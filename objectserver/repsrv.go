@@ -25,7 +25,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/justinas/alice"
@@ -38,58 +37,27 @@ import (
 	"go.uber.org/zap"
 )
 
-// ReplicationManager is used by the object server to limit replication concurrency
-type ReplicationManager struct {
-	lock         sync.Mutex
-	devSem       map[string]chan struct{}
-	totalSem     chan struct{}
-	limitPerDisk int64
-	limitOverall int64
-}
-
-// Begin gives or rejects permission for a new replication session on the given device.
-func (r *ReplicationManager) Begin(device string, timeout time.Duration) bool {
-	r.lock.Lock()
-	devSem, ok := r.devSem[device]
+func (r *Replicator) incomingBegin(device string, timeout time.Duration) bool {
+	r.incomingSemLock.Lock()
+	devSem, ok := r.incomingSem[device]
 	if !ok {
-		devSem = make(chan struct{}, r.limitPerDisk)
-		r.devSem[device] = devSem
+		devSem = make(chan struct{}, r.incomingLimitPerDev)
+		r.incomingSem[device] = devSem
 	}
-	r.lock.Unlock()
-	timeoutTimer := time.NewTicker(timeout)
-	defer timeoutTimer.Stop()
-	loopTimer := time.NewTicker(time.Millisecond * 10)
-	defer loopTimer.Stop()
-	for {
-		select {
-		case devSem <- struct{}{}:
-			select {
-			case r.totalSem <- struct{}{}:
-				return true
-			case <-loopTimer.C:
-				<-devSem
-			}
-		case <-timeoutTimer.C:
-			return false
-		}
+	r.incomingSemLock.Unlock()
+	select {
+	case devSem <- struct{}{}:
+		return true
+	case <-time.After(timeout):
+		return false
 	}
 }
 
-// Done marks the session completed, removing it from any accounting.
-func (r *ReplicationManager) Done(device string) {
-	r.lock.Lock()
-	<-r.devSem[device]
-	<-r.totalSem
-	r.lock.Unlock()
-}
-
-func NewReplicationManager(limitPerDisk int64, limitOverall int64) *ReplicationManager {
-	return &ReplicationManager{
-		limitPerDisk: limitPerDisk,
-		limitOverall: limitOverall,
-		devSem:       make(map[string]chan struct{}),
-		totalSem:     make(chan struct{}, limitOverall),
-	}
+func (r *Replicator) incomingDone(device string) {
+	r.incomingSemLock.Lock()
+	sem := r.incomingSem[device]
+	r.incomingSemLock.Unlock()
+	<-sem
 }
 
 // ProgressReportHandler handles HTTP requests for current replication progress
@@ -189,12 +157,12 @@ func (r *Replicator) objRepConnHandler(writer http.ResponseWriter, request *http
 		writer.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	if !r.replicationMan.Begin(brr.Device, r.replicateTimeout) {
+	if !r.incomingBegin(brr.Device, replicateIncomingTimeout) {
 		srv.GetLogger(request).Error("[ObjRepConnHandler] Timed out waiting for concurrency slot")
 		writer.WriteHeader(503)
 		return
 	}
-	defer r.replicationMan.Done(brr.Device)
+	defer r.incomingDone(brr.Device)
 	var hashes map[string]string
 	if brr.NeedHashes {
 		hashes, err = GetHashes(r.deviceRoot, brr.Device, brr.Partition, nil, r.reclaimAge, policy, srv.GetLogger(request))
@@ -286,19 +254,16 @@ func (r *Replicator) LogRequest(next http.Handler) http.Handler {
 		logr := r.logger.With(zap.String("txn", request.Header.Get("X-Trans-Id")))
 		request = srv.SetLogger(request, logr)
 		next.ServeHTTP(newWriter, request)
-		lvl, _ := r.logLevel.MarshalText()
-		if (request.Method != "REPLICATE" && request.Method != "REPCONN") || strings.ToUpper(string(lvl)) == "DEBUG" {
-			logr.Info("Request log",
-				zap.String("remoteAddr", request.RemoteAddr),
-				zap.String("eventTime", time.Now().Format("02/Jan/2006:15:04:05 -0700")),
-				zap.String("method", request.Method),
-				zap.String("urlPath", common.Urlencode(request.URL.Path)),
-				zap.Int("status", newWriter.Status),
-				zap.String("contentLength", common.GetDefault(newWriter.Header(), "Content-Length", "-")),
-				zap.String("referer", common.GetDefault(request.Header, "Referer", "-")),
-				zap.String("userAgent", common.GetDefault(request.Header, "User-Agent", "-")),
-				zap.Float64("requestTimeSeconds", time.Since(start).Seconds()))
-		}
+		logr.Info("Request log",
+			zap.String("remoteAddr", request.RemoteAddr),
+			zap.String("eventTime", time.Now().Format("02/Jan/2006:15:04:05 -0700")),
+			zap.String("method", request.Method),
+			zap.String("urlPath", common.Urlencode(request.URL.Path)),
+			zap.Int("status", newWriter.Status),
+			zap.String("contentLength", common.GetDefault(newWriter.Header(), "Content-Length", "-")),
+			zap.String("referer", common.GetDefault(request.Header, "Referer", "-")),
+			zap.String("userAgent", common.GetDefault(request.Header, "User-Agent", "-")),
+			zap.Float64("requestTimeSeconds", time.Since(start).Seconds()))
 	}
 	return http.HandlerFunc(fn)
 }

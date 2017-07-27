@@ -40,16 +40,6 @@ import (
 const zeroByteHash = "d41d8cd98f00b204e9800998ecf8427e"
 const deleteAtAccount = ".expiring_objects"
 
-func headerToMap(headers http.Header) map[string]string {
-	ret := make(map[string]string)
-	for key, value := range headers {
-		if len(value) > 0 {
-			ret[key] = headers.Get(key)
-		}
-	}
-	return ret
-}
-
 func splitHeader(header string) []string {
 	if header == "" {
 		return []string{}
@@ -100,7 +90,7 @@ func (server *ObjectServer) saveAsync(method, account, container, obj, localDevi
 		"account":   account,
 		"container": container,
 		"obj":       obj,
-		"headers":   headerToMap(headers),
+		"headers":   common.Headers2Map(headers),
 	}
 	if os.MkdirAll(filepath.Dir(asyncFile), 0755) == nil {
 		writer, err := fs.NewAtomicFileWriter(tempDir, filepath.Dir(asyncFile))
