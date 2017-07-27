@@ -100,6 +100,7 @@ type Client interface {
 	GetObject(container string, obj string, headers map[string]string) *http.Response
 	HeadObject(container string, obj string, headers map[string]string) *http.Response
 	DeleteObject(container string, obj string, headers map[string]string) *http.Response
+	Raw(method, urlAfterAccount string, headers map[string]string, body io.Reader) *http.Response
 }
 
 // ProxyClient is similar to Client except it also accepts an account parameter to its operations.  This is meant to be used by the proxy server.

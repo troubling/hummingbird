@@ -1084,6 +1084,10 @@ func (c *directClient) DeleteObject(container string, obj string, headers map[st
 	return c.pc.DeleteObject(c.account, container, obj, common.Map2Headers(headers))
 }
 
+func (c *directClient) Raw(method, urlAfterAccount string, headers map[string]string, body io.Reader) *http.Response {
+	return ResponseStub(http.StatusNotImplemented, "Raw requests not implemented for direct clients")
+}
+
 // NewDirectClient creates a new direct client with the given account name.
 func NewDirectClient(account string) (Client, error) {
 	pdc, err := NewProxyDirectClient(nil)

@@ -152,7 +152,7 @@ func (server *ProxyServer) ObjectPostHandler(writer http.ResponseWriter, request
 			return
 		}
 	}
-	if status, str := CheckMetadata(request, "Object"); status != http.StatusOK {
+	if status, str := common.CheckMetadata(request, "Object"); status != http.StatusOK {
 		writer.Header().Set("Content-Type", "text/plain")
 		writer.WriteHeader(status)
 		writer.Write([]byte(str))
@@ -202,7 +202,7 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 		}
 		request.Header.Set("Content-Type", contentType)
 	}
-	if status, str := CheckObjPut(request, vars["obj"]); status != http.StatusOK {
+	if status, str := common.CheckObjPut(request, vars["obj"]); status != http.StatusOK {
 		writer.Header().Set("Content-Type", "text/plain")
 		writer.WriteHeader(status)
 		writer.Write([]byte(str))

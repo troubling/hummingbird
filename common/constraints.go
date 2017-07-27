@@ -13,7 +13,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-package proxyserver
+package common
 
 import (
 	"fmt"
@@ -21,8 +21,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/troubling/hummingbird/common"
 )
 
 const (
@@ -77,7 +75,7 @@ func CheckMetadata(req *http.Request, targetType string) (int, string) {
 		if key == "" {
 			return http.StatusBadRequest, "Metadata name cannot be empty"
 		}
-		if common.StringInSlice(targetType, []string{"Account", "Container"}) && (strings.Contains(key, "\x00") || strings.Contains(value, "\x00")) {
+		if StringInSlice(targetType, []string{"Account", "Container"}) && (strings.Contains(key, "\x00") || strings.Contains(value, "\x00")) {
 			return http.StatusBadRequest, "Metadata must be valid UTF-8"
 		}
 		if len(key) > MAX_META_NAME_LENGTH {
@@ -103,7 +101,7 @@ func CheckObjPut(req *http.Request, objectName string) (int, string) {
 	if req.Header.Get("X-Copy-From") != "" && req.ContentLength != 0 {
 		return http.StatusBadRequest, "Copy requests require a zero byte body"
 	}
-	if req.Header.Get("Content-Length") == "" && !common.StringInSlice("chunked", req.TransferEncoding) {
+	if req.Header.Get("Content-Length") == "" && !StringInSlice("chunked", req.TransferEncoding) {
 		return http.StatusLengthRequired, "Missing Content-Length header."
 	}
 	if len(objectName) > MAX_OBJECT_NAME_LENGTH {

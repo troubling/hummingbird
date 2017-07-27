@@ -118,7 +118,7 @@ func (server *ProxyServer) ContainerPostHandler(writer http.ResponseWriter, requ
 			return
 		}
 	}
-	if status, str := CheckContainerPut(request, vars["container"]); status != http.StatusOK {
+	if status, str := common.CheckContainerPut(request, vars["container"]); status != http.StatusOK {
 		writer.Header().Set("Content-Type", "text/html; charset=UTF-8")
 		writer.WriteHeader(status)
 		writer.Write([]byte(fmt.Sprintf("<html><h1>%s</h1><p>%s</p></html>", http.StatusText(status), str)))
@@ -157,7 +157,7 @@ func (server *ProxyServer) ContainerPutHandler(writer http.ResponseWriter, reque
 		srv.StandardResponse(writer, 404)
 		return
 	}
-	if status, str := CheckContainerPut(request, vars["container"]); status != http.StatusOK {
+	if status, str := common.CheckContainerPut(request, vars["container"]); status != http.StatusOK {
 		writer.Header().Set("Content-Type", "text/html; charset=UTF-8")
 		writer.WriteHeader(status)
 		writer.Write([]byte(fmt.Sprintf("<html><h1>%s</h1><p>%s</p></html>", http.StatusText(status), str)))

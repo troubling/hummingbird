@@ -117,16 +117,24 @@ func (ctx *ProxyContext) addSubrequestCopy(f subrequestCopy) {
 }
 
 func getPathParts(request *http.Request) (bool, string, string, string) {
-	parts := strings.SplitN(request.URL.Path, "/", 5)
-	apiRequest := len(parts) > 0 && parts[1] == "v1"
-	if len(parts) == 5 {
-		return apiRequest, parts[2], parts[3], parts[4]
-	} else if len(parts) == 4 {
-		return apiRequest, parts[2], parts[3], ""
-	} else if len(parts) == 3 {
-		return apiRequest, parts[2], "", ""
+	apiRequest, account, container, object := getPathSegments(request.URL.Path)
+	return apiRequest == "v1", account, container, object
+}
+
+func getPathSegments(requestPath string) (string, string, string, string) {
+	parts := strings.SplitN(requestPath, "/", 5)
+	switch len(parts) {
+	case 5:
+		return parts[1], parts[2], parts[3], parts[4]
+	case 4:
+		return parts[1], parts[2], parts[3], ""
+	case 3:
+		return parts[1], parts[2], "", ""
+	case 2:
+		return parts[1], "", "", ""
+	default:
+		return "", "", "", ""
 	}
-	return apiRequest, "", "", ""
 }
 
 func (ctx *ProxyContext) GetAccountInfo(account string) (*AccountInfo, error) {

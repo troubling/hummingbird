@@ -1,0 +1,2 @@
+test:
+	HUMMINGBIRD_FUNCTIONAL_TESTS=yes go test

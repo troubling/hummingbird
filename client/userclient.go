@@ -195,6 +195,10 @@ func (c *userClient) DeleteObject(container string, obj string, headers map[stri
 	return c.doRequest("DELETE", "/"+container+"/"+obj, nil, headers)
 }
 
+func (c *userClient) Raw(method, urlAfterAccount string, headers map[string]string, body io.Reader) *http.Response {
+	return c.doRequest(method, urlAfterAccount, body, headers)
+}
+
 func (c *userClient) authenticatev1() *http.Response {
 	req, err := http.NewRequest("GET", c.authurl, nil)
 	if err != nil {

@@ -98,7 +98,7 @@ func (server *ProxyServer) AccountPostHandler(writer http.ResponseWriter, reques
 			return
 		}
 	}
-	if status, str := CheckMetadata(request, "Account"); status != http.StatusOK {
+	if status, str := common.CheckMetadata(request, "Account"); status != http.StatusOK {
 		writer.Header().Set("Content-Type", "text/html; charset=UTF-8")
 		writer.WriteHeader(status)
 		writer.Write([]byte(fmt.Sprintf("<html><h1>%s</h1><p>%s</p></html>", http.StatusText(status), str)))
@@ -128,7 +128,7 @@ func (server *ProxyServer) AccountPutHandler(writer http.ResponseWriter, request
 			return
 		}
 	}
-	if status, str := CheckMetadata(request, "Account"); status != http.StatusOK {
+	if status, str := common.CheckMetadata(request, "Account"); status != http.StatusOK {
 		writer.Header().Set("Content-Type", "text/html; charset=UTF-8")
 		writer.WriteHeader(status)
 		writer.Write([]byte(fmt.Sprintf("<html><h1>%s</h1><p>%s</p></html>", http.StatusText(status), str)))

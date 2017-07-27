@@ -23,3 +23,5 @@ install: bin/hummingbird
 develop: bin/hummingbird
 	ln -f -s bin/hummingbird /usr/local/bin/hummingbird
 
+functionaltest:
+	cd functional && make
