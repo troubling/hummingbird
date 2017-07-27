@@ -23,7 +23,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
 	"net"
 	"os"
 	"strconv"
@@ -37,7 +36,6 @@ const reloadTime = 15 * time.Second
 
 type Ring interface {
 	GetNodes(partition uint64) (response []*Device)
-	GetNodesInOrder(partition uint64) (response []*Device)
 	GetJobNodes(partition uint64, localDevice int) (response []*Device, handoff bool)
 	GetPartition(account string, container string, object string) uint64
 	LocalDevices(localPort int) (devs []*Device, err error)
@@ -107,15 +105,6 @@ func (r *hashRing) getData() *ringData {
 }
 
 func (r *hashRing) GetNodes(partition uint64) (response []*Device) {
-	response = r.GetNodesInOrder(partition)
-	for i := range response {
-		j := rand.Intn(i + 1)
-		response[i], response[j] = response[j], response[i]
-	}
-	return response
-}
-
-func (r *hashRing) GetNodesInOrder(partition uint64) (response []*Device) {
 	d := r.getData()
 	if partition >= uint64(len(d.replica2part2devId[0])) {
 		return nil

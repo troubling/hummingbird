@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -264,6 +265,10 @@ func (c *ProxyDirectClient) firstResponse(r ring.Ring, partition uint64, devToRe
 	returned := make(chan struct{})
 	defer close(returned)
 	devs := r.GetNodes(partition)
+	for i := range devs {
+		j := rand.Intn(i + 1)
+		devs[i], devs[j] = devs[j], devs[i]
+	}
 	more := r.GetMoreNodes(partition)
 
 	internalErrors := 0

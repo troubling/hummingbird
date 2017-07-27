@@ -69,10 +69,6 @@ func (p *priFakeRing) GetNodes(partition uint64) (response []*ring.Device) {
 	return
 }
 
-func (p *priFakeRing) GetNodesInOrder(partition uint64) (response []*ring.Device) {
-	return p.GetNodes(partition)
-}
-
 func (p *priFakeRing) ReplicaCount() (cnt uint64) {
 	return uint64(0)
 }
