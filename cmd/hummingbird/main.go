@@ -32,7 +32,6 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/fs"
-	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/containerserver"
 	"github.com/troubling/hummingbird/objectserver"
@@ -463,7 +462,7 @@ func main() {
 		objectserver.RescueParts(flag.Args()[1:])
 	case "ring":
 		ringBuilderFlags.Parse(flag.Args()[1:])
-		ring.BuildCmd(ringBuilderFlags)
+		tools.RingBuildCmd(ringBuilderFlags)
 	case "nodes":
 		nodesFlags.Parse(flag.Args()[1:])
 		tools.Nodes(nodesFlags)
