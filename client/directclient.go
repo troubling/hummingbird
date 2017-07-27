@@ -407,6 +407,9 @@ func (c *proxyClient) DeleteObject(account string, container string, obj string,
 func (c *proxyClient) ObjectRingFor(account string, container string) (ring.Ring, *http.Response) {
 	return c.pdc.ObjectRingFor(account, container, c.mc, c.lc)
 }
+func (c *proxyClient) ContainerRing() ring.Ring {
+	return c.pdc.ContainerRing
+}
 
 func (c *ProxyDirectClient) PutAccount(account string, headers http.Header) *http.Response {
 	partition := c.AccountRing.GetPartition(account, "", "")

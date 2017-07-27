@@ -198,7 +198,7 @@ func processControlCommand(serverCommand func(name string, args ...string) error
 	}
 
 	switch flag.Arg(1) {
-	case "proxy", "object", "object-replicator", "object-auditor", "container", "container-replicator", "account", "account-replicator":
+	case "proxy", "object", "object-replicator", "object-auditor", "container", "container-replicator", "account", "account-replicator", "andrewd":
 		if err := serverCommand(flag.Arg(1), flag.Args()[2:]...); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -214,8 +214,9 @@ func processControlCommand(serverCommand func(name string, args ...string) error
 		os.Exit(exc)
 	case "all":
 		exc := 0
-		for _, server := range []string{"proxy", "object", "object-replicator", "object-auditor",
-			"container", "container-replicator", "account", "account-replicator"} {
+		for _, server := range []string{"proxy", "object", "object-replicator",
+			"object-auditor", "container", "container-replicator", "account",
+			"account-replicator", "andrewd"} {
 			if err := serverCommand(server); err != nil {
 				fmt.Fprintln(os.Stderr, server, ":", err)
 				exc = 1
@@ -354,6 +355,19 @@ func main() {
 		nodesFlags.PrintDefaults()
 	}
 
+	andrewdFlags := flag.NewFlagSet("andrewd", flag.ExitOnError)
+	andrewdFlags.String("c", findConfig("andrewd"), "Config file to use")
+	andrewdFlags.String("l", "stdout", "Log location")
+	andrewdFlags.String("e", "stderr", "Error log location")
+	andrewdFlags.Bool("once", false, "Run one pass of the tools")
+	andrewdFlags.Usage = func() {
+		fmt.Fprintln(os.Stderr, "hummingbird andrewd [ARGS]")
+		fmt.Fprintln(os.Stderr, "  An automated-admin daemon. Should be run from a")
+		fmt.Fprintln(os.Stderr, "  single admin location with network access to")
+		fmt.Fprintln(os.Stderr, "  backend servers and the a/c/o rings.")
+		andrewdFlags.PrintDefaults()
+	}
+
 	/* main flag parser, which doesn't do much */
 
 	flag.Usage = func() {
@@ -366,7 +380,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "     hummingbird shutdown [daemon name] -- gracefully stop a server")
 		fmt.Fprintln(os.Stderr, "     hummingbird reload [daemon name]   -- alias for graceful-restart")
 		fmt.Fprintln(os.Stderr, "     hummingbird restart [daemon name]  -- stop then restart a server")
-		fmt.Fprintln(os.Stderr, "  The daemons are: object, proxy, object-replicator, object-auditor, all, main")
+		fmt.Fprintln(os.Stderr, "  The daemons are: object, proxy, object-replicator, object-auditor, andrewd, all, main")
 		fmt.Fprintln(os.Stderr)
 		objectFlags.Usage()
 		fmt.Fprintln(os.Stderr)
@@ -400,6 +414,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, "  Run grep on the edge")
 		fmt.Fprintln(os.Stderr)
 		nodesFlags.Usage()
+		fmt.Fprintln(os.Stderr)
+		andrewdFlags.Usage()
 	}
 
 	flag.Parse()
@@ -468,6 +484,9 @@ func main() {
 	case "nodes":
 		nodesFlags.Parse(flag.Args()[1:])
 		tools.Nodes(nodesFlags)
+	case "andrewd":
+		andrewdFlags.Parse(flag.Args()[1:])
+		srv.RunDaemon(tools.NewAdmin, andrewdFlags)
 	default:
 		flag.Usage()
 	}
