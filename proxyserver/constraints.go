@@ -55,6 +55,18 @@ var DEFAULT_CONSTRAINTS = map[string]interface{}{
 	"extra_header_count":        EXTRA_HEADER_COUNT,
 }
 
+var OwnerHeaders = map[string]bool{
+	"x-container-read":                true,
+	"x-container-write":               true,
+	"x-container-sync-key":            true,
+	"x-container-sync-to":             true,
+	"x-account-meta-temp-url-key":     true,
+	"x-account-meta-temp-url-key-2":   true,
+	"x-container-meta-temp-url-key":   true,
+	"x-container-meta-temp-url-key-2": true,
+	"x-account-access-control":        true,
+}
+
 func CheckMetadata(req *http.Request, targetType string) (int, string) {
 	metaCount := 0
 	metaSize := 0

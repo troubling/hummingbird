@@ -65,7 +65,9 @@ func (server *ProxyServer) ContainerGetHandler(writer http.ResponseWriter, reque
 		}
 	}
 	for k := range resp.Header {
-		writer.Header().Set(k, resp.Header.Get(k))
+		if !OwnerHeaders[strings.ToLower(k)] || ctx.StorageOwner {
+			writer.Header().Set(k, resp.Header.Get(k))
+		}
 	}
 	writer.WriteHeader(resp.StatusCode)
 	common.Copy(resp.Body, writer)
@@ -92,7 +94,9 @@ func (server *ProxyServer) ContainerHeadHandler(writer http.ResponseWriter, requ
 		}
 	}
 	for k := range resp.Header {
-		writer.Header().Set(k, resp.Header.Get(k))
+		if !OwnerHeaders[strings.ToLower(k)] || ctx.StorageOwner {
+			writer.Header().Set(k, resp.Header.Get(k))
+		}
 	}
 	writer.WriteHeader(resp.StatusCode)
 }
@@ -123,6 +127,11 @@ func (server *ProxyServer) ContainerPostHandler(writer http.ResponseWriter, requ
 		writer.WriteHeader(status)
 		writer.Write([]byte(fmt.Sprintf("<html><h1>%s</h1><p>%s</p></html>", http.StatusText(status), str)))
 		return
+	}
+	for k := range request.Header {
+		if OwnerHeaders[strings.ToLower(k)] && !ctx.StorageOwner {
+			request.Header.Del(k)
+		}
 	}
 	resp := ctx.C.PostContainer(vars["account"], vars["container"], request.Header)
 	resp.Body.Close()
@@ -162,6 +171,11 @@ func (server *ProxyServer) ContainerPutHandler(writer http.ResponseWriter, reque
 		writer.WriteHeader(status)
 		writer.Write([]byte(fmt.Sprintf("<html><h1>%s</h1><p>%s</p></html>", http.StatusText(status), str)))
 		return
+	}
+	for k := range request.Header {
+		if OwnerHeaders[strings.ToLower(k)] && !ctx.StorageOwner {
+			request.Header.Del(k)
+		}
 	}
 	resp := ctx.C.PutContainer(vars["account"], vars["container"], request.Header)
 	resp.Body.Close()
