@@ -80,7 +80,7 @@ func (ud *updateDevice) listAsyncs(c chan string, cancel chan struct{}) {
 }
 
 func (ud *updateDevice) updateContainers(ap *asyncPending) bool {
-	allSuccess := true
+	successes := uint64(0)
 	part := ud.r.containerRing.GetPartition(ap.Account, ap.Container, "")
 	header := common.Map2Headers(ap.Headers)
 	header.Set("User-Agent", fmt.Sprintf("object-updater %d", os.Getpid()))
@@ -89,20 +89,20 @@ func (ud *updateDevice) updateContainers(ap *asyncPending) bool {
 			common.Urlencode(ap.Account), common.Urlencode(ap.Container), common.Urlencode(ap.Object))
 		req, err := http.NewRequest(ap.Method, objUrl, nil)
 		if err != nil {
-			allSuccess = false
 			ud.r.logger.Error("updateContainers creating new request", zap.Error(err))
 			continue
 		}
 		req.Header = header
 		resp, err := ud.r.client.Do(req)
 		if err != nil {
-			allSuccess = false
 			continue
 		}
 		resp.Body.Close()
-		allSuccess = allSuccess && resp.StatusCode/100 == 2
+		if resp.StatusCode/100 == 2 {
+			successes++
+		}
 	}
-	return allSuccess
+	return successes >= (ud.r.containerRing.ReplicaCount()/2)+1
 }
 
 func (ud *updateDevice) processAsync(async string) {
