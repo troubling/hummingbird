@@ -944,6 +944,10 @@ type directClient struct {
 
 var _ Client = &directClient{}
 
+func (c *directClient) GetURL() string {
+	return "<direct>/" + c.account
+}
+
 func (c *directClient) PutAccount(headers map[string]string) *http.Response {
 	return c.pc.PutAccount(c.account, common.Map2Headers(headers))
 }

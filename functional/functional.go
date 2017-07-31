@@ -29,6 +29,7 @@ func getDefaultClient(t *testing.T) client.Client {
 }
 
 func getClient(t *testing.T, tenant, user, password, key, region, authURL string, internal bool) client.Client {
+	t.Log("CREATING CLIENT!")
 	c, resp := client.NewClient(tenant, user, password, key, region, authURL, internal)
 	if resp != nil {
 		bodyBytes, _ := ioutil.ReadAll(resp.Body)

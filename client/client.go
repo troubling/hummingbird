@@ -79,6 +79,7 @@ type ObjectRecord struct {
 
 // Client is an API interface to CloudFiles.
 type Client interface {
+	GetURL() string
 	PutAccount(headers map[string]string) *http.Response
 	PostAccount(headers map[string]string) *http.Response
 	// GetAccount reads the body of the response and converts it into a

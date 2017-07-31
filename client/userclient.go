@@ -51,6 +51,10 @@ func (c *userClient) doRequest(method string, path string, body io.Reader, heade
 	return c.do(req)
 }
 
+func (c *userClient) GetURL() string {
+	return c.ServiceURL
+}
+
 func (c *userClient) PutAccount(headers map[string]string) *http.Response {
 	return c.doRequest("PUT", "", nil, headers)
 }
