@@ -21,6 +21,7 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/uber-go/tally"
+	"go.uber.org/zap"
 )
 
 func NewBulk(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
@@ -229,7 +230,8 @@ func (b *bulkPut) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		j.Errors = failures
 		b, err := json.Marshal(j)
 		if err != nil {
-			writer.Write([]byte(fmt.Sprintf("JSON encoding error: %s\n%#v\n", err, j)))
+			ctx.Logger.Error("JSON encoding error: %s\n%#v\n", zap.Any("j", j), zap.Error(err))
+			b = []byte("There was an internal server error generating JSON.")
 		}
 		writer.Write(b)
 		writer.Write([]byte("\n"))
@@ -255,7 +257,8 @@ func (b *bulkPut) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		}
 		b, err := xml.Marshal(x)
 		if err != nil {
-			writer.Write([]byte(fmt.Sprintf("XML encoding error: %s\n%#v\n", err, x)))
+			ctx.Logger.Error("XML encoding error: %s\n%#v\n", zap.Any("x", x), zap.Error(err))
+			b = []byte("There was an internal server error generating XML.")
 		}
 		// Yes, even the PUTs are labeled <delete> in the XML from Swift's code.
 		b = bytes.Replace(b, []byte("replaceNameWithDeleteLowercase"), []byte("delete"), -1)
