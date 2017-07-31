@@ -183,14 +183,13 @@ func (at *authToken) fetchAndValidateToken(ctx *ProxyContext, authToken string) 
 		return nil, false
 	}
 	var tok *token
+	var cachedToken token
 	tokenValid := false
-	if cachedToken, err := ctx.Cache.Get(authToken); err == nil {
+	if err := ctx.Cache.GetStructured(authToken, &cachedToken); err == nil {
 		ctx.Logger.Debug("Found cache token",
 			zap.String("token", authToken))
-		if t, ok := cachedToken.(token); ok {
-			tok = &t
-			tokenValid = true
-		}
+		tokenValid = true
+		tok = &cachedToken
 	}
 
 	if tok == nil {
