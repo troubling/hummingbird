@@ -343,7 +343,7 @@ func (b *RingBuilder) updateLastPartMoves() {
 }
 
 // buildWeightedReplicasByTier returns a map <tier> => replicanths for all tiers in the ring based on their weights.
-func (b *RingBuilder) buildWeightedReplicasByTier() map[string]float64 {
+func (b *RingBuilder) buildWeightedReplicasByTier() (map[string]float64, error) {
 	weightOfOnePart := b.WeightOfOnePart()
 
 	devicesWithRoom := make([]int64, 0)
@@ -399,16 +399,19 @@ func (b *RingBuilder) buildWeightedReplicasByTier() map[string]float64 {
 	}
 
 	// Test that the for every level of the tier that the sum of weightedReplicas is very close to the total number of replicas for the ring
-	weights := [4]float64{0.0, 0.0, 0.0, 0.0}
+	replicasAtTier := [4]float64{0.0, 0.0, 0.0, 0.0}
 	for t, w := range weightedReplicasByTier {
 		if t != "" {
-			weights[strings.Count(t, ";")] += w
+			replicasAtTier[strings.Count(t, ";")] += w
 		}
 	}
-	//fmt.Println(weights)
-	// TODO: Add check here
+	for t, r := range replicasAtTier {
+		if math.Abs(b.Replicas-r) > 1e-10 {
+			return nil, errors.New(fmt.Sprintf("%f != %f at tier %d", r, b.Replicas, t))
+		}
+	}
 
-	return weightedReplicasByTier
+	return weightedReplicasByTier, nil
 }
 
 // buildTier2Children wraps buildTierTree to exclude zero-weight devices.
@@ -461,7 +464,10 @@ func (b *RingBuilder) buildMaxReplicasByTier() map[string]float64 {
 
 // buildWantedReplicasByTier returns a map of tier -> replicanths for all tiers in the ring based on unique as possible (full dispersion) with respect to their weights and device counts.
 func (b *RingBuilder) buildWantedReplicasByTier() (map[string]float64, error) {
-	weightedReplicas := b.buildWeightedReplicasByTier()
+	weightedReplicas, err := b.buildWeightedReplicasByTier()
+	if err != nil {
+		return nil, err
+	}
 	dispersedReplicas := make(map[string]minMax)
 	for t, r := range weightedReplicas {
 		dispersedReplicas[t] = minMax{
@@ -566,21 +572,24 @@ func (b *RingBuilder) buildWantedReplicasByTier() (map[string]float64, error) {
 	}
 
 	// Place all replicas in the cluster tier
-	err := placeReplicas("", b.Replicas)
+	if err := placeReplicas("", b.Replicas); err != nil {
+		return nil, err
+	}
 
-	// TODO: And belts and supsenders paranoia
-	weights := [4]float64{0.0, 0.0, 0.0, 0.0}
+	// Test that the for every level of the tier that the sum of weightedReplicas is very close to the total number of replicas for the ring
+	replicasAtTier := [4]float64{0.0, 0.0, 0.0, 0.0}
 	for t, w := range wantedReplicas {
 		if t != "" {
-			weights[strings.Count(t, ";")] += w
+			replicasAtTier[strings.Count(t, ";")] += w
 		}
 	}
-	//fmt.Println(weights)
-	if err != nil {
-		return nil, err
-	} else {
-		return wantedReplicas, nil
+	for t, r := range replicasAtTier {
+		if math.Abs(b.Replicas-r) > 1e-10 {
+			return nil, errors.New(fmt.Sprintf("%f != %f at tier %d", r, b.Replicas, t))
+		}
 	}
+
+	return wantedReplicas, nil
 }
 
 // GetRequiredOverload returns the minimum overload value required to make the ring maximally dispersed.
@@ -612,7 +621,10 @@ func (b *RingBuilder) GetRequiredOverload(weighted map[string]float64, wanted ma
 //   <tier> - a tuple, describing each tier in the ring topology
 //   <targetReplicas> - a float, the target replicas at the tier
 func (b *RingBuilder) buildTargetReplicasByTier() (map[string]float64, error) {
-	weightedReplicas := b.buildWeightedReplicasByTier()
+	weightedReplicas, err := b.buildWeightedReplicasByTier()
+	if err != nil {
+		return nil, err
+	}
 	wantedReplicas, err := b.buildWantedReplicasByTier()
 	if err != nil {
 		return nil, err
@@ -634,14 +646,20 @@ func (b *RingBuilder) buildTargetReplicasByTier() (map[string]float64, error) {
 		m := (wantedReplicas[tier] - weighted) / maxOverload
 		targetReplicas[tier] = m*overload + weighted
 	}
-	// TODO: Add belt and suspenders paranoia
-	weights := [4]float64{0.0, 0.0, 0.0, 0.0}
+
+	// Test that the for every level of the tier that the sum of weightedReplicas is very close to the total number of replicas for the ring
+	replicasAtTier := [4]float64{0.0, 0.0, 0.0, 0.0}
 	for t, w := range targetReplicas {
 		if t != "" {
-			weights[strings.Count(t, ";")] += w
+			replicasAtTier[strings.Count(t, ";")] += w
 		}
 	}
-	//fmt.Println(weights)
+	for t, r := range replicasAtTier {
+		if math.Abs(b.Replicas-r) > 1e-10 {
+			return nil, errors.New(fmt.Sprintf("%f != %f at tier %d", r, b.Replicas, t))
+		}
+	}
+
 	return targetReplicas, nil
 }
 
@@ -713,7 +731,7 @@ func (b *RingBuilder) buildTierTree(devs []*RingBuilderDevice) map[string][]stri
 }
 
 // setPartsWanted sets the partsWanted key for each of the devices to the number of partitions the device wants based on its relative weight.  This key is used to sort the devices according to "most wanted" during rebalancing to best distribute partitions.  A negative partsWanted indicates the device is "overweight" and wishes to give partitions away if possible.
-func (b *RingBuilder) setPartsWanted(repPlan map[string]replicaPlan) {
+func (b *RingBuilder) setPartsWanted(repPlan map[string]replicaPlan) error {
 	tier2Children := b.buildTier2Children()
 
 	partsByTier := make(map[string]int)
@@ -753,14 +771,18 @@ func (b *RingBuilder) setPartsWanted(repPlan map[string]replicaPlan) {
 	totalParts := int(b.Replicas * float64(b.Parts))
 	placeParts("", totalParts)
 
-	// TODO: Add belts and suspenders paranoia
-	parts := [4]int{0, 0, 0, 0}
+	// Test that the for every level the sum of partsByTier should be totalParts for the ring
+	partsAtTier := [4]int{0, 0, 0, 0}
 	for t, p := range partsByTier {
 		if t != "" {
-			parts[strings.Count(t, ";")] += p
+			partsAtTier[strings.Count(t, ";")] += p
 		}
 	}
-	//fmt.Println(parts)
+	for t, p := range partsAtTier {
+		if p != totalParts {
+			return errors.New(fmt.Sprintf("%d != %d at tier %d", p, totalParts, t))
+		}
+	}
 
 	for next, dev := devIterator(b.Devs); dev != nil; dev = next() {
 		if dev.Weight <= 0.0 {
@@ -771,6 +793,8 @@ func (b *RingBuilder) setPartsWanted(repPlan map[string]replicaPlan) {
 			dev.PartsWanted = int64(partsByTier[tier]) - dev.Parts
 		}
 	}
+
+	return nil
 }
 
 // adjustReplica2Part2DevSize makes sure the lengths of the arrays in replica2Part2Dev are correct for the currend value of Replicas and updates the mapping of partition -> [replicas] that need assignment
@@ -841,7 +865,6 @@ func (b *RingBuilder) adjustReplica2Part2DevSize(toAssign map[uint][]uint) {
 // gatherPartsFromFailedDevices updates the map of partition -> replicas to be reassigned from removed devices.
 func (b *RingBuilder) gatherPartsFromFailedDevices(assignParts map[uint][]uint) int {
 	// First we gather partitions from removed devices.  Since removed devices usually indicate device failures, we have no choice but to reassing these partitions.  However, we mark them as moves so later choices will skip other replicas of the same partition if possible.
-	// TODO: Implement this to support removing devices
 	if len(b.removedDevs) > 0 {
 		devsWithParts := make([]uint, 0)
 		for _, dev := range b.removedDevs {
@@ -1256,7 +1279,9 @@ func (b *RingBuilder) Rebalance() (int, float64, int, error) {
 	if err != nil {
 		return 0, 0.0, 0, err
 	}
-	b.setPartsWanted(repPlan)
+	if err := b.setPartsWanted(repPlan); err != nil {
+		return 0, 0.0, 0, err
+	}
 
 	assignParts := make(map[uint][]uint)
 	// gather parts from replica count adjustments
