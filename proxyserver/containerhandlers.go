@@ -65,7 +65,7 @@ func (server *ProxyServer) ContainerGetHandler(writer http.ResponseWriter, reque
 		}
 	}
 	for k := range resp.Header {
-		if !OwnerHeaders[strings.ToLower(k)] || ctx.StorageOwner {
+		if !common.OwnerHeaders[strings.ToLower(k)] || ctx.StorageOwner {
 			writer.Header().Set(k, resp.Header.Get(k))
 		}
 	}
@@ -94,7 +94,7 @@ func (server *ProxyServer) ContainerHeadHandler(writer http.ResponseWriter, requ
 		}
 	}
 	for k := range resp.Header {
-		if !OwnerHeaders[strings.ToLower(k)] || ctx.StorageOwner {
+		if !common.OwnerHeaders[strings.ToLower(k)] || ctx.StorageOwner {
 			writer.Header().Set(k, resp.Header.Get(k))
 		}
 	}
@@ -129,7 +129,7 @@ func (server *ProxyServer) ContainerPostHandler(writer http.ResponseWriter, requ
 		return
 	}
 	for k := range request.Header {
-		if OwnerHeaders[strings.ToLower(k)] && !ctx.StorageOwner {
+		if common.OwnerHeaders[strings.ToLower(k)] && !ctx.StorageOwner {
 			request.Header.Del(k)
 		}
 	}
@@ -173,7 +173,7 @@ func (server *ProxyServer) ContainerPutHandler(writer http.ResponseWriter, reque
 		return
 	}
 	for k := range request.Header {
-		if OwnerHeaders[strings.ToLower(k)] && !ctx.StorageOwner {
+		if common.OwnerHeaders[strings.ToLower(k)] && !ctx.StorageOwner {
 			request.Header.Del(k)
 		}
 	}
