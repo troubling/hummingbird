@@ -119,6 +119,7 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 			{middleware.NewFormPost, "filter:formpost"},
 			{middleware.NewTempURL, "filter:tempurl"},
 			{middleware.NewTempAuth, "filter:tempauth"},
+			{middleware.NewBulk, "filter:bulk"},
 			{middleware.NewMultirange, "filter:multirange"},
 			{middleware.NewRatelimiter, "filter:ratelimit"},
 			{middleware.NewStaticWeb, "filter:staticweb"},
@@ -139,6 +140,7 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 			{middleware.NewTempURL, "filter:tempurl"},
 			{middleware.NewAuthToken, "filter:authtoken"},
 			{middleware.NewKeystoneAuth, "filter:keystoneauth"},
+			{middleware.NewBulk, "filter:bulk"},
 			{middleware.NewMultirange, "filter:multirange"},
 			{middleware.NewRatelimiter, "filter:ratelimit"},
 			{middleware.NewStaticWeb, "filter:staticweb"},
@@ -189,7 +191,7 @@ func GetServer(serverconf conf.Config, flags *flag.FlagSet) (string, int, srv.Se
 		"account_autocreate":       server.accountAutoCreate,
 		"allow_account_management": true,
 	}
-	for k, v := range DEFAULT_CONSTRAINTS {
+	for k, v := range common.DEFAULT_CONSTRAINTS {
 		info[k] = v
 	}
 	middleware.RegisterInfo("swift", info)

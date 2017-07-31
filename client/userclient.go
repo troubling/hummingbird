@@ -51,6 +51,10 @@ func (c *userClient) doRequest(method string, path string, body io.Reader, heade
 	return c.do(req)
 }
 
+func (c *userClient) GetURL() string {
+	return c.ServiceURL
+}
+
 func (c *userClient) PutAccount(headers map[string]string) *http.Response {
 	return c.doRequest("PUT", "", nil, headers)
 }
@@ -193,6 +197,10 @@ func (c *userClient) HeadObject(container string, obj string, headers map[string
 
 func (c *userClient) DeleteObject(container string, obj string, headers map[string]string) *http.Response {
 	return c.doRequest("DELETE", "/"+container+"/"+obj, nil, headers)
+}
+
+func (c *userClient) Raw(method, urlAfterAccount string, headers map[string]string, body io.Reader) *http.Response {
+	return c.doRequest(method, urlAfterAccount, body, headers)
 }
 
 func (c *userClient) authenticatev1() *http.Response {

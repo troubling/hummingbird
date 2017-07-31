@@ -944,6 +944,10 @@ type directClient struct {
 
 var _ Client = &directClient{}
 
+func (c *directClient) GetURL() string {
+	return "<direct>/" + c.account
+}
+
 func (c *directClient) PutAccount(headers map[string]string) *http.Response {
 	return c.pc.PutAccount(c.account, common.Map2Headers(headers))
 }
@@ -1082,6 +1086,10 @@ func (c *directClient) HeadObject(container string, obj string, headers map[stri
 
 func (c *directClient) DeleteObject(container string, obj string, headers map[string]string) *http.Response {
 	return c.pc.DeleteObject(c.account, container, obj, common.Map2Headers(headers))
+}
+
+func (c *directClient) Raw(method, urlAfterAccount string, headers map[string]string, body io.Reader) *http.Response {
+	return ResponseStub(http.StatusNotImplemented, "Raw requests not implemented for direct clients")
 }
 
 // NewDirectClient creates a new direct client with the given account name.

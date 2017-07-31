@@ -224,16 +224,16 @@ func (ka *keystoneAuth) authorize(r *http.Request) (bool, int) {
 		}
 	}
 	/* Copying this truth table from swift.
-        # Compare roles from tokens against the configuration options:
-        #
-        # X-Auth-Token role  Has specified  X-Service-Token role  Grant
-        # in operator_roles? service_roles? in service_roles?     swift_owner?
-        # ------------------ -------------- --------------------  ------------
-        # yes                yes            yes                   yes
-        # yes                yes            no                    no
-        # yes                no             don't care            yes
-        # no                 don't care     don't care            no
-        # ------------------ -------------- --------------------  ------------
+	   # Compare roles from tokens against the configuration options:
+	   #
+	   # X-Auth-Token role  Has specified  X-Service-Token role  Grant
+	   # in operator_roles? service_roles? in service_roles?     swift_owner?
+	   # ------------------ -------------- --------------------  ------------
+	   # yes                yes            yes                   yes
+	   # yes                yes            no                    no
+	   # yes                no             don't care            yes
+	   # no                 don't care     don't care            no
+	   # ------------------ -------------- --------------------  ------------
 	*/
 	allowed := false
 	if haveOperatorRole && (len(serviceRoles) > 0 && haveServiceRole) {
