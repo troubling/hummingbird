@@ -176,6 +176,7 @@ func (ka *keystoneAuth) authorize(r *http.Request) (bool, int) {
 	}
 	if common.StringInSlice(ka.resellerAdminRole, userRoles) {
 		ctx.Logger.Debug("User has reseller admin authorization", zap.String("userid", tenantID))
+		ctx.StorageOwner = true
 		return true, http.StatusOK
 	}
 
@@ -222,6 +223,18 @@ func (ka *keystoneAuth) authorize(r *http.Request) (bool, int) {
 			break
 		}
 	}
+	/* Copying this truth table from swift.
+        # Compare roles from tokens against the configuration options:
+        #
+        # X-Auth-Token role  Has specified  X-Service-Token role  Grant
+        # in operator_roles? service_roles? in service_roles?     swift_owner?
+        # ------------------ -------------- --------------------  ------------
+        # yes                yes            yes                   yes
+        # yes                yes            no                    no
+        # yes                no             don't care            yes
+        # no                 don't care     don't care            no
+        # ------------------ -------------- --------------------  ------------
+	*/
 	allowed := false
 	if haveOperatorRole && (len(serviceRoles) > 0 && haveServiceRole) {
 		allowed = true
@@ -229,6 +242,7 @@ func (ka *keystoneAuth) authorize(r *http.Request) (bool, int) {
 		allowed = true
 	}
 	if allowed {
+		ctx.StorageOwner = true
 		return true, http.StatusOK
 	}
 	if !isAuthorized && authErr == nil {
