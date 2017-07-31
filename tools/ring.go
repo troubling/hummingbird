@@ -22,6 +22,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/gholt/brimtext"
 	"github.com/troubling/hummingbird/common/ring"
@@ -32,7 +33,9 @@ func PrintDevs(devs []*ring.RingBuilderDevice) {
 	data = append(data, []string{"ID", "REGION", "ZONE", "IP ADDRESS", "PORT", "REPLICATION IP", "REPLICATION PORT", "NAME", "WEIGHT", "PARTITIONS", "META"})
 	data = append(data, nil)
 	for _, dev := range devs {
-		data = append(data, []string{strconv.FormatInt(dev.Id, 10), strconv.FormatInt(dev.Region, 10), strconv.FormatInt(dev.Zone, 10), dev.Ip, strconv.FormatInt(dev.Port, 10), dev.ReplicationIp, strconv.FormatInt(dev.ReplicationPort, 10), dev.Device, strconv.FormatFloat(dev.Weight, 'f', -1, 64), strconv.FormatInt(dev.Parts, 10), dev.Meta})
+		if dev != nil {
+			data = append(data, []string{strconv.FormatInt(dev.Id, 10), strconv.FormatInt(dev.Region, 10), strconv.FormatInt(dev.Zone, 10), dev.Ip, strconv.FormatInt(dev.Port, 10), dev.ReplicationIp, strconv.FormatInt(dev.ReplicationPort, 10), dev.Device, strconv.FormatFloat(dev.Weight, 'f', -1, 64), strconv.FormatInt(dev.Parts, 10), dev.Meta})
+		}
 	}
 	fmt.Println(brimtext.Align(data, brimtext.NewSimpleAlignOptions()))
 }
@@ -344,6 +347,40 @@ func RingBuildCmd(flags *flag.FlagSet) {
 			fmt.Println(err)
 			return
 		}
+	case "info":
+		// Show info about the ring
+		builder, err := ring.NewRingBuilderFromFile(pth, debug)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Printf("%s, build version %d", pth, builder.Version)
+		regions := 0
+		zones := 0
+		devCount := 0
+		balance := 0.0
+		if len(builder.Devs) > 0 {
+			regionSet := make(map[int64]bool)
+			zoneSet := make(map[string]bool)
+			for _, dev := range builder.Devs {
+				if dev != nil {
+					regionSet[dev.Region] = true
+					zoneSet[fmt.Sprintf("%d,%d", dev.Region, dev.Zone)] = true
+					devCount += 1
+				}
+			}
+			regions = len(regionSet)
+			zones = len(zoneSet)
+			balance = builder.GetBalance()
+		}
+		fmt.Printf("%d partitions, %.6f replicas, %d regions, %d zones, %d devices, %.02f balance\n", builder.Parts, builder.Replicas, regions, zones, devCount, balance)
+		fmt.Printf("The minimum number of hours before a partition can be reassigned is %v (%v remaining)\n", builder.MinPartHours, time.Duration(builder.MinPartSecondsLeft())*time.Second)
+		fmt.Printf("The overload factor is %0.2f%% (%.6f)\n", builder.Overload*100, builder.Overload)
+
+		// Compare ring file against builder file
+		// TODO: Figure out how to do ring comparisons
+
+		PrintDevs(builder.Devs)
 	default:
 		fmt.Printf("Unknown command: %s\n", cmd)
 		flags.Usage()

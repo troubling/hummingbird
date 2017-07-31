@@ -49,6 +49,13 @@ func PolicyDir(policy int) string {
 	return fmt.Sprintf("objects-%d", policy)
 }
 
+func AsyncDir(policy int) string {
+	if policy == 0 {
+		return "async_pending"
+	}
+	return fmt.Sprintf("async_pending-%d", policy)
+}
+
 func UnPolicyDir(dir string) (int, error) {
 	if dir == "objects" {
 		return 0, nil
