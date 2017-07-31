@@ -381,6 +381,9 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		// TODO: Figure out how to do ring comparisons
 
 		PrintDevs(builder.Devs)
+	default:
+		fmt.Printf("Unknown command: %s\n", cmd)
+		flags.Usage()
 	}
 
 }
