@@ -178,7 +178,7 @@ func (b *bulkPut) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 			subreq.Header.Set("Content-Type", contentType)
 		}
 		// We just do Set as none of hummingbird supports multi-value headers.
-		for k, _ := range header {
+		for k := range header {
 			subreq.Header.Set(k, header.Get(k))
 		}
 		subrec := httptest.NewRecorder()
