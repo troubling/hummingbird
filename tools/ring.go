@@ -383,6 +383,14 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		PrintDevs(builder.Devs)
 
 	case "analyze":
+		epsilon := func(a, b float64) float64 {
+			// returns the ratio of the difference between two numbers to their average.
+			// this gives you a vague idea of how close two numbers are.
+			if a > b {
+				return (a - b) / ((a + b) / 2.0)
+			}
+			return (b - a) / ((a + b) / 2.0)
+		}
 		builder, err := ring.NewRingBuilderFromFile(pth, debug)
 		if err != nil {
 			fmt.Println(err)
@@ -393,6 +401,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		fmt.Println("Total Partitions: ", ring.PartitionCount())
 		replicas := int(ring.ReplicaCount())
 		devs := ring.AllDevices()
+		fmt.Println("Total Devices: ", len(devs))
 		totalWeight := float64(0)
 		devPartitions := make([]map[uint64]bool, len(devs))
 		for i, dev := range devs {
@@ -408,14 +417,8 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		}
 
 		for i, dev := range devs {
-			want := int64((dev.Weight / totalWeight) * float64(ring.PartitionCount()) * float64(replicas))
-			diff := int64(0)
-			if partCounts[i] > want {
-				diff = partCounts[i] - want
-			} else {
-				diff = want - partCounts[i]
-			}
-			if (float64(diff) / float64(want)) > 0.01 {
+			want := (dev.Weight / totalWeight) * float64(ring.PartitionCount()) * float64(replicas)
+			if epsilon(float64(partCounts[i]), want) > 0.02 {
 				fmt.Println("Device", dev.Id, "partition count >1% off its want:", partCounts[i], "vs", want)
 			}
 		}
@@ -435,22 +438,15 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		for i, dev1 := range devs {
 			for _, dev2 := range devs[i:] {
 				if dev1.Id != dev2.Id {
-					shouldShare :=
-						int64(float64(partCounts[dev1.Id]*partCounts[dev2.Id]) *
-							(float64(totalSharesRequired) / float64(totalPairings)))
-					shared := int64(0)
+					shouldShare := float64(partCounts[dev1.Id]*partCounts[dev2.Id]) *
+						(float64(totalSharesRequired) / float64(totalPairings))
+					shared := float64(0)
 					for part := range devPartitions[dev1.Id] {
 						if devPartitions[dev2.Id][part] {
 							shared++
 						}
 					}
-					diff := int64(0)
-					if shared > shouldShare {
-						diff = shared - shouldShare
-					} else {
-						diff = shouldShare - shared
-					}
-					if (float64(diff) / float64(shouldShare)) > 0.01 {
+					if epsilon(shared, shouldShare) > 0.02 {
 						fmt.Println(dev1.Id, "and", dev2.Id, "should share", shouldShare, "partitions, but share", shared)
 					}
 				}
@@ -461,11 +457,13 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		zones := make(map[int]bool)
 		ips := make(map[string]bool)
 		devices := make(map[string]bool)
+		primaryCounts := make(map[int][]int, len(devs))
 		for _, dev := range devs {
 			regions[dev.Region] = true
 			ips[dev.Ip] = true
 			zones[dev.Zone] = true
 			devices[fmt.Sprintf("%s:%s", dev.Ip, dev.Device)] = true
+			primaryCounts[dev.Id] = make([]int, replicas)
 		}
 		for part := uint64(0); part < ring.PartitionCount(); part++ {
 			partRegions := make(map[int]bool)
@@ -489,6 +487,19 @@ func RingBuildCmd(flags *flag.FlagSet) {
 			}
 			if len(partDevices) < len(devices) && len(partDevices) < replicas {
 				fmt.Println("Partition", part, "doesn't use all available devices.")
+			}
+
+			for i, node := range ring.GetNodes(part) {
+				primaryCounts[node.Id][i]++
+			}
+		}
+
+		for _, dev := range devs {
+			expectedParts := float64(ring.PartitionCount()) * float64(dev.Weight) / totalWeight
+			for i, parts := range primaryCounts[dev.Id] {
+				if epsilon(float64(parts), float64(expectedParts)) > 0.02 {
+					fmt.Println(dev.Id, "is primary number", i, "for", parts, "partitions, but that should be", int(expectedParts))
+				}
 			}
 		}
 		fmt.Println("Done!")
