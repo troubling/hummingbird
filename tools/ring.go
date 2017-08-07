@@ -381,6 +381,129 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		// TODO: Figure out how to do ring comparisons
 
 		PrintDevs(builder.Devs)
+
+	case "analyze":
+		epsilon := func(a, b float64) float64 {
+			// returns the ratio of the difference between two numbers to their average.
+			// this gives you a vague idea of how close two numbers are.
+			if a > b {
+				return (a - b) / ((a + b) / 2.0)
+			}
+			return (b - a) / ((a + b) / 2.0)
+		}
+		builder, err := ring.NewRingBuilderFromFile(pth, debug)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Printf("Analyzing %s...\n", pth)
+		ring := builder.GetRing()
+		fmt.Println("Total Partitions: ", ring.PartitionCount())
+		replicas := int(ring.ReplicaCount())
+		devs := ring.AllDevices()
+		fmt.Println("Total Devices: ", len(devs))
+		totalWeight := float64(0)
+		devPartitions := make([]map[uint64]bool, len(devs))
+		for i, dev := range devs {
+			totalWeight += dev.Weight
+			devPartitions[i] = make(map[uint64]bool)
+		}
+		partCounts := make([]int64, len(devs))
+		for part := uint64(0); part < ring.PartitionCount(); part++ {
+			for _, node := range ring.GetNodes(part) {
+				devPartitions[node.Id][part] = true
+				partCounts[node.Id]++
+			}
+		}
+
+		for i, dev := range devs {
+			want := (dev.Weight / totalWeight) * float64(ring.PartitionCount()) * float64(replicas)
+			if epsilon(float64(partCounts[i]), want) > 0.02 {
+				fmt.Println("Device", dev.Id, "partition count >1% off its want:", partCounts[i], "vs", want)
+			}
+		}
+
+		totalPairings := int64(0)
+		for i, dev1 := range devs {
+			for _, dev2 := range devs[i:] {
+				if dev1.Id != dev2.Id {
+					totalPairings += partCounts[dev1.Id] * partCounts[dev2.Id]
+				}
+			}
+		}
+		totalSharesRequired := ring.PartitionCount() * (ring.ReplicaCount() * ((ring.ReplicaCount() - 1) / 2))
+		if ring.ReplicaCount() == 2 {
+			totalSharesRequired = ring.PartitionCount()
+		}
+		for i, dev1 := range devs {
+			for _, dev2 := range devs[i:] {
+				if dev1.Id != dev2.Id {
+					shouldShare := float64(partCounts[dev1.Id]*partCounts[dev2.Id]) *
+						(float64(totalSharesRequired) / float64(totalPairings))
+					shared := float64(0)
+					for part := range devPartitions[dev1.Id] {
+						if devPartitions[dev2.Id][part] {
+							shared++
+						}
+					}
+					if epsilon(shared, shouldShare) > 0.02 {
+						fmt.Println(dev1.Id, "and", dev2.Id, "should share", shouldShare, "partitions, but share", shared)
+					}
+				}
+			}
+		}
+
+		regions := make(map[int]bool)
+		zones := make(map[int]bool)
+		ips := make(map[string]bool)
+		devices := make(map[string]bool)
+		primaryCounts := make(map[int][]int, len(devs))
+		for _, dev := range devs {
+			regions[dev.Region] = true
+			ips[dev.Ip] = true
+			zones[dev.Zone] = true
+			devices[fmt.Sprintf("%s:%s", dev.Ip, dev.Device)] = true
+			primaryCounts[dev.Id] = make([]int, replicas)
+		}
+		for part := uint64(0); part < ring.PartitionCount(); part++ {
+			partRegions := make(map[int]bool)
+			partZones := make(map[int]bool)
+			partIps := make(map[string]bool)
+			partDevices := make(map[string]bool)
+			for _, dev := range ring.GetNodes(part) {
+				partRegions[dev.Region] = true
+				partZones[dev.Zone] = true
+				partIps[dev.Ip] = true
+				partDevices[fmt.Sprintf("%s:%s", dev.Ip, dev.Device)] = true
+			}
+			if len(partRegions) < len(regions) && len(partRegions) < replicas {
+				fmt.Println("Partition", part, "doesn't use all available regions.")
+			}
+			if len(partZones) < len(zones) && len(partZones) < replicas {
+				fmt.Println("Partition", part, "doesn't use all available zones.")
+			}
+			if len(partIps) < len(ips) && len(partIps) < replicas {
+				fmt.Println("Partition", part, "doesn't use all available IPs.")
+			}
+			if len(partDevices) < len(devices) && len(partDevices) < replicas {
+				fmt.Println("Partition", part, "doesn't use all available devices.")
+			}
+
+			for i, node := range ring.GetNodes(part) {
+				primaryCounts[node.Id][i]++
+			}
+		}
+
+		for _, dev := range devs {
+			expectedParts := float64(ring.PartitionCount()) * float64(dev.Weight) / totalWeight
+			for i, parts := range primaryCounts[dev.Id] {
+				if epsilon(float64(parts), float64(expectedParts)) > 0.02 {
+					fmt.Println(dev.Id, "is primary number", i, "for", parts, "partitions, but that should be", int(expectedParts))
+				}
+			}
+		}
+		fmt.Println("Done!")
+
 	default:
 		fmt.Printf("Unknown command: %s\n", cmd)
 		flags.Usage()
