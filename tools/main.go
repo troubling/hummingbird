@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -217,7 +218,7 @@ func printRingLocations(r ring.Ring, ringType, datadir, account, container, obje
 			if handoffLimit != -1 && i == handoffLimit {
 				break
 			}
-			fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v\" # [Handoff]", v.Ip, v.Device, storageDirectory(datadir, partNum, pathHash))
+			fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v\" # [Handoff]\n", v.Ip, v.Device, storageDirectory(datadir, partNum, pathHash))
 		}
 	} else {
 		for _, v := range primaries {
@@ -291,6 +292,15 @@ func Nodes(flags *flag.FlagSet) {
 		if inferredType != "" && ringType != inferredType {
 			fmt.Printf("Error %v specified but ring type: %v\n", inferredType, ringType)
 			os.Exit(1)
+		}
+		if ringType == "object" && policyNum == 0 {
+			_, ringFileName := path.Split(ringPath)
+			if strings.HasPrefix(ringFileName, "object") && strings.Contains(ringFileName, "-") {
+				polSuff := strings.Split(ringFileName, "-")[1]
+				if polN, err := strconv.ParseInt(polSuff[:(len(polSuff)-len(".ring.gz"))], 10, 64); err == nil {
+					policyNum = int(polN)
+				}
+			}
 		}
 	} else {
 		r, ringType = getRing("", inferredType, policyNum)
