@@ -216,7 +216,7 @@ func processControlCommand(serverCommand func(name string, args ...string) error
 		exc := 0
 		for _, server := range []string{"proxy", "object", "object-replicator",
 			"object-auditor", "container", "container-replicator", "account",
-			"account-replicator", "andrewd"} {
+			"account-replicator"} {
 			if err := serverCommand(server); err != nil {
 				fmt.Fprintln(os.Stderr, server, ":", err)
 				exc = 1
