@@ -127,20 +127,33 @@ func DoJobs(name string, work []func() bool, concurrency int) {
 
 func RunBench(args []string) {
 	if len(args) < 1 {
-		fmt.Println("Usage: [configuration file]")
-		fmt.Println("Only supports auth 1.0.")
-		fmt.Println("The configuration file should look something like:")
-		fmt.Println("    [bench]")
-		fmt.Println("    auth = http://localhost:8080/auth/v1.0")
-		fmt.Println("    user = test:tester")
-		fmt.Println("    key = testing")
-		fmt.Println("    concurrency = 15")
-		fmt.Println("    object_size = 131072")
-		fmt.Println("    num_objects = 5000")
-		fmt.Println("    num_gets = 30000")
-		fmt.Println("    delete = yes")
-		fmt.Println("    allow_insecure_auth_cert = no")
-		fmt.Println("    single_container = false")
+		fmt.Println(`Usage: [configuration file]
+The configuration file should look something like:
+    [bench]
+    auth = http://localhost:8080/auth/v1.0
+    user = test:tester
+    key = testing
+    concurrency = 15
+    object_size = 131072
+    num_objects = 5000
+    num_gets = 30000
+    delete = yes
+    allow_insecure_auth_cert = no
+    single_container = false
+or
+    [bench]
+    auth = http://192.168.56.1:5000/v3/
+    tenant = test
+    user = tester
+    password = testing
+    concurrency = 15
+    object_size = 131072
+    num_objects = 5000
+    num_gets = 30000
+    delete = yes
+    allow_insecure_auth_cert = no
+    single_container = false
+`)
 		os.Exit(1)
 	}
 
@@ -151,8 +164,12 @@ func RunBench(args []string) {
 	}
 
 	authURL := benchconf.GetDefault("bench", "auth", "http://localhost:8080/auth/v1.0")
+	authTenant := benchconf.GetDefault("bench", "tenant", "")
 	authUser := benchconf.GetDefault("bench", "user", "test:tester")
+	authPassword := benchconf.GetDefault("bench", "password", "")
 	authKey := benchconf.GetDefault("bench", "key", "testing")
+	authRegion := benchconf.GetDefault("bench", "region", "")
+	authPrivateEndpoint := benchconf.GetBool("bench", "private", false)
 	concurrency := int(benchconf.GetInt("bench", "concurrency", 16))
 	objectSize := benchconf.GetInt("bench", "object_size", 131072)
 	numObjects := benchconf.GetInt("bench", "num_objects", 5000)
@@ -165,9 +182,9 @@ func RunBench(args []string) {
 	var cli client.Client
 	var resp *http.Response
 	if allowInsecureAuthCert {
-		cli, resp = client.NewInsecureClient("", authUser, "", authKey, "", authURL, false)
+		cli, resp = client.NewInsecureClient(authTenant, authUser, authPassword, authKey, authRegion, authURL, authPrivateEndpoint)
 	} else {
-		cli, resp = client.NewClient("", authUser, "", authKey, "", authURL, false)
+		cli, resp = client.NewClient(authTenant, authUser, authPassword, authKey, authRegion, authURL, authPrivateEndpoint)
 	}
 	if resp != nil {
 		msg, _ := ioutil.ReadAll(resp.Body)
