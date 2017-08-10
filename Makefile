@@ -1,4 +1,5 @@
 HUMMINGBIRD_VERSION?=$(shell git describe --tags)
+HUMMINGBIRD_VERSION_NO_V?=$(shell git describe --tags | cut -d v -f 2)
 
 all: bin/hummingbird
 
@@ -25,3 +26,26 @@ develop: bin/hummingbird
 
 functionaltest:
 	cd functional && make
+
+package: all
+	# Started this from https://medium.com/@newhouseb/hassle-free-go-in-production-528af8ee1a58
+	sudo rm -rf build/usr
+	mkdir -p build/usr/local/bin
+	cp bin/hummingbird build/usr/local/bin/hummingbird
+	chmod -R 0755 build
+	sudo chown -R root: build/usr
+	echo 2.0 > build/debian-binary
+	echo "Package: hummingbird" > build/control
+	echo "Version:" ${HUMMINGBIRD_VERSION_NO_V} >> build/control
+	echo "Architecture: amd64" >> build/control
+	echo "Section: net" >> build/control
+	echo "Maintainer: Rackspace <gholt@rackspace.com>" >> build/control
+	echo "Priority: optional" >> build/control
+	echo "Description: Hummingbird Object Storage Software" >> build/control
+	tar cvzf build/data.tar.gz -C build usr
+	tar cvzf build/control.tar.gz -C build control
+	cd build && ar rc hummingbird.deb debian-binary control.tar.gz data.tar.gz && cd ..
+
+clean:
+	rm -f bin/hummingbird
+	sudo rm -rf build
