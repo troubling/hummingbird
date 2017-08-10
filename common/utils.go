@@ -266,6 +266,44 @@ func ParseProxyPath(path string) (pathMap map[string]string, err error) {
 
 var buf64kpool = NewFreePool(128)
 
+// CopyQuorum copies data from src to dsts.
+// It behaves mostly like a Copy to a MultiWriter, but it doesn't return an error when a single dst has a write error,
+// only after the number of working dsts drops below quorum.
+func CopyQuorum(src io.Reader, quorum int, dsts ...io.Writer) (int64, error) {
+	buf, ok := buf64kpool.Get().([]byte)
+	if !ok {
+		buf = make([]byte, 64*1024)
+	}
+	defer buf64kpool.Put(buf)
+
+	var written int64
+	for {
+		nr, rerr := src.Read(buf)
+		if nr > 0 {
+			working := 0
+			for i, w := range dsts {
+				if w == nil {
+					continue
+				}
+				if n, err := w.Write(buf[0:nr]); err != nil || n != nr {
+					dsts[i] = nil
+					continue
+				}
+				working++
+			}
+			if working < quorum {
+				return written, errors.New("Too many writers failed.")
+			}
+		}
+		if rerr == io.EOF {
+			return written, nil
+		} else if rerr != nil {
+			return written, rerr
+		}
+		written += int64(nr)
+	}
+}
+
 func Copy(src io.Reader, dsts ...io.Writer) (written int64, err error) {
 	var buf []byte
 	var ok bool

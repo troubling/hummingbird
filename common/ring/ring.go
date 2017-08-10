@@ -94,6 +94,7 @@ type hashMoreNodes struct {
 	sameIpPorts       map[ipPort]bool
 	parts, start, inc int
 	partition         uint64
+	m                 sync.Mutex
 }
 
 func (d *Device) String() string {
@@ -279,6 +280,8 @@ func (m *hashMoreNodes) initialize() {
 }
 
 func (m *hashMoreNodes) Next() *Device {
+	m.m.Lock()
+	defer m.m.Unlock()
 	d := m.r.getData()
 	if m.used == nil {
 		m.initialize()
