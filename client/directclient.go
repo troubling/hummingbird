@@ -86,178 +86,57 @@ func NewProxyDirectClient(policyList conf.PolicyList) (*ProxyDirectClient, error
 	return c, nil
 }
 
-type respRec struct {
-	i int
-	r *http.Response
-	d *ring.Device
-}
-
-// quorumer launches requests and does bookkeeping to target quorum on writes.
-//
-// I'm hoping that it's a good hook for implementing write affinity and if we end
-// up having to log when an object can't be written to multiple regions or whatever.
-type quorumer interface {
-	start()
-	addResponse(int, *http.Response)
-	quorumMet(int) bool
-	launchUntilQuorumPossible() bool
-	getResponse(time.Duration) *http.Response
-}
-
-type stdQuorumer struct {
-	q                   int
-	makeRequest         func(int, *ring.Device) *http.Response
-	devs                []*ring.Device
-	more                ring.MoreNodes
-	responses           []*http.Response
-	failures            []int
-	responseClassCounts []int
-	requestCount        int
-	replicaCount        int
-	responsec           chan *respRec
-	cancel              chan struct{}
-}
-
-func (q *stdQuorumer) launchRequest() bool {
-	// step through primaries, then go to handoffs.
-	launch := func(index int, dev *ring.Device) {
-		resp := q.makeRequest(index, dev)
-		select {
-		case q.responsec <- &respRec{i: index, r: resp, d: dev}:
-		case <-q.cancel:
-		}
-	}
-	if q.requestCount < len(q.devs) {
-		go launch(q.requestCount, q.devs[q.requestCount])
-	} else {
-		var index int // assign handoffs the index of a failed primary, so we send update headers.
-		index, q.failures = q.failures[len(q.failures)-1], q.failures[:len(q.failures)-1]
-		dev := q.more.Next()
-		if dev == nil {
-			return false
-		}
-		go launch(index, dev)
-	}
-	q.requestCount++
-	return true
-}
-
-func (q *stdQuorumer) start() {
-	for q.requestCount < q.replicaCount {
-		q.launchRequest()
-	}
-}
-
-func (q *stdQuorumer) addResponse(index int, resp *http.Response) {
-	q.responses = append(q.responses, resp)
-	if resp.StatusCode >= 500 || resp.StatusCode < 0 {
-		q.failures = append(q.failures, index)
-		return
-	}
-	q.responseClassCounts[resp.StatusCode/100]++
-}
-
-func (q *stdQuorumer) launchUntilQuorumPossible() bool {
-	// if quorum has become impossible, launch requests until it's possible again.
-	for q.requestCount < q.replicaCount*2 {
-		for responseClass := 2; responseClass < 5; responseClass++ {
-			if (q.responseClassCounts[responseClass]+q.requestCount)-len(q.responses) >= q.q {
-				return true
-			}
-		}
-		if !q.launchRequest() {
-			break
-		}
-	}
-	return false
-}
-
-func (q *stdQuorumer) quorumMet(writers int) bool {
-	if writers >= q.replicaCount {
-		return true
-	}
-	if writers >= q.q && (len(q.responses)+writers) >= q.replicaCount*2 {
-		return true
-	}
-	for responseClass := 2; responseClass < 5; responseClass++ {
-		if q.responseClassCounts[responseClass] >= q.q {
-			return true
-		}
-	}
-	return false
-}
-
-func (q *stdQuorumer) getResponse(timeout time.Duration) *http.Response {
-	getResponseTimeout := time.After(timeout)
-	for {
-		// see if quorum has already been met
-		for _, r := range q.responses {
-			if q.responseClassCounts[r.StatusCode/100] >= q.q {
-				// Give pending requests a chance to finish, to improve consistency of read-after-write.
-				finalizeTimeout := time.After(PostQuorumTimeoutMs * time.Millisecond)
-				for q.requestCount > len(q.responses) {
-					select {
-					case resp := <-q.responsec:
-						q.addResponse(resp.i, resp.r)
-					case <-finalizeTimeout:
-						return r
-					}
-				}
-				return r
-			}
-		}
-		// bail out if quorum isn't possible
-		quorumPossible := false
-		for _, c := range q.responseClassCounts {
-			if (c+q.requestCount)-len(q.responses) >= q.q {
-				quorumPossible = true
-			}
-		}
-		if !quorumPossible {
-			return ResponseStub(http.StatusServiceUnavailable, "The service is currently unavailable.")
-		}
-		// if we haven't made quorum, but it's still possible, then there
-		// are outstanding requests we need to wait on.
-		select {
-		case response := <-q.responsec:
-			q.addResponse(response.i, response.r)
-		case <-getResponseTimeout:
-			return ResponseStub(http.StatusServiceUnavailable, "The service is currently unavailable.")
-		}
-	}
-}
-
-func newQuorumer(r ring.Ring, partition uint64, responsec chan *respRec, cancel chan struct{}, makeRequest func(index int, dev *ring.Device) *http.Response) quorumer {
-	return &stdQuorumer{
-		makeRequest:         makeRequest,
-		q:                   int(math.Ceil(float64(r.ReplicaCount()) / 2.0)),
-		replicaCount:        int(r.ReplicaCount()),
-		devs:                r.GetNodes(partition),
-		more:                r.GetMoreNodes(partition),
-		responseClassCounts: make([]int, 6),
-		cancel:              cancel,
-		responsec:           responsec,
-	}
-}
-
 // quorumResponse returns with a response representative of a quorum of nodes.
 //
 // This is analogous to swift's best_response function.
 func (c *ProxyDirectClient) quorumResponse(r ring.Ring, partition uint64, devToRequest func(int, *ring.Device) (*http.Request, error)) *http.Response {
-	responses := make(chan *respRec)
 	cancel := make(chan struct{})
 	defer close(cancel)
-	q := newQuorumer(r, partition, responses, cancel, func(index int, dev *ring.Device) *http.Response {
-		if req, err := devToRequest(index, dev); err != nil {
-			return ResponseStub(http.StatusInternalServerError, err.Error())
-		} else if r, err := c.client.Do(req); err != nil {
-			return ResponseStub(http.StatusInternalServerError, err.Error())
-		} else {
-			return StubResponse(r)
+	responsec := make(chan *http.Response)
+	devs := r.GetNodes(partition)
+	more := r.GetMoreNodes(partition)
+	for i := 0; i < int(r.ReplicaCount()); i++ {
+		go func(index int) {
+			var resp *http.Response
+			for dev := devs[index]; dev != nil; dev = more.Next() {
+				if req, err := devToRequest(index, dev); err != nil {
+					resp = ResponseStub(http.StatusInternalServerError, err.Error())
+				} else if r, err := c.client.Do(req); err != nil {
+					resp = ResponseStub(http.StatusInternalServerError, err.Error())
+				} else {
+					resp = StubResponse(r)
+					if r.StatusCode >= 200 && r.StatusCode < 500 {
+						break
+					}
+				}
+			}
+			select {
+			case responsec <- resp:
+			case <-cancel:
+				return
+			}
+		}(i)
+	}
+	responseClassCounts := make([]int, 6)
+	quorum := int(math.Ceil(float64(r.ReplicaCount()) / 2.0))
+	for i := 0; i < int(r.ReplicaCount()); i++ {
+		if resp := <-responsec; resp != nil {
+			responseClassCounts[resp.StatusCode/100]++
+			if responseClassCounts[resp.StatusCode/100] >= quorum {
+				timeout := time.After(time.Duration(PostQuorumTimeoutMs) * time.Millisecond)
+				for i < int(r.ReplicaCount()-1) {
+					select {
+					case <-responsec:
+						i++
+					case <-timeout:
+						return resp
+					}
+				}
+				return resp
+			}
 		}
-	})
-	q.start()
-	return q.getResponse(postPutTimeout)
+	}
+	return ResponseStub(http.StatusServiceUnavailable, "Unknown State")
 }
 
 func (c *ProxyDirectClient) firstResponse(r ring.Ring, partition uint64, devToRequest func(*ring.Device) (*http.Request, error)) (resp *http.Response) {
@@ -779,24 +658,25 @@ func (p *putReader) Read(b []byte) (int, error) {
 }
 
 func (oc *standardObjectClient) putObject(obj string, headers http.Header, src io.Reader) *http.Response {
-	objectReplicaCount := int(oc.objectRing.ReplicaCount())
 	objectPartition := oc.objectRing.GetPartition(oc.account, oc.container, obj)
 	containerPartition := oc.proxyDirectClient.ContainerRing.GetPartition(oc.account, oc.container, "")
 	containerDevices := oc.proxyDirectClient.ContainerRing.GetNodes(containerPartition)
+	objectReplicaCount := int(oc.objectRing.ReplicaCount())
 	ready := make(chan io.WriteCloser)
 	cancel := make(chan struct{})
 	defer close(cancel)
-	responses := make(chan *respRec)
-	writers := make([]io.Writer, 0)
-	cWriters := make([]io.WriteCloser, 0)
-	q := newQuorumer(oc.objectRing, objectPartition, responses, cancel, func(index int, dev *ring.Device) *http.Response {
+	responsec := make(chan *http.Response)
+	devs := oc.objectRing.GetNodes(objectPartition)
+	more := oc.objectRing.GetMoreNodes(objectPartition)
+
+	devToRequest := func(index int, dev *ring.Device) (*http.Request, error) {
 		trp, wp := io.Pipe()
 		rp := &putReader{Reader: trp, cancel: cancel, w: wp, ready: ready}
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", dev.Ip, dev.Port, dev.Device, objectPartition,
 			common.Urlencode(oc.account), common.Urlencode(oc.container), common.Urlencode(obj))
 		req, err := http.NewRequest("PUT", url, rp)
 		if err != nil {
-			return ResponseStub(http.StatusInternalServerError, err.Error())
+			return nil, err
 		}
 		req.Header.Set("Content-Type", "application/octet-stream")
 		for key := range headers {
@@ -806,36 +686,73 @@ func (oc *standardObjectClient) putObject(obj string, headers http.Header, src i
 		req.Header.Set("X-Container-Partition", strconv.FormatUint(containerPartition, 10))
 		addUpdateHeaders("X-Container", req.Header, containerDevices, index, objectReplicaCount)
 		req.Header.Set("Expect", "100-Continue")
-		// requests that get a 100-continue will wait inside Do() until we have a quorum of writers
-		if r, err := oc.proxyDirectClient.client.Do(req); err != nil {
-			return ResponseStub(http.StatusInternalServerError, err.Error())
-		} else {
-			return StubResponse(r)
-		}
-	})
-	q.start()
-	for !q.quorumMet(len(writers)) {
-		if !q.launchUntilQuorumPossible() {
-			return ResponseStub(http.StatusServiceUnavailable, "The service is currently unavailable.")
-		}
+		return req, nil
+	}
+
+	for i := 0; i < objectReplicaCount; i++ {
+		go func(index int) {
+			var resp *http.Response
+			for dev := devs[index]; dev != nil; dev = more.Next() {
+				if req, err := devToRequest(index, dev); err != nil {
+					resp = ResponseStub(http.StatusInternalServerError, err.Error())
+				} else if r, err := oc.proxyDirectClient.client.Do(req); err != nil {
+					resp = ResponseStub(http.StatusInternalServerError, err.Error())
+				} else {
+					resp = StubResponse(r)
+					if r.StatusCode >= 200 && r.StatusCode < 500 {
+						break
+					}
+				}
+			}
+			select {
+			case responsec <- resp:
+			case <-cancel:
+				return
+			}
+		}(i)
+	}
+	responseClassCounts := make([]int, 6)
+	quorum := int(math.Ceil(float64(oc.objectRing.ReplicaCount()) / 2.0))
+	writers := make([]io.Writer, 0)
+	cWriters := make([]io.WriteCloser, 0)
+	responseCount := 0
+	written := false
+	for {
 		select {
-		case response := <-responses:
-			q.addResponse(response.i, response.r)
+		case resp := <-responsec:
+			responseCount++
+			if resp != nil {
+				responseClassCounts[resp.StatusCode/100]++
+				if responseClassCounts[resp.StatusCode/100] >= quorum {
+					timeout := time.After(time.Duration(PostQuorumTimeoutMs) * time.Millisecond)
+					for responseCount < objectReplicaCount {
+						select {
+						case <-responsec:
+							responseCount++
+						case <-timeout:
+							return resp
+						}
+					}
+					return resp
+				} else if responseCount == objectReplicaCount {
+					return ResponseStub(http.StatusServiceUnavailable, "The service is currently unavailable.")
+				}
+			}
 		case w := <-ready:
 			defer w.Close()
 			writers = append(writers, w)
 			cWriters = append(cWriters, w)
 		}
+		if !written && len(writers) >= quorum && len(writers)+responseCount == objectReplicaCount {
+			written = true
+			if _, err := common.CopyQuorum(src, quorum, writers...); err != nil {
+				return ResponseStub(http.StatusServiceUnavailable, "The service is currently unavailable.")
+			}
+			for _, w := range cWriters {
+				w.Close()
+			}
+		}
 	}
-	// TODO: get a Copy function that only errors if we can't complete a quorum of writers.  Or something.
-	if _, err := common.Copy(src, writers...); err != nil {
-		return ResponseStub(http.StatusServiceUnavailable, "The service is currently unavailable.")
-	}
-	for _, w := range cWriters {
-		w.Close()
-	}
-	// TODO: verify that response etags match
-	return q.getResponse(postPutTimeout)
 }
 
 func (oc *standardObjectClient) postObject(obj string, headers http.Header) *http.Response {
