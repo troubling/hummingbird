@@ -172,7 +172,7 @@ func (server *ObjectServer) updateDeleteAt(method string, header http.Header, de
 
 func (server *ObjectServer) containerUpdates(writer http.ResponseWriter, request *http.Request, metadata map[string]string, deleteAt string, vars map[string]string, logger srv.LowLevelLogger) {
 	defer middleware.Recover(writer, request, "PANIC WHILE UPDATING CONTAINER LISTINGS")
-	if deleteAtTime, err := common.ParseDate(deleteAt); err != nil {
+	if deleteAtTime, err := common.ParseDate(deleteAt); err == nil {
 		go server.updateDeleteAt(request.Method, request.Header, deleteAtTime, vars, logger)
 	}
 
