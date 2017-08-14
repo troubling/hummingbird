@@ -125,6 +125,7 @@ type ProxyClient interface {
 	// ObjectRingFor returns the object ring for the given account/container or
 	// a response as to why the ring could not be returned.
 	ObjectRingFor(account string, container string) (ring.Ring, *http.Response)
+	ContainerRing() ring.Ring
 }
 
 // ContainerInfo is persisted in memcache via JSON; so this needs to continue to have public fields.
