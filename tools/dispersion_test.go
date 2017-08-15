@@ -56,7 +56,7 @@ func (f *FakeLowLevelLogger) With(fields ...zapcore.Field) *zap.Logger {
 }
 
 type FakeRing struct {
-	Devs      []ring.Device
+	Devs      []*ring.Device
 	Ip        string
 	Port      int
 	nodeCalls int
@@ -68,7 +68,7 @@ func (r *FakeRing) GetNodes(partition uint64) (response []*ring.Device) {
 	}
 	r.nodeCalls--
 	for i := range r.Devs {
-		response = append(response, &r.Devs[i])
+		response = append(response, r.Devs[i])
 	}
 	return response
 }
@@ -78,7 +78,7 @@ func (r *FakeRing) GetNodesInOrder(partition uint64) (response []*ring.Device) {
 		return nil
 	}
 	for i := range r.Devs {
-		response = append(response, &r.Devs[i])
+		response = append(response, r.Devs[i])
 	}
 	return response
 }
@@ -99,7 +99,7 @@ func (r *FakeRing) LocalDevices(localPort int) (devs []*ring.Device, err error) 
 	return nil, nil
 }
 
-func (r *FakeRing) AllDevices() (devs []ring.Device) {
+func (r *FakeRing) AllDevices() (devs []*ring.Device) {
 	return r.Devs
 }
 
@@ -116,7 +116,7 @@ func (r *FakeRing) ReplicaCount() uint64 {
 }
 
 func TestGetDispersionObjects(t *testing.T) {
-	fakeDevs := []ring.Device{
+	fakeDevs := []*ring.Device{
 		{Ip: "127.0.0.1", Port: 80, Device: "sda"},
 		{Ip: "127.0.0.1", Port: 80, Device: "sdb"}}
 
@@ -132,7 +132,7 @@ func TestGetDispersionObjects(t *testing.T) {
 
 func TestPutDispersionObjects(t *testing.T) {
 	p := conf.Policy{Name: "hat"}
-	c := &testDispersionClient{objRing: &FakeRing{Devs: []ring.Device{{Device: "sda"}, {Device: "sdb"}, {Device: "sdc"}}, nodeCalls: 3}}
+	c := &testDispersionClient{objRing: &FakeRing{Devs: []*ring.Device{{Device: "sda"}, {Device: "sdb"}, {Device: "sdc"}}, nodeCalls: 3}}
 	require.True(t, putDispersionObjects(c, &p, &FakeLowLevelLogger{}))
 	require.Equal(t, 4, c.objPuts)
 }
@@ -156,7 +156,7 @@ func TestScanDispersionObjects(t *testing.T) {
 	port, err := strconv.Atoi(ports)
 	require.Nil(t, err)
 	c := &testDispersionClient{objRing: &FakeRing{
-		Devs: []ring.Device{
+		Devs: []*ring.Device{
 			{Device: "sda", Ip: host, Port: port},
 			{Device: "sdb", Ip: host, Port: port},
 			{Device: "sdc", Ip: host, Port: port}}, nodeCalls: 3},
