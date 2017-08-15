@@ -1390,7 +1390,7 @@ func (b *RingBuilder) UpdateDevInfo(devId int64, newIp string, newPort int64, ne
 		newDevice = b.Devs[devId].Device
 	}
 	for next, dev := devIterator(b.Devs); dev != nil; dev = next() {
-		if dev.Ip == newIp && dev.Port == newPort && dev.Device == newDevice {
+		if dev.Id != devId && dev.Ip == newIp && dev.Port == newPort && dev.Device == newDevice {
 			return errors.New(fmt.Sprintf("Device id %d already uses %s:%d:/%s.", dev.Id, newIp, newPort, newDevice))
 		}
 	}
@@ -1401,7 +1401,7 @@ func (b *RingBuilder) UpdateDevInfo(devId int64, newIp string, newPort int64, ne
 		b.Devs[devId].ReplicationIp = newRepIp
 	}
 	if newRepPort >= 0 {
-		b.Devs[devId].Port = newRepPort
+		b.Devs[devId].ReplicationPort = newRepPort
 	}
 	if newMeta != "" {
 		b.Devs[devId].Meta = newMeta
