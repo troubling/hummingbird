@@ -1390,7 +1390,7 @@ func (b *RingBuilder) UpdateDevInfo(devId int64, newIp string, newPort int64, ne
 		newDevice = b.Devs[devId].Device
 	}
 	for next, dev := devIterator(b.Devs); dev != nil; dev = next() {
-		if dev.Ip == newIp && dev.Port == newPort && dev.Device == newDevice {
+		if dev.Id != devId && dev.Ip == newIp && dev.Port == newPort && dev.Device == newDevice {
 			return errors.New(fmt.Sprintf("Device id %d already uses %s:%d:/%s.", dev.Id, newIp, newPort, newDevice))
 		}
 	}
@@ -1401,7 +1401,7 @@ func (b *RingBuilder) UpdateDevInfo(devId int64, newIp string, newPort int64, ne
 		b.Devs[devId].ReplicationIp = newRepIp
 	}
 	if newRepPort >= 0 {
-		b.Devs[devId].Port = newRepPort
+		b.Devs[devId].ReplicationPort = newRepPort
 	}
 	if newMeta != "" {
 		b.Devs[devId].Meta = newMeta
@@ -1435,7 +1435,7 @@ func (b *RingBuilder) GetRing() *hashRing {
 	}
 	for i, dev := range b.Devs {
 		if dev != nil {
-			data.Devs = append(data.Devs, Device{
+			data.Devs = append(data.Devs, &Device{
 				Id:              int(b.Devs[i].Id),
 				Device:          b.Devs[i].Device,
 				Ip:              b.Devs[i].Ip,
@@ -1447,6 +1447,8 @@ func (b *RingBuilder) GetRing() *hashRing {
 				Weight:          b.Devs[i].Weight,
 				Zone:            int(b.Devs[i].Zone),
 			})
+		} else {
+			data.Devs = append(data.Devs, nil)
 		}
 	}
 	data.replica2part2devId = make([][]uint16, len(b.replica2Part2Dev))

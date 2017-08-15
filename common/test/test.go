@@ -113,7 +113,7 @@ func (r *FakeRing) LocalDevices(localPort int) (devs []*ring.Device, err error) 
 	}
 }
 
-func (r *FakeRing) AllDevices() (devs []ring.Device) {
+func (r *FakeRing) AllDevices() (devs []*ring.Device) {
 	return nil
 }
 
