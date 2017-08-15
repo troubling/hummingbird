@@ -19,16 +19,28 @@ import (
 	"crypto/md5"
 	"flag"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/uber-go/tally"
+	promreporter "github.com/uber-go/tally/prometheus"
+	"go.uber.org/zap"
+
+	"github.com/justinas/alice"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
+	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/middleware"
 )
 
 func getAffixes() (string, string) {
@@ -52,6 +64,9 @@ func inferRingType(account, container, object string) string {
 }
 
 func getRing(ringPath, ringType string, policyNum int) (ring.Ring, string) {
+	// if you have a direct path to a ring send it as ringPath. otherwise send
+	// a ringType ("" defaults to 'object') and optional policy and this'll
+	// try to find it in usual spots
 	prefix, suffix := getAffixes()
 	if ringPath != "" {
 		r, err := ring.LoadRing(ringPath, prefix, suffix)
@@ -326,4 +341,105 @@ func Nodes(flags *flag.FlagSet) {
 	}
 
 	printItemLocations(r, ringType, account, container, object, partition, allHandoffs, policyNum)
+}
+
+type AutoAdmin struct {
+	logger         srv.LowLevelLogger
+	port           int
+	bindIp         string
+	workDir        string
+	hClient        client.ProxyClient
+	policies       conf.PolicyList
+	metricsScope   tally.Scope
+	metricsCloser  io.Closer
+	bc             *BirdCatcher
+	runningForever bool
+}
+
+func (a *AutoAdmin) populateDispersion() {
+	if !putDispersionAccount(a.hClient, a.logger) {
+		return
+	}
+	if !putDispersionContainers(a.hClient, a.logger) {
+		return
+	}
+	for _, pol := range a.policies {
+		if !pol.Deprecated {
+			if !putDispersionObjects(a.hClient, pol, a.logger) {
+				return
+			}
+		}
+	}
+}
+
+func (a *AutoAdmin) Run() {
+	a.populateDispersion()
+	if !a.runningForever {
+		a.bc.runDispersionOnce()
+	}
+}
+
+func (a *AutoAdmin) RunForever() {
+	go a.startWebServer()
+	go a.bc.runDispersionForever()
+	a.runningForever = true
+	for {
+		a.Run()
+		time.Sleep(60 * time.Second)
+	}
+}
+
+func (a *AutoAdmin) GetHandler() http.Handler {
+	router := srv.NewRouter()
+	router.Get("/metrics", prometheus.Handler())
+
+	return alice.New(middleware.Metrics(a.metricsScope)).Then(router)
+}
+
+func (a *AutoAdmin) startWebServer() {
+	for {
+		if sock, err := srv.RetryListen(a.bindIp, a.port); err != nil {
+			a.logger.Error("Listen failed", zap.Error(err))
+		} else {
+			http.Serve(sock, a.GetHandler())
+		}
+	}
+}
+
+func NewAdmin(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv.LowLevelLogger, error) {
+
+	if !serverconf.HasSection("andrewd") {
+		return nil, nil, fmt.Errorf("Unable to find andrewd config section")
+	}
+	pdc, err := client.NewProxyDirectClient(nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("Could not make client: %v", err)
+	}
+	a := &AutoAdmin{
+		hClient:        client.NewProxyClient(pdc, nil, nil),
+		port:           int(serverconf.GetInt("andrewd", "bind_port", 7000)),
+		bindIp:         serverconf.GetDefault("andrewd", "bind_ip", "0.0.0.0"),
+		workDir:        serverconf.GetDefault("andrewd", "work_dir", "/var/cache/swift"),
+		policies:       conf.LoadPolicies(),
+		runningForever: false,
+		//containerDispersionGauge: []tally.Gauge{}, TODO- add container disp
+	}
+
+	a.metricsScope, a.metricsCloser = tally.NewRootScope(tally.ScopeOptions{
+		Prefix:         "hb_andrewd",
+		Tags:           map[string]string{},
+		CachedReporter: promreporter.NewReporter(promreporter.Options{}),
+		Separator:      promreporter.DefaultSeparator,
+	}, time.Second)
+
+	logLevelString := serverconf.GetDefault("andrewd", "log_level", "INFO")
+	logLevel := zap.NewAtomicLevel()
+	logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
+	if a.logger, err = srv.SetupLogger("andrewd", &logLevel, flags); err != nil {
+		return nil, nil, fmt.Errorf("Error setting up logger: %v", err)
+	}
+	a.bc = NewBirdCatcher(
+		a.logger, client.NewProxyClient(pdc, nil, nil), a.metricsScope)
+
+	return a, a.logger, nil
 }

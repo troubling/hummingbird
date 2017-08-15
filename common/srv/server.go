@@ -379,12 +379,12 @@ func RunDaemon(GetDaemon func(conf.Config, *flag.FlagSet) (Daemon, LowLevelLogge
 			if once {
 				daemon.Run()
 				fmt.Fprintf(os.Stderr, "Daemon pass completed.\n")
-				logger.Error("Daemon pass completed.")
+				logger.Info("Daemon pass completed.")
 			} else {
 				daemons = append(daemons, daemon)
 				go daemon.RunForever()
 				fmt.Fprintf(os.Stderr, "Daemon started.\n")
-				logger.Error("Daemon started.")
+				logger.Info("Daemon started.")
 			}
 		} else {
 			fmt.Fprintf(os.Stderr, "Failed to create daemon: %v", err)
