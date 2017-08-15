@@ -346,7 +346,7 @@ func (b *RingBuilder) updateLastPartMoves() {
 func (b *RingBuilder) buildWeightedReplicasByTier() (map[string]float64, error) {
 	weightOfOnePart := b.WeightOfOnePart()
 
-	devicesWithRoom := make([]int64, 0)
+	devicesWithRoom := make([]int64, 0, len(b.Devs))
 	weightedReplicasForDev := make(map[int64]float64)
 	for next, dev := devIterator(b.Devs); dev != nil; dev = next() {
 		if dev.Weight <= 0.0 {
@@ -416,7 +416,7 @@ func (b *RingBuilder) buildWeightedReplicasByTier() (map[string]float64, error) 
 
 // buildTier2Children wraps buildTierTree to exclude zero-weight devices.
 func (b *RingBuilder) buildTier2Children() map[string][]string {
-	weightedDevs := make([]*RingBuilderDevice, 0)
+	weightedDevs := make([]*RingBuilderDevice, 0, len(b.Devs))
 	for i := range b.Devs {
 		if b.Devs[i] != nil && b.Devs[i].Weight > 0.0 {
 			weightedDevs = append(weightedDevs, b.Devs[i])
@@ -866,7 +866,7 @@ func (b *RingBuilder) adjustReplica2Part2DevSize(toAssign map[uint][]uint) {
 func (b *RingBuilder) gatherPartsFromFailedDevices(assignParts map[uint][]uint) int {
 	// First we gather partitions from removed devices.  Since removed devices usually indicate device failures, we have no choice but to reassing these partitions.  However, we mark them as moves so later choices will skip other replicas of the same partition if possible.
 	if len(b.removedDevs) > 0 {
-		devsWithParts := make([]uint, 0)
+		devsWithParts := make([]uint, 0, len(b.Devs))
 		for _, dev := range b.removedDevs {
 			if dev.Parts > 0 {
 				devsWithParts = append(devsWithParts, uint(dev.Id))
@@ -903,7 +903,7 @@ func (b *RingBuilder) gatherPartsFromFailedDevices(assignParts map[uint][]uint) 
 //
 // It deliberately includes duplicates.
 func (b *RingBuilder) devsForPart(part int) []*RingBuilderDevice {
-	devs := make([]*RingBuilderDevice, 0)
+	devs := make([]*RingBuilderDevice, 0, len(b.Devs))
 	for _, part2Dev := range b.replica2Part2Dev {
 		if part >= len(part2Dev) {
 			continue
@@ -919,7 +919,7 @@ func (b *RingBuilder) devsForPart(part int) []*RingBuilderDevice {
 
 // replicasForPart returns a list of replicas for a specified partition.
 func (b *RingBuilder) replicasForPart(part int) []int {
-	replicas := make([]int, 0)
+	replicas := make([]int, 0, int(b.Replicas))
 	for replica, part2Dev := range b.replica2Part2Dev {
 		if part < len(part2Dev) {
 			replicas = append(replicas, replica)
@@ -945,8 +945,9 @@ func (b *RingBuilder) gatherPartsForDispersion(assignParts map[uint][]uint, repP
 		}
 
 		// Look for partitions not yet spread out enough.
-		undispersedDevReplicas := make([]devReplica, 0)
-		for _, replica := range b.replicasForPart(part) {
+		rfp := b.replicasForPart(part)
+		undispersedDevReplicas := make([]devReplica, 0, len(rfp))
+		for _, replica := range rfp {
 			devId := b.replica2Part2Dev[replica][part]
 			if devId == NONE_DEV {
 				continue
@@ -992,9 +993,10 @@ func (b *RingBuilder) gatherPartsForBalanceCanDisperse(assignParts map[uint][]ui
 		if !b.canPartMove(uint(part)) {
 			continue
 		}
-		overweightDevReplica := make([]devReplica, 0)
+		rfp := b.replicasForPart(part)
+		overweightDevReplica := make([]devReplica, 0, len(rfp))
 		replicasAtTier := make(map[string]int)
-		for _, replica := range b.replicasForPart(part) {
+		for _, replica := range rfp {
 			devId := b.replica2Part2Dev[replica][part]
 			if devId == NONE_DEV {
 				continue
@@ -1048,8 +1050,9 @@ func (b *RingBuilder) gatherPartsForBalanceForced(assignParts map[uint][]uint, s
 		if !b.canPartMove(uint(part)) {
 			continue
 		}
-		overweightDevReplica := make([]devReplica, 0)
-		for _, replica := range b.replicasForPart(part) {
+		rfp := b.replicasForPart(part)
+		overweightDevReplica := make([]devReplica, 0, len(rfp))
+		for _, replica := range rfp {
 			devId := b.replica2Part2Dev[replica][part]
 			if devId == NONE_DEV {
 				continue
@@ -1105,7 +1108,7 @@ func (b *RingBuilder) gatherPartsForBalance(assignParts map[uint][]uint, repPlan
 // Two different regions are considred the fartheres-apart things, followed by zones, then different ip within a zone; the least-far-apart things are different devices with the same ip in the same zone.
 func (b *RingBuilder) reassignParts(reassignParts []partReplicas, repPlan map[string]replicaPlan) error {
 	partsAvailableInTier := make(map[string]int)
-	availableDevs := make([]*RingBuilderDevice, 0)
+	availableDevs := make([]*RingBuilderDevice, 0, len(b.Devs))
 	for next, dev := devIterator(b.Devs); dev != nil; dev = next() {
 		wanted := int(math.Max(float64(dev.PartsWanted), 0))
 		for _, tier := range dev.tiers {
@@ -1160,6 +1163,11 @@ func (b *RingBuilder) reassignParts(reassignParts []partReplicas, repPlan map[st
 		depth += 1
 	}
 
+	// Shuffle reassignParts
+	for i := range reassignParts {
+		j := rand.Intn(i + 1)
+		reassignParts[i], reassignParts[j] = reassignParts[j], reassignParts[i]
+	}
 	for _, rp := range reassignParts {
 		part := rp.part
 		replaceReplicas := rp.replicas
@@ -1173,6 +1181,11 @@ func (b *RingBuilder) reassignParts(reassignParts []partReplicas, repPlan map[st
 			}
 		}
 
+		// Shuffle the replicas
+		for i := range replaceReplicas {
+			j := rand.Intn(i + 1)
+			replaceReplicas[i], replaceReplicas[j] = replaceReplicas[j], replaceReplicas[i]
+		}
 		for _, replica := range replaceReplicas {
 			// Find a new home for this replicas
 			tier := ""
@@ -1192,6 +1205,11 @@ func (b *RingBuilder) reassignParts(reassignParts []partReplicas, repPlan map[st
 					return errors.New(fmt.Sprintf("no home for %d/%d %+v", part, replica, data))
 				}
 
+				// Shuffle the candidates
+				for i := range candidates {
+					j := rand.Intn(i + 1)
+					candidates[i], candidates[j] = candidates[j], candidates[i]
+				}
 				curTier := candidates[0]
 				for _, t := range candidates {
 					if partsAvailableInTier[t] > partsAvailableInTier[curTier] {
@@ -1300,7 +1318,7 @@ GATHER:
 		if len(assignParts) == 0 {
 			break
 		}
-		assignPartsList := make([]partReplicas, 0)
+		assignPartsList := make([]partReplicas, 0, len(assignParts))
 		for p, r := range assignParts {
 			assignPartsList = append(assignPartsList, partReplicas{p, r})
 		}
@@ -1344,7 +1362,7 @@ GATHER:
 }
 
 func (b *RingBuilder) SearchDevs(region, zone int64, ip string, port int64, repIp string, repPort int64, device string, weight float64, meta string) []*RingBuilderDevice {
-	foundDevs := make([]*RingBuilderDevice, 0)
+	foundDevs := make([]*RingBuilderDevice, 0, len(b.Devs))
 	for next, dev := devIterator(b.Devs); dev != nil; dev = next() {
 		if region >= 0 && region != dev.Region {
 			continue
