@@ -57,6 +57,37 @@ func pickleint(val int64, buf *bytes.Buffer, scratch []byte) {
 	}
 }
 
+func picklearray(typ interface{}, data interface{}, buf *bytes.Buffer, scratch []byte) error {
+	buf.WriteString("carray\narray\n(") // GLOBAL array.array, MARK
+	switch typ {
+	case "H":
+		newdata := make([]uint16, 0)
+		if err := unpack(reflect.ValueOf(&data), reflect.ValueOf(&newdata)); err != nil {
+			return err
+		}
+		buf.WriteString("U\x01HT") // SHORT_BINSTRING "H", begin BINSTRING
+		binary.Write(buf, binary.LittleEndian, uint32(len(newdata)*2))
+		binary.Write(buf, binary.LittleEndian, newdata)
+	case "B":
+		newdata := make([]byte, 0)
+		if err := unpack(reflect.ValueOf(&data), reflect.ValueOf(&newdata)); err != nil {
+			return err
+		}
+		buf.WriteString("U\x01BT") // SHORT_BINSTRING "B", begin BINSTRING
+		binary.Write(buf, binary.LittleEndian, uint32(len(newdata)))
+		binary.Write(buf, binary.LittleEndian, newdata)
+	default:
+		if err := pickleobj(typ, buf, scratch); err != nil {
+			return err
+		}
+		if err := pickleobj(data, buf, scratch); err != nil {
+			return err
+		}
+	}
+	buf.WriteString("tR") // TUPLE, REDUCE
+	return nil
+}
+
 func pickleobj(o interface{}, buf *bytes.Buffer, scratch []byte) error {
 	v := reflect.ValueOf(o)
 	switch v.Kind() {
@@ -139,31 +170,12 @@ func pickleobj(o interface{}, buf *bytes.Buffer, scratch []byte) error {
 					return err
 				}
 			}
-			buf.WriteByte('l') // TUPLE
+			buf.WriteByte('t') // TUPLE
 		case PickleArray:
-			buf.WriteString("carray\narray\n")
-			buf.WriteByte('(') // MARK
-			if err := pickleobj(o.Type, buf, scratch); err != nil {
-				return err
-			}
-			if err := pickleobj(o.Data, buf, scratch); err != nil {
-				return err
-			}
-			buf.WriteByte('l') // TUPLE
-			buf.WriteByte('R') // REDUCE
+			return picklearray(o.Type, o.Data, buf, scratch)
 		default: // why not serialize arbitrary structs as dicts while we're here
 			if v.NumField() == 2 && v.Type().Field(0).Name == "ArrayType" {
-				buf.WriteString("carray\narray\n")
-				buf.WriteByte('(') // MARK
-				if err := pickleobj(v.Field(0).Interface(), buf, scratch); err != nil {
-					return err
-				}
-				if err := pickleobj(v.Field(1).Interface(), buf, scratch); err != nil {
-					return err
-				}
-				buf.WriteByte('t') // TUPLE
-				buf.WriteByte('R') // REDUCE
-				return nil
+				return picklearray(v.Field(0).Interface(), v.Field(1).Interface(), buf, scratch)
 			}
 			buf.WriteByte('(') // MARK
 			for i := 0; i < v.Type().NumField(); i++ {
