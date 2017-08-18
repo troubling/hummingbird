@@ -54,6 +54,21 @@ func BenchmarkUnpicklePythoned(b *testing.B) {
 	}
 }
 
+func BenchmarkUnpickleArray(b *testing.B) {
+	dat := make([]interface{}, 1000000)
+	for i := range dat {
+		dat[i] = int64(i % 30000)
+	}
+	pickled := PickleDumps(&PickleArray{
+		Type: "H",
+		Data: dat,
+	})
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		PickleLoads(pickled)
+	}
+}
+
 func TestUnpicklingVersion1Map(t *testing.T) {
 	data, err := PickleLoads([]byte("(dp1\nS'hi'\np2\nS'there'\np3\ns."))
 	assert.Nil(t, err)

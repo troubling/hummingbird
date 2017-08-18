@@ -176,6 +176,29 @@ func newState(initialSize int, data []byte) *unpickleState {
 	return &unpickleState{stack: make([]interface{}, initialSize), top: 0, data: data, dataOffset: 0}
 }
 
+func loadBinaryArray(typ string, data string) ([]interface{}, error) {
+	dat := []byte(data)
+	switch typ {
+	case "H":
+		if len(dat)%2 != 0 {
+			return nil, errors.New("Pickle data not a multiple of type size")
+		}
+		newdata := make([]interface{}, len(dat)/2)
+		for i := 0; i < len(dat); i += 2 {
+			newdata[i/2] = int64(binary.LittleEndian.Uint16(dat[i : i+2]))
+		}
+		return newdata, nil
+	case "B":
+		newdata := make([]interface{}, len(dat))
+		for i, b := range dat {
+			newdata[i] = int64(b)
+		}
+		return newdata, nil
+	default:
+		return nil, errors.New("Loading pickle of unknown type")
+	}
+}
+
 // attempt to convert python string representations to golang string
 // basically this should return the same thing as eval(src) in python.
 func pythonString(src string) (string, error) {
@@ -568,11 +591,20 @@ func PickleLoads(data []byte) (interface{}, error) {
 					return nil, errors.New("Invalid pickle (REDUCE): invalid array.array args")
 				}
 				tc, ok1 := as[0].(string)
-				val, ok2 := as[1].([]interface{})
-				if !ok1 || !ok2 {
-					return nil, errors.New("Invalid pickle (REDUCE): invalid array.array args")
+				if !ok1 {
+					return nil, errors.New("Invalid pickle (REDUCE): invalid array.array type")
 				}
-				state.push(PickleArray{Type: tc, Data: val})
+				if val, ok2 := as[1].([]interface{}); ok2 {
+					state.push(PickleArray{Type: tc, Data: val})
+				} else if valstr, ok2 := as[1].(string); ok2 {
+					if val, err := loadBinaryArray(tc, valstr); err == nil {
+						state.push(PickleArray{Type: tc, Data: val})
+					} else {
+						return nil, errors.New("Invalid pickle (REDUCE): invalid array.array value")
+					}
+				} else {
+					return nil, errors.New("Invalid pickle (REDUCE): invalid array.array value type")
+				}
 			case "copy_reg._reconstructor":
 				// this is a pretty hackish way of loading a serialized swift.common.header_key_dict.HeaderKeyDict
 				// and probably any other python object that's just a wrapped dict.
