@@ -1,14 +1,13 @@
 package objectserver
 
 import (
-	"bytes"
-	"crypto/md5"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"hash"
 	"os"
 	"path"
+	"strings"
 
 	"github.com/gholt/kvt"
 	_ "github.com/mattn/go-sqlite3"
@@ -22,12 +21,6 @@ import (
 // places; ...). We can make configurable, or auto-set, or whatever in the
 // future if we need to.
 var defaultDiskPartPower uint = 6
-
-// newHasher is used to get the hashing algorithm for metadata checks (and
-// possibly other checks). I know everybody hates MD5, but it's already in
-// widespread use throughout Openstack Swift / Hummingbird and it's not like
-// it's being used here for crypto.
-var newHasher func() hash.Hash = md5.New
 
 type fileTracker struct {
 	path          string
@@ -96,9 +89,9 @@ func (ft *fileTracker) init(dbi int) error {
                 timestamp INTEGER NOT NULL,
                 metahash TEXT, -- NULLable because not everyone stores the metadata
                 metadata TEXT,
-                CONSTRAINT ix_files_hash PRIMARY KEY (hash, shard)
+                CONSTRAINT ix_files_hash_shard PRIMARY KEY (hash, shard)
             );
-            CREATE INDEX ix_files_hash_timestamp ON files (hash, shard, timestamp);
+            CREATE INDEX ix_files_hash_shard_timestamp ON files (hash, shard, timestamp);
         `)
 		if err != nil {
 			return err
@@ -113,11 +106,19 @@ func (ft *fileTracker) close() {
 	}
 }
 
-func (ft *fileTracker) tempFile(hsh []byte, sizeHint int) (fs.AtomicFileWriter, error) {
-	return fs.NewAtomicFileWriter(ft.tempPath, ft.wholeFileDir(hsh))
+func (ft *fileTracker) tempFile(hsh string, sizeHint int) (fs.AtomicFileWriter, error) {
+	dir, err := ft.wholeFileDir(hsh)
+	if err != nil {
+		return nil, err
+	}
+	return fs.NewAtomicFileWriter(ft.tempPath, dir)
 }
 
-func (ft *fileTracker) commit(f fs.AtomicFileWriter, hsh []byte, shard int, timestamp int64, metahash []byte, metadata []byte) error {
+func (ft *fileTracker) commit(f fs.AtomicFileWriter, hsh string, shard int, timestamp int64, metahash string, metadata []byte) error {
+	hsh, diskPart, err := ft.validateHash(hsh)
+	if err != nil {
+		return err
+	}
 	var tx *sql.Tx
 	var rows *sql.Rows
 	// Single defer so we can control the order of the tear down.
@@ -132,20 +133,17 @@ func (ft *fileTracker) commit(f fs.AtomicFileWriter, hsh []byte, shard int, time
 		// If f.Save() was already called, this is a No-Op.
 		f.Abandon()
 	}()
-	diskPart := hsh[0] >> (8 - ft.diskPartPower)
 	db := ft.dbs[diskPart]
-	var err error
 	tx, err = db.Begin()
 	if err != nil {
 		return err
 	}
-	hshx := fmt.Sprintf("%032x", hsh)
 	rows, err = tx.Query(`
         SELECT timestamp, metahash, metadata
         FROM files
         WHERE hash = ? AND shard = ?
         ORDER BY timestamp DESC
-    `, hshx, shard)
+    `, hsh, shard)
 	if err != nil {
 		return err
 	}
@@ -157,7 +155,7 @@ func (ft *fileTracker) commit(f fs.AtomicFileWriter, hsh []byte, shard int, time
 		}
 	} else {
 		var dbTimestamp int64
-		var dbMetahash []byte
+		var dbMetahash string
 		var dbMetadata []byte
 		if err = rows.Scan(&dbTimestamp, &dbMetahash, &dbMetadata); err != nil {
 			return err
@@ -165,8 +163,11 @@ func (ft *fileTracker) commit(f fs.AtomicFileWriter, hsh []byte, shard int, time
 		if dbTimestamp >= timestamp {
 			return nil
 		}
-		removeOlder = ft.wholeFilePath(hsh, shard, dbTimestamp)
-		if !bytes.Equal(metahash, dbMetahash) {
+		removeOlder, err = ft.wholeFilePath(hsh, shard, dbTimestamp)
+		if err != nil {
+			return err
+		}
+		if metahash != dbMetahash {
 			metastore := kvt.Store{}
 			if err = json.Unmarshal(metadata, &metastore); err != nil {
 				// We return this error because the caller gave us bad metadata.
@@ -177,10 +178,10 @@ func (ft *fileTracker) commit(f fs.AtomicFileWriter, hsh []byte, shard int, time
 				ft.logger.Error(
 					"error decoding metadata from db; discarding",
 					zap.Error(err),
-					zap.String("hshx", hshx),
+					zap.String("hsh", hsh),
 					zap.Int("shard", shard),
 					zap.Int64("dbTimestamp", dbTimestamp),
-					zap.Binary("dbMetahash", dbMetahash),
+					zap.String("dbMetahash", dbMetahash),
 					zap.Binary("dbMetadata", dbMetadata),
 				)
 			} else {
@@ -191,12 +192,12 @@ func (ft *fileTracker) commit(f fs.AtomicFileWriter, hsh []byte, shard int, time
 						ft.logger.Error(
 							"error reencoding metadata from db; discarding",
 							zap.Error(err2),
-							zap.String("hshx", hshx),
+							zap.String("hsh", hsh),
 							zap.Int("shard", shard),
 							zap.Int64("dbTimestamp", dbTimestamp),
-							zap.Binary("dbMetahash", dbMetahash),
+							zap.String("dbMetahash", dbMetahash),
 							zap.Binary("dbMetadata", dbMetadata),
-							zap.Binary("metahash", metahash),
+							zap.String("metahash", metahash),
 							zap.Binary("metadata", metadata),
 						)
 					} else {
@@ -205,26 +206,31 @@ func (ft *fileTracker) commit(f fs.AtomicFileWriter, hsh []byte, shard int, time
 						return err
 					}
 				} else {
-					metahash = []byte(metastore.Hash())
+					metahash = metastore.Hash()
 					metadata = newMetadata
 				}
 			}
 		}
 	}
-	if err = f.Save(ft.wholeFilePath(hsh, shard, timestamp)); err != nil {
+	var pth string
+	pth, err = ft.wholeFilePath(hsh, shard, timestamp)
+	if err != nil {
+		return err
+	}
+	if err = f.Save(pth); err != nil {
 		return err
 	}
 	if removeOlder == "" {
 		_, err = tx.Exec(`
             INSERT INTO files (hash, shard, timestamp, metahash, metadata)
             VALUES (?, ?, ?, ?, ?)
-        `, hshx, shard, timestamp, metahash, metadata)
+        `, hsh, shard, timestamp, metahash, metadata)
 	} else {
 		_, err = tx.Exec(`
             UPDATE files
             SET timestamp = ?, metahash = ?, metadata = ?
             WHERE hash = ? AND shard = ?
-        `, timestamp, metahash, metadata, hshx, shard)
+        `, timestamp, metahash, metadata, hsh, shard)
 	}
 	if err == nil {
 		err = tx.Commit()
@@ -241,60 +247,75 @@ func (ft *fileTracker) commit(f fs.AtomicFileWriter, hsh []byte, shard int, time
 	return err
 }
 
-func (ft *fileTracker) wholeFileDir(hsh []byte) string {
-	return path.Join(ft.path, fmt.Sprintf("%02x", hsh[0]>>(8-ft.diskPartPower)))
+func (ft *fileTracker) wholeFileDir(hsh string) (string, error) {
+	hsh, diskPart, err := ft.validateHash(hsh)
+	if err != nil {
+		return "", err
+	}
+	return path.Join(ft.path, fmt.Sprintf("%02x", diskPart)), nil
 }
 
-func (ft *fileTracker) wholeFilePath(hsh []byte, shard int, timestamp int64) string {
-	return path.Join(ft.path, fmt.Sprintf("%02x/%032x.%02x.%019d", hsh[0]>>(8-ft.diskPartPower), hsh, shard, timestamp))
+func (ft *fileTracker) wholeFilePath(hsh string, shard int, timestamp int64) (string, error) {
+	hsh, diskPart, err := ft.validateHash(hsh)
+	if err != nil {
+		return "", err
+	}
+	return path.Join(ft.path, fmt.Sprintf("%02x/%032x.%02x.%019d", diskPart, hsh, shard, timestamp)), nil
 }
 
-func (ft *fileTracker) lookup(hsh []byte, shard int) (timestamp int64, metahash []byte, metadata []byte, path string, err error) {
-	diskPart := hsh[0] >> (8 - ft.diskPartPower)
+func (ft *fileTracker) lookup(hsh string, shard int) (timestamp int64, metahash string, metadata []byte, path string, err error) {
+	hsh, diskPart, err := ft.validateHash(hsh)
+	if err != nil {
+		return 0, "", nil, "", err
+	}
 	db := ft.dbs[diskPart]
-	hshx := fmt.Sprintf("%032x", hsh)
 	rows, err := db.Query(`
         SELECT timestamp, metahash, metadata
         FROM files
         WHERE hash = ? AND shard = ?
         ORDER BY timestamp DESC
-    `, hshx, shard)
+    `, hsh, shard)
 	if err != nil {
-		return 0, nil, nil, "", err
+		return 0, "", nil, "", err
 	}
 	if !rows.Next() {
 		rows.Close()
-		return 0, nil, nil, "", rows.Err()
+		return 0, "", nil, "", rows.Err()
 	}
 	if err = rows.Scan(&timestamp, &metahash, &metadata); err != nil {
-		return 0, nil, nil, "", err
+		return 0, "", nil, "", err
 	}
-	return timestamp, metahash, metadata, ft.wholeFilePath(hsh, shard, timestamp), nil
+	pth, err := ft.wholeFilePath(hsh, shard, timestamp)
+	return timestamp, metahash, metadata, pth, err
 }
 
 type fileTrackerItem struct {
-	hash      []byte
+	hash      string
 	shard     int
 	timestamp int64
-	metahash  []byte
+	metahash  string
 }
 
-func (ft *fileTracker) list(startHash []byte, stopHash []byte) ([]*fileTrackerItem, error) {
-	listing := []*fileTrackerItem{}
-	startDiskPart := startHash[0] >> (8 - ft.diskPartPower)
-	stopDiskPart := stopHash[0] >> (8 - ft.diskPartPower)
+func (ft *fileTracker) list(startHash string, stopHash string) ([]*fileTrackerItem, error) {
+	startHash, startDiskPart, err := ft.validateHash(startHash)
+	if err != nil {
+		return nil, err
+	}
+	stopHash, stopDiskPart, err := ft.validateHash(stopHash)
+	if err != nil {
+		return nil, err
+	}
 	if startDiskPart > stopDiskPart {
 		return nil, fmt.Errorf("startHash greater than stopHash: %x > %x", startHash, stopHash)
 	}
-	startHashx := fmt.Sprintf("%x", startHash)
-	stopHashx := fmt.Sprintf("%x", stopHash)
+	listing := []*fileTrackerItem{}
 	for diskPart := startDiskPart; diskPart <= stopDiskPart; diskPart++ {
 		db := ft.dbs[diskPart]
 		rows, err := db.Query(`
             SELECT hash, shard, timestamp, metahash
             FROM files
             WHERE hash BETWEEN ? AND ?
-        `, startHashx, stopHashx)
+        `, startHash, stopHash)
 		if err != nil {
 			return nil, err
 		}
@@ -310,4 +331,16 @@ func (ft *fileTracker) list(startHash []byte, stopHash []byte) ([]*fileTrackerIt
 		}
 	}
 	return listing, nil
+}
+
+func (ft *fileTracker) validateHash(hsh string) (string, int, error) {
+	hsh = strings.ToLower(hsh)
+	if len(hsh) != 32 {
+		return "", 0, fmt.Errorf("invalid hash %q; length was %d not 32", hsh, len(hsh))
+	}
+	hashBytes, err := hex.DecodeString(hsh)
+	if err != nil {
+		return "", 0, fmt.Errorf("invalid hash %q; decoding error: %s", hsh, err)
+	}
+	return hsh, int(hashBytes[0] >> (8 - ft.diskPartPower)), nil
 }
