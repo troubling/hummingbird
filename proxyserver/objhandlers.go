@@ -21,6 +21,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"go.uber.org/zap"
+
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/proxyserver/middleware"
@@ -42,6 +44,7 @@ func (server *ProxyServer) ObjectGetHandler(writer http.ResponseWriter, request 
 				return
 			}
 		}
+		ctx.Logger.Debug("object GET: container error", zap.String("container", vars["container"]), zap.Error(err))
 		srv.StandardResponse(writer, 404)
 		return
 	}

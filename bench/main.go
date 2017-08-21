@@ -38,16 +38,23 @@ type Object struct {
 	container string
 	name      string
 	data      []byte
+	verbose   bool
 }
 
 func (obj *Object) Put() bool {
 	resp := obj.c.PutObject(obj.container, obj.name, nil, bytes.NewReader(obj.data))
 	resp.Body.Close()
+	if obj.verbose && resp.StatusCode/100 != 2 {
+		fmt.Printf("object PUT failed: %d to %s/%s (%s)\n", resp.StatusCode, obj.container, obj.name, resp.Header)
+	}
 	return resp.StatusCode/100 == 2
 }
 
 func (obj *Object) Get() bool {
 	if resp := obj.c.GetObject(obj.container, obj.name, nil); resp.StatusCode/100 != 2 {
+		if obj.verbose {
+			fmt.Printf("object GET failed: %d to %s/%s (%s)\n", resp.StatusCode, obj.container, obj.name, resp.Header)
+		}
 		resp.Body.Close()
 		return false
 	} else {
@@ -174,8 +181,9 @@ or
 	objectSize := benchconf.GetInt("bench", "object_size", 131072)
 	numObjects := benchconf.GetInt("bench", "num_objects", 5000)
 	numGets := benchconf.GetInt("bench", "num_gets", 30000)
-	delete := benchconf.GetBool("bench", "delete", true)
+	objDelete := benchconf.GetBool("bench", "delete", true)
 	singleContainer := benchconf.GetBool("bench", "single_container", false)
+	verbose := benchconf.GetBool("bench", "verbose", false)
 	allowInsecureAuthCert := benchconf.GetBool("bench", "allow_insecure_auth_cert", false)
 	salt := fmt.Sprintf("%d", rand.Int63())
 
@@ -212,6 +220,7 @@ or
 			name:      fmt.Sprintf("%x", rand.Int63()),
 			data:      data,
 			c:         cli,
+			verbose:   verbose,
 		}
 	}
 
@@ -229,7 +238,7 @@ or
 	}
 	DoJobs("GET", work, concurrency)
 
-	if delete {
+	if objDelete {
 		work = make([]func() bool, len(objects))
 		for i := range objects {
 			work[i] = objects[i].Delete
