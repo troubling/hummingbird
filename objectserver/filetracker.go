@@ -15,13 +15,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// defaultDiskPartPower specifies the number of high bits to use to distribute
-// file across databases. Currently nothing sets or overrides this but the code
-// requires it be 1-8 (uses just the high byte of the hash; uses %02x in a few
-// places; ...). We can make configurable, or auto-set, or whatever in the
-// future if we need to.
-var defaultDiskPartPower uint = 6
-
 type fileTracker struct {
 	path          string
 	diskPartPower uint
@@ -30,12 +23,12 @@ type fileTracker struct {
 	logger        *zap.Logger
 }
 
-func newFileTracker(pth string, logger *zap.Logger) (*fileTracker, error) {
+func newFileTracker(pth string, diskPartPower uint, logger *zap.Logger) (*fileTracker, error) {
 	ft := &fileTracker{
 		path:          pth,
 		tempPath:      path.Join(pth, "temp"),
-		diskPartPower: defaultDiskPartPower,
-		dbs:           make([]*sql.DB, 1<<defaultDiskPartPower),
+		diskPartPower: diskPartPower,
+		dbs:           make([]*sql.DB, 1<<diskPartPower),
 		logger:        logger,
 	}
 	err := os.MkdirAll(ft.tempPath, 0700)

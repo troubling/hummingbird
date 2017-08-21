@@ -27,17 +27,17 @@ func md5hash(data string) string {
 func Test_newFileTrackerNotExistsAndAlreadyExists(t *testing.T) {
 	pth := "testdata/tmp/Test_newFileTrackerNotExistsAndAlreadyExists"
 	defer os.RemoveAll(pth)
-	ft, err := newFileTracker(pth, zap.L())
+	ft, err := newFileTracker(pth, 1, zap.L())
 	errnil(t, err)
 	ft.close()
-	ft, err = newFileTracker(pth, zap.L())
+	ft, err = newFileTracker(pth, 1, zap.L())
 	errnil(t, err)
 }
 
 func Test_fileTracker_commit(t *testing.T) {
 	pth := "testdata/tmp/Test_fileTracker_commit"
 	defer os.RemoveAll(pth)
-	ft, err := newFileTracker(pth, zap.L())
+	ft, err := newFileTracker(pth, 1, zap.L())
 	errnil(t, err)
 	defer ft.close()
 	hsh := md5hash("file1")
@@ -109,7 +109,7 @@ func Test_fileTracker_commit(t *testing.T) {
 func Test_fileTracker_lookup(t *testing.T) {
 	pth := "testdata/tmp/Test_fileTracker_lookup"
 	defer os.RemoveAll(pth)
-	ft, err := newFileTracker(pth, zap.L())
+	ft, err := newFileTracker(pth, 1, zap.L())
 	errnil(t, err)
 	defer ft.close()
 	hsh := md5hash("file1")
@@ -150,7 +150,7 @@ func Test_fileTracker_lookup(t *testing.T) {
 func Test_fileTracker_lookup_with_overwrite(t *testing.T) {
 	pth := "testdata/tmp/Test_fileTracker_lookup_with_overwrite"
 	defer os.RemoveAll(pth)
-	ft, err := newFileTracker(pth, zap.L())
+	ft, err := newFileTracker(pth, 1, zap.L())
 	errnil(t, err)
 	defer ft.close()
 	hsh := md5hash("file1")
@@ -198,7 +198,7 @@ func Test_fileTracker_lookup_with_overwrite(t *testing.T) {
 func Test_fileTracker_lookup_with_underwrite(t *testing.T) {
 	pth := "testdata/tmp/Test_fileTracker_lookup_with_underwrite"
 	defer os.RemoveAll(pth)
-	ft, err := newFileTracker(pth, zap.L())
+	ft, err := newFileTracker(pth, 1, zap.L())
 	errnil(t, err)
 	defer ft.close()
 	hsh := md5hash("file1")
@@ -246,12 +246,12 @@ func Test_fileTracker_lookup_with_underwrite(t *testing.T) {
 func Test_fileTracker_list(t *testing.T) {
 	pth := "testdata/tmp/Test_fileTracker_list"
 	defer os.RemoveAll(pth)
-	ft, err := newFileTracker(pth, zap.L())
+	ft, err := newFileTracker(pth, 1, zap.L())
 	errnil(t, err)
 	defer ft.close()
 	countOfHashesThatStartWith02 := 0
 	// Create a bunch of files.
-	for i := 0; i < 256; i++ {
+	for i := 0; i < 32; i++ {
 		hsh := md5hash(fmt.Sprintf("file%d", i))
 		if hsh[:2] == "02" {
 			countOfHashesThatStartWith02++
@@ -268,7 +268,7 @@ func Test_fileTracker_list(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(listing) != 256 {
+	if len(listing) != 32 {
 		t.Fatal(len(listing))
 	}
 	// List a subset.
@@ -276,8 +276,10 @@ func Test_fileTracker_list(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if countOfHashesThatStartWith02 < 1 {
+		t.Fatal(countOfHashesThatStartWith02)
+	}
 	if len(listing) != countOfHashesThatStartWith02 {
 		t.Fatal(len(listing), countOfHashesThatStartWith02)
 	}
-	fmt.Printf("%#v\n", listing[0])
 }
