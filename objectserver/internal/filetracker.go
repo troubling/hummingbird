@@ -15,7 +15,10 @@ import (
 	"go.uber.org/zap"
 )
 
-type fileTracker struct {
+// FileTracker will track a set of files for a path. This is the "index.db" per
+// disk. Right now it just handles whole files, but eventually we'd like to add
+// either slab support or direct database embedding for small files.
+type FileTracker struct {
 	path          string
 	diskPartPower uint
 	tempPath      string
@@ -23,8 +26,9 @@ type fileTracker struct {
 	logger        *zap.Logger
 }
 
-func newFileTracker(pth string, diskPartPower uint, logger *zap.Logger) (*fileTracker, error) {
-	ft := &fileTracker{
+// NewFileTracker create a FileTracker to manage the pth given.
+func NewFileTracker(pth string, diskPartPower uint, logger *zap.Logger) (*FileTracker, error) {
+	ft := &FileTracker{
 		path:          pth,
 		tempPath:      path.Join(pth, "temp"),
 		diskPartPower: diskPartPower,
@@ -54,7 +58,7 @@ func newFileTracker(pth string, diskPartPower uint, logger *zap.Logger) (*fileTr
 	return ft, nil
 }
 
-func (ft *fileTracker) init(dbi int) error {
+func (ft *FileTracker) init(dbi int) error {
 	db := ft.dbs[dbi]
 	tx, err := db.Begin()
 	if err != nil {
@@ -93,13 +97,18 @@ func (ft *fileTracker) init(dbi int) error {
 	return tx.Commit()
 }
 
-func (ft *fileTracker) close() {
+// Close closes all the underlying databases for the FileTracker; you should
+// discard the FileTracker after this call and use NewFileTracker if you want
+// to use the path again.
+func (ft *FileTracker) Close() {
 	for _, db := range ft.dbs {
 		db.Close()
 	}
 }
 
-func (ft *fileTracker) tempFile(hsh string, sizeHint int) (fs.AtomicFileWriter, error) {
+// TempFile returns a temporary file to write to for eventually adding a file
+// toe the FileTracker with Commit.
+func (ft *FileTracker) TempFile(hsh string, sizeHint int) (fs.AtomicFileWriter, error) {
 	dir, err := ft.wholeFileDir(hsh)
 	if err != nil {
 		return nil, err
@@ -107,7 +116,10 @@ func (ft *fileTracker) tempFile(hsh string, sizeHint int) (fs.AtomicFileWriter, 
 	return fs.NewAtomicFileWriter(ft.tempPath, dir)
 }
 
-func (ft *fileTracker) commit(f fs.AtomicFileWriter, hsh string, shard int, timestamp int64, metahash string, metadata []byte) error {
+// Commit moves the temporary file (from TempFile) into place and records its
+// information in the database. It could simply discard it all if there is
+// already a newer file in place for the hsh.
+func (ft *FileTracker) Commit(f fs.AtomicFileWriter, hsh string, shard int, timestamp int64, metahash string, metadata []byte) error {
 	hsh, diskPart, err := ft.validateHash(hsh)
 	if err != nil {
 		return err
@@ -240,7 +252,7 @@ func (ft *fileTracker) commit(f fs.AtomicFileWriter, hsh string, shard int, time
 	return err
 }
 
-func (ft *fileTracker) wholeFileDir(hsh string) (string, error) {
+func (ft *FileTracker) wholeFileDir(hsh string) (string, error) {
 	hsh, diskPart, err := ft.validateHash(hsh)
 	if err != nil {
 		return "", err
@@ -248,7 +260,7 @@ func (ft *fileTracker) wholeFileDir(hsh string) (string, error) {
 	return path.Join(ft.path, fmt.Sprintf("%02x", diskPart)), nil
 }
 
-func (ft *fileTracker) wholeFilePath(hsh string, shard int, timestamp int64) (string, error) {
+func (ft *FileTracker) wholeFilePath(hsh string, shard int, timestamp int64) (string, error) {
 	hsh, diskPart, err := ft.validateHash(hsh)
 	if err != nil {
 		return "", err
@@ -256,7 +268,8 @@ func (ft *fileTracker) wholeFilePath(hsh string, shard int, timestamp int64) (st
 	return path.Join(ft.path, fmt.Sprintf("%02x/%032x.%02x.%019d", diskPart, hsh, shard, timestamp)), nil
 }
 
-func (ft *fileTracker) lookup(hsh string, shard int) (timestamp int64, metahash string, metadata []byte, path string, err error) {
+// Lookup returns the stored information for the hsh and shard.
+func (ft *FileTracker) Lookup(hsh string, shard int) (timestamp int64, metahash string, metadata []byte, path string, err error) {
 	hsh, diskPart, err := ft.validateHash(hsh)
 	if err != nil {
 		return 0, "", nil, "", err
@@ -282,14 +295,16 @@ func (ft *fileTracker) lookup(hsh string, shard int) (timestamp int64, metahash 
 	return timestamp, metahash, metadata, pth, err
 }
 
-type fileTrackerItem struct {
-	hash      string
-	shard     int
-	timestamp int64
-	metahash  string
+// FileTrackerItem is a single item returned by List.
+type FileTrackerItem struct {
+	Hash      string
+	Shard     int
+	Timestamp int64
+	Metahash  string
 }
 
-func (ft *fileTracker) list(startHash string, stopHash string) ([]*fileTrackerItem, error) {
+// List returns stored information in the hash range given.
+func (ft *FileTracker) List(startHash string, stopHash string) ([]*FileTrackerItem, error) {
 	startHash, startDiskPart, err := ft.validateHash(startHash)
 	if err != nil {
 		return nil, err
@@ -301,7 +316,7 @@ func (ft *fileTracker) list(startHash string, stopHash string) ([]*fileTrackerIt
 	if startDiskPart > stopDiskPart {
 		return nil, fmt.Errorf("startHash greater than stopHash: %x > %x", startHash, stopHash)
 	}
-	listing := []*fileTrackerItem{}
+	listing := []*FileTrackerItem{}
 	for diskPart := startDiskPart; diskPart <= stopDiskPart; diskPart++ {
 		db := ft.dbs[diskPart]
 		rows, err := db.Query(`
@@ -313,8 +328,8 @@ func (ft *fileTracker) list(startHash string, stopHash string) ([]*fileTrackerIt
 			return nil, err
 		}
 		for rows.Next() {
-			item := &fileTrackerItem{}
-			if err = rows.Scan(&item.hash, &item.shard, &item.timestamp, &item.metahash); err != nil {
+			item := &FileTrackerItem{}
+			if err = rows.Scan(&item.Hash, &item.Shard, &item.Timestamp, &item.Metahash); err != nil {
 				return listing, err
 			}
 			listing = append(listing, item)
@@ -326,7 +341,7 @@ func (ft *fileTracker) list(startHash string, stopHash string) ([]*fileTrackerIt
 	return listing, nil
 }
 
-func (ft *fileTracker) validateHash(hsh string) (string, int, error) {
+func (ft *FileTracker) validateHash(hsh string) (string, int, error) {
 	hsh = strings.ToLower(hsh)
 	if len(hsh) != 32 {
 		return "", 0, fmt.Errorf("invalid hash %q; length was %d not 32", hsh, len(hsh))

@@ -27,27 +27,27 @@ func md5hash(data string) string {
 func Test_newFileTrackerNotExistsAndAlreadyExists(t *testing.T) {
 	pth := "testdata/tmp/Test_newFileTrackerNotExistsAndAlreadyExists"
 	defer os.RemoveAll(pth)
-	ft, err := newFileTracker(pth, 1, zap.L())
+	ft, err := NewFileTracker(pth, 1, zap.L())
 	errnil(t, err)
-	ft.close()
-	ft, err = newFileTracker(pth, 1, zap.L())
+	ft.Close()
+	ft, err = NewFileTracker(pth, 1, zap.L())
 	errnil(t, err)
 }
 
 func Test_fileTracker_commit(t *testing.T) {
 	pth := "testdata/tmp/Test_fileTracker_commit"
 	defer os.RemoveAll(pth)
-	ft, err := newFileTracker(pth, 1, zap.L())
+	ft, err := NewFileTracker(pth, 1, zap.L())
 	errnil(t, err)
-	defer ft.close()
+	defer ft.Close()
 	hsh := md5hash("file1")
 	timestamp := time.Now().UnixNano()
 	body := "just testing"
 	// Initial commit.
-	f, err := ft.tempFile(hsh, len(body))
+	f, err := ft.TempFile(hsh, len(body))
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ft.commit(f, hsh, 0, timestamp, "", nil))
+	errnil(t, ft.Commit(f, hsh, 0, timestamp, "", nil))
 	pth, err = ft.wholeFilePath(hsh, 0, timestamp)
 	errnil(t, err)
 	fi, err := os.Stat(pth)
@@ -56,10 +56,10 @@ func Test_fileTracker_commit(t *testing.T) {
 		t.Fatal(fi.Size(), len(body))
 	}
 	// Doing the same commit again should not fail.
-	f, err = ft.tempFile(hsh, len(body))
+	f, err = ft.TempFile(hsh, len(body))
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ft.commit(f, hsh, 0, timestamp, "", nil))
+	errnil(t, ft.Commit(f, hsh, 0, timestamp, "", nil))
 	pth, err = ft.wholeFilePath(hsh, 0, timestamp)
 	errnil(t, err)
 	fi, err = os.Stat(pth)
@@ -68,10 +68,10 @@ func Test_fileTracker_commit(t *testing.T) {
 		t.Fatal(fi.Size(), len(body))
 	}
 	// Doing an older commit should be discarded.
-	f, err = ft.tempFile(hsh, len(body))
+	f, err = ft.TempFile(hsh, len(body))
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ft.commit(f, hsh, 0, timestamp-1, "", nil))
+	errnil(t, ft.Commit(f, hsh, 0, timestamp-1, "", nil))
 	pth, err = ft.wholeFilePath(hsh, 0, timestamp-1)
 	fi, err = os.Stat(pth)
 	if !os.IsNotExist(err) {
@@ -86,10 +86,10 @@ func Test_fileTracker_commit(t *testing.T) {
 		t.Fatal(fi.Size(), len(body))
 	}
 	// Doing a newer commit should discard the original.
-	f, err = ft.tempFile(hsh, len(body))
+	f, err = ft.TempFile(hsh, len(body))
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ft.commit(f, hsh, 0, timestamp+1, "", nil))
+	errnil(t, ft.Commit(f, hsh, 0, timestamp+1, "", nil))
 	pth, err = ft.wholeFilePath(hsh, 0, timestamp+1)
 	errnil(t, err)
 	fi, err = os.Stat(pth)
@@ -109,19 +109,19 @@ func Test_fileTracker_commit(t *testing.T) {
 func Test_fileTracker_lookup(t *testing.T) {
 	pth := "testdata/tmp/Test_fileTracker_lookup"
 	defer os.RemoveAll(pth)
-	ft, err := newFileTracker(pth, 1, zap.L())
+	ft, err := NewFileTracker(pth, 1, zap.L())
 	errnil(t, err)
-	defer ft.close()
+	defer ft.Close()
 	hsh := md5hash("file1")
 	timestamp := time.Now().UnixNano()
 	body := "just testing"
 	// Commit file.
-	f, err := ft.tempFile(hsh, len(body))
+	f, err := ft.TempFile(hsh, len(body))
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ft.commit(f, hsh, 0, timestamp, "", nil))
+	errnil(t, ft.Commit(f, hsh, 0, timestamp, "", nil))
 	// Do the lookup.
-	lookedupTimestamp, metahash, metadata, path, err := ft.lookup(hsh, 0)
+	lookedupTimestamp, metahash, metadata, path, err := ft.Lookup(hsh, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,26 +150,26 @@ func Test_fileTracker_lookup(t *testing.T) {
 func Test_fileTracker_lookup_with_overwrite(t *testing.T) {
 	pth := "testdata/tmp/Test_fileTracker_lookup_with_overwrite"
 	defer os.RemoveAll(pth)
-	ft, err := newFileTracker(pth, 1, zap.L())
+	ft, err := NewFileTracker(pth, 1, zap.L())
 	errnil(t, err)
-	defer ft.close()
+	defer ft.Close()
 	hsh := md5hash("file1")
 	timestamp := time.Now().UnixNano()
 	body := "just testing"
 	// Commit file.
-	f, err := ft.tempFile(hsh, len(body))
+	f, err := ft.TempFile(hsh, len(body))
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ft.commit(f, hsh, 0, timestamp, "", nil))
+	errnil(t, ft.Commit(f, hsh, 0, timestamp, "", nil))
 	// Commit newer file.
 	timestamp = time.Now().UnixNano()
 	body = "just testing newer"
-	f, err = ft.tempFile(hsh, len(body))
+	f, err = ft.TempFile(hsh, len(body))
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ft.commit(f, hsh, 0, timestamp, "", nil))
+	errnil(t, ft.Commit(f, hsh, 0, timestamp, "", nil))
 	// Do the lookup.
-	lookedupTimestamp, metahash, metadata, path, err := ft.lookup(hsh, 0)
+	lookedupTimestamp, metahash, metadata, path, err := ft.Lookup(hsh, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,26 +198,26 @@ func Test_fileTracker_lookup_with_overwrite(t *testing.T) {
 func Test_fileTracker_lookup_with_underwrite(t *testing.T) {
 	pth := "testdata/tmp/Test_fileTracker_lookup_with_underwrite"
 	defer os.RemoveAll(pth)
-	ft, err := newFileTracker(pth, 1, zap.L())
+	ft, err := NewFileTracker(pth, 1, zap.L())
 	errnil(t, err)
-	defer ft.close()
+	defer ft.Close()
 	hsh := md5hash("file1")
 	timestamp := time.Now().UnixNano()
 	body := "just testing"
 	// Commit file.
-	f, err := ft.tempFile(hsh, len(body))
+	f, err := ft.TempFile(hsh, len(body))
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ft.commit(f, hsh, 0, timestamp, "", nil))
+	errnil(t, ft.Commit(f, hsh, 0, timestamp, "", nil))
 	// Commit older file (should be discarded).
 	timestampOlder := timestamp - 1
 	bodyOlder := "just testing older"
-	f, err = ft.tempFile(hsh, len(bodyOlder))
+	f, err = ft.TempFile(hsh, len(bodyOlder))
 	errnil(t, err)
 	f.Write([]byte(bodyOlder))
-	errnil(t, ft.commit(f, hsh, 0, timestampOlder, "", nil))
+	errnil(t, ft.Commit(f, hsh, 0, timestampOlder, "", nil))
 	// Do the lookup.
-	lookedupTimestamp, metahash, metadata, path, err := ft.lookup(hsh, 0)
+	lookedupTimestamp, metahash, metadata, path, err := ft.Lookup(hsh, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,9 +246,9 @@ func Test_fileTracker_lookup_with_underwrite(t *testing.T) {
 func Test_fileTracker_list(t *testing.T) {
 	pth := "testdata/tmp/Test_fileTracker_list"
 	defer os.RemoveAll(pth)
-	ft, err := newFileTracker(pth, 1, zap.L())
+	ft, err := NewFileTracker(pth, 1, zap.L())
 	errnil(t, err)
-	defer ft.close()
+	defer ft.Close()
 	countOfHashesThatStartWith02 := 0
 	// Create a bunch of files.
 	for i := 0; i < 32; i++ {
@@ -258,13 +258,13 @@ func Test_fileTracker_list(t *testing.T) {
 		}
 		timestamp := time.Now().UnixNano()
 		body := "just testing"
-		f, err := ft.tempFile(hsh, len(body))
+		f, err := ft.TempFile(hsh, len(body))
 		errnil(t, err)
 		f.Write([]byte(body))
-		errnil(t, ft.commit(f, hsh, 0, timestamp, "", nil))
+		errnil(t, ft.Commit(f, hsh, 0, timestamp, "", nil))
 	}
 	// List all of them.
-	listing, err := ft.list("00000000000000000000000000000000", "ffffffffffffffffffffffffffffffff")
+	listing, err := ft.List("00000000000000000000000000000000", "ffffffffffffffffffffffffffffffff")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +272,7 @@ func Test_fileTracker_list(t *testing.T) {
 		t.Fatal(len(listing))
 	}
 	// List a subset.
-	listing, err = ft.list("02000000000000000000000000000000", "02ffffffffffffffffffffffffffffff")
+	listing, err = ft.List("02000000000000000000000000000000", "02ffffffffffffffffffffffffffffff")
 	if err != nil {
 		t.Fatal(err)
 	}
