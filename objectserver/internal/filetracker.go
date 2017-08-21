@@ -225,6 +225,9 @@ func (ft *FileTracker) Commit(f fs.AtomicFileWriter, hsh string, shard int, time
 	if err = f.Save(pth); err != nil {
 		return err
 	}
+	if metadata != nil {
+		panic(fmt.Sprintf("GLH2 %#v", metadata))
+	}
 	if removeOlder == "" {
 		_, err = tx.Exec(`
             INSERT INTO files (hash, shard, timestamp, metahash, metadata)
