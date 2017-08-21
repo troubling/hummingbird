@@ -1,4 +1,4 @@
-package objectserver
+package internal
 
 import (
 	"database/sql"
