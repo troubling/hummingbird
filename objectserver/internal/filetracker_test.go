@@ -129,7 +129,7 @@ func Test_fileTracker_lookup(t *testing.T) {
 		t.Fatal(lookedupTimestamp, timestamp)
 	}
 	if metahash != "" || metadata != nil {
-		t.Fatal(metahash, metadata)
+		t.Fatalf("%#v %#v\n", metahash, metadata)
 	}
 	if path == "" {
 		t.Fatal(path)
@@ -177,7 +177,7 @@ func Test_fileTracker_lookup_with_overwrite(t *testing.T) {
 		t.Fatal(lookedupTimestamp, timestamp)
 	}
 	if metahash != "" || metadata != nil {
-		t.Fatal(metahash, metadata)
+		t.Fatalf("%#v %#v\n", metahash, metadata)
 	}
 	if path == "" {
 		t.Fatal(path)
@@ -225,7 +225,7 @@ func Test_fileTracker_lookup_with_underwrite(t *testing.T) {
 		t.Fatal(lookedupTimestamp, timestamp)
 	}
 	if metahash != "" || metadata != nil {
-		t.Fatal(metahash, metadata)
+		t.Fatalf("%#v %#v\n", metahash, metadata)
 	}
 	if path == "" {
 		t.Fatal(path)
