@@ -24,8 +24,8 @@ func md5hash(data string) string {
 	return hex.EncodeToString(b[:])
 }
 
-func Test_newFileTrackerNotExistsAndAlreadyExists(t *testing.T) {
-	pth := "testdata/tmp/Test_newFileTrackerNotExistsAndAlreadyExists"
+func TestNewFileTracker_notExistsAndAlreadyExists(t *testing.T) {
+	pth := "testdata/tmp/TestNewFileTracker_notExistsAndAlreadyExists"
 	defer os.RemoveAll(pth)
 	ft, err := NewFileTracker(pth, 1, zap.L())
 	errnil(t, err)
@@ -34,8 +34,8 @@ func Test_newFileTrackerNotExistsAndAlreadyExists(t *testing.T) {
 	errnil(t, err)
 }
 
-func Test_fileTracker_commit(t *testing.T) {
-	pth := "testdata/tmp/Test_fileTracker_commit"
+func TestFileTracker_Commit(t *testing.T) {
+	pth := "testdata/tmp/TestFileTracker_Commit"
 	defer os.RemoveAll(pth)
 	ft, err := NewFileTracker(pth, 1, zap.L())
 	errnil(t, err)
@@ -106,8 +106,8 @@ func Test_fileTracker_commit(t *testing.T) {
 	}
 }
 
-func Test_fileTracker_lookup(t *testing.T) {
-	pth := "testdata/tmp/Test_fileTracker_lookup"
+func TestFileTracker_Lookup(t *testing.T) {
+	pth := "testdata/tmp/TestFileTracker_Lookup"
 	defer os.RemoveAll(pth)
 	ft, err := NewFileTracker(pth, 1, zap.L())
 	errnil(t, err)
@@ -147,8 +147,8 @@ func Test_fileTracker_lookup(t *testing.T) {
 	}
 }
 
-func Test_fileTracker_lookup_with_overwrite(t *testing.T) {
-	pth := "testdata/tmp/Test_fileTracker_lookup_with_overwrite"
+func TestFileTracker_Lookup_withOverwrite(t *testing.T) {
+	pth := "testdata/tmp/TestFileTracker_Lookup_withOverwrite"
 	defer os.RemoveAll(pth)
 	ft, err := NewFileTracker(pth, 1, zap.L())
 	errnil(t, err)
@@ -195,8 +195,8 @@ func Test_fileTracker_lookup_with_overwrite(t *testing.T) {
 	}
 }
 
-func Test_fileTracker_lookup_with_underwrite(t *testing.T) {
-	pth := "testdata/tmp/Test_fileTracker_lookup_with_underwrite"
+func TestFileTracker_Lookup_withUnderwrite(t *testing.T) {
+	pth := "testdata/tmp/TestFileTracker_Lookup_withUnderwrite"
 	defer os.RemoveAll(pth)
 	ft, err := NewFileTracker(pth, 1, zap.L())
 	errnil(t, err)
@@ -243,8 +243,8 @@ func Test_fileTracker_lookup_with_underwrite(t *testing.T) {
 	}
 }
 
-func Test_fileTracker_list(t *testing.T) {
-	pth := "testdata/tmp/Test_fileTracker_list"
+func TestFileTracker_List(t *testing.T) {
+	pth := "testdata/tmp/TestFileTracker_List"
 	defer os.RemoveAll(pth)
 	ft, err := NewFileTracker(pth, 1, zap.L())
 	errnil(t, err)

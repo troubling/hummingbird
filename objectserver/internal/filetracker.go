@@ -288,8 +288,14 @@ func (ft *FileTracker) Lookup(hsh string, shard int) (timestamp int64, metahash 
 		rows.Close()
 		return 0, "", nil, "", rows.Err()
 	}
+	if len(metadata) != 0 {
+		panic("GLH0")
+	}
 	if err = rows.Scan(&timestamp, &metahash, &metadata); err != nil {
 		return 0, "", nil, "", err
+	}
+	if len(metadata) != 0 {
+		panic("GLH1")
 	}
 	pth, err := ft.wholeFilePath(hsh, shard, timestamp)
 	return timestamp, metahash, metadata, pth, err
