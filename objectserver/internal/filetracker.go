@@ -85,7 +85,7 @@ func (ft *FileTracker) init(dbi int) error {
                 shard INTEGER NOT NULL,
                 timestamp INTEGER NOT NULL,
                 metahash TEXT, -- NULLable because not everyone stores the metadata
-                metadata TEXT,
+                metadata BLOB,
                 CONSTRAINT ix_files_hash_shard PRIMARY KEY (hash, shard)
             );
             CREATE INDEX ix_files_hash_shard_timestamp ON files (hash, shard, timestamp);
