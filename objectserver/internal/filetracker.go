@@ -15,9 +15,30 @@ import (
 	"go.uber.org/zap"
 )
 
-// FileTracker will track a set of files for a path. This is the "index.db" per
-// disk. Right now it just handles whole files, but eventually we'd like to add
-// either slab support or direct database embedding for small files.
+// FileTracker will track a set of files for a path.
+//
+// This is the "index.db" per disk. Right now it just handles whole files, but
+// eventually we'd like to add either slab support or direct database embedding
+// for small files. But, those details should be transparent from users of a
+// FileTracker.
+//
+// This is different from the standard Swift full replica file tracking in that
+// the directory structure is much shallower, there are 64 databases per drive
+// at most instead of a ton of hashes.pkl files, and the version tracking /
+// consolidation is much simpler.
+//
+// The FileTracker stores the newest file contents it knows about and discards
+// any older ones, like the standard Swift's .data files. It does not have
+// .meta files at all, and certainly not stacked to infinity .meta files.
+// Instead the metadata is stored in a JSON-db key=(value,timestamp) structure
+// (github.com/gholt/kvt) along with its hash.
+//
+// A given FileTracker may not even store any metadata, such as in an EC
+// system, with just "key" FileTrackers storing the metadata.
+//
+// Since there will be 64 databases, it's important to try to have at least
+// that many ring partitions per drive. It will work with fewer, but it will
+// perform better if it can use all 64 databases.
 type FileTracker struct {
 	path          string
 	diskPartPower uint
@@ -26,7 +47,12 @@ type FileTracker struct {
 	logger        *zap.Logger
 }
 
-// NewFileTracker create a FileTracker to manage the pth given.
+// NewFileTracker creates a FileTracker to manage the path given.
+//
+// The disk partition power should be 6 except for in tests. At least, that's
+// our plan for now, as 1<<6 gives 64 databases per disk and ends up with not
+// too much over 1 million files per database on an 8T disk with 100K average
+// sized files.
 func NewFileTracker(pth string, diskPartPower uint, logger *zap.Logger) (*FileTracker, error) {
 	ft := &FileTracker{
 		path:          pth,
@@ -106,9 +132,17 @@ func (ft *FileTracker) Close() {
 	}
 }
 
-// TempFile returns a temporary file to write to for eventually adding a file
-// toe the FileTracker with Commit.
-func (ft *FileTracker) TempFile(hsh string, sizeHint int) (fs.AtomicFileWriter, error) {
+// TempFile returns a temporary file to write to for eventually adding the
+// hash:shard to the FileTracker with Commit; may return (nil, nil) if there is
+// already a newer or equal timestamp in place for the hash:shard.
+func (ft *FileTracker) TempFile(hsh string, shard int, timestamp int64, sizeHint int) (fs.AtomicFileWriter, error) {
+	storedTimestamp, _, _, _, err := ft.Lookup(hsh, shard)
+	if err != nil {
+		return nil, err
+	}
+	if storedTimestamp >= timestamp {
+		return nil, nil
+	}
 	dir, err := ft.wholeFileDir(hsh)
 	if err != nil {
 		return nil, err
@@ -117,8 +151,18 @@ func (ft *FileTracker) TempFile(hsh string, sizeHint int) (fs.AtomicFileWriter, 
 }
 
 // Commit moves the temporary file (from TempFile) into place and records its
-// information in the database. It could simply discard it all if there is
-// already a newer file in place for the hsh.
+// information in the database. It may actually discard it completely if there
+// is already a newer file in place for the hash:shard.
+//
+// Shard is mostly for EC type policies; just use 0 if you're using a full
+// replica policy.
+//
+// Timestamp is the timestamp for the file contents, not the metadata.
+//
+// Metahash and metadata are from github.com/gholt/kvt.Store -- which is just a
+// simple JSON database of key=(value,timestamp) similar to what we use in the
+// account/container metadata. The FileTracker doesn't look too closely at
+// these, but it does compare the hashes and merges metadata sets if needed.
 func (ft *FileTracker) Commit(f fs.AtomicFileWriter, hsh string, shard int, timestamp int64, metahash string, metadata []byte) error {
 	hsh, diskPart, err := ft.validateHash(hsh)
 	if err != nil {
@@ -284,8 +328,8 @@ func (ft *FileTracker) Lookup(hsh string, shard int) (timestamp int64, metahash 
 	if err != nil {
 		return 0, "", nil, "", err
 	}
+	defer rows.Close()
 	if !rows.Next() {
-		rows.Close()
 		return 0, "", nil, "", rows.Err()
 	}
 	if err = rows.Scan(&timestamp, &metahash, &metadata); err != nil {
@@ -304,6 +348,10 @@ type FileTrackerItem struct {
 }
 
 // List returns stored information in the hash range given.
+//
+// This is for replication, auditing, that sort of thing.
+//
+// TODO: Think on how we want to do replication exactly.
 func (ft *FileTracker) List(startHash string, stopHash string) ([]*FileTrackerItem, error) {
 	startHash, startDiskPart, err := ft.validateHash(startHash)
 	if err != nil {

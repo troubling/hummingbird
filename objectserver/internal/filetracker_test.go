@@ -13,9 +13,13 @@ import (
 )
 
 func errnil(t *testing.T, err error) {
-	// TODO: Call t.Helper() once we require Go 1.9.
+	// TODO: Once we Go 1.9:
+	// t.Helper()
+	// if err != nil {
+	// 	t.Fatal(err)
+	// }
 	if err != nil {
-		t.Fatal(err)
+		panic(err)
 	}
 }
 
@@ -44,7 +48,7 @@ func TestFileTracker_Commit(t *testing.T) {
 	timestamp := time.Now().UnixNano()
 	body := "just testing"
 	// Initial commit.
-	f, err := ft.TempFile(hsh, len(body))
+	f, err := ft.TempFile(hsh, 0, timestamp, len(body))
 	errnil(t, err)
 	f.Write([]byte(body))
 	errnil(t, ft.Commit(f, hsh, 0, timestamp, "", nil))
@@ -55,8 +59,15 @@ func TestFileTracker_Commit(t *testing.T) {
 	if fi.Size() != int64(len(body)) {
 		t.Fatal(fi.Size(), len(body))
 	}
-	// Doing the same commit again should not fail.
-	f, err = ft.TempFile(hsh, len(body))
+	// Same commit should return (nil, nil).
+	f, err = ft.TempFile(hsh, 0, timestamp, len(body))
+	if f != nil || err != nil {
+		t.Fatal(f, err)
+	}
+	// So we'll fake the timestamp on the TempFile call, but try to do the same
+	// as the stored timestamp on the commit again, which should not fail (but
+	// won't really do anything behind the scenes).
+	f, err = ft.TempFile(hsh, 0, timestamp+1, len(body))
 	errnil(t, err)
 	f.Write([]byte(body))
 	errnil(t, ft.Commit(f, hsh, 0, timestamp, "", nil))
@@ -67,8 +78,15 @@ func TestFileTracker_Commit(t *testing.T) {
 	if fi.Size() != int64(len(body)) {
 		t.Fatal(fi.Size(), len(body))
 	}
-	// Doing an older commit should be discarded.
-	f, err = ft.TempFile(hsh, len(body))
+	// Attempting an older commit should return (nil, nil).
+	f, err = ft.TempFile(hsh, 0, timestamp-1, len(body))
+	if f != nil || err != nil {
+		t.Fatal(f, err)
+	}
+	// Doing an older commit should be discarded. We're going to fake like
+	// we're doing a newer commit to get the temp file, but then actually try
+	// to do an old commit.
+	f, err = ft.TempFile(hsh, 0, timestamp+1, len(body))
 	errnil(t, err)
 	f.Write([]byte(body))
 	errnil(t, ft.Commit(f, hsh, 0, timestamp-1, "", nil))
@@ -86,7 +104,7 @@ func TestFileTracker_Commit(t *testing.T) {
 		t.Fatal(fi.Size(), len(body))
 	}
 	// Doing a newer commit should discard the original.
-	f, err = ft.TempFile(hsh, len(body))
+	f, err = ft.TempFile(hsh, 0, timestamp+1, len(body))
 	errnil(t, err)
 	f.Write([]byte(body))
 	errnil(t, ft.Commit(f, hsh, 0, timestamp+1, "", nil))
@@ -116,7 +134,7 @@ func TestFileTracker_Lookup(t *testing.T) {
 	timestamp := time.Now().UnixNano()
 	body := "just testing"
 	// Commit file.
-	f, err := ft.TempFile(hsh, len(body))
+	f, err := ft.TempFile(hsh, 0, timestamp, len(body))
 	errnil(t, err)
 	f.Write([]byte(body))
 	errnil(t, ft.Commit(f, hsh, 0, timestamp, "", nil))
@@ -157,14 +175,14 @@ func TestFileTracker_Lookup_withOverwrite(t *testing.T) {
 	timestamp := time.Now().UnixNano()
 	body := "just testing"
 	// Commit file.
-	f, err := ft.TempFile(hsh, len(body))
+	f, err := ft.TempFile(hsh, 0, timestamp, len(body))
 	errnil(t, err)
 	f.Write([]byte(body))
 	errnil(t, ft.Commit(f, hsh, 0, timestamp, "", nil))
 	// Commit newer file.
 	timestamp = time.Now().UnixNano()
 	body = "just testing newer"
-	f, err = ft.TempFile(hsh, len(body))
+	f, err = ft.TempFile(hsh, 0, timestamp, len(body))
 	errnil(t, err)
 	f.Write([]byte(body))
 	errnil(t, ft.Commit(f, hsh, 0, timestamp, "", nil))
@@ -205,14 +223,15 @@ func TestFileTracker_Lookup_withUnderwrite(t *testing.T) {
 	timestamp := time.Now().UnixNano()
 	body := "just testing"
 	// Commit file.
-	f, err := ft.TempFile(hsh, len(body))
+	f, err := ft.TempFile(hsh, 0, timestamp, len(body))
 	errnil(t, err)
 	f.Write([]byte(body))
 	errnil(t, ft.Commit(f, hsh, 0, timestamp, "", nil))
 	// Commit older file (should be discarded).
 	timestampOlder := timestamp - 1
 	bodyOlder := "just testing older"
-	f, err = ft.TempFile(hsh, len(bodyOlder))
+	// Fake newer commit, but we'll really commit with timestampOlder.
+	f, err = ft.TempFile(hsh, 0, timestamp+1, len(bodyOlder))
 	errnil(t, err)
 	f.Write([]byte(bodyOlder))
 	errnil(t, ft.Commit(f, hsh, 0, timestampOlder, "", nil))
@@ -258,7 +277,7 @@ func TestFileTracker_List(t *testing.T) {
 		}
 		timestamp := time.Now().UnixNano()
 		body := "just testing"
-		f, err := ft.TempFile(hsh, len(body))
+		f, err := ft.TempFile(hsh, 0, timestamp, len(body))
 		errnil(t, err)
 		f.Write([]byte(body))
 		errnil(t, ft.Commit(f, hsh, 0, timestamp, "", nil))
