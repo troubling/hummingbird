@@ -165,10 +165,10 @@ func (ft *FileTracker) init(dbi int) error {
             CREATE TABLE %s (
                 partition INTEGER NOT NULL,
                 remainder INTEGER NOT NULL,
-                chexorFNV64ai INTEGER NOT NULL
+                chexorFNV64ai INTEGER NOT NULL,
+                CONSTRAINT ix_%s_partition_remainder PRIMARY KEY (partition, remainder)
             );
-            CREATE INDEX ix_%s_partition_remainder ON %s (partition, remainder);
-        `, ft.chexorsModTable, ft.chexorsModTable, ft.chexorsModTable))
+        `, ft.chexorsModTable, ft.chexorsModTable))
 		if err != nil {
 			return err
 		}
@@ -328,22 +328,21 @@ func (ft *FileTracker) Commit(f fs.AtomicFileWriter, hsh string, shard int, time
 		return err
 	}
 	var chexorFNV64a uint64
-	var chexorInsertNeeded bool
 	if !rows.Next() {
 		rows.Close()
 		if err = rows.Err(); err != nil {
 			return err
 		}
-		chexorInsertNeeded = true
-		// TODO: Ain't done yet.
+		startHash, stopHash := ft.partitionRange(ringPart)
 		rows, err = tx.Query(`
             SELECT hash, shard, timestamp, metahash
             FROM files
             WHERE hash BETWEEN ? AND ?
-        `, 0, 0)
+        `, startHash, stopHash)
 		if err != nil {
 			return err
 		}
+		chexorFNV64as := make([]uint64, ft.chexorsMod)
 		var dbHash string
 		var dbShard int
 		var dbTimestamp int64
@@ -352,11 +351,35 @@ func (ft *FileTracker) Commit(f fs.AtomicFileWriter, hsh string, shard int, time
 			if err = rows.Scan(&dbHash, &dbShard, &dbTimestamp, &dbMetahash); err != nil {
 				return err
 			}
-			updateChexorFNV64a(chexorFNV64a, dbHash, dbShard, dbTimestamp, dbMetahash)
+			hashBytes, err := hex.DecodeString(dbHash)
+			if err != nil {
+				ft.logger.Error("invalid dbHash for row", zap.String("fp.path", ft.path), zap.Int("diskPart", diskPart), zap.String("dbHash", dbHash), zap.Int("dbShard", dbShard), zap.Int64("dbTimestamp", dbTimestamp), zap.String("dbMetahash", dbMetahash))
+				continue
+			}
+			remainder := int(hashBytes[len(hashBytes)-1]) % ft.chexorsMod
+			chexorFNV64as[remainder] = updateChexorFNV64a(chexorFNV64as[remainder], dbHash, dbShard, dbTimestamp, dbMetahash)
 		}
 		rows.Close()
 		if err = rows.Err(); err != nil {
 			return err
+		}
+		for remainder, chexorFNV64a := range chexorFNV64as {
+			_, err = tx.Exec(fmt.Sprintf(`
+                INSERT INTO %s (partition, remainder, chexorFNV64ai)
+                VALUES (?, ?, ?)
+            `, ft.chexorsModTable), ringPart, remainder, int(chexorFNV64a))
+			if err != nil {
+				if strings.HasPrefix(err.Error(), "UNIQUE constraint failed:") {
+					// This shouldn't happen but if it somehow does (say
+					// somebody deliberately deletes a row to have it
+					// recalculated, but that means there are many rows that
+					// are recalculated and don't need to be) it'll just log
+					// the failed insert and move on.
+					ft.logger.Error("row already existed", zap.String("ft.chexorsModTable", ft.chexorsModTable), zap.Int("ringPart", ringPart), zap.Int("remainder", remainder))
+					continue
+				}
+				return err
+			}
 		}
 	} else {
 		var chexorFNV64ai int64
@@ -384,24 +407,17 @@ func (ft *FileTracker) Commit(f fs.AtomicFileWriter, hsh string, shard int, time
             SET timestamp = ?, metahash = ?, metadata = ?
             WHERE hash = ? AND shard = ?
         `, timestamp, metahash, metadata, hsh, shard)
-		updateChexorFNV64a(chexorFNV64a, hsh, shard, removeOlderTimestamp, removeOlderMetahash)
+		chexorFNV64a = updateChexorFNV64a(chexorFNV64a, hsh, shard, removeOlderTimestamp, removeOlderMetahash)
 	}
 	if err != nil {
 		return err
 	}
-	updateChexorFNV64a(chexorFNV64a, hsh, shard, timestamp, metahash)
-	if chexorInsertNeeded {
-		_, err = tx.Exec(fmt.Sprintf(`
-            INSERT INTO %s (partition, remainder, chexorFNV64ai)
-            VALUES (?, ?, ?)
-        `, ft.chexorsModTable), ringPart, chexorRemainder, int(chexorFNV64a))
-	} else {
-		_, err = tx.Exec(fmt.Sprintf(`
-            UPDATE %s
-            SET chexorFNV64ai = ?
-            WHERE partition = ? AND remainder = ?
-        `, ft.chexorsModTable), int(chexorFNV64a), ringPart, chexorRemainder)
-	}
+	chexorFNV64a = updateChexorFNV64a(chexorFNV64a, hsh, shard, timestamp, metahash)
+	_, err = tx.Exec(fmt.Sprintf(`
+        UPDATE %s
+        SET chexorFNV64ai = ?
+        WHERE partition = ? AND remainder = ?
+    `, ft.chexorsModTable), int(chexorFNV64a), ringPart, chexorRemainder)
 	if err == nil {
 		err = tx.Commit()
 	}
@@ -519,4 +535,10 @@ func (ft *FileTracker) validateHash(hsh string) (hshOut string, ringPart int, di
 	}
 	upper := uint64(hashBytes[0])<<24 | uint64(hashBytes[1])<<16 | uint64(hashBytes[2])<<8 | uint64(hashBytes[3])
 	return hsh, int(upper >> (32 - ft.ringPartPower)), int(hashBytes[0] >> (8 - ft.diskPartPower)), int(hashBytes[len(hashBytes)-1]) % ft.chexorsMod, nil
+}
+
+func (ft *FileTracker) partitionRange(ringPart int) (string, string) {
+	start := uint64(ringPart << (64 - ft.ringPartPower))
+	stop := uint64((ringPart+1)<<(64-ft.ringPartPower)) - 1
+	return fmt.Sprintf("%016x0000000000000000", start), fmt.Sprintf("%016xffffffffffffffff", stop)
 }

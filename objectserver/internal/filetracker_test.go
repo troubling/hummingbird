@@ -329,3 +329,56 @@ func TestFileTracker_List(t *testing.T) {
 		t.Fatal(len(listing), countOfHashesThatStartWith02)
 	}
 }
+
+func TestFileTracker_partitionRange(t *testing.T) {
+	pth := "testdata/tmp/TestFileTracker_partitionRange"
+	defer os.RemoveAll(pth)
+	ft, err := NewFileTracker(pth, 4, 1, 2, zap.L())
+	errnil(t, err)
+	defer ft.Close()
+	startHash, stopHash := ft.partitionRange(0)
+	if startHash != "00000000000000000000000000000000" {
+		t.Fatal(startHash)
+	}
+	if stopHash != "0fffffffffffffffffffffffffffffff" {
+		t.Fatal(stopHash)
+	}
+	startHash, stopHash = ft.partitionRange(7)
+	if startHash != "70000000000000000000000000000000" {
+		t.Fatal(startHash)
+	}
+	if stopHash != "7fffffffffffffffffffffffffffffff" {
+		t.Fatal(stopHash)
+	}
+	startHash, stopHash = ft.partitionRange(15)
+	if startHash != "f0000000000000000000000000000000" {
+		t.Fatal(startHash)
+	}
+	if stopHash != "ffffffffffffffffffffffffffffffff" {
+		t.Fatal(stopHash)
+	}
+	ft, err = NewFileTracker(pth, 8, 1, 2, zap.L())
+	errnil(t, err)
+	defer ft.Close()
+	startHash, stopHash = ft.partitionRange(0)
+	if startHash != "00000000000000000000000000000000" {
+		t.Fatal(startHash)
+	}
+	if stopHash != "00ffffffffffffffffffffffffffffff" {
+		t.Fatal(stopHash)
+	}
+	startHash, stopHash = ft.partitionRange(127)
+	if startHash != "7f000000000000000000000000000000" {
+		t.Fatal(startHash)
+	}
+	if stopHash != "7fffffffffffffffffffffffffffffff" {
+		t.Fatal(stopHash)
+	}
+	startHash, stopHash = ft.partitionRange(255)
+	if startHash != "ff000000000000000000000000000000" {
+		t.Fatal(startHash)
+	}
+	if stopHash != "ffffffffffffffffffffffffffffffff" {
+		t.Fatal(stopHash)
+	}
+}
