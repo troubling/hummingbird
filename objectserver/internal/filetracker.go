@@ -353,7 +353,7 @@ func (ft *FileTracker) Commit(f fs.AtomicFileWriter, hsh string, shard int, time
 			}
 			hashBytes, err := hex.DecodeString(dbHash)
 			if err != nil {
-				ft.logger.Error("invalid dbHash for row", zap.String("fp.path", ft.path), zap.Int("diskPart", diskPart), zap.String("dbHash", dbHash), zap.Int("dbShard", dbShard), zap.Int64("dbTimestamp", dbTimestamp), zap.String("dbMetahash", dbMetahash))
+				ft.logger.Error("invalid dbHash for row", zap.String("ft.path", ft.path), zap.Int("diskPart", diskPart), zap.String("dbHash", dbHash), zap.Int("dbShard", dbShard), zap.Int64("dbTimestamp", dbTimestamp), zap.String("dbMetahash", dbMetahash))
 				continue
 			}
 			remainder := int(hashBytes[len(hashBytes)-1]) % ft.chexorsMod
@@ -450,7 +450,7 @@ func (ft *FileTracker) wholeFilePath(hsh string, shard int, timestamp int64) (st
 }
 
 // Lookup returns the stored information for the hsh and shard.
-func (ft *FileTracker) Lookup(hsh string, shard int) (timestamp int64, metahash string, metadata []byte, path string, err error) {
+func (ft *FileTracker) Lookup(hsh string, shard int) (timestamp int64, metahash string, metadata []byte, pth string, err error) {
 	hsh, _, diskPart, _, err := ft.validateHash(hsh)
 	if err != nil {
 		return 0, "", nil, "", err
@@ -472,8 +472,35 @@ func (ft *FileTracker) Lookup(hsh string, shard int) (timestamp int64, metahash 
 	if err = rows.Scan(&timestamp, &metahash, &metadata); err != nil {
 		return 0, "", nil, "", err
 	}
-	pth, err := ft.wholeFilePath(hsh, shard, timestamp)
+	pth, err = ft.wholeFilePath(hsh, shard, timestamp)
 	return timestamp, metahash, metadata, pth, err
+}
+
+func (ft *FileTracker) Chexors(partition int) ([]*uint64, error) {
+	diskPart := partition >> (ft.ringPartPower - ft.diskPartPower)
+	db := ft.dbs[diskPart]
+	rows, err := db.Query(fmt.Sprintf(`
+        SELECT remainder, chexorFNV64ai
+        FROM %s
+        WHERE partition = ?
+    `, ft.chexorsModTable), partition)
+	if err != nil {
+		return nil, err
+	}
+	var remainder int
+	var chexorFNV64ai int64
+	listing := make([]*uint64, ft.chexorsMod)
+	for rows.Next() {
+		if err = rows.Scan(&remainder, &chexorFNV64ai); err != nil {
+			ft.logger.Error("error with rows.Scan", zap.String("ft.path", ft.path), zap.String("ft.chexorsModTable", ft.chexorsModTable), zap.Int("partition", partition))
+			continue
+		}
+		chexorFNV64a := new(uint64)
+		*chexorFNV64a = uint64(chexorFNV64ai)
+		listing[remainder] = chexorFNV64a
+	}
+	rows.Close()
+	return listing, rows.Err()
 }
 
 // FileTrackerItem is a single item returned by List.

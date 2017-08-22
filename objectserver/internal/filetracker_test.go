@@ -57,6 +57,8 @@ func TestChexorFNV64a(t *testing.T) {
 }
 
 func newTestFileTracker(t *testing.T, pth string) *FileTracker {
+	// TODO: Once we Go 1.9:
+	// t.Helper()
 	ft, err := NewFileTracker(pth, 2, 1, 2, zap.L())
 	errnil(t, err)
 	return ft
@@ -287,6 +289,62 @@ func TestFileTracker_Lookup_withUnderwrite(t *testing.T) {
 	}
 	if string(b) != body {
 		t.Fatal(string(b), body)
+	}
+}
+
+func TestFileTracker_Chexors(t *testing.T) {
+	pth := "testdata/tmp/TestFileTracker_Chexors"
+	defer os.RemoveAll(pth)
+	ft, err := NewFileTracker(pth, 2, 1, 2, zap.L())
+	errnil(t, err)
+	defer ft.Close()
+	timestamp := time.Date(2017, 1, 2, 3, 5, 6, 7, time.UTC).UnixNano()
+	// Create a bunch of files.
+	for i := 0; i < 32; i++ {
+		hsh := md5hash(fmt.Sprintf("file%d", i))
+		body := "just testing"
+		timestamp++
+		f, err := ft.TempFile(hsh, 0, timestamp, len(body))
+		errnil(t, err)
+		f.Write([]byte(body))
+		errnil(t, ft.Commit(f, hsh, 0, timestamp, "", nil))
+	}
+	listing, err := ft.Chexors(0)
+	errnil(t, err)
+	// Golden values; just testing they don't change.
+	if *listing[0] != 0x41911753f0b1ca97 || *listing[1] != 0x4b78ef08c9c79e78 {
+		msg := "chexors changed"
+		for _, c := range listing {
+			msg += fmt.Sprintf(" %016x", *c)
+		}
+		t.Fatal(msg)
+	}
+	listing, err = ft.Chexors(1)
+	errnil(t, err)
+	if *listing[0] != 0xa88cd09e155fe208 || *listing[1] != 0x6b8188dc60291219 {
+		msg := "chexors changed"
+		for _, c := range listing {
+			msg += fmt.Sprintf(" %016x", *c)
+		}
+		t.Fatal(msg)
+	}
+	listing, err = ft.Chexors(2)
+	errnil(t, err)
+	if *listing[0] != 0xd684658d6e22839e || *listing[1] != 0x745bf60b803b15f3 {
+		msg := "chexors changed"
+		for _, c := range listing {
+			msg += fmt.Sprintf(" %016x", *c)
+		}
+		t.Fatal(msg)
+	}
+	listing, err = ft.Chexors(3)
+	errnil(t, err)
+	if *listing[0] != 0x52faeda6def196a4 || *listing[1] != 0x14765d22c063f259 {
+		msg := "chexors changed"
+		for _, c := range listing {
+			msg += fmt.Sprintf(" %016x", *c)
+		}
+		t.Fatal(msg)
 	}
 }
 
