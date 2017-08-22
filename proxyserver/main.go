@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	_ "net/http/pprof"
 	"strings"
 	"time"
 
@@ -100,6 +101,11 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 	router.Post("/v1/:account/", http.HandlerFunc(server.AccountPostHandler))
 	router.Options("/v1/:account", http.HandlerFunc(server.OptionsHandler))
 	router.Options("/v1/:account/", http.HandlerFunc(server.OptionsHandler))
+
+	if config.GetBool("proxy-server", "pprof_enabled", false) {
+		router.Get("/debug/pprof/:parm", http.DefaultServeMux)
+		router.Post("/debug/pprof/:parm", http.DefaultServeMux)
+	}
 
 	tempAuth := config.GetBool("proxy-server", "tempauth_enabled", true)
 	var middlewares []struct {

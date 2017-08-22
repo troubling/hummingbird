@@ -439,7 +439,12 @@ func (c *userClient) authenticate() *http.Response {
 // returns the error response if unable to.
 func NewClient(tenant string, username string, password string, apikey string, region string, authurl string, private bool) (Client, *http.Response) {
 	c := &userClient{
-		client:   &http.Client{Timeout: 30 * time.Minute},
+		client: &http.Client{
+			Timeout: 30 * time.Minute,
+			Transport: &http.Transport{
+				MaxIdleConnsPerHost: 300,
+			},
+		},
 		tenant:   tenant,
 		username: username,
 		password: password,
