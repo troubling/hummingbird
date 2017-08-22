@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	_ "net/http/pprof"
 	"strings"
 	"time"
 
@@ -101,6 +102,11 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 	router.Options("/v1/:account", http.HandlerFunc(server.OptionsHandler))
 	router.Options("/v1/:account/", http.HandlerFunc(server.OptionsHandler))
 
+	if config.GetBool("proxy-server", "pprof_enabled", false) {
+		router.Get("/debug/pprof/:parm", http.DefaultServeMux)
+		router.Post("/debug/pprof/:parm", http.DefaultServeMux)
+	}
+
 	tempAuth := config.GetBool("proxy-server", "tempauth_enabled", true)
 	var middlewares []struct {
 		construct func(conf.Section, tally.Scope) (func(http.Handler) http.Handler, error)
@@ -149,7 +155,8 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 			{middleware.NewXlo, "filter:slo"},
 		}
 	}
-	pipeline := alice.New(middleware.NewContext(server.mc, server.logger, server.proxyDirectClient))
+	pipeline := alice.New(middleware.NewContext(config.GetBool("debug", "debug_x_source_code", false),
+		server.mc, server.logger, server.proxyDirectClient))
 	for _, m := range middlewares {
 		mid, err := m.construct(config.GetSection(m.section), metricsScope)
 		if err != nil {

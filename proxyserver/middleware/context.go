@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -74,6 +75,7 @@ type ProxyContextMiddleware struct {
 	log               srv.LowLevelLogger
 	Cache             ring.MemcacheRing
 	proxyDirectClient *client.ProxyDirectClient
+	debugResponses    bool
 }
 
 type ProxyContext struct {
@@ -345,6 +347,13 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 				w.Header().Set("Www-Authenticate", "Swift realm=\"unknown\"")
 			}
 		}
+
+		if m.debugResponses {
+			buf := make([]byte, 1024)
+			runtime.Stack(buf, false)
+			w.Header().Set("X-Source-Code", string(buf))
+		}
+
 		ctx.responseSent = true
 		ctx.status = status
 		return status
@@ -353,13 +362,14 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 	m.next.ServeHTTP(newWriter, request)
 }
 
-func NewContext(mc ring.MemcacheRing, log srv.LowLevelLogger, proxyDirectClient *client.ProxyDirectClient) func(http.Handler) http.Handler {
+func NewContext(debugResponses bool, mc ring.MemcacheRing, log srv.LowLevelLogger, proxyDirectClient *client.ProxyDirectClient) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return &ProxyContextMiddleware{
 			Cache:             mc,
 			log:               log,
 			next:              next,
 			proxyDirectClient: proxyDirectClient,
+			debugResponses:    debugResponses,
 		}
 	}
 }
