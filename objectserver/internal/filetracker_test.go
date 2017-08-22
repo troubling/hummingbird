@@ -28,21 +28,24 @@ func md5hash(data string) string {
 	return hex.EncodeToString(b[:])
 }
 
+func newTestFileTracker(t *testing.T, pth string) *FileTracker {
+	ft, err := NewFileTracker(pth, 2, 1, 2, zap.L())
+	errnil(t, err)
+	return ft
+}
+
 func TestNewFileTracker_notExistsAndAlreadyExists(t *testing.T) {
 	pth := "testdata/tmp/TestNewFileTracker_notExistsAndAlreadyExists"
 	defer os.RemoveAll(pth)
-	ft, err := NewFileTracker(pth, 1, zap.L())
-	errnil(t, err)
+	ft := newTestFileTracker(t, pth)
 	ft.Close()
-	ft, err = NewFileTracker(pth, 1, zap.L())
-	errnil(t, err)
+	ft = newTestFileTracker(t, pth)
 }
 
 func TestFileTracker_Commit(t *testing.T) {
 	pth := "testdata/tmp/TestFileTracker_Commit"
 	defer os.RemoveAll(pth)
-	ft, err := NewFileTracker(pth, 1, zap.L())
-	errnil(t, err)
+	ft := newTestFileTracker(t, pth)
 	defer ft.Close()
 	hsh := md5hash("file1")
 	timestamp := time.Now().UnixNano()
@@ -127,8 +130,7 @@ func TestFileTracker_Commit(t *testing.T) {
 func TestFileTracker_Lookup(t *testing.T) {
 	pth := "testdata/tmp/TestFileTracker_Lookup"
 	defer os.RemoveAll(pth)
-	ft, err := NewFileTracker(pth, 1, zap.L())
-	errnil(t, err)
+	ft := newTestFileTracker(t, pth)
 	defer ft.Close()
 	hsh := md5hash("file1")
 	timestamp := time.Now().UnixNano()
@@ -168,8 +170,7 @@ func TestFileTracker_Lookup(t *testing.T) {
 func TestFileTracker_Lookup_withOverwrite(t *testing.T) {
 	pth := "testdata/tmp/TestFileTracker_Lookup_withOverwrite"
 	defer os.RemoveAll(pth)
-	ft, err := NewFileTracker(pth, 1, zap.L())
-	errnil(t, err)
+	ft := newTestFileTracker(t, pth)
 	defer ft.Close()
 	hsh := md5hash("file1")
 	timestamp := time.Now().UnixNano()
@@ -216,8 +217,7 @@ func TestFileTracker_Lookup_withOverwrite(t *testing.T) {
 func TestFileTracker_Lookup_withUnderwrite(t *testing.T) {
 	pth := "testdata/tmp/TestFileTracker_Lookup_withUnderwrite"
 	defer os.RemoveAll(pth)
-	ft, err := NewFileTracker(pth, 1, zap.L())
-	errnil(t, err)
+	ft := newTestFileTracker(t, pth)
 	defer ft.Close()
 	hsh := md5hash("file1")
 	timestamp := time.Now().UnixNano()
@@ -265,8 +265,7 @@ func TestFileTracker_Lookup_withUnderwrite(t *testing.T) {
 func TestFileTracker_List(t *testing.T) {
 	pth := "testdata/tmp/TestFileTracker_List"
 	defer os.RemoveAll(pth)
-	ft, err := NewFileTracker(pth, 1, zap.L())
-	errnil(t, err)
+	ft := newTestFileTracker(t, pth)
 	defer ft.Close()
 	countOfHashesThatStartWith02 := 0
 	// Create a bunch of files.
