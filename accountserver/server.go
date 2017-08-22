@@ -505,7 +505,13 @@ func (server *AccountServer) GetHandler(config conf.Config, metricsPrefix string
 		CachedReporter: promreporter.NewReporter(promreporter.Options{}),
 		Separator:      promreporter.DefaultSeparator,
 	}, time.Second)
-	commonHandlers := alice.New(server.LogRequest, middleware.RecoverHandler, middleware.ValidateRequest, server.AcquireDevice)
+	commonHandlers := alice.New(
+		middleware.NewDebugResponses(config.GetBool("debug", "debug_x_source_code", false)),
+		server.LogRequest,
+		middleware.RecoverHandler,
+		middleware.ValidateRequest,
+		server.AcquireDevice,
+	)
 	router := srv.NewRouter()
 	router.Get("/metrics", prometheus.Handler())
 	router.Get("/loglevel", server.logLevel)
