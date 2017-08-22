@@ -28,6 +28,34 @@ func md5hash(data string) string {
 	return hex.EncodeToString(b[:])
 }
 
+func TestChexorFNV64a(t *testing.T) {
+	var chexorFNV64a uint64
+	chexorFNV64a = updateChexorFNV64a(chexorFNV64a, "eb4585ad9fe0426781ed7c49252f8225", 0, time.Date(2017, 1, 2, 3, 4, 5, 6, time.UTC).UnixNano(), "3d6a6976bcf5dfb9")
+	if chexorFNV64a == 0 {
+		t.Fatal(chexorFNV64a)
+	}
+	chexorFNV64a = updateChexorFNV64a(chexorFNV64a, "eb4585ad9fe0426781ed7c49252f8225", 0, time.Date(2017, 1, 2, 3, 4, 5, 6, time.UTC).UnixNano(), "3d6a6976bcf5dfb9")
+	if chexorFNV64a != 0 {
+		t.Fatal(chexorFNV64a)
+	}
+	chexorFNV64a = updateChexorFNV64a(chexorFNV64a, "eb4585ad9fe0426781ed7c49252f8225", 0, time.Date(2017, 1, 2, 3, 4, 5, 6, time.UTC).UnixNano(), "3d6a6976bcf5dfb9")
+	if chexorFNV64a == 0 {
+		t.Fatal(chexorFNV64a)
+	}
+	chexorFNV64a = updateChexorFNV64a(chexorFNV64a, "e4ac654ba9b61686c2dc854a1128a323", 1, time.Date(2016, 6, 5, 4, 3, 2, 1, time.UTC).UnixNano(), "3d670f76bcf310f4")
+	if chexorFNV64a == 0 {
+		t.Fatal(chexorFNV64a)
+	}
+	chexorFNV64a = updateChexorFNV64a(chexorFNV64a, "eb4585ad9fe0426781ed7c49252f8225", 0, time.Date(2017, 1, 2, 3, 4, 5, 6, time.UTC).UnixNano(), "3d6a6976bcf5dfb9")
+	if chexorFNV64a == 0 {
+		t.Fatal(chexorFNV64a)
+	}
+	chexorFNV64a = updateChexorFNV64a(chexorFNV64a, "e4ac654ba9b61686c2dc854a1128a323", 1, time.Date(2016, 6, 5, 4, 3, 2, 1, time.UTC).UnixNano(), "3d670f76bcf310f4")
+	if chexorFNV64a != 0 {
+		t.Fatal(chexorFNV64a)
+	}
+}
+
 func newTestFileTracker(t *testing.T, pth string) *FileTracker {
 	ft, err := NewFileTracker(pth, 2, 1, 2, zap.L())
 	errnil(t, err)

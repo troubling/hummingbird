@@ -163,10 +163,12 @@ func (ft *FileTracker) init(dbi int) error {
 	if !tableExists {
 		_, err = tx.Exec(fmt.Sprintf(`
             CREATE TABLE %s (
-                id INTEGER PRIMARY KEY,
+                partition INTEGER NOT NULL,
+                remainder INTEGER NOT NULL,
                 chexorFNV64ai INTEGER NOT NULL
             );
-        `, ft.chexorsModTable))
+            CREATE INDEX ix_%s_partition_remainder ON %s (partition, remainder);
+        `, ft.chexorsModTable, ft.chexorsModTable, ft.chexorsModTable))
 		if err != nil {
 			return err
 		}
@@ -215,7 +217,7 @@ func (ft *FileTracker) TempFile(hsh string, shard int, timestamp int64, sizeHint
 // account/container metadata. The FileTracker doesn't look too closely at
 // these, but it does compare the hashes and merges metadata sets if needed.
 func (ft *FileTracker) Commit(f fs.AtomicFileWriter, hsh string, shard int, timestamp int64, metahash string, metadata []byte) error {
-	hsh, diskPart, chexorID, err := ft.validateHash(hsh)
+	hsh, ringPart, diskPart, chexorRemainder, err := ft.validateHash(hsh)
 	if err != nil {
 		return err
 	}
@@ -320,8 +322,8 @@ func (ft *FileTracker) Commit(f fs.AtomicFileWriter, hsh string, shard int, time
 	rows, err = tx.Query(fmt.Sprintf(`
         SELECT chexorFNV64ai
         FROM %s
-        WHERE id = ?
-    `, ft.chexorsModTable), chexorID)
+        WHERE partition = ? AND remainder = ?
+    `, ft.chexorsModTable), ringPart, chexorRemainder)
 	if err != nil {
 		return err
 	}
@@ -333,6 +335,7 @@ func (ft *FileTracker) Commit(f fs.AtomicFileWriter, hsh string, shard int, time
 			return err
 		}
 		chexorInsertNeeded = true
+		// TODO: Ain't done yet.
 		rows, err = tx.Query(`
             SELECT hash, shard, timestamp, metahash
             FROM files
@@ -389,15 +392,15 @@ func (ft *FileTracker) Commit(f fs.AtomicFileWriter, hsh string, shard int, time
 	updateChexorFNV64a(chexorFNV64a, hsh, shard, timestamp, metahash)
 	if chexorInsertNeeded {
 		_, err = tx.Exec(fmt.Sprintf(`
-            INSERT INTO %s (id, chexorFNV64ai)
-            VALUES (?, ?)
-        `, ft.chexorsModTable), chexorID, int(chexorFNV64a))
+            INSERT INTO %s (partition, remainder, chexorFNV64ai)
+            VALUES (?, ?, ?)
+        `, ft.chexorsModTable), ringPart, chexorRemainder, int(chexorFNV64a))
 	} else {
 		_, err = tx.Exec(fmt.Sprintf(`
             UPDATE %s
             SET chexorFNV64ai = ?
-            WHERE id = ?
-        `, ft.chexorsModTable), chexorID, int(chexorFNV64a))
+            WHERE partition = ? AND remainder = ?
+        `, ft.chexorsModTable), int(chexorFNV64a), ringPart, chexorRemainder)
 	}
 	if err == nil {
 		err = tx.Commit()
@@ -415,7 +418,7 @@ func (ft *FileTracker) Commit(f fs.AtomicFileWriter, hsh string, shard int, time
 }
 
 func (ft *FileTracker) wholeFileDir(hsh string) (string, error) {
-	hsh, diskPart, _, err := ft.validateHash(hsh)
+	hsh, _, diskPart, _, err := ft.validateHash(hsh)
 	if err != nil {
 		return "", err
 	}
@@ -423,7 +426,7 @@ func (ft *FileTracker) wholeFileDir(hsh string) (string, error) {
 }
 
 func (ft *FileTracker) wholeFilePath(hsh string, shard int, timestamp int64) (string, error) {
-	hsh, diskPart, _, err := ft.validateHash(hsh)
+	hsh, _, diskPart, _, err := ft.validateHash(hsh)
 	if err != nil {
 		return "", err
 	}
@@ -432,7 +435,7 @@ func (ft *FileTracker) wholeFilePath(hsh string, shard int, timestamp int64) (st
 
 // Lookup returns the stored information for the hsh and shard.
 func (ft *FileTracker) Lookup(hsh string, shard int) (timestamp int64, metahash string, metadata []byte, path string, err error) {
-	hsh, diskPart, _, err := ft.validateHash(hsh)
+	hsh, _, diskPart, _, err := ft.validateHash(hsh)
 	if err != nil {
 		return 0, "", nil, "", err
 	}
@@ -468,14 +471,12 @@ type FileTrackerItem struct {
 // List returns stored information in the hash range given.
 //
 // This is for replication, auditing, that sort of thing.
-//
-// TODO: Think on how we want to do replication exactly.
 func (ft *FileTracker) List(startHash string, stopHash string) ([]*FileTrackerItem, error) {
-	startHash, startDiskPart, _, err := ft.validateHash(startHash)
+	startHash, _, startDiskPart, _, err := ft.validateHash(startHash)
 	if err != nil {
 		return nil, err
 	}
-	stopHash, stopDiskPart, _, err := ft.validateHash(stopHash)
+	stopHash, _, stopDiskPart, _, err := ft.validateHash(stopHash)
 	if err != nil {
 		return nil, err
 	}
@@ -507,14 +508,15 @@ func (ft *FileTracker) List(startHash string, stopHash string) ([]*FileTrackerIt
 	return listing, nil
 }
 
-func (ft *FileTracker) validateHash(hsh string) (hshOut string, diskPart int, chexorID int, err error) {
+func (ft *FileTracker) validateHash(hsh string) (hshOut string, ringPart int, diskPart int, chexorRemainder int, err error) {
 	hsh = strings.ToLower(hsh)
 	if len(hsh) != 32 {
-		return "", 0, 0, fmt.Errorf("invalid hash %q; length was %d not 32", hsh, len(hsh))
+		return "", 0, 0, 0, fmt.Errorf("invalid hash %q; length was %d not 32", hsh, len(hsh))
 	}
 	hashBytes, err := hex.DecodeString(hsh)
 	if err != nil {
-		return "", 0, 0, fmt.Errorf("invalid hash %q; decoding error: %s", hsh, err)
+		return "", 0, 0, 0, fmt.Errorf("invalid hash %q; decoding error: %s", hsh, err)
 	}
-	return hsh, int(hashBytes[0] >> (8 - ft.diskPartPower)), int(hashBytes[len(hashBytes)-1]) % ft.chexorsMod, nil
+	upper := uint64(hashBytes[0])<<24 | uint64(hashBytes[1])<<16 | uint64(hashBytes[2])<<8 | uint64(hashBytes[3])
+	return hsh, int(upper >> (32 - ft.ringPartPower)), int(hashBytes[0] >> (8 - ft.diskPartPower)), int(hashBytes[len(hashBytes)-1]) % ft.chexorsMod, nil
 }
