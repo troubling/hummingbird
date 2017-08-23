@@ -131,6 +131,10 @@ func (ft *FileTracker) init(dbi int) error {
 		return err
 	}
 	if !tableExists {
+        // TODO: add a column for chexorRemainder and another table to record
+        // the ft.chexorsMod value. If that changes on an existing cluster, we
+        // could theoretically update the whole database to work with the new
+        // value.
 		_, err = tx.Exec(`
             CREATE TABLE files (
                 hash TEXT NOT NULL,
@@ -514,41 +518,43 @@ type FileTrackerItem struct {
 // List returns stored information in the hash range given.
 //
 // This is for replication, auditing, that sort of thing.
-func (ft *FileTracker) List(startHash string, stopHash string) ([]*FileTrackerItem, error) {
-	startHash, _, startDiskPart, _, err := ft.validateHash(startHash)
-	if err != nil {
-		return nil, err
-	}
-	stopHash, _, stopDiskPart, _, err := ft.validateHash(stopHash)
-	if err != nil {
-		return nil, err
-	}
-	if startDiskPart > stopDiskPart {
-		return nil, fmt.Errorf("startHash greater than stopHash: %x > %x", startHash, stopHash)
-	}
-	listing := []*FileTrackerItem{}
-	for diskPart := startDiskPart; diskPart <= stopDiskPart; diskPart++ {
-		db := ft.dbs[diskPart]
-		rows, err := db.Query(`
-            SELECT hash, shard, timestamp, metahash
-            FROM files
-            WHERE hash BETWEEN ? AND ?
-        `, startHash, stopHash)
-		if err != nil {
-			return nil, err
-		}
-		for rows.Next() {
-			item := &FileTrackerItem{}
-			if err = rows.Scan(&item.Hash, &item.Shard, &item.Timestamp, &item.Metahash); err != nil {
-				return listing, err
-			}
-			listing = append(listing, item)
-		}
-		if err = rows.Err(); err != nil {
-			return listing, err
-		}
-	}
-	return listing, nil
+func (ft *FileTracker) List(partition int, chexorRemainder int) ([]*FileTrackerItem, error) {
+    // TODO: Need the extra column before we can implement this.
+    return nil, nil
+	// startHash, _, startDiskPart, _, err := ft.validateHash(startHash)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// stopHash, _, stopDiskPart, _, err := ft.validateHash(stopHash)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// if startDiskPart > stopDiskPart {
+	// 	return nil, fmt.Errorf("startHash greater than stopHash: %x > %x", startHash, stopHash)
+	// }
+	// listing := []*FileTrackerItem{}
+	// for diskPart := startDiskPart; diskPart <= stopDiskPart; diskPart++ {
+	// 	db := ft.dbs[diskPart]
+	// 	rows, err := db.Query(`
+    //         SELECT hash, shard, timestamp, metahash
+    //         FROM files
+    //         WHERE hash BETWEEN ? AND ?
+    //     `, startHash, stopHash)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	for rows.Next() {
+	// 		item := &FileTrackerItem{}
+	// 		if err = rows.Scan(&item.Hash, &item.Shard, &item.Timestamp, &item.Metahash); err != nil {
+	// 			return listing, err
+	// 		}
+	// 		listing = append(listing, item)
+	// 	}
+	// 	if err = rows.Err(); err != nil {
+	// 		return listing, err
+	// 	}
+	// }
+	// return listing, nil
 }
 
 func (ft *FileTracker) validateHash(hsh string) (hshOut string, ringPart int, diskPart int, chexorRemainder int, err error) {
