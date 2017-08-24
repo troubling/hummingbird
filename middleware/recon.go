@@ -318,7 +318,7 @@ func diskUsage(driveRoot string) ([]map[string]interface{}, error) {
 	return devices, nil
 }
 
-func ReconHandler(driveRoot string, writer http.ResponseWriter, request *http.Request) {
+func ReconHandler(driveRoot string, mountCheck bool, writer http.ResponseWriter, request *http.Request) {
 	var content interface{} = nil
 
 	vars := srv.GetVars(request)
@@ -393,10 +393,14 @@ func ReconHandler(driveRoot string, writer http.ResponseWriter, request *http.Re
 		content = getMounts()
 	case "unmounted":
 		var err error
-		content, err = getUnmounted(driveRoot)
-		if err != nil {
-			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			return
+		if !mountCheck {
+			content = make([]map[string]interface{}, 0)
+		} else {
+			content, err = getUnmounted(driveRoot)
+			if err != nil {
+				http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				return
+			}
 		}
 	case "ringmd5":
 		var err error

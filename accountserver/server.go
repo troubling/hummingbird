@@ -409,7 +409,7 @@ func (server *AccountServer) HealthcheckHandler(writer http.ResponseWriter, requ
 
 // ReconHandler delegates incoming /recon calls to the common recon handler.
 func (server *AccountServer) ReconHandler(writer http.ResponseWriter, request *http.Request) {
-	middleware.ReconHandler(server.driveRoot, writer, request)
+	middleware.ReconHandler(server.driveRoot, server.checkMounts, writer, request)
 }
 
 // DiskUsageHandler returns information on the current outstanding HTTP requests per-disk.

@@ -155,7 +155,7 @@ func TestGetMem(t *testing.T) {
 	vars := map[string]string{"method": "mem"}
 	r = srv.SetVars(r, vars)
 	w := &testWriter{make(http.Header), bytes.NewBuffer(nil), 0}
-	ReconHandler("", w, r)
+	ReconHandler("", false, w, r)
 	output := w.f.Bytes()
 	var v map[string]string
 	err := json.Unmarshal(output, &v)
@@ -169,7 +169,7 @@ func TestGetLoad(t *testing.T) {
 	vars := map[string]string{"method": "load"}
 	r = srv.SetVars(r, vars)
 	w := &testWriter{make(http.Header), bytes.NewBuffer(nil), 0}
-	ReconHandler("", w, r)
+	ReconHandler("", false, w, r)
 	output := w.f.Bytes()
 	var v map[string]interface{}
 	err := json.Unmarshal(output, &v)

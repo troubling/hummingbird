@@ -17,11 +17,13 @@ package tools
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -254,9 +256,12 @@ type probObj struct {
 	nodesFound int
 }
 
-type BirdCatcher struct {
+type Dispersion struct {
 	logger  srv.LowLevelLogger
 	hClient client.ProxyClient
+
+	db  *sql.DB
+	dbl sync.Mutex
 
 	metricsScope tally.Scope
 
@@ -269,18 +274,18 @@ type BirdCatcher struct {
 	objRescueCounters   map[int64]tally.Counter
 }
 
-func (bc *BirdCatcher) scanDispersionObjs(cancelChan chan struct{}) {
-	resp := bc.hClient.GetAccount(AdminAccount, map[string]string{"format": "json", "prefix": "disp-objs-"}, http.Header{})
+func (d *Dispersion) scanDispersionObjs(cancelChan chan struct{}) {
+	resp := d.hClient.GetAccount(AdminAccount, map[string]string{"format": "json", "prefix": "disp-objs-"}, http.Header{})
 	var cRecords []accountserver.ContainerListingRecord
 	err := json.NewDecoder(resp.Body).Decode(&cRecords)
 	if err != nil {
-		bc.logger.Error("Could not get container listing", zap.Error(err))
+		d.logger.Error("Could not get container listing", zap.Error(err))
 		return
 	}
 	dirClient := http.Client{Timeout: 10 * time.Second}
 
 	if len(cRecords) == 0 {
-		bc.logger.Error("No dispersion containers found")
+		d.logger.Error("No dispersion containers found")
 		return
 	}
 	resultChan := make(chan string)
@@ -295,12 +300,12 @@ func (bc *BirdCatcher) scanDispersionObjs(cancelChan chan struct{}) {
 		}
 		policy, err := strconv.ParseInt(contArr[2], 10, 64)
 		if err != nil {
-			bc.logger.Error("error parsing policy index", zap.Error(err))
+			d.logger.Error("error parsing policy index", zap.Error(err))
 			return
 		}
-		objRing, resp = bc.hClient.ObjectRingFor(AdminAccount, cr.Name)
+		objRing, resp = d.hClient.ObjectRingFor(AdminAccount, cr.Name)
 		if resp != nil {
-			bc.logger.Error("error getting obj ring for", zap.String("container", cr.Name))
+			d.logger.Error("error getting obj ring for", zap.String("container", cr.Name))
 			return
 		}
 		marker := ""
@@ -311,10 +316,10 @@ func (bc *BirdCatcher) scanDispersionObjs(cancelChan chan struct{}) {
 			default:
 			}
 			var ors []containerserver.ObjectListingRecord
-			resp := bc.hClient.GetContainer(AdminAccount, cr.Name, map[string]string{"format": "json", "marker": marker}, http.Header{})
+			resp := d.hClient.GetContainer(AdminAccount, cr.Name, map[string]string{"format": "json", "marker": marker}, http.Header{})
 			err = json.NewDecoder(resp.Body).Decode(&ors)
 			if err != nil {
-				bc.logger.Error("error in container listing", zap.String("container", cr.Name), zap.Error(err))
+				d.logger.Error("error in container listing", zap.String("container", cr.Name), zap.Error(err))
 				return
 			}
 			if len(ors) == 0 {
@@ -364,20 +369,20 @@ func (bc *BirdCatcher) scanDispersionObjs(cancelChan chan struct{}) {
 						notFoundNodes, objRing.GetMoreNodes(partition), resultChan)
 				}
 				if len(goodNodes) == 0 {
-					bc.logger.Error("LOST Partition",
+					d.logger.Error("LOST Partition",
 						zap.Uint64("partition", partition),
 						zap.String("objPath", fmt.Sprintf("/%s/%s/%s", AdminAccount, cr.Name, objRec.Name)))
 				}
 
 				marker = objRec.Name
-				if !bc.onceFullDispersion {
+				if !d.onceFullDispersion {
 					time.Sleep(SLEEP_TIME)
-					bc.partitionProcessed <- struct{}{}
+					d.partitionProcessed <- struct{}{}
 				}
 			}
 		}
-		bc.reportObjectDispersion(policy, objRing.ReplicaCount(), goodPartitions, probObjs, numRescues)
-		bc.logger.Info("Dispersion report written",
+		d.reportObjectDispersion(policy, objRing.ReplicaCount(), goodPartitions, probObjs, numRescues)
+		d.logger.Info("Dispersion report written",
 			zap.Int64("policy", policy),
 			zap.Int64("rescuing", numRescues),
 			zap.Int64("goodPartitions", goodPartitions),
@@ -385,26 +390,26 @@ func (bc *BirdCatcher) scanDispersionObjs(cancelChan chan struct{}) {
 		start := time.Now()
 		for i := int64(0); i < numRescues; i++ {
 			res := <-resultChan
-			bc.logger.Info(res)
+			d.logger.Info(res)
 		}
 		if numRescues > 0 {
-			bc.logger.Info("time spent rescuing",
+			d.logger.Info("time spent rescuing",
 				zap.Float64("seconds", time.Since(start).Seconds()))
 		}
 	}
 }
 
-func (bc *BirdCatcher) reportObjectDispersion(
+func (d *Dispersion) reportObjectDispersion(
 	policy int64, replicas uint64, goodPartitions int64,
 	probObjects map[string]probObj, numRescues int64) {
 
 	if numRescues > 0 {
-		if _, ok := bc.objRescueCounters[policy]; !ok {
-			bc.objRescueCounters[policy] = bc.metricsScope.Counter(
+		if _, ok := d.objRescueCounters[policy]; !ok {
+			d.objRescueCounters[policy] = d.metricsScope.Counter(
 				fmt.Sprintf("rescue_object_p%d", policy))
 		}
-		bc.objRescueCounters[policy].Inc(numRescues)
-		bc.logger.Info("rescue object partitions",
+		d.objRescueCounters[policy].Inc(numRescues)
+		d.logger.Info("rescue object partitions",
 			zap.Int64("rescues", numRescues), zap.Int64("policy", policy))
 	}
 	objMap := map[uint64]int64{0: goodPartitions}
@@ -412,57 +417,57 @@ func (bc *BirdCatcher) reportObjectDispersion(
 		nodesMissing := replicas - uint64(po.nodesFound)
 		objMap[nodesMissing] = objMap[nodesMissing] + 1
 	}
-	if _, ok := bc.objDispersionGauges[policy]; !ok {
-		bc.objDispersionGauges[policy] = make([]tally.Gauge, replicas+1)
+	if _, ok := d.objDispersionGauges[policy]; !ok {
+		d.objDispersionGauges[policy] = make([]tally.Gauge, replicas+1)
 		for i := uint64(0); i <= replicas; i++ {
-			bc.objDispersionGauges[policy][i] = bc.metricsScope.Gauge(
+			d.objDispersionGauges[policy][i] = d.metricsScope.Gauge(
 				fmt.Sprintf("dispersion_object_p%d_missing_%d", policy, i))
 		}
 	}
 	for i := uint64(0); i <= replicas; i++ {
 		cnt := objMap[i]
-		bc.objDispersionGauges[policy][i].Update(float64(cnt))
-		bc.logger.Info("object partitions missing", zap.Uint64("missing", i),
+		d.objDispersionGauges[policy][i].Update(float64(cnt))
+		d.logger.Info("object partitions missing", zap.Uint64("missing", i),
 			zap.Int64("count", cnt), zap.Int64("policy", policy))
 	}
 }
 
-func (bc *BirdCatcher) dispersionMonitor(ticker <-chan time.Time) {
+func (d *Dispersion) dispersionMonitor(ticker <-chan time.Time) {
 	for {
 		select {
-		case <-bc.partitionProcessed:
-			bc.lastPartProcessed = time.Now()
+		case <-d.partitionProcessed:
+			d.lastPartProcessed = time.Now()
 		case <-ticker:
-			bc.checkDispersionRunner()
+			d.checkDispersionRunner()
 		}
 	}
 }
 
-func (bc *BirdCatcher) checkDispersionRunner() {
-	if time.Since(bc.lastPartProcessed) > 10*time.Minute {
-		if bc.dispersionCanceler != nil {
-			close(bc.dispersionCanceler)
+func (d *Dispersion) checkDispersionRunner() {
+	if time.Since(d.lastPartProcessed) > 10*time.Minute {
+		if d.dispersionCanceler != nil {
+			close(d.dispersionCanceler)
 		}
-		bc.dispersionCanceler = make(chan struct{})
-		go bc.scanDispersionObjs(bc.dispersionCanceler)
+		d.dispersionCanceler = make(chan struct{})
+		go d.scanDispersionObjs(d.dispersionCanceler)
 	}
 }
 
-func (bc *BirdCatcher) runDispersionForever() {
-	bc.onceFullDispersion = false
-	bc.checkDispersionRunner()
-	bc.dispersionMonitor(time.NewTicker(time.Second * 30).C)
+func (d *Dispersion) runDispersionForever() {
+	d.onceFullDispersion = false
+	d.checkDispersionRunner()
+	d.dispersionMonitor(time.NewTicker(time.Second * 30).C)
 }
 
-func (bc *BirdCatcher) runDispersionOnce() {
-	bc.onceFullDispersion = true
+func (d *Dispersion) runDispersionOnce() {
+	d.onceFullDispersion = true
 	dummyCanceler := make(chan struct{})
 	defer close(dummyCanceler)
-	bc.scanDispersionObjs(dummyCanceler)
+	d.scanDispersionObjs(dummyCanceler)
 }
 
-func NewBirdCatcher(logger srv.LowLevelLogger, hClient client.ProxyClient, metricsScope tally.Scope) *BirdCatcher {
-	return &BirdCatcher{
+func NewDispersion(logger srv.LowLevelLogger, hClient client.ProxyClient, metricsScope tally.Scope) *Dispersion {
+	return &Dispersion{
 		logger:              logger,
 		hClient:             hClient,
 		partitionProcessed:  make(chan struct{}),
