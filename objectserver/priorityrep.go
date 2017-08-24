@@ -241,13 +241,15 @@ func getRescuePartsJobs(objRing ring.Ring, partitions []uint64) []*PriorityRepJo
 	jobs := make([]*PriorityRepJob, 0)
 	allDevices := objRing.AllDevices()
 	for d := range allDevices {
-		for _, p := range partitions {
-			nodes, _ := objRing.GetJobNodes(p, allDevices[d].Id)
-			jobs = append(jobs, &PriorityRepJob{
-				Partition:  p,
-				FromDevice: &allDevices[d],
-				ToDevices:  nodes,
-			})
+		if allDevices[d] != nil {
+			for _, p := range partitions {
+				nodes, _ := objRing.GetJobNodes(p, allDevices[d].Id)
+				jobs = append(jobs, &PriorityRepJob{
+					Partition:  p,
+					FromDevice: allDevices[d],
+					ToDevices:  nodes,
+				})
+			}
 		}
 	}
 	return jobs
