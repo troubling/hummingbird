@@ -33,8 +33,9 @@ import (
 )
 
 type DirectObject struct {
-	Url  string
-	Data []byte
+	Url    string
+	Data   []byte
+	Client *http.Client
 }
 
 func (obj *DirectObject) Put() bool {
@@ -43,7 +44,7 @@ func (obj *DirectObject) Put() bool {
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.ContentLength = int64(len(obj.Data))
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := obj.Client.Do(req)
 	if resp != nil {
 		resp.Body.Close()
 	}
@@ -55,7 +56,7 @@ func (obj *DirectObject) Put() bool {
 
 func (obj *DirectObject) Get() bool {
 	req, _ := http.NewRequest("GET", obj.Url, nil)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := obj.Client.Do(req)
 	if resp != nil {
 		io.Copy(ioutil.Discard, resp.Body)
 	}
@@ -67,7 +68,7 @@ func (obj *DirectObject) Get() bool {
 
 func (obj *DirectObject) Replicate() bool {
 	req, _ := http.NewRequest("REPLICATE", obj.Url, nil)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := obj.Client.Do(req)
 	if resp != nil {
 		io.Copy(ioutil.Discard, resp.Body)
 	}
@@ -77,7 +78,7 @@ func (obj *DirectObject) Replicate() bool {
 func (obj *DirectObject) Delete() bool {
 	req, _ := http.NewRequest("DELETE", obj.Url, nil)
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := obj.Client.Do(req)
 	if resp != nil {
 		resp.Body.Close()
 	}
@@ -153,6 +154,12 @@ func RunDBench(args []string) {
 		deviceList = strings.Split(driveList, ",")
 	}
 
+	client := &http.Client{
+		Transport: &http.Transport{
+			MaxIdleConnsPerHost: 300,
+		},
+	}
+
 	data := make([]byte, objectSize)
 	objects := make([]*DirectObject, numObjects)
 	deviceParts := make(map[string]bool)
@@ -160,8 +167,9 @@ func RunDBench(args []string) {
 		device := strings.Trim(deviceList[i%len(deviceList)], " ")
 		part := rand.Int63()%numPartitions + minPartition
 		objects[i] = &DirectObject{
-			Url:  fmt.Sprintf("%s%s/%d/%s/%s/%d", address, device, part, "a", "c", rand.Int63()),
-			Data: data,
+			Url:    fmt.Sprintf("%s%s/%d/%s/%s/%d", address, device, part, "a", "c", rand.Int63()),
+			Data:   data,
+			Client: client,
 		}
 		deviceParts[fmt.Sprintf("%s/%d", device, part)] = true
 	}
@@ -177,7 +185,7 @@ func RunDBench(args []string) {
 	replWork := make([]func() bool, 0)
 	for replKey := range deviceParts {
 		devicePart := strings.Split(replKey, "/")
-		replWork = append(replWork, (&DirectObject{Url: fmt.Sprintf("%s%s/%s", address, devicePart[0], devicePart[1])}).Replicate)
+		replWork = append(replWork, (&DirectObject{Url: fmt.Sprintf("%s%s/%s", address, devicePart[0], devicePart[1]), Client: client}).Replicate)
 	}
 	if doReplicates {
 		DoJobs("REPLICATE", replWork, concurrency)
