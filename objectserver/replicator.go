@@ -48,6 +48,7 @@ const (
 	replicateIncomingTimeout     = time.Minute
 	replicateLoopSleepTime       = time.Second * 30
 	replicatePartSleepTime       = time.Millisecond * 10
+	minimumReplicationPassTime   = time.Minute * 30
 )
 
 var (
@@ -170,11 +171,12 @@ type replicationDevice struct {
 		listPartitions() ([]string, error)
 		replicatePartition(partition string)
 	}
-	r      *Replicator
-	dev    *ring.Device
-	policy int
-	cancel chan struct{}
-	priRep chan PriorityRepJob
+	r             *Replicator
+	dev           *ring.Device
+	policy        int
+	cancel        chan struct{}
+	priRep        chan PriorityRepJob
+	partSleepTime time.Duration
 }
 
 type statUpdate struct {
@@ -599,6 +601,7 @@ func (rd *replicationDevice) Replicate() {
 	}
 	rd.updateStat("PartitionsTotal", int64(len(partitionList)))
 
+	start := time.Now()
 	for _, partition := range partitionList {
 		rd.updateStat("checkin", 1)
 		select {
@@ -611,7 +614,15 @@ func (rd *replicationDevice) Replicate() {
 		}
 		rd.processPriorityJobs()
 		rd.i.replicatePartition(partition)
-		time.Sleep(replicatePartSleepTime)
+		time.Sleep(rd.partSleepTime)
+	}
+	if time.Since(start) < minimumReplicationPassTime {
+		rd.partSleepTime = minimumReplicationPassTime / time.Duration(len(partitionList))
+	} else {
+		rd.partSleepTime = rd.partSleepTime / 2
+	}
+	if rd.partSleepTime < replicatePartSleepTime {
+		rd.partSleepTime = replicatePartSleepTime
 	}
 	rd.updateStat("FullReplicateCount", 1)
 }
@@ -690,11 +701,12 @@ func (rd *replicationDevice) processPriorityJobs() {
 
 var newReplicationDevice = func(dev *ring.Device, policy int, r *Replicator) *replicationDevice {
 	rd := &replicationDevice{
-		r:      r,
-		dev:    dev,
-		policy: policy,
-		cancel: make(chan struct{}),
-		priRep: make(chan PriorityRepJob),
+		r:             r,
+		dev:           dev,
+		policy:        policy,
+		cancel:        make(chan struct{}),
+		priRep:        make(chan PriorityRepJob),
+		partSleepTime: replicatePartSleepTime,
 	}
 	rd.i = rd
 	return rd

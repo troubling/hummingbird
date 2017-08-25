@@ -254,7 +254,7 @@ func (r *Replicator) LogRequest(next http.Handler) http.Handler {
 		logr := r.logger.With(zap.String("txn", request.Header.Get("X-Trans-Id")))
 		request = srv.SetLogger(request, logr)
 		next.ServeHTTP(newWriter, request)
-		logr.Info("Request log",
+		logr.Debug("Request log",
 			zap.String("remoteAddr", request.RemoteAddr),
 			zap.String("eventTime", time.Now().Format("02/Jan/2006:15:04:05 -0700")),
 			zap.String("method", request.Method),
