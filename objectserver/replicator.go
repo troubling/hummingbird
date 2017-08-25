@@ -48,6 +48,8 @@ const (
 	replicateIncomingTimeout     = time.Minute
 	replicateLoopSleepTime       = time.Second * 30
 	replicatePartSleepTime       = time.Millisecond * 10
+	handoffListDirFreq           = time.Minute * 10
+	handoffToAllMod              = 5
 )
 
 var (
@@ -167,7 +169,7 @@ type replicationDevice struct {
 		replicateLocal(partition string, nodes []*ring.Device, moreNodes ring.MoreNodes)
 		replicateHandoff(partition string, nodes []*ring.Device)
 		cleanTemp()
-		listPartitions() ([]string, error)
+		listPartitions() ([]string, []string, error)
 		replicatePartition(partition string)
 	}
 	r      *Replicator
@@ -550,13 +552,15 @@ func (rd *replicationDevice) replicatePartition(partition string) {
 	rd.updateStat("PartitionsDone", 1)
 }
 
-func (rd *replicationDevice) listPartitions() ([]string, error) {
+func (rd *replicationDevice) listPartitions() ([]string, []string, error) {
+	// returns a list of all partitions and a subset of that list- just the handoffs
 	objPath := filepath.Join(rd.r.deviceRoot, rd.dev.Device, PolicyDir(rd.policy))
 	partitions, err := filepath.Glob(filepath.Join(objPath, "[0-9]*"))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	partitionList := make([]string, 0, len(partitions))
+	handoffList := []string{}
 	for _, partition := range partitions {
 		partition = filepath.Base(partition)
 		if len(rd.r.partitions) > 0 && !rd.r.partitions[partition] {
@@ -570,7 +574,14 @@ func (rd *replicationDevice) listPartitions() ([]string, error) {
 		j := rand.Intn(i + 1)
 		partitionList[j], partitionList[i] = partitionList[i], partitionList[j]
 	}
-	return partitionList, nil
+	for _, partition := range partitionList {
+		if pi, err := strconv.ParseUint(partition, 10, 64); err == nil {
+			if _, handoff := rd.r.objectRings[rd.policy].GetJobNodes(pi, rd.dev.Id); handoff {
+				handoffList = append(handoffList, partition)
+			}
+		}
+	}
+	return partitionList, handoffList, nil
 }
 
 func (rd *replicationDevice) Replicate() {
@@ -586,20 +597,22 @@ func (rd *replicationDevice) Replicate() {
 
 	rd.i.cleanTemp()
 
-	partitionList, err := rd.i.listPartitions()
+	allPartitionList, handoffPartitions, err := rd.i.listPartitions()
 	if err != nil {
 		rd.r.logger.Error("[replicateDevice] Error getting partition list",
 			zap.String("Device", rd.dev.Device),
 			zap.Error(err))
 		return
-	} else if len(partitionList) == 0 {
+	} else if len(allPartitionList) == 0 {
 		rd.r.logger.Info("[replicateDevice] No partitions found",
 			zap.String("filepath", filepath.Join(rd.r.deviceRoot, rd.dev.Device, PolicyDir(rd.policy))))
 		return
 	}
-	rd.updateStat("PartitionsTotal", int64(len(partitionList)))
+	rd.updateStat("PartitionsTotal", int64(len(allPartitionList)))
 
-	for _, partition := range partitionList {
+	lastListing := time.Now()
+	handoffsForLog := len(handoffPartitions)
+	for i, partition := range allPartitionList {
 		rd.updateStat("checkin", 1)
 		select {
 		case <-rd.cancel:
@@ -611,7 +624,32 @@ func (rd *replicationDevice) Replicate() {
 		}
 		rd.processPriorityJobs()
 		rd.i.replicatePartition(partition)
+		if j := common.StringInSliceIndex(partition, handoffPartitions); j >= 0 {
+			handoffPartitions = append(handoffPartitions[:j], handoffPartitions[j+1:]...)
+		}
 		time.Sleep(replicatePartSleepTime)
+		if i%handoffToAllMod == 0 && len(handoffPartitions) > 0 {
+			var p string
+			p, handoffPartitions = handoffPartitions[0], handoffPartitions[1:]
+			rd.i.replicatePartition(p)
+		}
+		if len(handoffPartitions) == 0 {
+			if handoffsForLog > 0 {
+				rd.r.logger.Info("[replicateDevice] Completed handoff replication pass",
+					zap.Int("handoffsProcessed", handoffsForLog),
+					zap.Duration("handoffDuration", time.Since(lastListing)))
+				handoffsForLog = 0
+			}
+			if time.Since(lastListing) > handoffListDirFreq {
+				if _, handoffPartitions, err = rd.i.listPartitions(); err != nil {
+					rd.r.logger.Error("[replicateDevice] Error getting handoff partition list",
+						zap.String("Device", rd.dev.Device),
+						zap.Error(err))
+				}
+				lastListing = time.Now()
+				handoffsForLog = len(handoffPartitions)
+			}
+		}
 	}
 	rd.updateStat("FullReplicateCount", 1)
 }
