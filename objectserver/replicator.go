@@ -620,9 +620,9 @@ func (rd *replicationDevice) Replicate() {
 		rd.partSleepTime = minimumReplicationPassTime / time.Duration(len(partitionList))
 	} else {
 		rd.partSleepTime = rd.partSleepTime / 2
-		if rd.partSleepTime < replicatePartSleepTime {
-			rd.partSleepTime = replicatePartSleepTime
-		}
+	}
+	if rd.partSleepTime < replicatePartSleepTime {
+		rd.partSleepTime = replicatePartSleepTime
 	}
 	rd.updateStat("FullReplicateCount", 1)
 }
