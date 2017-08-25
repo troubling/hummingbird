@@ -1,6 +1,6 @@
 #!/bin/bash
 
-hummingbird stop all
+hummingbird stop all || /bin/true
 sudo find /var/log/hummingbird /var/cache/swift -type f -exec rm -f {} \;
 sudo umount -f /srv/hb || /bin/true
 sudo mkdir -p /srv/hb
