@@ -652,7 +652,7 @@ func (ft *FileTracker) Lookup(hsh string, shard int) (timestamp int64, metahash 
 
 // Chexors returns the returns the chexors for the data contained in the
 // ringPart. This is used during replication to quickly determine if two disks
-// already up to date with one another.
+// are already up to date with one another.
 func (ft *FileTracker) Chexors(ringPart int) ([]*uint64, error) {
 	diskPart := ringPart >> (ft.ringPartPower - ft.diskPartPower)
 	db := ft.dbs[diskPart]
@@ -682,7 +682,7 @@ func (ft *FileTracker) Chexors(ringPart int) ([]*uint64, error) {
 
 // MetaChexors returns the returns the chexors for the metadata contained in
 // the ringPart. This is used during replication to quickly determine if two
-// disks already up to date with one another.
+// disks are already up to date with one another.
 func (ft *FileTracker) MetaChexors(ringPart int) ([]*uint64, error) {
 	diskPart := ringPart >> (ft.ringPartPower - ft.diskPartPower)
 	db := ft.dbs[diskPart]
