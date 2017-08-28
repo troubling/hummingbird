@@ -33,7 +33,8 @@ type AtomicFileWriter interface {
 	Fd() uintptr
 	// Save atomically writes the file to its destination.
 	Save(string) error
-	// Abandon removes any resources associated with this file.
+	// Abandon removes any resources associated with this file unless Save had
+	// already been called, in which case Abandon is a No-Op.
 	Abandon() error
 	// Preallocate pre-allocates space on disk, given the expected file size and disk reserve size.
 	Preallocate(int64, int64) error
