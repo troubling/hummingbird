@@ -23,6 +23,9 @@ import (
 	"path/filepath"
 )
 
+// Quick check for interface implementation.
+var _ = AtomicFileWriter(&TempFile{})
+
 // TempFile implements an atomic file write by writing to a temp directory and then renaming into place.
 type TempFile struct {
 	*os.File
