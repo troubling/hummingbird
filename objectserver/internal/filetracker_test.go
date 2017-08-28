@@ -30,27 +30,55 @@ func md5hash(data string) string {
 
 func TestChexorFNV64a(t *testing.T) {
 	var chexorFNV64a uint64
-	chexorFNV64a = updateChexorFNV64a(chexorFNV64a, "eb4585ad9fe0426781ed7c49252f8225", 0, time.Date(2017, 1, 2, 3, 4, 5, 6, time.UTC).UnixNano(), "3d6a6976bcf5dfb9")
+	chexorFNV64a = updateChexorFNV64a(chexorFNV64a, "eb4585ad9fe0426781ed7c49252f8225", time.Date(2017, 1, 2, 3, 4, 5, 6, time.UTC).UnixNano())
 	if chexorFNV64a == 0 {
 		t.Fatal(chexorFNV64a)
 	}
-	chexorFNV64a = updateChexorFNV64a(chexorFNV64a, "eb4585ad9fe0426781ed7c49252f8225", 0, time.Date(2017, 1, 2, 3, 4, 5, 6, time.UTC).UnixNano(), "3d6a6976bcf5dfb9")
+	chexorFNV64a = updateChexorFNV64a(chexorFNV64a, "eb4585ad9fe0426781ed7c49252f8225", time.Date(2017, 1, 2, 3, 4, 5, 6, time.UTC).UnixNano())
 	if chexorFNV64a != 0 {
 		t.Fatal(chexorFNV64a)
 	}
-	chexorFNV64a = updateChexorFNV64a(chexorFNV64a, "eb4585ad9fe0426781ed7c49252f8225", 0, time.Date(2017, 1, 2, 3, 4, 5, 6, time.UTC).UnixNano(), "3d6a6976bcf5dfb9")
+	chexorFNV64a = updateChexorFNV64a(chexorFNV64a, "eb4585ad9fe0426781ed7c49252f8225", time.Date(2017, 1, 2, 3, 4, 5, 6, time.UTC).UnixNano())
 	if chexorFNV64a == 0 {
 		t.Fatal(chexorFNV64a)
 	}
-	chexorFNV64a = updateChexorFNV64a(chexorFNV64a, "e4ac654ba9b61686c2dc854a1128a323", 1, time.Date(2016, 6, 5, 4, 3, 2, 1, time.UTC).UnixNano(), "3d670f76bcf310f4")
+	chexorFNV64a = updateChexorFNV64a(chexorFNV64a, "e4ac654ba9b61686c2dc854a1128a323", time.Date(2016, 6, 5, 4, 3, 2, 1, time.UTC).UnixNano())
 	if chexorFNV64a == 0 {
 		t.Fatal(chexorFNV64a)
 	}
-	chexorFNV64a = updateChexorFNV64a(chexorFNV64a, "eb4585ad9fe0426781ed7c49252f8225", 0, time.Date(2017, 1, 2, 3, 4, 5, 6, time.UTC).UnixNano(), "3d6a6976bcf5dfb9")
+	chexorFNV64a = updateChexorFNV64a(chexorFNV64a, "eb4585ad9fe0426781ed7c49252f8225", time.Date(2017, 1, 2, 3, 4, 5, 6, time.UTC).UnixNano())
 	if chexorFNV64a == 0 {
 		t.Fatal(chexorFNV64a)
 	}
-	chexorFNV64a = updateChexorFNV64a(chexorFNV64a, "e4ac654ba9b61686c2dc854a1128a323", 1, time.Date(2016, 6, 5, 4, 3, 2, 1, time.UTC).UnixNano(), "3d670f76bcf310f4")
+	chexorFNV64a = updateChexorFNV64a(chexorFNV64a, "e4ac654ba9b61686c2dc854a1128a323", time.Date(2016, 6, 5, 4, 3, 2, 1, time.UTC).UnixNano())
+	if chexorFNV64a != 0 {
+		t.Fatal(chexorFNV64a)
+	}
+}
+
+func TestMetaChexorFNV64a(t *testing.T) {
+	var chexorFNV64a uint64
+	chexorFNV64a = updateMetaChexorFNV64a(chexorFNV64a, "eb4585ad9fe0426781ed7c49252f8225", "01fb28db560ceb2b")
+	if chexorFNV64a == 0 {
+		t.Fatal(chexorFNV64a)
+	}
+	chexorFNV64a = updateMetaChexorFNV64a(chexorFNV64a, "eb4585ad9fe0426781ed7c49252f8225", "01fb28db560ceb2b")
+	if chexorFNV64a != 0 {
+		t.Fatal(chexorFNV64a)
+	}
+	chexorFNV64a = updateMetaChexorFNV64a(chexorFNV64a, "eb4585ad9fe0426781ed7c49252f8225", "01fb28db560ceb2b")
+	if chexorFNV64a == 0 {
+		t.Fatal(chexorFNV64a)
+	}
+	chexorFNV64a = updateMetaChexorFNV64a(chexorFNV64a, "e4ac654ba9b61686c2dc854a1128a323", "65b557cd2a7faa35")
+	if chexorFNV64a == 0 {
+		t.Fatal(chexorFNV64a)
+	}
+	chexorFNV64a = updateMetaChexorFNV64a(chexorFNV64a, "eb4585ad9fe0426781ed7c49252f8225", "01fb28db560ceb2b")
+	if chexorFNV64a == 0 {
+		t.Fatal(chexorFNV64a)
+	}
+	chexorFNV64a = updateMetaChexorFNV64a(chexorFNV64a, "e4ac654ba9b61686c2dc854a1128a323", "65b557cd2a7faa35")
 	if chexorFNV64a != 0 {
 		t.Fatal(chexorFNV64a)
 	}
@@ -312,7 +340,7 @@ func TestFileTracker_Chexors(t *testing.T) {
 	listing, err := ft.Chexors(0)
 	errnil(t, err)
 	// Golden values; just testing they don't change.
-	if *listing[0] != 0x41911753f0b1ca97 || *listing[1] != 0x4b78ef08c9c79e78 {
+	if *listing[0] != 0x3141a949fc5058d9 || *listing[1] != 0x5f51fe797fd947d8 {
 		msg := "chexors changed"
 		for _, c := range listing {
 			msg += fmt.Sprintf(" %016x", *c)
@@ -321,7 +349,7 @@ func TestFileTracker_Chexors(t *testing.T) {
 	}
 	listing, err = ft.Chexors(1)
 	errnil(t, err)
-	if *listing[0] != 0xa88cd09e155fe208 || *listing[1] != 0x6b8188dc60291219 {
+	if *listing[0] != 0x745a1d290f08db20 || *listing[1] != 0x51f395db668ca4c3 {
 		msg := "chexors changed"
 		for _, c := range listing {
 			msg += fmt.Sprintf(" %016x", *c)
@@ -330,7 +358,7 @@ func TestFileTracker_Chexors(t *testing.T) {
 	}
 	listing, err = ft.Chexors(2)
 	errnil(t, err)
-	if *listing[0] != 0xd684658d6e22839e || *listing[1] != 0x745bf60b803b15f3 {
+	if *listing[0] != 0x541d85d562e50e2e || *listing[1] != 0xf91d6f8d5903a6d1 {
 		msg := "chexors changed"
 		for _, c := range listing {
 			msg += fmt.Sprintf(" %016x", *c)
@@ -339,7 +367,63 @@ func TestFileTracker_Chexors(t *testing.T) {
 	}
 	listing, err = ft.Chexors(3)
 	errnil(t, err)
-	if *listing[0] != 0x52faeda6def196a4 || *listing[1] != 0x14765d22c063f259 {
+	if *listing[0] != 0x30a31879a94294f4 || *listing[1] != 0x31ea856ac9bb368f {
+		msg := "chexors changed"
+		for _, c := range listing {
+			msg += fmt.Sprintf(" %016x", *c)
+		}
+		t.Fatal(msg)
+	}
+}
+
+func TestFileTracker_MetaChexors(t *testing.T) {
+	pth := "testdata/tmp/TestFileTracker_MetaChexors"
+	defer os.RemoveAll(pth)
+	ft, err := NewFileTracker(pth, 2, 1, 2, zap.L())
+	errnil(t, err)
+	defer ft.Close()
+	timestamp := time.Date(2017, 1, 2, 3, 5, 6, 7, time.UTC).UnixNano()
+	// Create a bunch of files.
+	for i := 0; i < 32; i++ {
+		hsh := md5hash(fmt.Sprintf("file%d", i))
+		body := "just testing"
+		timestamp++
+		f, err := ft.TempFile(hsh, 0, timestamp, len(body))
+		errnil(t, err)
+		f.Write([]byte(body))
+		errnil(t, ft.Commit(f, hsh, 0, timestamp, hsh[:16], nil))
+	}
+	listing, err := ft.MetaChexors(0)
+	errnil(t, err)
+	// Golden values; just testing they don't change.
+	if *listing[0] != 0x1b23359c090669d9 || *listing[1] != 0xd164921a8346dd25 {
+		msg := "chexors changed"
+		for _, c := range listing {
+			msg += fmt.Sprintf(" %016x", *c)
+		}
+		t.Fatal(msg)
+	}
+	listing, err = ft.MetaChexors(1)
+	errnil(t, err)
+	if *listing[0] != 0xa2064b82bc598f75 || *listing[1] != 0x32a8f7115eb4ba03 {
+		msg := "chexors changed"
+		for _, c := range listing {
+			msg += fmt.Sprintf(" %016x", *c)
+		}
+		t.Fatal(msg)
+	}
+	listing, err = ft.MetaChexors(2)
+	errnil(t, err)
+	if *listing[0] != 0x8e1619a90fec2f94 || *listing[1] != 0xb9aa921d04d47864 {
+		msg := "chexors changed"
+		for _, c := range listing {
+			msg += fmt.Sprintf(" %016x", *c)
+		}
+		t.Fatal(msg)
+	}
+	listing, err = ft.MetaChexors(3)
+	errnil(t, err)
+	if *listing[0] != 0x3b87526fc361d6c7 || *listing[1] != 0x64deffa5cd2b156c {
 		msg := "chexors changed"
 		for _, c := range listing {
 			msg += fmt.Sprintf(" %016x", *c)
