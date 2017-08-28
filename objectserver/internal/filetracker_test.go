@@ -348,18 +348,29 @@ func TestFileTracker_Chexors(t *testing.T) {
 	}
 }
 
-/* TODO: Once we implement new List
 func TestFileTracker_List(t *testing.T) {
 	pth := "testdata/tmp/TestFileTracker_List"
 	defer os.RemoveAll(pth)
 	ft := newTestFileTracker(t, pth)
 	defer ft.Close()
-	countOfHashesThatStartWith02 := 0
+	matchHashes0_0 := map[string]struct{}{}
+	matchHashes0_1 := map[string]struct{}{}
+	matchHashes1_1 := map[string]struct{}{}
 	// Create a bunch of files.
 	for i := 0; i < 32; i++ {
 		hsh := md5hash(fmt.Sprintf("file%d", i))
-		if hsh[:2] == "02" {
-			countOfHashesThatStartWith02++
+		hshb, err := hex.DecodeString(hsh)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if hshb[0]>>(8-ft.ringPartPower) == 0 && int(hshb[15])%ft.chexorsMod == 0 {
+			matchHashes0_0[hsh] = struct{}{}
+		}
+		if hshb[0]>>(8-ft.ringPartPower) == 0 && int(hshb[15])%ft.chexorsMod == 1 {
+			matchHashes0_1[hsh] = struct{}{}
+		}
+		if hshb[0]>>(8-ft.ringPartPower) == 1 && int(hshb[15])%ft.chexorsMod == 1 {
+			matchHashes1_1[hsh] = struct{}{}
 		}
 		timestamp := time.Now().UnixNano()
 		body := "just testing"
@@ -368,49 +379,68 @@ func TestFileTracker_List(t *testing.T) {
 		f.Write([]byte(body))
 		errnil(t, ft.Commit(f, hsh, 0, timestamp, "", nil))
 	}
-	// List all of them.
-	listing, err := ft.List("00000000000000000000000000000000", "ffffffffffffffffffffffffffffffff")
+	listing, err := ft.List(0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(listing) != 32 {
-		t.Fatal(len(listing))
+	for _, item := range listing {
+		if _, ok := matchHashes0_0[item.Hash]; !ok {
+			t.Error(item.Hash)
+		}
+		delete(matchHashes0_0, item.Hash)
 	}
-	// List a subset.
-	listing, err = ft.List("02000000000000000000000000000000", "02ffffffffffffffffffffffffffffff")
+	if len(matchHashes0_0) != 0 {
+		t.Error(matchHashes0_0)
+	}
+	listing, err = ft.List(0, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if countOfHashesThatStartWith02 < 1 {
-		t.Fatal(countOfHashesThatStartWith02)
+	for _, item := range listing {
+		if _, ok := matchHashes0_1[item.Hash]; !ok {
+			t.Error(item.Hash)
+		}
+		delete(matchHashes0_1, item.Hash)
 	}
-	if len(listing) != countOfHashesThatStartWith02 {
-		t.Fatal(len(listing), countOfHashesThatStartWith02)
+	if len(matchHashes0_1) != 0 {
+		t.Error(matchHashes0_1)
+	}
+	listing, err = ft.List(1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range listing {
+		if _, ok := matchHashes1_1[item.Hash]; !ok {
+			t.Error(item.Hash)
+		}
+		delete(matchHashes1_1, item.Hash)
+	}
+	if len(matchHashes1_1) != 0 {
+		t.Error(matchHashes1_1)
 	}
 }
-*/
 
-func TestFileTracker_partitionRange(t *testing.T) {
+func TestFileTracker_ringPartRange(t *testing.T) {
 	pth := "testdata/tmp/TestFileTracker_partitionRange"
 	defer os.RemoveAll(pth)
 	ft, err := NewFileTracker(pth, 4, 1, 2, zap.L())
 	errnil(t, err)
 	defer ft.Close()
-	startHash, stopHash := ft.partitionRange(0)
+	startHash, stopHash := ft.ringPartRange(0)
 	if startHash != "00000000000000000000000000000000" {
 		t.Fatal(startHash)
 	}
 	if stopHash != "0fffffffffffffffffffffffffffffff" {
 		t.Fatal(stopHash)
 	}
-	startHash, stopHash = ft.partitionRange(7)
+	startHash, stopHash = ft.ringPartRange(7)
 	if startHash != "70000000000000000000000000000000" {
 		t.Fatal(startHash)
 	}
 	if stopHash != "7fffffffffffffffffffffffffffffff" {
 		t.Fatal(stopHash)
 	}
-	startHash, stopHash = ft.partitionRange(15)
+	startHash, stopHash = ft.ringPartRange(15)
 	if startHash != "f0000000000000000000000000000000" {
 		t.Fatal(startHash)
 	}
@@ -420,21 +450,21 @@ func TestFileTracker_partitionRange(t *testing.T) {
 	ft, err = NewFileTracker(pth, 8, 1, 2, zap.L())
 	errnil(t, err)
 	defer ft.Close()
-	startHash, stopHash = ft.partitionRange(0)
+	startHash, stopHash = ft.ringPartRange(0)
 	if startHash != "00000000000000000000000000000000" {
 		t.Fatal(startHash)
 	}
 	if stopHash != "00ffffffffffffffffffffffffffffff" {
 		t.Fatal(stopHash)
 	}
-	startHash, stopHash = ft.partitionRange(127)
+	startHash, stopHash = ft.ringPartRange(127)
 	if startHash != "7f000000000000000000000000000000" {
 		t.Fatal(startHash)
 	}
 	if stopHash != "7fffffffffffffffffffffffffffffff" {
 		t.Fatal(stopHash)
 	}
-	startHash, stopHash = ft.partitionRange(255)
+	startHash, stopHash = ft.ringPartRange(255)
 	if startHash != "ff000000000000000000000000000000" {
 		t.Fatal(startHash)
 	}

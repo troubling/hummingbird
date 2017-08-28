@@ -60,11 +60,11 @@ type FileTracker struct {
 
 // NewFileTracker creates a FileTracker to manage the path given.
 //
-// The ring partition power is defined by the ring in use, but should be
-// greater than the disk partition power. The disk partition power should be 6
-// except for in tests. At least, that's our plan for now, as 1<<6 gives 64
-// databases per disk and ends up with not too much over 1 million files per
-// database on an 8T disk with 100K average sized files.
+// The ringPartPower is defined by the ring in use, but should be greater than
+// the diskPartPower. The diskPartPower should be 6 except for in tests. At
+// least, that's our plan for now, as 1<<6 gives 64 databases per disk and ends
+// up with not too much over 1 million files per database on an 8T disk with
+// 100K average sized files.
 //
 // The chexorsMod setting is the modulo divisor used against the file hashes to
 // split them into distinct chexors. These are used with replication to quickly
@@ -395,7 +395,7 @@ func (ft *FileTracker) Commit(f fs.AtomicFileWriter, hsh string, shard int, time
 		if err = rows.Err(); err != nil {
 			return err
 		}
-		startHash, stopHash := ft.partitionRange(ringPart)
+		startHash, stopHash := ft.ringPartRange(ringPart)
 		rows, err = tx.Query(`
             SELECT hash, shard, timestamp, metahash
             FROM files
@@ -538,14 +538,14 @@ func (ft *FileTracker) Lookup(hsh string, shard int) (timestamp int64, metahash 
 	return timestamp, metahash, metadata, pth, err
 }
 
-func (ft *FileTracker) Chexors(partition int) ([]*uint64, error) {
-	diskPart := partition >> (ft.ringPartPower - ft.diskPartPower)
+func (ft *FileTracker) Chexors(ringPart int) ([]*uint64, error) {
+	diskPart := ringPart >> (ft.ringPartPower - ft.diskPartPower)
 	db := ft.dbs[diskPart]
 	rows, err := db.Query(fmt.Sprintf(`
         SELECT remainder, chexorFNV64ai
         FROM %s
         WHERE partition = ?
-    `, ft.chexorsModTable), partition)
+    `, ft.chexorsModTable), ringPart)
 	if err != nil {
 		return nil, err
 	}
@@ -554,7 +554,7 @@ func (ft *FileTracker) Chexors(partition int) ([]*uint64, error) {
 	listing := make([]*uint64, ft.chexorsMod)
 	for rows.Next() {
 		if err = rows.Scan(&remainder, &chexorFNV64ai); err != nil {
-			ft.logger.Error("error with rows.Scan", zap.String("ft.path", ft.path), zap.String("ft.chexorsModTable", ft.chexorsModTable), zap.Int("partition", partition))
+			ft.logger.Error("error with rows.Scan", zap.String("ft.path", ft.path), zap.String("ft.chexorsModTable", ft.chexorsModTable), zap.Int("ringPart", ringPart))
 			continue
 		}
 		chexorFNV64a := new(uint64)
@@ -573,47 +573,42 @@ type FileTrackerItem struct {
 	Metahash  string
 }
 
-// List returns stored information in the hash range given.
+// List returns the items for the ringPart and chexorRemainder given.
 //
 // This is for replication, auditing, that sort of thing.
-func (ft *FileTracker) List(partition int, chexorRemainder int) ([]*FileTrackerItem, error) {
-	// TODO: Need to implement this now that we have the extra chexorRemainder
-	// column.
-	return nil, nil
-	// startHash, _, startDiskPart, _, err := ft.validateHash(startHash)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// stopHash, _, stopDiskPart, _, err := ft.validateHash(stopHash)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// if startDiskPart > stopDiskPart {
-	// 	return nil, fmt.Errorf("startHash greater than stopHash: %x > %x", startHash, stopHash)
-	// }
-	// listing := []*FileTrackerItem{}
-	// for diskPart := startDiskPart; diskPart <= stopDiskPart; diskPart++ {
-	// 	db := ft.dbs[diskPart]
-	// 	rows, err := db.Query(`
-	//         SELECT hash, shard, timestamp, metahash
-	//         FROM files
-	//         WHERE hash BETWEEN ? AND ?
-	//     `, startHash, stopHash)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// 	for rows.Next() {
-	// 		item := &FileTrackerItem{}
-	// 		if err = rows.Scan(&item.Hash, &item.Shard, &item.Timestamp, &item.Metahash); err != nil {
-	// 			return listing, err
-	// 		}
-	// 		listing = append(listing, item)
-	// 	}
-	// 	if err = rows.Err(); err != nil {
-	// 		return listing, err
-	// 	}
-	// }
-	// return listing, nil
+func (ft *FileTracker) List(ringPart int, chexorRemainder int) ([]*FileTrackerItem, error) {
+	startHash, stopHash := ft.ringPartRange(ringPart)
+	_, _, startDiskPart, _, err := ft.validateHash(startHash)
+	if err != nil {
+		return nil, err
+	}
+	_, _, stopDiskPart, _, err := ft.validateHash(stopHash)
+	if err != nil {
+		return nil, err
+	}
+	listing := []*FileTrackerItem{}
+	for diskPart := startDiskPart; diskPart <= stopDiskPart; diskPart++ {
+		db := ft.dbs[diskPart]
+		rows, err := db.Query(`
+	        SELECT hash, shard, timestamp, metahash
+	        FROM files
+	        WHERE hash BETWEEN ? AND ? AND chexorRemainder = ?
+	    `, startHash, stopHash, chexorRemainder)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			item := &FileTrackerItem{}
+			if err = rows.Scan(&item.Hash, &item.Shard, &item.Timestamp, &item.Metahash); err != nil {
+				return listing, err
+			}
+			listing = append(listing, item)
+		}
+		if err = rows.Err(); err != nil {
+			return listing, err
+		}
+	}
+	return listing, nil
 }
 
 func (ft *FileTracker) validateHash(hsh string) (hshOut string, ringPart int, diskPart int, chexorRemainder int, err error) {
@@ -629,7 +624,7 @@ func (ft *FileTracker) validateHash(hsh string) (hshOut string, ringPart int, di
 	return hsh, int(upper >> (32 - ft.ringPartPower)), int(hashBytes[0] >> (8 - ft.diskPartPower)), int(hashBytes[len(hashBytes)-1]) % ft.chexorsMod, nil
 }
 
-func (ft *FileTracker) partitionRange(ringPart int) (string, string) {
+func (ft *FileTracker) ringPartRange(ringPart int) (string, string) {
 	start := uint64(ringPart << (64 - ft.ringPartPower))
 	stop := uint64((ringPart+1)<<(64-ft.ringPartPower)) - 1
 	return fmt.Sprintf("%016x0000000000000000", start), fmt.Sprintf("%016xffffffffffffffff", stop)
