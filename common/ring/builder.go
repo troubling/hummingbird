@@ -1453,7 +1453,7 @@ func (b *RingBuilder) GetRing() *hashRing {
 	}
 	for i, dev := range b.Devs {
 		if dev != nil {
-			data.Devs = append(data.Devs, Device{
+			data.Devs = append(data.Devs, &Device{
 				Id:              int(b.Devs[i].Id),
 				Device:          b.Devs[i].Device,
 				Ip:              b.Devs[i].Ip,
@@ -1465,6 +1465,8 @@ func (b *RingBuilder) GetRing() *hashRing {
 				Weight:          b.Devs[i].Weight,
 				Zone:            int(b.Devs[i].Zone),
 			})
+		} else {
+			data.Devs = append(data.Devs, nil)
 		}
 	}
 	data.replica2part2devId = make([][]uint16, len(b.replica2Part2Dev))

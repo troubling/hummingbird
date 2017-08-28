@@ -53,10 +53,10 @@ func (p *priFakeRing) LocalDevices(localPort int) (devs []*ring.Device, err erro
 	return nil, nil
 }
 
-func (p *priFakeRing) AllDevices() (devs []ring.Device) {
-	devs = append(devs, ring.Device{Id: 0, Device: "drive0", Ip: "127.0.0.0", Port: 1})
-	devs = append(devs, ring.Device{Id: 1, Device: "drive1", Ip: "127.0.0.1", Port: 1})
-	devs = append(devs, ring.Device{Id: 2, Device: "drive2", Ip: "127.0.0.1", Port: 1})
+func (p *priFakeRing) AllDevices() (devs []*ring.Device) {
+	devs = append(devs, &ring.Device{Id: 0, Device: "drive0", Ip: "127.0.0.0", Port: 1})
+	devs = append(devs, &ring.Device{Id: 1, Device: "drive1", Ip: "127.0.0.1", Port: 1})
+	devs = append(devs, &ring.Device{Id: 2, Device: "drive2", Ip: "127.0.0.1", Port: 1})
 	return devs
 }
 
