@@ -42,13 +42,18 @@ func PrintDevs(devs []*ring.RingBuilderDevice) {
 
 func RingBuildCmd(flags *flag.FlagSet) {
 	args := flags.Args()
-	if len(args) < 2 || args[0] == "help" {
+	if len(args) < 1 || args[0] == "help" {
 		flags.Usage()
 		return
 	}
 	debug := flags.Lookup("debug").Value.String() == "true"
 	pth := args[0]
-	cmd := args[1]
+	cmd := ""
+	if len(args) == 1 {
+		cmd = "info"
+	} else {
+		cmd = args[1]
+	}
 	switch cmd {
 	case "create":
 		if len(args) < 5 {
