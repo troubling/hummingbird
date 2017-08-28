@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/gholt/kvt"
 	_ "github.com/mattn/go-sqlite3"
@@ -70,7 +71,9 @@ type FileTracker struct {
 // determine if two nodes have different data. If you assume a fill size of
 // around 1 million files, perhaps a 64 chexorsMod would work, giving about
 // 15,000 files per chexor. ChexorsMod cannot be less than 1 or greater than
-// 256.
+// 256. It also cannot currently be changed after deployment. If we need
+// convert existing data to a new ChexorsMod later, it is possible, we'll just
+// have to add the code for it.
 func NewFileTracker(pth string, ringPartPower, diskPartPower uint, chexorsMod int, logger *zap.Logger) (*FileTracker, error) {
 	if ringPartPower <= diskPartPower {
 		return nil, fmt.Errorf("ringPartPower must be greater than diskPartPower: %d is not greater than %d", ringPartPower, diskPartPower)
@@ -120,7 +123,7 @@ func (ft *FileTracker) init(dbi int) error {
 	rows, err := tx.Query(`
         SELECT name
         FROM sqlite_master
-        WHERE name = 'files'
+        WHERE name = 'databaseMetadata'
     `)
 	if err != nil {
 		return err
@@ -131,20 +134,75 @@ func (ft *FileTracker) init(dbi int) error {
 		return err
 	}
 	if !tableExists {
-        // TODO: add a column for chexorRemainder and another table to record
-        // the ft.chexorsMod value. If that changes on an existing cluster, we
-        // could theoretically update the whole database to work with the new
-        // value.
+		_, err = tx.Exec(`
+            CREATE TABLE databaseMetadata (
+                key TEXT PRIMARY KEY NOT NULL,
+                value TEXT,
+                timestamp INTEGER NOT NULL
+            );
+        `)
+		if err != nil {
+			return err
+		}
+		tx.Exec(`
+            INSERT INTO databaseMetadata (key, value, timestamp)
+            VALUES ("fileTracker.chexorsMod", ?, ?)
+        `, fmt.Sprint(ft.chexorsMod), time.Now().UnixNano())
+	} else {
+		rows, err = tx.Query(`
+            SELECT value
+            FROM databaseMetadata
+            WHERE key = "fileTracker.chexorsMod"
+        `)
+		if err != nil {
+			return err
+		}
+		if !rows.Next() {
+			rows.Close()
+			if err = rows.Err(); err != nil {
+				return err
+			}
+			return fmt.Errorf("no fileTracker.chexorsMod in databaseMetadata")
+		}
+		var cm int
+		err = rows.Scan(&cm)
+		rows.Close()
+		if err == nil {
+			err = rows.Err()
+		}
+		if err != nil {
+			return err
+		}
+		if cm != ft.chexorsMod {
+			return fmt.Errorf("fileTracker.chexorsMod mismatch; databaseMetadata has %d, runtime has %d", cm, ft.chexorsMod)
+		}
+	}
+	rows, err = tx.Query(`
+        SELECT name
+        FROM sqlite_master
+        WHERE name = 'files'
+    `)
+	if err != nil {
+		return err
+	}
+	tableExists = rows.Next()
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	if !tableExists {
 		_, err = tx.Exec(`
             CREATE TABLE files (
                 hash TEXT NOT NULL,
                 shard INTEGER NOT NULL,
                 timestamp INTEGER NOT NULL,
+                chexorRemainder INTEGER NOT NULL,
                 metahash TEXT, -- NULLable because not everyone stores the metadata
                 metadata BLOB,
                 CONSTRAINT ix_files_hash_shard PRIMARY KEY (hash, shard)
             );
             CREATE INDEX ix_files_hash_shard_timestamp ON files (hash, shard, timestamp);
+            CREATE INDEX ix_files_hash_shard_chexorRemainder ON files (hash, shard, chexorRemainder);
         `)
 		if err != nil {
 			return err
@@ -402,9 +460,9 @@ func (ft *FileTracker) Commit(f fs.AtomicFileWriter, hsh string, shard int, time
 	}
 	if removeOlderPath == "" {
 		_, err = tx.Exec(`
-            INSERT INTO files (hash, shard, timestamp, metahash, metadata)
-            VALUES (?, ?, ?, ?, ?)
-        `, hsh, shard, timestamp, metahash, metadata)
+            INSERT INTO files (hash, shard, timestamp, chexorRemainder, metahash, metadata)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `, hsh, shard, timestamp, chexorRemainder, metahash, metadata)
 	} else {
 		_, err = tx.Exec(`
             UPDATE files
@@ -519,8 +577,9 @@ type FileTrackerItem struct {
 //
 // This is for replication, auditing, that sort of thing.
 func (ft *FileTracker) List(partition int, chexorRemainder int) ([]*FileTrackerItem, error) {
-    // TODO: Need the extra column before we can implement this.
-    return nil, nil
+	// TODO: Need to implement this now that we have the extra chexorRemainder
+	// column.
+	return nil, nil
 	// startHash, _, startDiskPart, _, err := ft.validateHash(startHash)
 	// if err != nil {
 	// 	return nil, err
@@ -536,10 +595,10 @@ func (ft *FileTracker) List(partition int, chexorRemainder int) ([]*FileTrackerI
 	// for diskPart := startDiskPart; diskPart <= stopDiskPart; diskPart++ {
 	// 	db := ft.dbs[diskPart]
 	// 	rows, err := db.Query(`
-    //         SELECT hash, shard, timestamp, metahash
-    //         FROM files
-    //         WHERE hash BETWEEN ? AND ?
-    //     `, startHash, stopHash)
+	//         SELECT hash, shard, timestamp, metahash
+	//         FROM files
+	//         WHERE hash BETWEEN ? AND ?
+	//     `, startHash, stopHash)
 	// 	if err != nil {
 	// 		return nil, err
 	// 	}
