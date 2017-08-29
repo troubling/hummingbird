@@ -520,6 +520,11 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		}
 		fmt.Println("Done!")
 
+	case "validate":
+		err := ring.Validate(pth)
+		if err != nil {
+			fmt.Println(err)
+		}
 	default:
 		fmt.Printf("Unknown command: %s\n", cmd)
 		flags.Usage()
