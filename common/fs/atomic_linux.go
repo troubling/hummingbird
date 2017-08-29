@@ -78,6 +78,9 @@ func linkat(fd uintptr, dst string) error {
 	return nil
 }
 
+// Quick check for interface implementation.
+var _ = AtomicFileWriter(&TempFile{})
+
 // TempFile implements an atomic file writer using linux's O_TMPFILE/linkat mechanism if available, otherwise by writing to a temp directory and renaming.
 type TempFile struct {
 	*os.File
