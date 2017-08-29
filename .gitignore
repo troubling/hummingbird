@@ -13,5 +13,6 @@
 # Output of the go coverage tool
 *.out
 
-#Hummingbird related build directory
+#Hummingbird related build directories
 bin
+build

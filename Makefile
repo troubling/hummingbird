@@ -23,13 +23,13 @@ install: bin/hummingbird
 	chmod a+rx $(DESTDIR)/usr/bin/hummingbird
 
 installsystemd: bin/hummingbird
-	cp bin/hummingbird $(DESTDIR)/usr/bin/hummingbird
-	chmod a+rx $(DESTDIR)/usr/bin/hummingbird
-	cp systemd/lib/systemd/system/*.service $(DESTDIR)/lib/systemd/system/
+	sudo cp bin/hummingbird $(DESTDIR)/usr/bin/hummingbird
+	sudo chmod a+rx $(DESTDIR)/usr/bin/hummingbird
+	sudo cp systemd/lib/systemd/system/*.service $(DESTDIR)/lib/systemd/system/
 	# Example commands:
-	# sudo systemctl enable hummingbirdproxy
-	# sudo systemctl start hummingbirdproxy
-	# journalctl -u hummingbirdproxy -f
+	# sudo systemctl enable hummingbird-proxy
+	# sudo systemctl start hummingbird-proxy
+	# journalctl -u hummingbird-proxy -f
 
 develop: bin/hummingbird
 	ln -f -s bin/hummingbird /usr/local/bin/hummingbird
