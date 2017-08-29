@@ -81,7 +81,7 @@ func (server *ObjectServer) sendContainerUpdate(host, device, method, partition,
 	return false
 }
 
-func (server *ObjectServer) saveAsync(method, account, container, obj, localDevice string, headers http.Header) {
+func (server *ObjectServer) saveAsync(method, account, container, obj, localDevice string, headers http.Header, logger srv.LowLevelLogger) {
 	hash := server.hashPath(account, container, obj)
 	asyncFile := filepath.Join(server.driveRoot, localDevice, "async_pending", hash[29:32], hash+"-"+headers.Get("X-Timestamp"))
 	tempDir := TempDirPath(server.driveRoot, localDevice)
@@ -92,14 +92,18 @@ func (server *ObjectServer) saveAsync(method, account, container, obj, localDevi
 		"obj":       obj,
 		"headers":   common.Headers2Map(headers),
 	}
-	if os.MkdirAll(filepath.Dir(asyncFile), 0755) == nil {
-		writer, err := fs.NewAtomicFileWriter(tempDir, filepath.Dir(asyncFile))
+	var err error
+	if err = os.MkdirAll(filepath.Dir(asyncFile), 0755); err == nil {
+		var writer fs.AtomicFileWriter
+		writer, err = fs.NewAtomicFileWriter(tempDir, filepath.Dir(asyncFile))
 		if err == nil {
 			defer writer.Abandon()
 			writer.Write(pickle.PickleDumps(data))
 			writer.Save(asyncFile)
+			return
 		}
 	}
+	logger.Error("Error saving obj async", zap.String("objPath", fmt.Sprintf("%s/%s/%s", account, container, obj)), zap.Error(err))
 }
 
 func (server *ObjectServer) updateContainer(metadata map[string]string, request *http.Request, vars map[string]string, logger srv.LowLevelLogger) {
@@ -131,7 +135,7 @@ func (server *ObjectServer) updateContainer(metadata map[string]string, request 
 		}
 	}
 	if failures > 0 {
-		server.saveAsync(request.Method, vars["account"], vars["container"], vars["obj"], vars["device"], requestHeaders)
+		server.saveAsync(request.Method, vars["account"], vars["container"], vars["obj"], vars["device"], requestHeaders, logger)
 	}
 }
 
@@ -166,7 +170,7 @@ func (server *ObjectServer) updateDeleteAt(method string, header http.Header, de
 		}
 	}
 	if failures > 0 || len(hosts) == 0 {
-		server.saveAsync(method, deleteAtAccount, container, obj, vars["device"], requestHeaders)
+		server.saveAsync(method, deleteAtAccount, container, obj, vars["device"], requestHeaders, logger)
 	}
 }
 

@@ -39,7 +39,7 @@ type Ring interface {
 	GetJobNodes(partition uint64, localDevice int) (response []*Device, handoff bool)
 	GetPartition(account string, container string, object string) uint64
 	LocalDevices(localPort int) (devs []*Device, err error)
-	AllDevices() (devs []Device)
+	AllDevices() (devs []*Device)
 	GetMoreNodes(partition uint64) MoreNodes
 	ReplicaCount() (cnt uint64)
 	PartitionCount() (cnt uint64)
@@ -63,9 +63,9 @@ type Device struct {
 }
 
 type ringData struct {
-	Devs                                []Device `json:"devs"`
-	ReplicaCount                        int      `json:"replica_count"`
-	PartShift                           uint64   `json:"part_shift"`
+	Devs                                []*Device `json:"devs"`
+	ReplicaCount                        int       `json:"replica_count"`
+	PartShift                           uint64    `json:"part_shift"`
 	replica2part2devId                  [][]uint16
 	regionCount, zoneCount, ipPortCount int
 }
@@ -111,7 +111,7 @@ func (r *hashRing) GetNodes(partition uint64) (response []*Device) {
 		return nil
 	}
 	for i := 0; i < d.ReplicaCount; i++ {
-		response = append(response, &d.Devs[d.replica2part2devId[i][partition]])
+		response = append(response, d.Devs[d.replica2part2devId[i][partition]])
 	}
 	return response
 }
@@ -123,7 +123,7 @@ func (r *hashRing) GetJobNodes(partition uint64, localDevice int) (response []*D
 		return nil, false
 	}
 	for i := 0; i < d.ReplicaCount; i++ {
-		dev := &d.Devs[d.replica2part2devId[i][partition]]
+		dev := d.Devs[d.replica2part2devId[i][partition]]
 		if dev.Id == localDevice {
 			handoff = false
 		} else {
@@ -164,13 +164,13 @@ func (r *hashRing) LocalDevices(localPort int) (devs []*Device, err error) {
 
 	for i, dev := range d.Devs {
 		if localIPs[dev.ReplicationIp] && dev.ReplicationPort == localPort {
-			devs = append(devs, &d.Devs[i])
+			devs = append(devs, d.Devs[i])
 		}
 	}
 	return devs, nil
 }
 
-func (r *hashRing) AllDevices() (devs []Device) {
+func (r *hashRing) AllDevices() (devs []*Device) {
 	d := r.getData()
 	return d.Devs
 }
@@ -267,7 +267,7 @@ func (m *hashMoreNodes) initialize() {
 	m.sameZones = make(map[regionZone]bool)
 	m.sameIpPorts = make(map[ipPort]bool)
 	for _, mp := range d.replica2part2devId {
-		m.addDevice(&d.Devs[mp[m.partition]])
+		m.addDevice(d.Devs[mp[m.partition]])
 	}
 	hash := md5.New()
 	hash.Write([]byte(strconv.FormatUint(m.partition, 10)))
@@ -300,9 +300,9 @@ func (m *hashMoreNodes) Next() *Device {
 		handoffPart := (i + m.start) % m.parts
 		for _, part2devId := range d.replica2part2devId {
 			if handoffPart < len(part2devId) {
-				if check(&d.Devs[part2devId[handoffPart]]) {
-					m.addDevice(&d.Devs[part2devId[handoffPart]])
-					return &d.Devs[part2devId[handoffPart]]
+				if check(d.Devs[part2devId[handoffPart]]) {
+					m.addDevice(d.Devs[part2devId[handoffPart]])
+					return d.Devs[part2devId[handoffPart]]
 				}
 			}
 		}

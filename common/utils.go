@@ -473,6 +473,15 @@ func StringInSlice(s string, slice []string) bool {
 	return false
 }
 
+func StringInSliceIndex(s string, slice []string) int {
+	for i, x := range slice {
+		if x == s {
+			return i
+		}
+	}
+	return -1
+}
+
 func IsOriginAllowed(allowedOriginHeader, requestOrigin string) bool {
 	allowOrigins := strings.Split(allowedOriginHeader, " ")
 	for _, o := range allowOrigins {

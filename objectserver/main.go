@@ -110,6 +110,8 @@ func (server *ObjectServer) ObjGetHandler(writer http.ResponseWriter, request *h
 	ifMatches := common.ParseIfMatch(request.Header.Get("If-Match"))
 	ifNoneMatches := common.ParseIfMatch(request.Header.Get("If-None-Match"))
 
+	metadata := obj.Metadata()
+	headers.Set("X-Backend-Timestamp", metadata["X-Timestamp"])
 	if !obj.Exists() {
 		if ifMatches["*"] {
 			srv.StandardResponse(writer, http.StatusPreconditionFailed)
@@ -118,11 +120,8 @@ func (server *ObjectServer) ObjGetHandler(writer http.ResponseWriter, request *h
 		}
 		return
 	}
-
-	metadata := obj.Metadata()
 	etag := resolveEtag(request, metadata)
 
-	headers.Set("X-Backend-Timestamp", metadata["X-Timestamp"])
 	if deleteAt, ok := metadata["X-Delete-At"]; ok {
 		if deleteTime, err := common.ParseDate(deleteAt); err == nil && deleteTime.Before(time.Now()) {
 			srv.StandardResponse(writer, http.StatusNotFound)

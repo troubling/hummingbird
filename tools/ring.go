@@ -42,13 +42,18 @@ func PrintDevs(devs []*ring.RingBuilderDevice) {
 
 func RingBuildCmd(flags *flag.FlagSet) {
 	args := flags.Args()
-	if len(args) < 2 || args[0] == "help" {
+	if len(args) < 1 || args[0] == "help" {
 		flags.Usage()
 		return
 	}
 	debug := flags.Lookup("debug").Value.String() == "true"
 	pth := args[0]
-	cmd := args[1]
+	cmd := ""
+	if len(args) == 1 {
+		cmd = "info"
+	} else {
+		cmd = args[1]
+	}
 	switch cmd {
 	case "create":
 		if len(args) < 5 {
@@ -405,8 +410,10 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		totalWeight := float64(0)
 		devPartitions := make([]map[uint64]bool, len(devs))
 		for i, dev := range devs {
-			totalWeight += dev.Weight
-			devPartitions[i] = make(map[uint64]bool)
+			if dev != nil {
+				totalWeight += dev.Weight
+				devPartitions[i] = make(map[uint64]bool)
+			}
 		}
 		partCounts := make([]int64, len(devs))
 		for part := uint64(0); part < ring.PartitionCount(); part++ {
@@ -417,17 +424,21 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		}
 
 		for i, dev := range devs {
-			want := (dev.Weight / totalWeight) * float64(ring.PartitionCount()) * float64(replicas)
-			if epsilon(float64(partCounts[i]), want) > 0.02 {
-				fmt.Println("Device", dev.Id, "partition count >1% off its want:", partCounts[i], "vs", want)
+			if dev != nil {
+				want := (dev.Weight / totalWeight) * float64(ring.PartitionCount()) * float64(replicas)
+				if epsilon(float64(partCounts[i]), want) > 0.02 {
+					fmt.Println("Device", dev.Id, "partition count >1% off its want:", partCounts[i], "vs", want)
+				}
 			}
 		}
 
 		totalPairings := int64(0)
 		for i, dev1 := range devs {
-			for _, dev2 := range devs[i:] {
-				if dev1.Id != dev2.Id {
-					totalPairings += partCounts[dev1.Id] * partCounts[dev2.Id]
+			if dev1 != nil {
+				for _, dev2 := range devs[i:] {
+					if dev2 != nil && dev1.Id != dev2.Id {
+						totalPairings += partCounts[dev1.Id] * partCounts[dev2.Id]
+					}
 				}
 			}
 		}
@@ -436,18 +447,20 @@ func RingBuildCmd(flags *flag.FlagSet) {
 			totalSharesRequired = ring.PartitionCount()
 		}
 		for i, dev1 := range devs {
-			for _, dev2 := range devs[i:] {
-				if dev1.Id != dev2.Id {
-					shouldShare := float64(partCounts[dev1.Id]*partCounts[dev2.Id]) *
-						(float64(totalSharesRequired) / float64(totalPairings))
-					shared := float64(0)
-					for part := range devPartitions[dev1.Id] {
-						if devPartitions[dev2.Id][part] {
-							shared++
+			if dev1 != nil {
+				for _, dev2 := range devs[i:] {
+					if dev2 != nil && dev1.Id != dev2.Id {
+						shouldShare := float64(partCounts[dev1.Id]*partCounts[dev2.Id]) *
+							(float64(totalSharesRequired) / float64(totalPairings))
+						shared := float64(0)
+						for part := range devPartitions[dev1.Id] {
+							if devPartitions[dev2.Id][part] {
+								shared++
+							}
 						}
-					}
-					if epsilon(shared, shouldShare) > 0.02 {
-						fmt.Println(dev1.Id, "and", dev2.Id, "should share", shouldShare, "partitions, but share", shared)
+						if epsilon(shared, shouldShare) > 0.02 {
+							fmt.Println(dev1.Id, "and", dev2.Id, "should share", shouldShare, "partitions, but share", shared)
+						}
 					}
 				}
 			}
@@ -459,11 +472,13 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		devices := make(map[string]bool)
 		primaryCounts := make(map[int][]int, len(devs))
 		for _, dev := range devs {
-			regions[dev.Region] = true
-			ips[dev.Ip] = true
-			zones[dev.Zone] = true
-			devices[fmt.Sprintf("%s:%s", dev.Ip, dev.Device)] = true
-			primaryCounts[dev.Id] = make([]int, replicas)
+			if dev != nil {
+				regions[dev.Region] = true
+				ips[dev.Ip] = true
+				zones[dev.Zone] = true
+				devices[fmt.Sprintf("%s:%s", dev.Ip, dev.Device)] = true
+				primaryCounts[dev.Id] = make([]int, replicas)
+			}
 		}
 		for part := uint64(0); part < ring.PartitionCount(); part++ {
 			partRegions := make(map[int]bool)
@@ -477,28 +492,29 @@ func RingBuildCmd(flags *flag.FlagSet) {
 				partDevices[fmt.Sprintf("%s:%s", dev.Ip, dev.Device)] = true
 			}
 			if len(partRegions) < len(regions) && len(partRegions) < replicas {
-				fmt.Println("Partition", part, "doesn't use all available regions.")
+				fmt.Printf("Partition %d uses %d/%d available regions.\n", part, len(partRegions), len(regions))
 			}
 			if len(partZones) < len(zones) && len(partZones) < replicas {
-				fmt.Println("Partition", part, "doesn't use all available zones.")
+				fmt.Printf("Partition %d uses %d/%d available zones.\n", part, len(partZones), len(zones))
 			}
 			if len(partIps) < len(ips) && len(partIps) < replicas {
-				fmt.Println("Partition", part, "doesn't use all available IPs.")
+				fmt.Printf("Partition %d uses %d/%d available IPs.\n", part, len(partIps), len(ips))
 			}
 			if len(partDevices) < len(devices) && len(partDevices) < replicas {
-				fmt.Println("Partition", part, "doesn't use all available devices.")
+				fmt.Printf("Partition %d uses %d/%d available devices.", part, len(partDevices), len(devices))
 			}
 
 			for i, node := range ring.GetNodes(part) {
 				primaryCounts[node.Id][i]++
 			}
 		}
-
 		for _, dev := range devs {
-			expectedParts := float64(ring.PartitionCount()) * float64(dev.Weight) / totalWeight
-			for i, parts := range primaryCounts[dev.Id] {
-				if epsilon(float64(parts), float64(expectedParts)) > 0.02 {
-					fmt.Println(dev.Id, "is primary number", i, "for", parts, "partitions, but that should be", int(expectedParts))
+			if dev != nil {
+				expectedParts := float64(ring.PartitionCount()) * float64(dev.Weight) / totalWeight
+				for i, parts := range primaryCounts[dev.Id] {
+					if epsilon(float64(parts), float64(expectedParts)) > 0.02 {
+						fmt.Println(dev.Id, "is primary number", i, "for", parts, "partitions, but that should be", int(expectedParts))
+					}
 				}
 			}
 		}

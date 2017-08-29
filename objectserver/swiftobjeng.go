@@ -223,6 +223,8 @@ func (f *SwiftEngine) New(vars map[string]string, needData bool, asyncWG *sync.W
 			sor.Quarantine()
 			return nil, fmt.Errorf("File size doesn't match content-length: %d vs %d", stat.Size(), contentLength)
 		}
+	} else {
+		sor.metadata, _ = ObjectMetadata(sor.dataFile, sor.metaFile) // ignore errors if deleted
 	}
 	return sor, nil
 }

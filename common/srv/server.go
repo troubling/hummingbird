@@ -192,22 +192,44 @@ func LogPanics(logger LowLevelLogger, msg string) {
 
 // SetupLogger configures structured logging using uber's zap library.
 func SetupLogger(prefix string, atomicLevel *zap.AtomicLevel, flags *flag.FlagSet) (LowLevelLogger, error) {
-	productionConfig := zap.NewProductionConfig()
-	productionConfig.Level = *atomicLevel
+
+	highPriority := zap.LevelEnablerFunc(func(lvl zapcore.Level) bool {
+		return lvl >= atomicLevel.Level() && lvl >= zapcore.ErrorLevel
+	})
+	lowPriority := zap.LevelEnablerFunc(func(lvl zapcore.Level) bool {
+		return lvl >= atomicLevel.Level() && lvl < zapcore.ErrorLevel
+	})
+
+	var lowPrioFile, highPrioFile zapcore.WriteSyncer
+	var openerr error
 	if lFlag := flags.Lookup("l"); lFlag != nil && lFlag.Value.(flag.Getter).Get().(string) != "" {
-		productionConfig.OutputPaths = []string{lFlag.Value.(flag.Getter).Get().(string)}
+		lowPrioFile, _, openerr = zap.Open(lFlag.Value.(flag.Getter).Get().(string))
 	} else {
-		productionConfig.OutputPaths = []string{"stdout"}
+		lowPrioFile, _, openerr = zap.Open("stdout")
+	}
+	if openerr != nil {
+		return nil, fmt.Errorf("Unable to create logger: %v", openerr)
 	}
 	if eFlag := flags.Lookup("e"); eFlag != nil && eFlag.Value.(flag.Getter).Get().(string) != "" {
-		productionConfig.ErrorOutputPaths = []string{eFlag.Value.(flag.Getter).Get().(string)}
+		highPrioFile, _, openerr = zap.Open(eFlag.Value.(flag.Getter).Get().(string))
 	} else {
-		productionConfig.ErrorOutputPaths = []string{"stderr"}
+		highPrioFile, _, openerr = zap.Open("stderr")
 	}
-	baseLogger, err := productionConfig.Build()
-	if err != nil {
-		return nil, fmt.Errorf("Unable to create logger: %v", err)
+	if openerr != nil {
+		return nil, fmt.Errorf("Unable to create logger: %v", openerr)
 	}
+
+	infos := zapcore.AddSync(lowPrioFile)
+	errors := zapcore.AddSync(highPrioFile)
+
+	encoder := zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig())
+
+	core := zapcore.NewTee(
+		zapcore.NewCore(encoder, infos, lowPriority),
+		zapcore.NewCore(encoder, errors, highPriority),
+	)
+
+	baseLogger := zap.New(core)
 	logger := baseLogger.With(zap.String("name", prefix))
 	return logger, nil
 }

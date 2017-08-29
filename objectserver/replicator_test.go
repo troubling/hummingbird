@@ -167,7 +167,7 @@ type patchableReplicationDevice struct {
 	_replicateLocal     func(partition string, nodes []*ring.Device, moreNodes ring.MoreNodes)
 	_replicateHandoff   func(partition string, nodes []*ring.Device)
 	_cleanTemp          func()
-	_listPartitions     func() ([]string, error)
+	_listPartitions     func() ([]string, []string, error)
 	_replicatePartition func(partition string)
 	_Replicate          func()
 }
@@ -179,7 +179,7 @@ func (d *patchableReplicationDevice) replicatePartition(partition string) {
 	}
 	d.replicationDevice.replicatePartition(partition)
 }
-func (d *patchableReplicationDevice) listPartitions() ([]string, error) {
+func (d *patchableReplicationDevice) listPartitions() ([]string, []string, error) {
 	if d._listPartitions != nil {
 		return d._listPartitions()
 	}
@@ -759,15 +759,15 @@ func TestReplicate(t *testing.T) {
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 	rd := newPatchableReplicationDevice(replicator)
-	rd._listPartitions = func() ([]string, error) {
-		return []string{"1", "2", "3"}, nil
+	rd._listPartitions = func() ([]string, []string, error) {
+		return []string{"1", "2", "3"}, []string{"2"}, nil
 	}
 	calledWith := []string{}
 	rd._replicatePartition = func(partition string) {
 		calledWith = append(calledWith, partition)
 	}
 	rd.Replicate()
-	require.Equal(t, []string{"1", "2", "3"}, calledWith)
+	require.Equal(t, []string{"1", "2", "2", "3"}, calledWith)
 }
 
 func TestCancelReplicate(t *testing.T) {
@@ -782,8 +782,8 @@ func TestCancelReplicate(t *testing.T) {
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 	rd := newPatchableReplicationDevice(replicator)
-	rd._listPartitions = func() ([]string, error) {
-		return []string{"1", "2", "3"}, nil
+	rd._listPartitions = func() ([]string, []string, error) {
+		return []string{"1", "2", "3"}, nil, nil
 	}
 	calledWith := []string{}
 	rd._replicatePartition = func(partition string) {
@@ -818,12 +818,12 @@ func TestListPartitions(t *testing.T) {
 	require.Nil(t, os.MkdirAll(filepath.Join(objPath, "Z"), 0777))
 	rd := newPatchableReplicationDevice(replicator)
 	rd.dev = &ring.Device{Device: "sda"}
-	partitions, err := rd.listPartitions()
+	partitions, _, err := rd.listPartitions()
 	require.Nil(t, err)
 	require.Equal(t, 3, len(partitions))
 
 	replicator.partitions = map[string]bool{"2": true}
-	partitions, err = rd.listPartitions()
+	partitions, _, err = rd.listPartitions()
 	require.Nil(t, err)
 	require.Equal(t, 1, len(partitions))
 	require.Equal(t, "2", partitions[0])
