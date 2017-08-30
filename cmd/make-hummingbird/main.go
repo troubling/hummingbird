@@ -175,7 +175,7 @@ func makeHummingbird(args []string) error {
 			if f, err = os.Create(fmt.Sprintf("build/lib/systemd/system/hummingbird-%s.service", name)); err != nil {
 				return err
 			}
-			if _, err = f.WriteString(fmt.Sprintf(service, name, username, groupname, name, name)); err != nil {
+			if _, err = f.WriteString(fmt.Sprintf(service, name, username, groupname, name, "", name)); err != nil {
 				return err
 			}
 			if err = f.Close(); err != nil {

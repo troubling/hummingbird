@@ -31,31 +31,48 @@ build:
 	mkdir -p build/var/run/hummingbird
 	mkdir -p build/var/log/hummingbird
 	mkdir -p build/var/cache/swift
+	mkdir -p build/srv/hummingbird
 
-buildperms:
+build-ring:
+	hummingbird ring build/etc/hummingbird/object.builder create 10 1 1
+	hummingbird ring build/etc/hummingbird/object.builder add r1z1-127.0.0.1:6010R127.0.0.1:8010/hummingbird 1
+	hummingbird ring build/etc/hummingbird/object.builder rebalance
+	hummingbird ring build/etc/hummingbird/container.builder create 10 1 1
+	hummingbird ring build/etc/hummingbird/container.builder add r1z1-127.0.0.1:6011/hummingbird 1
+	hummingbird ring build/etc/hummingbird/container.builder rebalance
+	hummingbird ring build/etc/hummingbird/account.builder create 10 1 1
+	hummingbird ring build/etc/hummingbird/account.builder add r1z1-127.0.0.1:6012/hummingbird 1
+	hummingbird ring build/etc/hummingbird/account.builder rebalance
+	rm -rf build/etc/hummingbird/backups
+
+build-perms:
 	find build -type d -exec chmod 0755 {} \;
 	find build -type f -exec chmod 0644 {} \;
 	find build/usr/bin -type f -exec chmod 0755 {} \;
 	sudo chown -R root: build/etc build/lib build/usr build/var
 
-package: clean build buildperms
+package: clean build build-ring build-perms
 	# Started this from https://medium.com/@newhouseb/hassle-free-go-in-production-528af8ee1a58
 	echo 2.0 > build/debian-binary
 	echo "Package: hummingbird" > build/control
 	echo "Version:" ${HUMMINGBIRD_VERSION_NO_V} >> build/control
-	echo "Architecture: amd64" >> build/control
 	echo "Section: net" >> build/control
-	echo "Maintainer: Rackspace <gholt@rackspace.com>" >> build/control
 	echo "Priority: optional" >> build/control
+	echo "Architecture: amd64" >> build/control
+	echo "Depends: adduser, memcached" >> build/control
+	echo "Maintainer: Rackspace <gholt@rackspace.com>" >> build/control
 	echo "Description: Hummingbird Object Storage Software" >> build/control
-	tar cvzf build/data.tar.gz -C build etc lib usr var
-	tar cvzf build/control.tar.gz -C build control
+	echo '#!/bin/sh' > build/postinst
+	echo "adduser --system --group --no-create-home hummingbird" >> build/postinst
+	echo "chown hummingbird: /srv/hummingbird" >> build/postinst
+	tar cvzf build/data.tar.gz -C build etc lib srv usr var
+	tar cvzf build/control.tar.gz -C build control postinst
 	cd build && (ar rc hummingbird.deb debian-binary control.tar.gz data.tar.gz ; cd ..)
 
 haio-init: clean
 	$(MAKE) MAKE_HUMMINGBIRD_ARGS=haio build
 	go build -o build/usr/bin/nectar cmd/nectar/main.go
-	$(MAKE) MAKE_HUMMINGBIRD_ARGS=haio buildperms
+	$(MAKE) MAKE_HUMMINGBIRD_ARGS=haio build-perms
 	cd build && (sudo find etc lib usr var -type d -exec test \! -e /{} \; -exec mkdir -p /{} \; -print && sudo find etc lib usr var -type f -exec rm -f /{} \; -exec cp -a {} /{} \; -print ; cd ..)
 	sudo chown -R $${USER}: /etc/hummingbird
 
