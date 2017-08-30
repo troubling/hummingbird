@@ -24,7 +24,7 @@ echo 'export PATH=$PATH:/usr/local/go/bin' | sudo tee -a /etc/profile
 source /etc/profile
 ```
 
-Get Hummingbird and install as an haio:
+Get Hummingbird and install as an HAIO:
 
 ```sh
 go get -t github.com/troubling/hummingbird/...
@@ -41,7 +41,7 @@ hbmain start
 nectar -A http://127.0.0.1:8080/auth/v1.0 -U test:tester -K testing head
 ```
 
-If you're going to be actively developing hummingbird, you should fork the repository on GitHub and:
+If you're going to be actively developing Hummingbird, you should fork the repository on GitHub and:
 
 ```sh
 cd ~/go/src/github.com/troubling/hummingbird
