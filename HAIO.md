@@ -67,7 +67,8 @@ make test            # runs go vet and the unit tests with coverage
 make functional-test # runs the functional tests; the haio cluster must be running already
 ```
 
-Logs will be going through the standard systemd log system, so if you're used to journalctl you can just use that. But, hblog is also provided in case that's simpler:
+Logs will be going through the standard systemd log system, so if you're used to journalctl you can just use that.  
+But, hblog is also provided in case that's simpler:
 
 ```sh
 hblog proxy    # shows all the log lines from the proxy server
