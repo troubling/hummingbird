@@ -75,7 +75,7 @@ git clone git@github.com:openstack/swift
 sudo mkdir /etc/swift/
 sudo chown $USER: /etc/swift
 cp ~/swift/test/sample.conf /etc/swift/test.conf
-sudo apt install python-eventlet python-mock python-netifaces python-nose python-pastedeploy python-pbr python-pyeclib python-setuptools python-swiftclient python-unittest2
+sudo apt install python-eventlet python-mock python-netifaces python-nose python-pastedeploy python-pbr python-pyeclib python-setuptools python-swiftclient python-unittest2 python-xattr
 cd ~/swift/test/functional
 nosetests
 ```
