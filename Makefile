@@ -1,5 +1,6 @@
 HUMMINGBIRD_VERSION?=$(shell git describe --tags)
 HUMMINGBIRD_VERSION_NO_V?=$(shell git describe --tags | cut -d v -f 2)
+NECTAR_VERSION=0.0.1
 
 quick:
 	go build cmd/...
@@ -67,7 +68,26 @@ package: clean build build-ring build-perms
 	echo "chown hummingbird: /srv/hummingbird" >> build/postinst
 	tar cvzf build/data.tar.gz -C build etc lib srv usr var
 	tar cvzf build/control.tar.gz -C build control postinst
-	cd build && (ar rc hummingbird.deb debian-binary control.tar.gz data.tar.gz ; cd ..)
+	cd build && (ar rc hummingbird-${HUMMINGBIRD_VERSION_NO_V}.deb debian-binary control.tar.gz data.tar.gz ; cd ..)
+
+package-nectar:
+	sudo rm -rf build
+	mkdir -p build/usr/bin
+	find build -type d -exec chmod 0755 {} \;
+	go build -o build/usr/bin/nectar cmd/nectar/main.go
+	chmod 0755 build/usr/bin/nectar
+	sudo chown -R root: build/usr
+	echo 2.0 > build/debian-binary
+	echo "Package: nectar" > build/control
+	echo "Version:" ${NECTAR_VERSION} >> build/control
+	echo "Section: net" >> build/control
+	echo "Priority: optional" >> build/control
+	echo "Architecture: amd64" >> build/control
+	echo "Maintainer: Rackspace <gholt@rackspace.com>" >> build/control
+	echo "Description: Client for Hummingbird Object Storage Software" >> build/control
+	tar cvzf build/data.tar.gz -C build usr
+	tar cvzf build/control.tar.gz -C build control
+	cd build && (ar rc nectar-${NECTAR_VERSION}.deb debian-binary control.tar.gz data.tar.gz ; cd ..)
 
 haio-init: clean
 	$(MAKE) MAKE_HUMMINGBIRD_ARGS=haio build
