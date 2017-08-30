@@ -18,10 +18,8 @@ func makeHummingbird(args []string) error {
 	if len(args) == 1 && args[0] == "haio" {
 		haio = true
 	}
-	ip := "0.0.0.0"
 	devices := "/srv"
 	if haio {
-		ip = "127.0.0.1"
 		devices = "/srv/hb"
 	}
 	username := "hummingbird"
@@ -59,7 +57,7 @@ func makeHummingbird(args []string) error {
 	if f, err = os.Create("build/etc/hummingbird/proxy-server.conf"); err != nil {
 		return err
 	}
-	if _, err = f.WriteString(fmt.Sprintf(proxy_server_conf, ip, 8080)); err != nil {
+	if _, err = f.WriteString(fmt.Sprintf(proxy_server_conf, 8080)); err != nil {
 		return err
 	}
 	if err = f.Close(); err != nil {
@@ -73,7 +71,7 @@ func makeHummingbird(args []string) error {
 			if f, err = os.Create(fmt.Sprintf("build/etc/hummingbird/account-server/%d.conf", i)); err != nil {
 				return err
 			}
-			if _, err = f.WriteString(fmt.Sprintf(account_server_conf, fmt.Sprintf("%s/%d", devices, i), ip, 6002+i*10)); err != nil {
+			if _, err = f.WriteString(fmt.Sprintf(account_server_conf, fmt.Sprintf("%s/%d", devices, i), 6002+i*10)); err != nil {
 				return err
 			}
 			if err = f.Close(); err != nil {
@@ -87,7 +85,7 @@ func makeHummingbird(args []string) error {
 			if f, err = os.Create(fmt.Sprintf("build/etc/hummingbird/container-server/%d.conf", i)); err != nil {
 				return err
 			}
-			if _, err = f.WriteString(fmt.Sprintf(container_server_conf, fmt.Sprintf("%s/%d", devices, i), ip, 6001+i*10)); err != nil {
+			if _, err = f.WriteString(fmt.Sprintf(container_server_conf, fmt.Sprintf("%s/%d", devices, i), 6001+i*10)); err != nil {
 				return err
 			}
 			if err = f.Close(); err != nil {
@@ -101,7 +99,7 @@ func makeHummingbird(args []string) error {
 			if f, err = os.Create(fmt.Sprintf("build/etc/hummingbird/object-server/%d.conf", i)); err != nil {
 				return err
 			}
-			if _, err = f.WriteString(fmt.Sprintf(object_server_conf, fmt.Sprintf("%s/%d", devices, i), ip, 6000+i*10, ip, 8000+i*10)); err != nil {
+			if _, err = f.WriteString(fmt.Sprintf(object_server_conf, fmt.Sprintf("%s/%d", devices, i), 6000+i*10, 8000+i*10)); err != nil {
 				return err
 			}
 			if err = f.Close(); err != nil {
@@ -112,7 +110,7 @@ func makeHummingbird(args []string) error {
 		if f, err = os.Create("build/etc/hummingbird/account-server.conf"); err != nil {
 			return err
 		}
-		if _, err = f.WriteString(fmt.Sprintf(account_server_conf, devices, ip, 6012)); err != nil {
+		if _, err = f.WriteString(fmt.Sprintf(account_server_conf, devices, 6012)); err != nil {
 			return err
 		}
 		if err = f.Close(); err != nil {
@@ -121,7 +119,7 @@ func makeHummingbird(args []string) error {
 		if f, err = os.Create("build/etc/hummingbird/container-server.conf"); err != nil {
 			return err
 		}
-		if _, err = f.WriteString(fmt.Sprintf(container_server_conf, devices, ip, 6011)); err != nil {
+		if _, err = f.WriteString(fmt.Sprintf(container_server_conf, devices, 6011)); err != nil {
 			return err
 		}
 		if err = f.Close(); err != nil {
@@ -130,7 +128,7 @@ func makeHummingbird(args []string) error {
 		if f, err = os.Create("build/etc/hummingbird/object-server.conf"); err != nil {
 			return err
 		}
-		if _, err = f.WriteString(fmt.Sprintf(object_server_conf, devices, ip, 6010, ip, 8010)); err != nil {
+		if _, err = f.WriteString(fmt.Sprintf(object_server_conf, devices, 6010, 8010)); err != nil {
 			return err
 		}
 		if err = f.Close(); err != nil {
@@ -223,7 +221,7 @@ policy_type = replication
 `
 
 var proxy_server_conf = `[DEFAULT]
-bind_ip = %s
+bind_ip = 127.0.0.1
 bind_port = %d
 log_level = DEBUG
 
@@ -259,7 +257,7 @@ user_test_tester3 = testing3
 var account_server_conf = `[DEFAULT]
 devices = %s
 mount_check = false
-bind_ip = %s
+bind_ip = 127.0.0.1
 bind_port = %d
 
 [app:account-server]
@@ -270,7 +268,7 @@ bind_port = %d
 var container_server_conf = `[DEFAULT]
 devices = %s
 mount_check = false
-bind_ip = %s
+bind_ip = 127.0.0.1
 bind_port = %d
 
 [app:container-server]
@@ -283,11 +281,11 @@ devices = %s
 mount_check = false
 
 [app:object-server]
-bind_ip = %s
+bind_ip = 127.0.0.1
 bind_port = %d
 
 [object-replicator]
-bind_ip = %s
+bind_ip = 127.0.0.1
 bind_port = %d
 
 [object-auditor]
