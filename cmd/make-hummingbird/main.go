@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	"strings"
 )
 
 func main() {
@@ -139,15 +140,47 @@ func makeHummingbird(args []string) error {
 	if err = os.MkdirAll("build/lib/systemd/system", 0755); err != nil {
 		return err
 	}
-	for _, name := range []string{"proxy", "account", "account-replicator", "container", "container-replicator", "object", "object-replicator", "object-auditor", "andrewd"} {
+	for _, name := range []string{"proxy", "andrewd"} {
 		if f, err = os.Create(fmt.Sprintf("build/lib/systemd/system/hummingbird-%s.service", name)); err != nil {
 			return err
 		}
-		if _, err = f.WriteString(fmt.Sprintf(service, name, username, groupname, name, name)); err != nil {
+		if _, err = f.WriteString(fmt.Sprintf(service, name, username, groupname, name, "", name)); err != nil {
 			return err
 		}
 		if err = f.Close(); err != nil {
 			return err
+		}
+	}
+	if haio {
+		for _, name := range []string{"account", "account-replicator", "container", "container-replicator", "object", "object-replicator", "object-auditor"} {
+			for i := 1; i <= 4; i++ {
+				if f, err = os.Create(fmt.Sprintf("build/lib/systemd/system/hummingbird-%s%d.service", name, i)); err != nil {
+					return err
+				}
+				ss := strings.SplitN(name, "-", 2)
+				basename := name
+				if len(ss) == 2 {
+					basename = ss[0]
+				}
+				if _, err = f.WriteString(fmt.Sprintf(service, name, username, groupname, name, fmt.Sprintf(" -c /etc/hummingbird/%s-server/%d.conf", basename, i), name)); err != nil {
+					return err
+				}
+				if err = f.Close(); err != nil {
+					return err
+				}
+			}
+		}
+	} else {
+		for _, name := range []string{"account", "account-replicator", "container", "container-replicator", "object", "object-replicator", "object-auditor"} {
+			if f, err = os.Create(fmt.Sprintf("build/lib/systemd/system/hummingbird-%s.service", name)); err != nil {
+				return err
+			}
+			if _, err = f.WriteString(fmt.Sprintf(service, name, username, groupname, name, name)); err != nil {
+				return err
+			}
+			if err = f.Close(); err != nil {
+				return err
+			}
 		}
 	}
 	if haio {
@@ -269,7 +302,7 @@ After=syslog.target network.target
 Type=simple
 User=%s
 Group=%s
-ExecStart=/usr/bin/hummingbird %s
+ExecStart=/usr/bin/hummingbird %s%s
 TimeoutStopSec=60
 Restart=on-failure
 RestartSec=5
@@ -299,33 +332,84 @@ WantedBy=multi-user.target
 var hball = `#!/bin/bash
 
 sudo systemctl $@ hummingbird-proxy
-sudo systemctl $@ hummingbird-account
-sudo systemctl $@ hummingbird-account-replicator
-sudo systemctl $@ hummingbird-container
-sudo systemctl $@ hummingbird-container-replicator
-sudo systemctl $@ hummingbird-object
-sudo systemctl $@ hummingbird-object-replicator
-sudo systemctl $@ hummingbird-object-auditor
+sudo systemctl $@ hummingbird-account1
+sudo systemctl $@ hummingbird-account-replicator1
+sudo systemctl $@ hummingbird-container1
+sudo systemctl $@ hummingbird-container-replicator1
+sudo systemctl $@ hummingbird-object1
+sudo systemctl $@ hummingbird-object-replicator1
+sudo systemctl $@ hummingbird-object-auditor1
+sudo systemctl $@ hummingbird-account2
+sudo systemctl $@ hummingbird-account-replicator2
+sudo systemctl $@ hummingbird-container2
+sudo systemctl $@ hummingbird-container-replicator2
+sudo systemctl $@ hummingbird-object2
+sudo systemctl $@ hummingbird-object-replicator2
+sudo systemctl $@ hummingbird-object-auditor2
+sudo systemctl $@ hummingbird-account3
+sudo systemctl $@ hummingbird-account-replicator3
+sudo systemctl $@ hummingbird-container3
+sudo systemctl $@ hummingbird-container-replicator3
+sudo systemctl $@ hummingbird-object3
+sudo systemctl $@ hummingbird-object-replicator3
+sudo systemctl $@ hummingbird-object-auditor3
+sudo systemctl $@ hummingbird-account4
+sudo systemctl $@ hummingbird-account-replicator4
+sudo systemctl $@ hummingbird-container4
+sudo systemctl $@ hummingbird-container-replicator4
+sudo systemctl $@ hummingbird-object4
+sudo systemctl $@ hummingbird-object-replicator4
+sudo systemctl $@ hummingbird-object-auditor4
 `
 
 var hbmain = `#!/bin/bash
 
 sudo systemctl $@ hummingbird-proxy
-sudo systemctl $@ hummingbird-account
-sudo systemctl $@ hummingbird-container
-sudo systemctl $@ hummingbird-object
+sudo systemctl $@ hummingbird-account1
+sudo systemctl $@ hummingbird-container1
+sudo systemctl $@ hummingbird-object1
+sudo systemctl $@ hummingbird-account2
+sudo systemctl $@ hummingbird-container2
+sudo systemctl $@ hummingbird-object2
+sudo systemctl $@ hummingbird-account3
+sudo systemctl $@ hummingbird-container3
+sudo systemctl $@ hummingbird-object3
+sudo systemctl $@ hummingbird-account4
+sudo systemctl $@ hummingbird-container4
+sudo systemctl $@ hummingbird-object4
 `
 
 var hbreset = `#!/bin/bash
 
 sudo systemctl stop hummingbird-proxy || /bin/true
-sudo systemctl stop hummingbird-account || /bin/true
-sudo systemctl stop hummingbird-account-replicator || /bin/true
-sudo systemctl stop hummingbird-container || /bin/true
-sudo systemctl stop hummingbird-container-replicator || /bin/true
-sudo systemctl stop hummingbird-object || /bin/true
-sudo systemctl stop hummingbird-object-replicator || /bin/true
-sudo systemctl stop hummingbird-object-auditor || /bin/true
+sudo systemctl stop hummingbird-account1 || /bin/true
+sudo systemctl stop hummingbird-account-replicator1 || /bin/true
+sudo systemctl stop hummingbird-container1 || /bin/true
+sudo systemctl stop hummingbird-container-replicator1 || /bin/true
+sudo systemctl stop hummingbird-object1 || /bin/true
+sudo systemctl stop hummingbird-object-replicator1 || /bin/true
+sudo systemctl stop hummingbird-object-auditor1 || /bin/true
+sudo systemctl stop hummingbird-account2 || /bin/true
+sudo systemctl stop hummingbird-account-replicator2 || /bin/true
+sudo systemctl stop hummingbird-container2 || /bin/true
+sudo systemctl stop hummingbird-container-replicator2 || /bin/true
+sudo systemctl stop hummingbird-object2 || /bin/true
+sudo systemctl stop hummingbird-object-replicator2 || /bin/true
+sudo systemctl stop hummingbird-object-auditor2 || /bin/true
+sudo systemctl stop hummingbird-account3 || /bin/true
+sudo systemctl stop hummingbird-account-replicator3 || /bin/true
+sudo systemctl stop hummingbird-container3 || /bin/true
+sudo systemctl stop hummingbird-container-replicator3 || /bin/true
+sudo systemctl stop hummingbird-object3 || /bin/true
+sudo systemctl stop hummingbird-object-replicator3 || /bin/true
+sudo systemctl stop hummingbird-object-auditor3 || /bin/true
+sudo systemctl stop hummingbird-account4 || /bin/true
+sudo systemctl stop hummingbird-account-replicator4 || /bin/true
+sudo systemctl stop hummingbird-container4 || /bin/true
+sudo systemctl stop hummingbird-container-replicator4 || /bin/true
+sudo systemctl stop hummingbird-object4 || /bin/true
+sudo systemctl stop hummingbird-object-replicator4 || /bin/true
+sudo systemctl stop hummingbird-object-auditor4 || /bin/true
 sudo find /var/log/hummingbird /var/cache/swift -type f -exec rm -f {} \;
 sudo umount -f /srv/hb || /bin/true
 sudo mkdir -p /srv/hb
