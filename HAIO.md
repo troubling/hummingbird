@@ -1,4 +1,4 @@
-# Hummingbird All In One (haio)
+# Hummingbird All In One (HAIO)
 
 These instructions assume Ubuntu 16.04, but other distributions and versions should work with some translation.
 
