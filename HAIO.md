@@ -64,9 +64,7 @@ There a few other make targets as well:
 make                 # just does quick compile, mostly just a syntax check
 make fmt             # runs go fmt with the options we like
 make test            # runs go vet and the unit tests with coverage
-make functional-test # runs the functional tests; the haio cluster must be running
-                     # already and you'll need to set the environment variables as
-                     # per functional/Makefile
+make functional-test # runs the functional tests; cluster must be running
 ```
 
 Logs will be going through the standard systemd log system, so if you're used to journalctl you can just use that.  
