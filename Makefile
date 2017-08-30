@@ -19,7 +19,6 @@ functional-test:
 	$(MAKE) -C functional
 
 build:
-	# Started this from https://medium.com/@newhouseb/hassle-free-go-in-production-528af8ee1a58
 	sudo rm -rf build
 	mkdir -p build/usr/bin
 	go build -o build/usr/bin/hummingbird -ldflags "-X common.Version=$(HUMMINGBIRD_VERSION)" cmd/hummingbird/main.go
@@ -36,6 +35,7 @@ buildperms:
 	sudo chown -R root: build/etc build/lib build/usr build/var
 
 package: clean build buildperms
+	# Started this from https://medium.com/@newhouseb/hassle-free-go-in-production-528af8ee1a58
 	echo 2.0 > build/debian-binary
 	echo "Package: hummingbird" > build/control
 	echo "Version:" ${HUMMINGBIRD_VERSION_NO_V} >> build/control
@@ -48,9 +48,22 @@ package: clean build buildperms
 	tar cvzf build/control.tar.gz -C build control
 	cd build && (ar rc hummingbird.deb debian-binary control.tar.gz data.tar.gz ; cd ..)
 
-haio: clean
+haio-init: clean
 	$(MAKE) MAKE_HUMMINGBIRD_ARGS=haio build
 	go build -o build/usr/bin/nectar cmd/nectar/main.go
 	$(MAKE) MAKE_HUMMINGBIRD_ARGS=haio buildperms
-	cd build && (sudo find etc lib usr var -type d -exec test \! -e {} \; -exec cp -a {} /{} \; -print && sudo find etc lib usr var -type f -exec rm -f /{} \; -exec cp -a {} /{} \; -print ; cd ..)
+	cd build && (sudo find etc lib usr var -type d -exec test \! -e /{} \; -exec mkdir -p /{} \; -print && sudo find etc lib usr var -type f -exec rm -f /{} \; -exec cp -a {} /{} \; -print ; cd ..)
 	sudo chown -R $${USER}: /etc/hummingbird
+
+haio:
+	hball stop
+	sudo rm -rf build
+	mkdir -p build/usr/bin
+	go build -o build/usr/bin/hummingbird -ldflags "-X common.Version=$(HUMMINGBIRD_VERSION)" cmd/hummingbird/main.go
+	chmod 0755 build/usr/bin/hummingbird
+	sudo rm -f /usr/bin/hummingbird
+	sudo cp build/usr/bin/hummingbird /usr/bin/hummingbird
+	go build -o build/usr/bin/nectar cmd/nectar/main.go
+	chmod 0755 build/usr/bin/nectar
+	sudo rm -f /usr/bin/nectar
+	sudo cp build/usr/bin/nectar /usr/bin/nectar

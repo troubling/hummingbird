@@ -191,7 +191,7 @@ func makeHummingbird(args []string) error {
 			{"hball", hball},
 			{"hbmain", hbmain},
 			{"hbreset", hbreset},
-			{"remakerings", remakerings},
+			{"hbrings", hbrings},
 		} {
 			if f, err = os.Create("build/usr/bin/" + ss[0]); err != nil {
 				return err
@@ -424,7 +424,7 @@ sudo chown -R "${USER}:${USER}" /var/run/hummingbird \
 sudo systemctl restart memcached
 `
 
-var remakerings = `#!/bin/bash
+var hbrings = `#!/bin/bash
 set -e
 
 cd /etc/hummingbird
