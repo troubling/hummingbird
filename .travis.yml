@@ -10,9 +10,12 @@ go:
 install:
   - sudo apt-get -y install build-essential memcached rsync xfsprogs git-core libffi-dev python-dev liberasurecode-dev python-virtualenv curl libjerasure-dev
   - 
-  - make get haio-init
+  - make get package
   - mkdir -p /tmp/output/bin
   - cp /usr/bin/hummingbird /tmp/output/bin
+  - mkdir -p /tmp/output/package
+  - cp build/hummingbird.deb /tmp/output/package
+  - make haio-init
   - hbrings
   - go get github.com/haya14busa/goverage
   - git clone --depth 1 'https://github.com/openstack/swift.git' ~/swift
