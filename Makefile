@@ -18,6 +18,10 @@ test:
 functional-test:
 	$(MAKE) -C functional
 
+get:
+	# Travis uses this
+	go get -t $(shell go list ./... | grep -v /vendor/)
+
 build:
 	sudo rm -rf build
 	mkdir -p build/usr/bin
