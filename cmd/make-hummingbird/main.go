@@ -424,7 +424,7 @@ else
     hummingbird stop all
 fi
 sudo find /var/log/hummingbird /var/cache/swift -type f -exec rm -f {} \;
-sudo umount -f /srv/hb || /bin/true
+sudo umount -f /srv/hb 2>&1 || /bin/true
 sudo mkdir -p /srv/hb
 sudo truncate -s 5GB /srv/hb-disk
 sudo mkfs.xfs -f /srv/hb-disk
