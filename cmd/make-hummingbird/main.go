@@ -332,85 +332,97 @@ WantedBy=multi-user.target
 
 var hball = `#!/bin/bash
 
-sudo systemctl $@ hummingbird-proxy
-sudo systemctl $@ hummingbird-account1
-sudo systemctl $@ hummingbird-account-replicator1
-sudo systemctl $@ hummingbird-container1
-sudo systemctl $@ hummingbird-container-replicator1
-sudo systemctl $@ hummingbird-object1
-sudo systemctl $@ hummingbird-object-replicator1
-sudo systemctl $@ hummingbird-object-auditor1
-sudo systemctl $@ hummingbird-account2
-sudo systemctl $@ hummingbird-account-replicator2
-sudo systemctl $@ hummingbird-container2
-sudo systemctl $@ hummingbird-container-replicator2
-sudo systemctl $@ hummingbird-object2
-sudo systemctl $@ hummingbird-object-replicator2
-sudo systemctl $@ hummingbird-object-auditor2
-sudo systemctl $@ hummingbird-account3
-sudo systemctl $@ hummingbird-account-replicator3
-sudo systemctl $@ hummingbird-container3
-sudo systemctl $@ hummingbird-container-replicator3
-sudo systemctl $@ hummingbird-object3
-sudo systemctl $@ hummingbird-object-replicator3
-sudo systemctl $@ hummingbird-object-auditor3
-sudo systemctl $@ hummingbird-account4
-sudo systemctl $@ hummingbird-account-replicator4
-sudo systemctl $@ hummingbird-container4
-sudo systemctl $@ hummingbird-container-replicator4
-sudo systemctl $@ hummingbird-object4
-sudo systemctl $@ hummingbird-object-replicator4
-sudo systemctl $@ hummingbird-object-auditor4
+if hash systemctl 2>/dev/null ; then
+    sudo systemctl $@ hummingbird-proxy
+    sudo systemctl $@ hummingbird-account1
+    sudo systemctl $@ hummingbird-account-replicator1
+    sudo systemctl $@ hummingbird-container1
+    sudo systemctl $@ hummingbird-container-replicator1
+    sudo systemctl $@ hummingbird-object1
+    sudo systemctl $@ hummingbird-object-replicator1
+    sudo systemctl $@ hummingbird-object-auditor1
+    sudo systemctl $@ hummingbird-account2
+    sudo systemctl $@ hummingbird-account-replicator2
+    sudo systemctl $@ hummingbird-container2
+    sudo systemctl $@ hummingbird-container-replicator2
+    sudo systemctl $@ hummingbird-object2
+    sudo systemctl $@ hummingbird-object-replicator2
+    sudo systemctl $@ hummingbird-object-auditor2
+    sudo systemctl $@ hummingbird-account3
+    sudo systemctl $@ hummingbird-account-replicator3
+    sudo systemctl $@ hummingbird-container3
+    sudo systemctl $@ hummingbird-container-replicator3
+    sudo systemctl $@ hummingbird-object3
+    sudo systemctl $@ hummingbird-object-replicator3
+    sudo systemctl $@ hummingbird-object-auditor3
+    sudo systemctl $@ hummingbird-account4
+    sudo systemctl $@ hummingbird-account-replicator4
+    sudo systemctl $@ hummingbird-container4
+    sudo systemctl $@ hummingbird-container-replicator4
+    sudo systemctl $@ hummingbird-object4
+    sudo systemctl $@ hummingbird-object-replicator4
+    sudo systemctl $@ hummingbird-object-auditor4
+else
+    hummingbird $@ all
+fi
 `
 
 var hbmain = `#!/bin/bash
 
-sudo systemctl $@ hummingbird-proxy
-sudo systemctl $@ hummingbird-account1
-sudo systemctl $@ hummingbird-container1
-sudo systemctl $@ hummingbird-object1
-sudo systemctl $@ hummingbird-account2
-sudo systemctl $@ hummingbird-container2
-sudo systemctl $@ hummingbird-object2
-sudo systemctl $@ hummingbird-account3
-sudo systemctl $@ hummingbird-container3
-sudo systemctl $@ hummingbird-object3
-sudo systemctl $@ hummingbird-account4
-sudo systemctl $@ hummingbird-container4
-sudo systemctl $@ hummingbird-object4
+if hash systemctl 2>/dev/null ; then
+    sudo systemctl $@ hummingbird-proxy
+    sudo systemctl $@ hummingbird-account1
+    sudo systemctl $@ hummingbird-container1
+    sudo systemctl $@ hummingbird-object1
+    sudo systemctl $@ hummingbird-account2
+    sudo systemctl $@ hummingbird-container2
+    sudo systemctl $@ hummingbird-object2
+    sudo systemctl $@ hummingbird-account3
+    sudo systemctl $@ hummingbird-container3
+    sudo systemctl $@ hummingbird-object3
+    sudo systemctl $@ hummingbird-account4
+    sudo systemctl $@ hummingbird-container4
+    sudo systemctl $@ hummingbird-object4
+else
+    hummingbird $@ main
+fi
 `
 
 var hbreset = `#!/bin/bash
 
-sudo systemctl stop hummingbird-proxy || /bin/true
-sudo systemctl stop hummingbird-account1 || /bin/true
-sudo systemctl stop hummingbird-account-replicator1 || /bin/true
-sudo systemctl stop hummingbird-container1 || /bin/true
-sudo systemctl stop hummingbird-container-replicator1 || /bin/true
-sudo systemctl stop hummingbird-object1 || /bin/true
-sudo systemctl stop hummingbird-object-replicator1 || /bin/true
-sudo systemctl stop hummingbird-object-auditor1 || /bin/true
-sudo systemctl stop hummingbird-account2 || /bin/true
-sudo systemctl stop hummingbird-account-replicator2 || /bin/true
-sudo systemctl stop hummingbird-container2 || /bin/true
-sudo systemctl stop hummingbird-container-replicator2 || /bin/true
-sudo systemctl stop hummingbird-object2 || /bin/true
-sudo systemctl stop hummingbird-object-replicator2 || /bin/true
-sudo systemctl stop hummingbird-object-auditor2 || /bin/true
-sudo systemctl stop hummingbird-account3 || /bin/true
-sudo systemctl stop hummingbird-account-replicator3 || /bin/true
-sudo systemctl stop hummingbird-container3 || /bin/true
-sudo systemctl stop hummingbird-container-replicator3 || /bin/true
-sudo systemctl stop hummingbird-object3 || /bin/true
-sudo systemctl stop hummingbird-object-replicator3 || /bin/true
-sudo systemctl stop hummingbird-object-auditor3 || /bin/true
-sudo systemctl stop hummingbird-account4 || /bin/true
-sudo systemctl stop hummingbird-account-replicator4 || /bin/true
-sudo systemctl stop hummingbird-container4 || /bin/true
-sudo systemctl stop hummingbird-container-replicator4 || /bin/true
-sudo systemctl stop hummingbird-object4 || /bin/true
-sudo systemctl stop hummingbird-object-replicator4 || /bin/true
-sudo systemctl stop hummingbird-object-auditor4 || /bin/true
+if hash systemctl 2>/dev/null ; then
+    sudo systemctl stop hummingbird-proxy || /bin/true
+    sudo systemctl stop hummingbird-account1 || /bin/true
+    sudo systemctl stop hummingbird-account-replicator1 || /bin/true
+    sudo systemctl stop hummingbird-container1 || /bin/true
+    sudo systemctl stop hummingbird-container-replicator1 || /bin/true
+    sudo systemctl stop hummingbird-object1 || /bin/true
+    sudo systemctl stop hummingbird-object-replicator1 || /bin/true
+    sudo systemctl stop hummingbird-object-auditor1 || /bin/true
+    sudo systemctl stop hummingbird-account2 || /bin/true
+    sudo systemctl stop hummingbird-account-replicator2 || /bin/true
+    sudo systemctl stop hummingbird-container2 || /bin/true
+    sudo systemctl stop hummingbird-container-replicator2 || /bin/true
+    sudo systemctl stop hummingbird-object2 || /bin/true
+    sudo systemctl stop hummingbird-object-replicator2 || /bin/true
+    sudo systemctl stop hummingbird-object-auditor2 || /bin/true
+    sudo systemctl stop hummingbird-account3 || /bin/true
+    sudo systemctl stop hummingbird-account-replicator3 || /bin/true
+    sudo systemctl stop hummingbird-container3 || /bin/true
+    sudo systemctl stop hummingbird-container-replicator3 || /bin/true
+    sudo systemctl stop hummingbird-object3 || /bin/true
+    sudo systemctl stop hummingbird-object-replicator3 || /bin/true
+    sudo systemctl stop hummingbird-object-auditor3 || /bin/true
+    sudo systemctl stop hummingbird-account4 || /bin/true
+    sudo systemctl stop hummingbird-account-replicator4 || /bin/true
+    sudo systemctl stop hummingbird-container4 || /bin/true
+    sudo systemctl stop hummingbird-container-replicator4 || /bin/true
+    sudo systemctl stop hummingbird-object4 || /bin/true
+    sudo systemctl stop hummingbird-object-replicator4 || /bin/true
+    sudo systemctl stop hummingbird-object-auditor4 || /bin/true
+else
+    hummingbird stop all
+fi
 sudo find /var/log/hummingbird /var/cache/swift -type f -exec rm -f {} \;
 sudo umount -f /srv/hb || /bin/true
 sudo mkdir -p /srv/hb
@@ -422,7 +434,11 @@ sudo mkdir -p /var/cache/swift /var/cache/swift2 /var/cache/swift3 \
     /srv/hb/3/sdb3 /srv/hb/4/sdb4 /var/run/hummingbird /var/log/hummingbird
 sudo chown -R "${USER}:${USER}" /var/run/hummingbird \
     /var/log/hummingbird /var/cache/swift* /srv/*
-sudo systemctl restart memcached
+if hash systemctl 2>/dev/null ; then
+    sudo systemctl restart memcached
+else
+    sudo service memcached restart
+fi
 `
 
 var hbrings = `#!/bin/bash
@@ -474,5 +490,10 @@ hummingbird ring account.builder rebalance
 
 var hblog = `#!/bin/bash
 
-journalctl -u hummingbird-$@
+if hash journalctl 2>/dev/null ; then
+    echo "Unsure how to view your logs"
+    exit 1
+else
+    journalctl -u hummingbird-$@
+fi
 `
