@@ -12,7 +12,7 @@ install:
   - 
   - make get package
   - mkdir -p /tmp/output/bin
-  - cp /usr/bin/hummingbird /tmp/output/bin
+  - cp build/usr/bin/hummingbird /tmp/output/bin
   - mkdir -p /tmp/output/package
   - cp build/hummingbird.deb /tmp/output/package
   - make haio-init
