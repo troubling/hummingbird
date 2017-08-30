@@ -192,6 +192,7 @@ func makeHummingbird(args []string) error {
 			{"hbmain", hbmain},
 			{"hbreset", hbreset},
 			{"hbrings", hbrings},
+			{"hblog", hblog},
 		} {
 			if f, err = os.Create("build/usr/bin/" + ss[0]); err != nil {
 				return err
@@ -469,4 +470,9 @@ hummingbird ring account.builder add r1z2-127.0.0.1:6022/sdb2 1
 hummingbird ring account.builder add r1z3-127.0.0.1:6032/sdb3 1
 hummingbird ring account.builder add r1z4-127.0.0.1:6042/sdb4 1
 hummingbird ring account.builder rebalance
+`
+
+var hblog = `#!/bin/bash
+
+journalctl -u hummingbird-$@
 `

@@ -67,6 +67,15 @@ make test            # runs go vet and the unit tests with coverage
 make functional-test # runs the functional tests; the haio cluster must be running already
 ```
 
+Logs will be going through the standard systemd log system, so if you're used to journalctl you can just use that. But, hblog is also provided in case that's simpler:
+
+```sh
+hblog proxy    # shows all the log lines from the proxy server
+hblog proxy -f # shows recent log lines and follows, like a tail -f
+hblog object1  # shows logs for just the first object server
+hblog object\* # shows logs for all the object servers (can also have -f)
+```
+
 If you want to run Openstack Swift's functional tests against Hummingbird:
 
 ```sh
