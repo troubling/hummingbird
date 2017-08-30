@@ -196,7 +196,14 @@ func UidFromConf(path string) (uint32, uint32, error) {
 		return 0, 0, err
 	}
 	for _, config := range configs {
-		username := config.GetDefault("DEFAULT", "user", "swift")
+		username := config.GetDefault("DEFAULT", "user", "")
+		if username == "" {
+			usr, err := user.Current()
+			if err != nil {
+				return 0, 0, err
+			}
+			username = usr.Name
+		}
 		usr, err := user.Lookup(username)
 		if err != nil {
 			return 0, 0, err
