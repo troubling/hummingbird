@@ -489,9 +489,9 @@ hummingbird ring account.builder rebalance
 var hblog = `#!/bin/bash
 
 if hash journalctl 2>/dev/null ; then
+    journalctl -u hummingbird-$@
+else
     echo "Unsure how to view your logs"
     exit 1
-else
-    journalctl -u hummingbird-$@
 fi
 `
