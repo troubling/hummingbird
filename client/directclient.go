@@ -1048,13 +1048,12 @@ func (c *directClient) Raw(method, urlAfterAccount string, headers map[string]st
 	return nectarutil.ResponseStub(http.StatusNotImplemented, "Raw requests not implemented for direct clients")
 }
 
-/*
 // NewDirectClient creates a new direct client with the given account name.
+<<<<<<< HEAD
 func NewDirectClient(account string) (nectar.Client, error) {
-	pdc, err := NewProxyDirectClient(nil)
+	pdc, err := NewProxyDirectClient(nil, zap.NewNop())
 	if err != nil {
 		return nil, err
 	}
-	return &directClient{account: account, pc: NewProxyClient(pdc, nil, nil)}, nil
+	return &directClient{account: account, pc: NewProxyClient(pdc, nil, nil, zap.NewNop())}, nil
 }
-*/

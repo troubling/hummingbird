@@ -16,7 +16,6 @@
 package proxyserver
 
 import (
-	"io"
 	"mime"
 	"net/http"
 	"path/filepath"
