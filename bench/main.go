@@ -65,7 +65,12 @@ func (obj *Object) Get() bool {
 }
 
 func (obj *Object) Delete() bool {
-	return obj.c.DeleteObject(obj.container, obj.name, nil).StatusCode/100 == 2
+	resp := obj.c.DeleteObject(obj.container, obj.name, nil)
+	resp.Body.Close()
+	if obj.verbose && resp.StatusCode/100 != 2 {
+		fmt.Printf("object DELETE failed: %d to %s/%s (%s)\n", resp.StatusCode, obj.container, obj.name, resp.Header)
+	}
+	return resp.StatusCode/100 == 2
 }
 
 func DoJobs(name string, work []func() bool, concurrency int) {
