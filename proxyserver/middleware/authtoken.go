@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"strings"
 	"time"
@@ -43,8 +44,9 @@ type identity struct {
 
 type authToken struct {
 	*identity
-	next      http.Handler
-	cacheTime int
+	next           http.Handler
+	cacheDur       time.Duration
+	preValidateDur time.Duration
 }
 
 var authHeaders = []string{"X-Identity-Status",
@@ -95,10 +97,11 @@ type project struct {
 }
 
 type token struct {
-	ExpiresAt time.Time `json:"expires_at"`
-	IssuedAt  time.Time `json:"issued_at"`
-	Methods   []string
-	User      struct {
+	ExpiresAt     time.Time `json:"expires_at"`
+	MemcacheTtlAt time.Time
+	IssuedAt      time.Time `json:"issued_at"`
+	Methods       []string
+	User          struct {
 		ID      string
 		Name    string
 		Email   string
@@ -186,10 +189,17 @@ func (at *authToken) fetchAndValidateToken(ctx *ProxyContext, authToken string) 
 	var cachedToken token
 	tokenValid := false
 	if err := ctx.Cache.GetStructured(authToken, &cachedToken); err == nil {
-		ctx.Logger.Debug("Found cache token",
-			zap.String("token", authToken))
-		tokenValid = true
-		tok = &cachedToken
+		validateTokenEarly := false
+		if at.preValidateDur > 0 && !cachedToken.MemcacheTtlAt.IsZero() {
+			invalidateEarlyTime := time.Now().Add(time.Duration(rand.Int63n(int64(at.preValidateDur))))
+			validateTokenEarly = cachedToken.MemcacheTtlAt.Before(invalidateEarlyTime)
+		}
+		if !validateTokenEarly {
+			ctx.Logger.Debug("Found cache token",
+				zap.String("token", authToken))
+			tokenValid = true
+			tok = &cachedToken
+		}
 	}
 
 	if tok == nil {
@@ -202,11 +212,12 @@ func (at *authToken) fetchAndValidateToken(ctx *ProxyContext, authToken string) 
 
 		if tok != nil {
 			tokenValid = true
-			ttl := at.cacheTime
-			if expiresIn := tok.ExpiresAt.Sub(time.Now()); expiresIn < time.Duration(at.cacheTime)*time.Second {
-				ttl = int(expiresIn / time.Second)
+			ttl := at.cacheDur
+			if expiresIn := tok.ExpiresAt.Sub(time.Now()); expiresIn < ttl && expiresIn > 0 {
+				ttl = expiresIn
 			}
-			ctx.Cache.Set(authToken, *tok, ttl)
+			tok.MemcacheTtlAt = time.Now().Add(ttl)
+			ctx.Cache.Set(authToken, *tok, int(ttl/time.Second))
 		}
 	}
 	return tok, tokenValid
@@ -330,9 +341,11 @@ func removeAuthHeaders(r *http.Request) {
 
 func NewAuthToken(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
 	return func(next http.Handler) http.Handler {
+		tokenCacheDur := time.Duration(int(config.GetInt("token_cache_time", 300))) * time.Second
 		return &authToken{
-			next:      next,
-			cacheTime: int(config.GetInt("token_cache_time", 300)),
+			next:           next,
+			cacheDur:       tokenCacheDur,
+			preValidateDur: (tokenCacheDur / 10),
 			identity: &identity{authURL: config.GetDefault("auth_uri", "http://127.0.0.1:5000/"),
 				authPlugin:      config.GetDefault("auth_plugin", "password"),
 				projectDomainID: config.GetDefault("project_domain_id", "default"),
