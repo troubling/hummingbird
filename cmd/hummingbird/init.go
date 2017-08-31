@@ -300,7 +300,7 @@ token=` + "`" + `curl -si http://127.0.0.1:8080/auth/v1.0 -H x-auth-user:test:te
 curl -i -X PUT $url/container -H "$token" ; echo
 curl -i -X PUT $url/container/object -H "$token" -T /usr/bin/hummingbird ; echo
 curl -i "$url/container?format=json" -H "$token" ; echo
-find /srv/hummingbird
+sudo find /srv/hummingbird
 `)
 	}
 	return nil
