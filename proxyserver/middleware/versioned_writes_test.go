@@ -84,7 +84,7 @@ func TestObjectPutHistory(t *testing.T) {
 				},
 			},
 			"container/a/c_v": {},
-		}),
+		}, zap.NewNop()),
 	}
 
 	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", ctx))
@@ -141,7 +141,7 @@ func TestObjectDeleteHistory(t *testing.T) {
 				},
 			},
 			"container/a/c_v": {},
-		}),
+		}, zap.NewNop()),
 	}
 
 	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", ctx))
@@ -205,7 +205,7 @@ func TestObjectDeleteStack(t *testing.T) {
 				},
 			},
 			"container/a/c_v": {},
-		}),
+		}, zap.NewNop()),
 	}
 
 	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", ctx))
@@ -270,7 +270,7 @@ func TestObjectDeleteStackMarker(t *testing.T) {
 				},
 			},
 			"container/a/c_v": {},
-		}),
+		}, zap.NewNop()),
 	}
 
 	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", ctx))

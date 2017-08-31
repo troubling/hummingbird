@@ -26,6 +26,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
+	"go.uber.org/zap"
 )
 
 func TestDispositionFormat(t *testing.T) {
@@ -197,7 +198,7 @@ func TestTempurlMiddleware401NoKeys(t *testing.T) {
 	ctx := &ProxyContext{
 		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
 			"container/a/c": {Metadata: map[string]string{}},
-		}),
+		}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{
 			"account/a": {Metadata: map[string]string{}},
 		},
@@ -215,7 +216,7 @@ func TestTempurlMiddleware401WrongKeys(t *testing.T) {
 	ctx := &ProxyContext{
 		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
 			"container/a/c": {Metadata: map[string]string{"Temp-Url-Key": "ABCD", "Temp-Url-Key-2": "012345"}},
-		}),
+		}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{
 			"account/a": {Metadata: map[string]string{"Temp-Url-Key": "ABCD", "Temp-Url-Key-2": "012345"}},
 		},
@@ -234,7 +235,7 @@ func TestTempurlMiddlewareContainerKey(t *testing.T) {
 	ctx := &ProxyContext{
 		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
 			"container/a/c": {Metadata: map[string]string{"Temp-Url-Key": "mykey"}},
-		}),
+		}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
 	}
 	r = r.WithContext(context.WithValue(r.Context(), "proxycontext", ctx))
@@ -263,7 +264,7 @@ func TestTempurlMiddlewarePath(t *testing.T) {
 	ctx := &ProxyContext{
 		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
 			"container/a/c": {Metadata: map[string]string{"Temp-Url-Key": "mykey"}},
-		}),
+		}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
 	}
 	r = r.WithContext(context.WithValue(r.Context(), "proxycontext", ctx))
@@ -286,7 +287,7 @@ func TestTempurlMiddlewareAccountKey(t *testing.T) {
 	ctx := &ProxyContext{
 		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
 			"container/a/c": {Metadata: map[string]string{}},
-		}),
+		}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{
 			"account/a": {Metadata: map[string]string{"Temp-Url-Key": "mykey"}}},
 	}

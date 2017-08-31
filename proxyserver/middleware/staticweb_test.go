@@ -9,9 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"go.uber.org/zap"
+
 	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
-	"go.uber.org/zap"
 )
 
 type testNext struct {
@@ -104,7 +105,7 @@ func TestStaticWebGetObject(t *testing.T) {
 	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", &ProxyContext{
 		ProxyContextMiddleware: &ProxyContextMiddleware{next: s},
 		Logger:                 zap.NewNop(),
-		C:                      client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{"Web-Index": "index.html"}}}),
+		C:                      client.NewProxyClient(&client.ProxyDirectClient(), nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{"Web-Index": "index.html"}}}, zap.NewNop()),
 		accountInfoCache:       map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
 	}))
 	rec := httptest.NewRecorder()
@@ -146,7 +147,7 @@ func TestStaticWebGetObjectNotThere(t *testing.T) {
 		Logger:                 zap.NewNop(),
 		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Listings": "true",
-		}}}),
+		}}}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
 	}))
 	rec := httptest.NewRecorder()
@@ -185,7 +186,7 @@ func TestStaticWebGetSubdirRedirect(t *testing.T) {
 		Logger:                 zap.NewNop(),
 		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Listings": "true",
-		}}}),
+		}}}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
 	}))
 	rec := httptest.NewRecorder()
@@ -228,7 +229,7 @@ func TestStaticWebGetSubdir(t *testing.T) {
 		Logger:                 zap.NewNop(),
 		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Listings": "true",
-		}}}),
+		}}}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
 	}))
 	rec := httptest.NewRecorder()
@@ -279,7 +280,7 @@ func TestStaticWebGetContainerRedirect(t *testing.T) {
 		Logger:                 zap.NewNop(),
 		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Listings": "true",
-		}}}),
+		}}}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
 	}))
 	rec := httptest.NewRecorder()
@@ -312,7 +313,7 @@ func TestStaticWebGetContainer(t *testing.T) {
 		Logger:                 zap.NewNop(),
 		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Listings": "true",
-		}}}),
+		}}}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
 	}))
 	rec := httptest.NewRecorder()
@@ -358,7 +359,7 @@ func TestStaticWebGetWithWebIndex(t *testing.T) {
 		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Listings": "true",
 			"Web-Index":    "index.html",
-		}}}),
+		}}}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
 	}))
 	rec := httptest.NewRecorder()
@@ -404,7 +405,7 @@ func TestStaticWebGetSubdirWithWebIndex(t *testing.T) {
 		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Listings": "true",
 			"Web-Index":    "index.html",
-		}}}),
+		}}}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
 	}))
 	rec := httptest.NewRecorder()
@@ -454,7 +455,7 @@ func TestStaticWebGetSubdirWithWebIndexRedirect(t *testing.T) {
 		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Listings": "true",
 			"Web-Index":    "index.html",
-		}}}),
+		}}}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
 	}))
 	rec := httptest.NewRecorder()
@@ -491,7 +492,7 @@ func TestStaticWebGetContainerNoListings(t *testing.T) {
 		Logger:                 zap.NewNop(),
 		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Index": "notfound",
-		}}}),
+		}}}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
 	}))
 	rec := httptest.NewRecorder()
@@ -535,7 +536,7 @@ func TestStaticWebGetContainerCustomCSS(t *testing.T) {
 		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Listings":     "true",
 			"Web-Listings-Css": "listings.css",
-		}}}),
+		}}}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
 	}))
 	rec := httptest.NewRecorder()
@@ -576,7 +577,7 @@ func TestStaticWebGetContainerCustomCSS(t *testing.T) {
 		Logger:                 zap.NewNop(),
 		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Listings": "true",
-		}}}),
+		}}}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
 	}))
 	rec = httptest.NewRecorder()
@@ -619,7 +620,7 @@ func TestStaticWebCustomErrorPages(t *testing.T) {
 		Logger:                 zap.NewNop(),
 		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Error": "error.html",
-		}}}),
+		}}}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
 	}))
 	request.Header.Set("X-Web-Mode", "t")
@@ -664,7 +665,7 @@ func TestStaticWebCustomErrorPages(t *testing.T) {
 		Logger:                 zap.NewNop(),
 		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Error": "error.html",
-		}}}),
+		}}}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
 	}))
 	rec = httptest.NewRecorder()
@@ -707,7 +708,7 @@ func TestStaticWebNoContainerInfo(t *testing.T) {
 	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", &ProxyContext{
 		ProxyContextMiddleware: &ProxyContextMiddleware{next: s},
 		Logger:                 zap.NewNop(),
-		C:                      client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c2": client.NilContainerInfo}),
+		C:                      client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c2": client.NilContainerInfo}, zap.NewNop()),
 		accountInfoCache:       map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
 	}))
 	rec := httptest.NewRecorder()
