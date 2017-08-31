@@ -1255,6 +1255,53 @@ func (b *RingBuilder) buildBalancePerDev() map[int64]float64 {
 	return balancePerDev
 }
 
+// validate validates the ring.
+//
+// This is a safety method to try to catch any bugs in the building process.  It ensures partitions have been assigned to real devices, aren't doubly assigned, etc.
+func (b *RingBuilder) Validate() error {
+
+	partsOnDevs := int64(0)
+	for next, dev := devIterator(b.Devs); dev != nil; dev = next() {
+		partsOnDevs += dev.Parts
+	}
+
+	if len(b.replica2Part2Dev) == 0 {
+		return errors.New("replica2Part2Dev is emptyl did you forget to rebalance?")
+	}
+
+	partsInMap := int64(0)
+	for _, p2d := range b.replica2Part2Dev {
+		partsInMap += int64(len(p2d))
+	}
+
+	if partsOnDevs != partsInMap {
+		return errors.New(fmt.Sprintf("All partitions are not double accounted for: %d != %d", partsOnDevs, partsInMap))
+	}
+
+	for part := 0; part < b.Parts; part++ {
+		devsForPart := make([]uint, 0)
+		for replica := range b.replica2Part2Dev {
+			if len(b.replica2Part2Dev[replica]) <= part {
+				return errors.New(fmt.Sprintf("The partition assignments of replica %d were shorter than expected (%d < %d)", replica, len(b.replica2Part2Dev[replica]), b.Parts))
+			}
+			devId := b.replica2Part2Dev[replica][part]
+			if devId >= uint(len(b.Devs)) || b.Devs[devId] == nil {
+				return errors.New(fmt.Sprintf("Partition %d, replica %d was not allocated to a device.", part, replica))
+			}
+			devsForPart = append(devsForPart, devId)
+		}
+		devsForPartSet := make(map[uint]bool)
+		for _, devId := range devsForPart {
+			if _, ok := devsForPartSet[devId]; ok {
+				return errors.New(fmt.Sprintf("The partitions %d has been assigned to duplicate devices %v", part, devsForPart))
+			}
+			devsForPartSet[devId] = true
+		}
+	}
+
+	return nil
+}
+
 // GetBalance gets the balance of the ring.
 //
 // The balance value is the highest percentage of the desired amount of partitions a given device wants.  For instance, if the "worst" device wants (based on tis weight relative to the sum of all devices' weights) 123 partitions and it has 124 partitions, the balance value would be 0.83 (1 extra / 123 wanted * 100)
@@ -1560,6 +1607,11 @@ func Rebalance(builderPath string, debug bool) error {
 	if err != nil {
 		return err
 	}
+	// make sure the ring is valid
+	err = builder.Validate()
+	if err != nil {
+		return err
+	}
 	fmt.Printf("Changed: %d Balance: %f Removed: %d\n", changed, balance, removed)
 	err = builder.Save(builderPath)
 	if err != nil {
@@ -1673,4 +1725,13 @@ func WriteRing(builderPath string) error {
 		return err
 	}
 	return nil
+}
+
+func Validate(builderPath string) error {
+	builder, err := NewRingBuilderFromFile(builderPath, false)
+	if err != nil {
+		return err
+	}
+	err = builder.Validate()
+	return err
 }
