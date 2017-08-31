@@ -51,9 +51,9 @@ func initCommand(args []string) error {
 			return err
 		}
 		args = args[1:]
-        if subcmd == "haio" {
-            username = usr.Username
-        }
+		if subcmd == "haio" {
+			username = usr.Username
+		}
 		userID, err = strconv.Atoi(usr.Uid)
 		if err != nil {
 			return err
@@ -66,9 +66,9 @@ func initCommand(args []string) error {
 		if err != nil {
 			return err
 		}
-        if subcmd == "haio" {
-            groupname = grp.Name
-        }
+		if subcmd == "haio" {
+			groupname = grp.Name
+		}
 	}
 	if subcmd == "debian" {
 		dst = "build"
@@ -127,46 +127,84 @@ func initCommand(args []string) error {
 		hbresetCreate(dst)
 		hblogCreate(dst)
 	}
+	if err := os.MkdirAll(path.Join(dst, "var/run/hummingbird"), 0755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(path.Join(dst, "var/log/hummingbird"), 0755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(path.Join(dst, "var/cache/swift"), 0755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(path.Join(dst, "srv/hummingbird"), 0755); err != nil {
+		return err
+	}
+	if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/account.builder"), "create", "10", "1", "1"); err != nil {
+		return err
+	}
+	if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/account.builder"), "add", "r1z1-127.0.0.1:6012/hummingbird", "1"); err != nil {
+		return err
+	}
+	if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/account.builder"), "rebalance"); err != nil {
+		return err
+	}
+	if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/container.builder"), "create", "10", "1", "1"); err != nil {
+		return err
+	}
+	if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/container.builder"), "add", "r1z1-127.0.0.1:6011/hummingbird", "1"); err != nil {
+		return err
+	}
+	if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/container.builder"), "rebalance"); err != nil {
+		return err
+	}
+	if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/object.builder"), "create", "10", "1", "1"); err != nil {
+		return err
+	}
+	if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/object.builder"), "add", "r1z1-127.0.0.1:6010R127.0.0.1:8010/hummingbird", "1"); err != nil {
+		return err
+	}
+	if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/object.builder"), "rebalance"); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(path.Join(dst, "etc/hummingbird/backups")); err != nil {
+		return err
+	}
+	if subcmd == "" {
+		adduser, err := exec.LookPath("adduser")
+		if err != nil {
+			return err
+		}
+		if err := runCommand(adduser, "--system", "--group", "--no-create-home", "hummingbird"); err != nil {
+			return err
+		}
+		usr, err := user.Lookup("hummingbird")
+		if err != nil {
+			return err
+		}
+		hummingbirdUserID, err := strconv.Atoi(usr.Uid)
+		if err != nil {
+			return err
+		}
+		hummingbirdGroupID, err := strconv.Atoi(usr.Gid)
+		if err != nil {
+			return err
+		}
+		if err := os.Chown(path.Join(dst, "srv/hummingbird"), hummingbirdUserID, hummingbirdGroupID); err != nil {
+			return err
+		}
+		if _, err = exec.LookPath("memcached"); err != nil {
+			apt, err := exec.LookPath("apt")
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "WARNING: Could not determine if memcached was installed; hummingbird will need at least one memcache server.")
+			} else {
+				if err = runCommand(apt, "install", "memcached"); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	var debName string
 	if subcmd == "debian" {
-		if err := os.MkdirAll(path.Join(dst, "var/run/hummingbird"), 0755); err != nil {
-			return err
-		}
-		if err := os.MkdirAll(path.Join(dst, "var/log/hummingbird"), 0755); err != nil {
-			return err
-		}
-		if err := os.MkdirAll(path.Join(dst, "var/cache/swift"), 0755); err != nil {
-			return err
-		}
-		if err := os.MkdirAll(path.Join(dst, "srv/hummingbird"), 0755); err != nil {
-			return err
-		}
-		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/account.builder"), "create", "10", "1", "1"); err != nil {
-			return err
-		}
-		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/account.builder"), "add", "r1z1-127.0.0.1:6012/hummingbird", "1"); err != nil {
-			return err
-		}
-		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/account.builder"), "rebalance"); err != nil {
-			return err
-		}
-		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/container.builder"), "create", "10", "1", "1"); err != nil {
-			return err
-		}
-		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/container.builder"), "add", "r1z1-127.0.0.1:6011/hummingbird", "1"); err != nil {
-			return err
-		}
-		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/container.builder"), "rebalance"); err != nil {
-			return err
-		}
-		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/object.builder"), "create", "10", "1", "1"); err != nil {
-			return err
-		}
-		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/object.builder"), "add", "r1z1-127.0.0.1:6010R127.0.0.1:8010/hummingbird", "1"); err != nil {
-			return err
-		}
-		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/object.builder"), "rebalance"); err != nil {
-			return err
-		}
 		if err := debianBinaryCreate(dst); err != nil {
 			return err
 		}
@@ -181,9 +219,6 @@ func initCommand(args []string) error {
 			return err
 		}
 		if err := debianPostInstCreate(dst); err != nil {
-			return err
-		}
-		if err := os.RemoveAll(path.Join(dst, "etc/hummingbird/backups")); err != nil {
 			return err
 		}
 		if err := filepath.Walk(dst, func(pth string, info os.FileInfo, err error) error {
@@ -224,7 +259,7 @@ func initCommand(args []string) error {
 		if err = os.Chdir(dst); err != nil {
 			return err
 		}
-		debName := "hummingbird-" + version + ".deb"
+		debName = "hummingbird-" + version + ".deb"
 		if err = runCommand(ar, "rc", debName, "debian-binary", "control.tar.gz", "data.tar.gz"); err != nil {
 			return err
 		}
@@ -244,6 +279,30 @@ func initCommand(args []string) error {
 			return err
 		}
 	}
+	fmt.Println()
+	switch subcmd {
+	case "debian":
+		fmt.Println(debName, "has been built.")
+	case "haio":
+		fmt.Println("HAIO is ready for use.")
+	default:
+		fmt.Println(`Hummingbird is ready for use.
+
+For quick local testing:
+
+sudo systemctl start memcached
+sudo systemctl start hummingbird-proxy
+sudo systemctl start hummingbird-account
+sudo systemctl start hummingbird-container
+sudo systemctl start hummingbird-object
+url=` + "`" + `curl -si http://127.0.0.1:8080/auth/v1.0 -H x-auth-user:test:tester -H x-auth-key:testing | grep ^X-Storage-Url | cut -f2 -d ' ' | tr -d '\r\n'` + "`" + `
+token=` + "`" + `curl -si http://127.0.0.1:8080/auth/v1.0 -H x-auth-user:test:tester -H x-auth-key:testing | grep ^X-Auth-Token | tr -d '\r\n'` + "`" + `
+curl -i -X PUT $url/container -H "$token" ; echo
+curl -i -X PUT $url/container/object -H "$token" -T /usr/bin/hummingbird ; echo
+curl -i "$url/container?format=json" -H "$token" ; echo
+find /srv/hummingbird
+`)
+	}
 	return nil
 }
 
@@ -256,6 +315,9 @@ func runCommand(name string, args ...string) error {
 
 func hummingbirdCreate(dst string) error {
 	pth := path.Join(dst, "usr/bin/hummingbird")
+	if err := os.Remove(pth); err != nil && !os.IsNotExist(err) {
+		return err
+	}
 	if err := os.MkdirAll(path.Dir(pth), 0755); err != nil {
 		return err
 	}
