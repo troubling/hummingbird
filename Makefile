@@ -3,7 +3,7 @@ HUMMINGBIRD_VERSION_NO_V?=$(shell git describe --tags | cut -d v -f 2)
 NECTAR_VERSION=0.0.1
 
 quick:
-	go build cmd/...
+	go install ./...
 
 clean:
 	sudo rm -rf build

@@ -26,11 +26,11 @@ func initCommand(args []string) error {
 	if err != nil {
 		return err
 	}
+	sudo, err := exec.LookPath("sudo")
+	if err != nil {
+		return err
+	}
 	if usr.Uid != "0" {
-		sudo, err := exec.LookPath("sudo")
-		if err != nil {
-			return err
-		}
 		if subcmd == "" {
 			return runCommand(sudo, os.Args[0], "init")
 		} else {
@@ -74,6 +74,33 @@ func initCommand(args []string) error {
 		dst = "build"
 		if _, err := os.Stat(dst); !os.IsNotExist(err) {
 			return fmt.Errorf("%s exists already; that would be our working directory", dst)
+		}
+	}
+	if subcmd == "haio" {
+		if apt, err := exec.LookPath("apt"); err != nil {
+			fmt.Fprintln(os.Stderr, "Could not find 'apt'; continuing without full-service set up.")
+		} else if err = runCommand(apt, "install", "-y", "gcc", "git-core", "make", "memcached", "sqlite3", "tar", "wget", "xfsprogs"); err != nil {
+			return err
+		} else if wget, err := exec.LookPath("wget"); err != nil {
+			fmt.Fprintln(os.Stderr, "Could not find 'wget'; continuing without full-service set up.")
+		} else if err = runCommand(wget, "-nc", "https://storage.googleapis.com/golang/go1.9.linux-amd64.tar.gz"); err != nil {
+			return err
+		} else if tar, err := exec.LookPath("tar"); err != nil {
+			fmt.Fprintln(os.Stderr, "Could not find 'tar'; continuing without full-service set up.")
+		} else if err = runCommand(tar, "-C", "/usr/local", "-xzf", "go1.9.linux-amd64.tar.gz"); err != nil {
+			return err
+		} else if f, err := os.OpenFile("/etc/profile", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err != nil {
+			return err
+		} else if _, err = f.WriteString("\nexport PATH=$PATH:/usr/local/go/bin\n"); err != nil {
+			return err
+		} else if err = f.Close(); err != nil {
+			return err
+		} else if _, err = fmt.Println("Retrieving sources; this may take a while..."); err != nil {
+			return err
+		} else if err := runCommand("/usr/local/go/bin/go", "get", "-t", "github.com/troubling/hummingbird/..."); err != nil {
+			return err
+		} else if err := runCommand("/usr/local/go/bin/go", "build", "-o", "/usr/bin/nectar", "github.com/troubling/hummingbird/cmd/nectar/..."); err != nil {
+			return err
 		}
 	}
 	if err := hummingbirdCreate(dst); err != nil {
@@ -139,35 +166,37 @@ func initCommand(args []string) error {
 	if err := os.MkdirAll(path.Join(dst, "srv/hummingbird"), 0755); err != nil {
 		return err
 	}
-	if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/account.builder"), "create", "10", "1", "1"); err != nil {
-		return err
-	}
-	if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/account.builder"), "add", "r1z1-127.0.0.1:6012/hummingbird", "1"); err != nil {
-		return err
-	}
-	if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/account.builder"), "rebalance"); err != nil {
-		return err
-	}
-	if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/container.builder"), "create", "10", "1", "1"); err != nil {
-		return err
-	}
-	if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/container.builder"), "add", "r1z1-127.0.0.1:6011/hummingbird", "1"); err != nil {
-		return err
-	}
-	if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/container.builder"), "rebalance"); err != nil {
-		return err
-	}
-	if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/object.builder"), "create", "10", "1", "1"); err != nil {
-		return err
-	}
-	if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/object.builder"), "add", "r1z1-127.0.0.1:6010R127.0.0.1:8010/hummingbird", "1"); err != nil {
-		return err
-	}
-	if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/object.builder"), "rebalance"); err != nil {
-		return err
-	}
-	if err := os.RemoveAll(path.Join(dst, "etc/hummingbird/backups")); err != nil {
-		return err
+	if subcmd != "haio" {
+		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/account.builder"), "create", "10", "1", "1"); err != nil {
+			return err
+		}
+		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/account.builder"), "add", "r1z1-127.0.0.1:6012/hummingbird", "1"); err != nil {
+			return err
+		}
+		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/account.builder"), "rebalance"); err != nil {
+			return err
+		}
+		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/container.builder"), "create", "10", "1", "1"); err != nil {
+			return err
+		}
+		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/container.builder"), "add", "r1z1-127.0.0.1:6011/hummingbird", "1"); err != nil {
+			return err
+		}
+		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/container.builder"), "rebalance"); err != nil {
+			return err
+		}
+		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/object.builder"), "create", "10", "1", "1"); err != nil {
+			return err
+		}
+		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/object.builder"), "add", "r1z1-127.0.0.1:6010R127.0.0.1:8010/hummingbird", "1"); err != nil {
+			return err
+		}
+		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/object.builder"), "rebalance"); err != nil {
+			return err
+		}
+		if err := os.RemoveAll(path.Join(dst, "etc/hummingbird/backups")); err != nil {
+			return err
+		}
 	}
 	if subcmd == "" {
 		adduser, err := exec.LookPath("adduser")
@@ -197,7 +226,7 @@ func initCommand(args []string) error {
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "WARNING: Could not determine if memcached was installed; hummingbird will need at least one memcache server.")
 			} else {
-				if err = runCommand(apt, "install", "memcached"); err != nil {
+				if err = runCommand(apt, "install", "-y", "memcached"); err != nil {
 					return err
 				}
 			}
@@ -279,12 +308,59 @@ func initCommand(args []string) error {
 			return err
 		}
 	}
+	if subcmd == "haio" {
+		if err := filepath.Walk("/etc/hummingbird", func(pth string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if info.IsDir() {
+				if err = os.Chmod(pth, 0755); err != nil {
+					return err
+				}
+			} else {
+				if err = os.Chmod(pth, 0644); err != nil {
+					return err
+				}
+			}
+			return os.Chown(pth, userID, groupID)
+		}); err != nil {
+			return err
+		}
+		systemctl, err := exec.LookPath("systemctl")
+		if err == nil {
+			if err = runCommand(systemctl, "daemon-reload"); err != nil {
+				return err
+			}
+		}
+		if err = runCommand(sudo, "-u", username, "/usr/bin/hbrings"); err != nil {
+			return err
+		}
+		if err = runCommand(sudo, "-u", username, "/usr/bin/hbreset"); err != nil {
+			return err
+		}
+		if err = runCommand(sudo, "-u", username, "/usr/bin/hbmain", "start"); err != nil {
+			return err
+		}
+		if err = runCommand("/usr/bin/nectar", "-A", "http://127.0.0.1:8080/auth/v1.0", "-U", "test:tester", "-K", "testing", "head"); err != nil {
+			return err
+		}
+		if err = runCommand(sudo, "-u", username, "/usr/bin/hbmain", "stop"); err != nil {
+			return err
+		}
+	}
 	fmt.Println()
 	switch subcmd {
 	case "debian":
 		fmt.Println(debName, "has been built.")
 	case "haio":
-		fmt.Println("HAIO is ready for use.")
+		fmt.Println(`HAIO is ready for use.
+
+You probably want relogin or run:
+
+source /etc/profile
+
+See https://github.com/troubling/hummingbird/blob/master/HAIO.md for more info.
+`)
 	default:
 		fmt.Println(`Hummingbird is ready for use.
 
