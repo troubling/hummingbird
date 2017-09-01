@@ -44,3 +44,15 @@ You can run Openstack Swift's functional tests against Hummingbird if you want:
 cd ~/swift/test/functional
 nosetests
 ```
+
+If you want to stop/start individual services, you would do it much like a "real" user would:
+
+```
+sudo systemctl stop hummingbird-proxy
+```
+
+Although, since an HAIO pretends to be a cluster of 4 machines, the account, container, and object services all have 4 each:
+
+```
+sudo systemctl restart hummingbird-object1
+```
