@@ -5,7 +5,7 @@ dist: trusty
 language: go
 
 go:
-  - 1.8.3
+  - 1.9
 
 install:
   - sudo apt-get -y install build-essential memcached rsync xfsprogs git-core libffi-dev python-dev liberasurecode-dev python-virtualenv curl libjerasure-dev
