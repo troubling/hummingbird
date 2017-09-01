@@ -2,14 +2,8 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"os/user"
-	"path"
-	"path/filepath"
-	"strconv"
-	"strings"
 
 	"github.com/troubling/hummingbird/common"
 )
@@ -22,112 +16,262 @@ func initCommand(args []string) error {
 			return fmt.Errorf("unknown subcommand: %q", args[0])
 		}
 	}
-	usr, err := user.Current()
-	if err != nil {
-		return err
+	versionNoV := common.Version
+	if versionNoV == "" {
+		versionNoV = "0.0.1"
 	}
-	sudo, err := exec.LookPath("sudo")
-	if err != nil {
-		return err
-	}
-	if usr.Uid != "0" {
-		if subcmd == "" {
-			return runCommand(sudo, os.Args[0], "init")
-		} else {
-			return runCommand(sudo, os.Args[0], "init", subcmd, usr.Username)
-		}
+	if versionNoV[0] == 'v' {
+		versionNoV = versionNoV[1:]
 	}
 	username := "hummingbird"
 	groupname := "hummingbird"
-	userID := 0
-	groupID := 0
-	homedir := "."
-	dst := "/"
-	if subcmd != "" {
-		if len(args) < 1 {
-			return fmt.Errorf("internal error: init %s but no user", subcmd)
-		}
-		usr, err := user.Lookup(args[0])
+	if subcmd == "haio" {
+		usr, err := user.Current()
 		if err != nil {
 			return err
 		}
-		args = args[1:]
-		if subcmd == "haio" {
-			username = usr.Username
-		}
-		userID, err = strconv.Atoi(usr.Uid)
-		if err != nil {
-			return err
-		}
-		groupID, err = strconv.Atoi(usr.Gid)
-		if err != nil {
-			return err
-		}
+		username = usr.Username
 		grp, err := user.LookupGroupId(usr.Gid)
 		if err != nil {
 			return err
 		}
-		if subcmd == "haio" {
-			groupname = grp.Name
-		}
-		homedir = usr.HomeDir
+		groupname = grp.Name
 	}
-	if subcmd == "debian" {
-		dst = "build"
-		if _, err := os.Stat(dst); !os.IsNotExist(err) {
-			return fmt.Errorf("%s exists already; that would be our working directory", dst)
-		}
+	scriptName := "hummingbird-init"
+	if subcmd != "" {
+		scriptName += "-" + subcmd
 	}
-	if subcmd == "haio" {
-		apt, err := exec.LookPath("apt")
-		if err != nil {
-			return err
-		}
-		if err = runCommand(apt, "install", "-y", "gcc", "git-core", "make", "memcached", "sqlite3", "tar", "wget", "xfsprogs"); err != nil {
-			return err
-		}
-		wget, err := exec.LookPath("wget")
-		if err != nil {
-			return err
-		}
-		if err = runCommand(sudo, "-u", username, wget, "-nc", "https://storage.googleapis.com/golang/go1.9.linux-amd64.tar.gz"); err != nil {
-			return err
-		}
-		tar, err := exec.LookPath("tar")
-		if err != nil {
-			return err
-		}
-		if err = runCommand(tar, "-C", "/usr/local", "-xzf", "go1.9.linux-amd64.tar.gz"); err != nil {
-			return err
-		}
-		f, err := os.OpenFile("/etc/profile", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			return err
-		}
-		if _, err = f.WriteString("\nexport PATH=$PATH:/usr/local/go/bin\n"); err != nil {
-			return err
-		}
-		if err = f.Close(); err != nil {
-			return err
-		}
-		if _, err = fmt.Println("Retrieving sources; this may take a while..."); err != nil {
-			return err
-		}
-		if err := runCommand(sudo, "-u", username, "/usr/local/go/bin/go", "get", "-t", "github.com/troubling/hummingbird/..."); err != nil {
-			return err
-		}
-		if err := runCommand("/usr/local/go/bin/go", "build", "-o", "/usr/bin/nectar", "github.com/troubling/hummingbird/cmd/nectar/..."); err != nil {
-			return err
+	scriptName += ".sh"
+	script, err := os.Create(scriptName)
+	if err != nil {
+		return nil
+	}
+	var printErr error
+	// This just lets us run through creating the script, ignoring errors, and
+	// then we can return the first error encountered, if any.
+	print := func(format string, args ...interface{}) {
+		_, innerErr := fmt.Fprintf(script, format+"\n", args...)
+		if innerErr != nil && printErr == nil {
+			printErr = innerErr
 		}
 	}
-	if err := hummingbirdCreate(dst); err != nil {
-		return err
+
+	print(`#!/bin/bash`)
+	print(`set -e`)
+	print(`set -x`)
+	print(``)
+
+	var prefix string
+	switch subcmd {
+	case "":
+		print(`sudo adduser --system --group --no-create-home hummingbird`)
+		print(`sudo apt install -y memcached`)
+	case "haio":
+		print(`sudo apt install -y gcc git-core make memcached sqlite3 tar wget xfsprogs`)
+		print(`wget -nc https://storage.googleapis.com/golang/go1.9.linux-amd64.tar.gz`)
+		print(`sudo tar -C /usr/local -xzf go1.9.linux-amd64.tar.gz`)
+		print(`export PATH=$PATH:/usr/local/go/bin`)
+		print(`grep -q /usr/local/go/bin /etc/profile || echo 'export PATH=$PATH:/usr/local/go/bin' | sudo tee -a /etc/profile`)
+		print(`echo "Retrieving sources; this may take a while..."`)
+		print(`go get -t github.com/troubling/hummingbird/...`)
+		print(`cd ~/go/src/github.com/troubling/hummingbird`)
+		print(`go build -o nectar github.com/troubling/hummingbird/cmd/nectar/...`)
+		print(`sudo cp nectar /usr/bin/`)
+		print(`sudo chown root: /usr/bin/nectar`)
+		print(`sudo chmod 0755 /usr/bin/nectar`)
+		print(`cd -`)
+	case "debian":
+		prefix = "build"
+		print(`if [ -e build ] ; then`)
+		print(`    echo '"build" exists already; that would be our working directory.'`)
+		print(`    exit 1`)
+		print(`fi`)
+		print(`mkdir build`)
+		print(`sudo apt install -y binutils`)
 	}
-	if err := hummingbirdConfCreate(dst); err != nil {
-		return err
+	print(``)
+
+	print(`sudo rm -f %s/usr/bin/hummingbird`, prefix)
+	print(`sudo mkdir -p %s/usr/bin`, prefix)
+	print(`sudo cp hummingbird %s/usr/bin/`, prefix)
+	print(`sudo chown root: %s/usr/bin/hummingbird`, prefix)
+	print(`sudo chmod 0755 %s/usr/bin/hummingbird`, prefix)
+	print(``)
+
+	print(`sudo mkdir -p %s/etc/hummingbird`, prefix)
+	if subcmd != "debian" {
+		print(`sudo chown %s: %s/etc/hummingbird`, username, prefix)
 	}
-	if err := proxyServerConfCreate(dst); err != nil {
-		return err
+	print(`sudo chmod 0755 %s/etc/hummingbird`, prefix)
+	print(``)
+
+	print(`sudo tee %s/etc/hummingbird/hummingbird.conf >/dev/null << EOF`, prefix)
+	print(`[swift-hash]`)
+	print(`swift_hash_path_prefix = changeme`)
+	print(`swift_hash_path_suffix = changeme`)
+	print(``)
+	print(`[storage-policy:0]`)
+	print(`name = gold`)
+	print(`policy_type = replication`)
+	print(`default = yes`)
+	print(``)
+	print(`[storage-policy:1]`)
+	print(`name = silver`)
+	print(`policy_type = replication`)
+	print(`EOF`)
+	if subcmd != "debian" {
+		print(`sudo chown %s: %s/etc/hummingbird/hummingbird.conf`, username, prefix)
+	}
+	print(`sudo chmod 0644 %s/etc/hummingbird/hummingbird.conf`, prefix)
+	print(``)
+
+	print(`sudo tee %s/etc/hummingbird/proxy-server.conf >/dev/null << EOF`, prefix)
+	print(`[DEFAULT]`)
+	print(`bind_ip = 127.0.0.1`)
+	print(`bind_port = 8080`)
+	print(``)
+	print(`[app:proxy-server]`)
+	print(`allow_account_management = true`)
+	print(`account_autocreate = true`)
+	print(``)
+	print(`[filter:tempauth]`)
+	print(`user_admin_admin = admin .admin .reseller_admin`)
+	print(`user_test_tester = testing .admin`)
+	print(`user_test2_tester2 = testing2 .admin`)
+	print(`user_test_tester3 = testing3`)
+	print(``)
+	print(`[filter:catch_errors]`)
+	print(``)
+	print(`[filter:healthcheck]`)
+	print(``)
+	print(`[filter:proxy-logging]`)
+	print(``)
+	print(`[filter:ratelimit]`)
+	print(``)
+	print(`[filter:dlo]`)
+	print(``)
+	print(`[filter:slo]`)
+	print(``)
+	print(`[filter:tempurl]`)
+	print(``)
+	print(`[filter:staticweb]`)
+	print(``)
+	print(`[filter:copy]`)
+	print(`EOF`)
+	if subcmd != "debian" {
+		print(`sudo chown %s: %s/etc/hummingbird/proxy-server.conf`, username, prefix)
+	}
+	print(`sudo chmod 0644 %s/etc/hummingbird/proxy-server.conf`, prefix)
+	print(``)
+
+	printAccountServerConf := func(index int) {
+		var pth string
+		var devices string
+		var port int
+		if index < 1 {
+			pth = prefix + "/etc/hummingbird/account-server.conf"
+			devices = "/srv/hummingbird"
+			port = 6012
+		} else {
+			print(`sudo mkdir -p %s/etc/hummingbird/account-server`, prefix)
+			if subcmd != "debian" {
+				print(`sudo chown %s: %s/etc/hummingbird/account-server`, username, prefix)
+			}
+			print(`sudo chmod 0755 %s/etc/hummingbird/account-server`, prefix)
+			pth = fmt.Sprintf("%s/etc/hummingbird/account-server/%d.conf", prefix, index)
+			devices = fmt.Sprintf("/srv/hb/%d", index)
+			port = 6002 + index*10
+		}
+		print(`sudo tee %s >/dev/null << EOF`, pth)
+		print(`[DEFAULT]`)
+		print(`devices = %s`, devices)
+		print(`mount_check = false`)
+		print(`bind_ip = 127.0.0.1`)
+		print(`bind_port = %d`, port)
+		print(``)
+		print(`[app:account-server]`)
+		print(``)
+		print(`[account-replicator]`)
+		print(`EOF`)
+		if subcmd != "debian" {
+			print(`sudo chown %s: %s`, username, pth)
+		}
+		print(`sudo chmod 0644 %s`, pth)
+		print(``)
+	}
+	printContainerServerConf := func(index int) {
+		var pth string
+		var devices string
+		var port int
+		if index < 1 {
+			pth = prefix + "/etc/hummingbird/container-server.conf"
+			devices = "/srv/hummingbird"
+			port = 6011
+		} else {
+			print(`sudo mkdir -p %s/etc/hummingbird/container-server`, prefix)
+			if subcmd != "debian" {
+				print(`sudo chown %s: %s/etc/hummingbird/container-server`, username, prefix)
+			}
+			print(`sudo chmod 0755 %s/etc/hummingbird/container-server`, prefix)
+			pth = fmt.Sprintf("%s/etc/hummingbird/container-server/%d.conf", prefix, index)
+			devices = fmt.Sprintf("/srv/hb/%d", index)
+			port = 6001 + index*10
+		}
+		print(`sudo tee %s >/dev/null << EOF`, pth)
+		print(`[DEFAULT]`)
+		print(`devices = %s`, devices)
+		print(`mount_check = false`)
+		print(`bind_ip = 127.0.0.1`)
+		print(`bind_port = %d`, port)
+		print(``)
+		print(`[app:container-server]`)
+		print(``)
+		print(`[container-replicator]`)
+		print(`EOF`)
+		if subcmd != "debian" {
+			print(`sudo chown %s: %s`, username, pth)
+		}
+		print(`sudo chmod 0644 %s`, pth)
+		print(``)
+	}
+	printObjectServerConf := func(index int) {
+		var pth string
+		var devices string
+		var port int
+		if index < 1 {
+			pth = prefix + "/etc/hummingbird/object-server.conf"
+			devices = "/srv/hummingbird"
+			port = 6010
+		} else {
+			print(`sudo mkdir -p %s/etc/hummingbird/object-server`, prefix)
+			if subcmd != "debian" {
+				print(`sudo chown %s: %s/etc/hummingbird/object-server`, username, prefix)
+			}
+			print(`sudo chmod 0755 %s/etc/hummingbird/object-server`, prefix)
+			pth = fmt.Sprintf("%s/etc/hummingbird/object-server/%d.conf", prefix, index)
+			devices = fmt.Sprintf("/srv/hb/%d", index)
+			port = 6000 + index*10
+		}
+		print(`sudo tee %s >/dev/null << EOF`, pth)
+		print(`[DEFAULT]`)
+		print(`devices = %s`, devices)
+		print(`mount_check = false`)
+		print(``)
+		print(`[app:object-server]`)
+		print(`bind_ip = 127.0.0.1`)
+		print(`bind_port = %d`, port)
+		print(``)
+		print(`[object-replicator]`)
+		print(`bind_ip = 127.0.0.1`)
+		print(`bind_port = %d`, port+2000)
+		print(``)
+		print(`[object-auditor]`)
+		print(`EOF`)
+		if subcmd != "debian" {
+			print(`sudo chown %s: %s`, username, pth)
+		}
+		print(`sudo chmod 0644 %s`, pth)
+		print(``)
 	}
 	start := 0
 	stop := 0
@@ -136,922 +280,404 @@ func initCommand(args []string) error {
 		stop = 4
 	}
 	for index := start; index <= stop; index++ {
-		if err := accountServerConfCreate(dst, index); err != nil {
-			return err
-		}
-		if err := containerServerConfCreate(dst, index); err != nil {
-			return err
-		}
-		if err := objectServerConfCreate(dst, index); err != nil {
-			return err
-		}
+		printAccountServerConf(index)
+		printContainerServerConf(index)
+		printObjectServerConf(index)
 	}
-	for _, name := range []string{"proxy", "andrewd"} {
-		if err := serviceCreate(dst, name, 0, username, groupname); err != nil {
-			return err
-		}
-	}
-	for _, name := range []string{"account", "account-replicator", "container", "container-replicator", "object", "object-replicator", "object-auditor"} {
-		if subcmd == "haio" {
-			for index := 1; index <= 4; index++ {
-				if err := serviceCreate(dst, name, index, username, groupname); err != nil {
-					return err
-				}
-			}
+
+	printService := func(basename string, index int) {
+		var pth string
+		var extraArgs string
+		if index < 1 {
+			pth = fmt.Sprintf(prefix+"/lib/systemd/system/hummingbird-%s.service", basename)
 		} else {
-			if err := serviceCreate(dst, name, 0, username, groupname); err != nil {
-				return err
-			}
+			pth = fmt.Sprintf(prefix+"/lib/systemd/system/hummingbird-%s%d.service", basename, index)
+			extraArgs = fmt.Sprintf(" -c /etc/hummingbird/%s-server/%d.conf", basename, index)
 		}
+		print(`sudo tee %s >/dev/null << EOF`, pth)
+		print(`# See these pages for lots of options:`)
+		print(`# http://0pointer.de/public/systemd-man/systemd.service.html`)
+		print(`# http://0pointer.de/public/systemd-man/systemd.exec.html`)
+		print(`[Unit]`)
+		print(`Description=hummingbird-%s`, basename)
+		print(`After=syslog.target network.target`)
+		print(`[Service]`)
+		print(`Type=simple`)
+		print(`User=%s`, username)
+		print(`Group=%s`, groupname)
+		print(`ExecStart=/usr/bin/hummingbird %s%s`, basename, extraArgs)
+		print(`TimeoutStopSec=60`)
+		print(`Restart=on-failure`)
+		print(`RestartSec=5`)
+		print(`StandardOutput=syslog`)
+		print(`StandardError=syslog`)
+		print(`SyslogIdentifier=hummingbird-%s`, basename)
+		print(`LimitCPU=infinity`)
+		print(`LimitFSIZE=infinity`)
+		print(`LimitDATA=infinity`)
+		print(`LimitSTACK=infinity`)
+		print(`LimitCORE=infinity`)
+		print(`LimitRSS=infinity`)
+		print(`LimitNOFILE=1048576`)
+		print(`LimitAS=infinity`)
+		print(`LimitNPROC=infinity`)
+		print(`LimitMEMLOCK=infinity`)
+		print(`LimitLOCKS=infinity`)
+		print(`LimitSIGPENDING=infinity`)
+		print(`LimitMSGQUEUE=infinity`)
+		print(`LimitNICE=infinity`)
+		print(`LimitRTPRIO=infinity`)
+		print(`LimitRTTIME=infinity`)
+		print(`[Install]`)
+		print(`WantedBy=multi-user.target`)
+		print(`EOF`)
+		print(`sudo chmod 0644 %s`, pth)
+		print(``)
 	}
+	print(`sudo mkdir -p %s/lib/systemd/system`, prefix)
+	printService("proxy", 0)
+	start = 0
+	stop = 0
 	if subcmd == "haio" {
-		hballCreate(dst)
-		hbmainCreate(dst)
-		hbringsCreate(dst)
-		hbresetCreate(dst)
-		hblogCreate(dst)
+		start = 1
+		stop = 4
 	}
-	if err := os.MkdirAll(path.Join(dst, "var/run/hummingbird"), 0755); err != nil {
-		return err
+	for index := start; index <= stop; index++ {
+		printService("account", index)
+		printService("account-replicator", index)
+		printService("container", index)
+		printService("container-replicator", index)
+		printService("object", index)
+		printService("object-replicator", index)
+		printService("object-auditor", index)
 	}
-	if err := os.MkdirAll(path.Join(dst, "var/log/hummingbird"), 0755); err != nil {
-		return err
+	printService("andrewd", 0)
+
+	if subcmd == "haio" {
+		print(`sudo tee %s/usr/bin/hball >/dev/null << EOF`, prefix)
+		print(`#!/bin/bash`)
+		print(``)
+		print(`if hash systemctl 2>/dev/null ; then`)
+		print(`    sudo systemctl \$@ hummingbird-proxy`)
+		print(`    sudo systemctl \$@ hummingbird-account1`)
+		print(`    sudo systemctl \$@ hummingbird-account-replicator1`)
+		print(`    sudo systemctl \$@ hummingbird-container1`)
+		print(`    sudo systemctl \$@ hummingbird-container-replicator1`)
+		print(`    sudo systemctl \$@ hummingbird-object1`)
+		print(`    sudo systemctl \$@ hummingbird-object-replicator1`)
+		print(`    sudo systemctl \$@ hummingbird-object-auditor1`)
+		print(`    sudo systemctl \$@ hummingbird-account2`)
+		print(`    sudo systemctl \$@ hummingbird-account-replicator2`)
+		print(`    sudo systemctl \$@ hummingbird-container2`)
+		print(`    sudo systemctl \$@ hummingbird-container-replicator2`)
+		print(`    sudo systemctl \$@ hummingbird-object2`)
+		print(`    sudo systemctl \$@ hummingbird-object-replicator2`)
+		print(`    sudo systemctl \$@ hummingbird-object-auditor2`)
+		print(`    sudo systemctl \$@ hummingbird-account3`)
+		print(`    sudo systemctl \$@ hummingbird-account-replicator3`)
+		print(`    sudo systemctl \$@ hummingbird-container3`)
+		print(`    sudo systemctl \$@ hummingbird-container-replicator3`)
+		print(`    sudo systemctl \$@ hummingbird-object3`)
+		print(`    sudo systemctl \$@ hummingbird-object-replicator3`)
+		print(`    sudo systemctl \$@ hummingbird-object-auditor3`)
+		print(`    sudo systemctl \$@ hummingbird-account4`)
+		print(`    sudo systemctl \$@ hummingbird-account-replicator4`)
+		print(`    sudo systemctl \$@ hummingbird-container4`)
+		print(`    sudo systemctl \$@ hummingbird-container-replicator4`)
+		print(`    sudo systemctl \$@ hummingbird-object4`)
+		print(`    sudo systemctl \$@ hummingbird-object-replicator4`)
+		print(`    sudo systemctl \$@ hummingbird-object-auditor4`)
+		print(`else`)
+		print(`    hummingbird \$@ all`)
+		print(`fi`)
+		print(`EOF`)
+		print(`sudo chmod 0755 %s/usr/bin/hball`, prefix)
+		print(``)
+
+		print(`sudo tee %s/usr/bin/hbmain >/dev/null << EOF`, prefix)
+		print(`#!/bin/bash`)
+		print(``)
+		print(`if hash systemctl 2>/dev/null ; then`)
+		print(`    sudo systemctl \$@ hummingbird-proxy`)
+		print(`    sudo systemctl \$@ hummingbird-account1`)
+		print(`    sudo systemctl \$@ hummingbird-container1`)
+		print(`    sudo systemctl \$@ hummingbird-object1`)
+		print(`    sudo systemctl \$@ hummingbird-account2`)
+		print(`    sudo systemctl \$@ hummingbird-container2`)
+		print(`    sudo systemctl \$@ hummingbird-object2`)
+		print(`    sudo systemctl \$@ hummingbird-account3`)
+		print(`    sudo systemctl \$@ hummingbird-container3`)
+		print(`    sudo systemctl \$@ hummingbird-object3`)
+		print(`    sudo systemctl \$@ hummingbird-account4`)
+		print(`    sudo systemctl \$@ hummingbird-container4`)
+		print(`    sudo systemctl \$@ hummingbird-object4`)
+		print(`else`)
+		print(`    hummingbird \$@ main`)
+		print(`fi`)
+		print(`EOF`)
+		print(`sudo chmod 0755 %s/usr/bin/hbmain`, prefix)
+		print(``)
+
+		print(`sudo tee %s/usr/bin/hbrings >/dev/null << EOF`, prefix)
+		print(`#!/bin/bash`)
+		print(`set -e`)
+		print(``)
+		print(`cd /etc/hummingbird`)
+		print(``)
+		print(`rm -f *.builder *.ring.gz backups/*.builder backups/*.ring.gz`)
+		print(``)
+		print(`hummingbird ring object.builder create 10 3 1`)
+		print(`hummingbird ring object.builder add r1z1-127.0.0.1:6010R127.0.0.1:8010/sdb1 1`)
+		print(`hummingbird ring object.builder add r1z2-127.0.0.1:6020R127.0.0.1:8020/sdb2 1`)
+		print(`hummingbird ring object.builder add r1z3-127.0.0.1:6030R127.0.0.1:8030/sdb3 1`)
+		print(`hummingbird ring object.builder add r1z4-127.0.0.1:6040R127.0.0.1:8040/sdb4 1`)
+		print(`hummingbird ring object.builder rebalance`)
+		print(``)
+		print(`hummingbird ring object-1.builder create 10 2 1`)
+		print(`hummingbird ring object-1.builder add r1z1-127.0.0.1:6010R127.0.0.1:8010/sdb1 1`)
+		print(`hummingbird ring object-1.builder add r1z2-127.0.0.1:6020R127.0.0.1:8020/sdb2 1`)
+		print(`hummingbird ring object-1.builder add r1z3-127.0.0.1:6030R127.0.0.1:8030/sdb3 1`)
+		print(`hummingbird ring object-1.builder add r1z4-127.0.0.1:6040R127.0.0.1:8040/sdb4 1`)
+		print(`hummingbird ring object-1.builder rebalance`)
+		print(``)
+		print(`hummingbird ring object-2.builder create 10 6 1`)
+		print(`hummingbird ring object-2.builder add r1z1-127.0.0.1:6010R127.0.0.1:8010/sdb1 1`)
+		print(`hummingbird ring object-2.builder add r1z1-127.0.0.1:6010R127.0.0.1:8010/sdb5 1`)
+		print(`hummingbird ring object-2.builder add r1z2-127.0.0.1:6020R127.0.0.1:8020/sdb2 1`)
+		print(`hummingbird ring object-2.builder add r1z2-127.0.0.1:6020R127.0.0.1:8020/sdb6 1`)
+		print(`hummingbird ring object-2.builder add r1z3-127.0.0.1:6030R127.0.0.1:8030/sdb3 1`)
+		print(`hummingbird ring object-2.builder add r1z3-127.0.0.1:6030R127.0.0.1:8030/sdb7 1`)
+		print(`hummingbird ring object-2.builder add r1z4-127.0.0.1:6040R127.0.0.1:8040/sdb4 1`)
+		print(`hummingbird ring object-2.builder add r1z4-127.0.0.1:6040R127.0.0.1:8040/sdb8 1`)
+		print(`hummingbird ring object-2.builder rebalance`)
+		print(``)
+		print(`hummingbird ring container.builder create 10 3 1`)
+		print(`hummingbird ring container.builder add r1z1-127.0.0.1:6011/sdb1 1`)
+		print(`hummingbird ring container.builder add r1z2-127.0.0.1:6021/sdb2 1`)
+		print(`hummingbird ring container.builder add r1z3-127.0.0.1:6031/sdb3 1`)
+		print(`hummingbird ring container.builder add r1z4-127.0.0.1:6041/sdb4 1`)
+		print(`hummingbird ring container.builder rebalance`)
+		print(``)
+		print(`hummingbird ring account.builder create 10 3 1`)
+		print(`hummingbird ring account.builder add r1z1-127.0.0.1:6012/sdb1 1`)
+		print(`hummingbird ring account.builder add r1z2-127.0.0.1:6022/sdb2 1`)
+		print(`hummingbird ring account.builder add r1z3-127.0.0.1:6032/sdb3 1`)
+		print(`hummingbird ring account.builder add r1z4-127.0.0.1:6042/sdb4 1`)
+		print(`hummingbird ring account.builder rebalance`)
+		print(`EOF`)
+		print(`sudo chmod 0755 %s/usr/bin/hbrings`, prefix)
+		print(``)
+
+		print(`sudo tee %s/usr/bin/hbreset >/dev/null << EOF`, prefix)
+		print(`#!/bin/bash`)
+		print(``)
+		print(`if hash systemctl 2>/dev/null ; then`)
+		print(`    sudo systemctl stop hummingbird-proxy || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-account1 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-account-replicator1 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-container1 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-container-replicator1 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-object1 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-object-replicator1 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-object-auditor1 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-account2 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-account-replicator2 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-container2 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-container-replicator2 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-object2 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-object-replicator2 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-object-auditor2 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-account3 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-account-replicator3 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-container3 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-container-replicator3 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-object3 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-object-replicator3 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-object-auditor3 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-account4 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-account-replicator4 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-container4 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-container-replicator4 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-object4 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-object-replicator4 || /bin/true`)
+		print(`    sudo systemctl stop hummingbird-object-auditor4 || /bin/true`)
+		print(`else`)
+		print(`    hummingbird stop all`)
+		print(`fi`)
+		print(`sudo find /var/log/hummingbird /var/cache/swift -type f -exec rm -f {} \;`)
+		print(`sudo mountpoint -q /srv/hb && sudo umount -f /srv/hb || /bin/true`)
+		print(`sudo mkdir -p /srv/hb`)
+		print(`sudo truncate -s 5GB /srv/hb-disk`)
+		print(`sudo mkfs.xfs -f /srv/hb-disk`)
+		print(`sudo mount -o loop /srv/hb-disk /srv/hb`)
+		print(`sudo mkdir -p /var/cache/swift /var/cache/swift2 /var/cache/swift3 /var/cache/swift4 /var/run/swift /srv/hb/1/sdb1 /srv/hb/2/sdb2 /srv/hb/3/sdb3 /srv/hb/4/sdb4 /var/run/hummingbird /var/log/hummingbird`)
+		print(`sudo chown -R ${USER}: /var/run/hummingbird /var/log/hummingbird /var/cache/swift* /srv/hb*`)
+		print(`if hash systemctl 2>/dev/null ; then`)
+		print(`    sudo systemctl restart memcached`)
+		print(`else`)
+		print(`    sudo service memcached restart`)
+		print(`fi`)
+		print(`EOF`)
+		print(`sudo chmod 0755 %s/usr/bin/hbreset`, prefix)
+		print(``)
+
+		print(`sudo tee %s/usr/bin/hblog >/dev/null << EOF`, prefix)
+		print(`#!/bin/bash`)
+		print(``)
+		print(`if hash journalctl 2>/dev/null ; then`)
+		print(`    journalctl -u hummingbird-\$@`)
+		print(`else`)
+		print(`    echo "Unsure how to view your logs"`)
+		print(`    exit 1`)
+		print(`fi`)
+		print(`EOF`)
+		print(`sudo chmod 0755 %s/usr/bin/hblog`, prefix)
+		print(``)
 	}
-	if err := os.MkdirAll(path.Join(dst, "var/cache/swift"), 0755); err != nil {
-		return err
+
+	print(`sudo mkdir -p %s/var/run/hummingbird`, prefix)
+	print(`sudo chmod 0755 %s/var/run/hummingbird`, prefix)
+	print(`sudo mkdir -p %s/var/log/hummingbird`, prefix)
+	print(`sudo chmod 0755 %s/var/log/hummingbird`, prefix)
+	print(`sudo mkdir -p %s/var/cache/swift`, prefix)
+	if subcmd != "debian" {
+		print(`sudo chown %s: %s/var/cache/swift`, username, prefix)
 	}
-	if err := os.MkdirAll(path.Join(dst, "srv/hummingbird"), 0755); err != nil {
-		return err
-	}
+	print(`sudo chmod 0755 %s/var/cache/swift`, prefix)
+	print(``)
+
 	if subcmd != "haio" {
-		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/account.builder"), "create", "10", "1", "1"); err != nil {
-			return err
+		print(`sudo mkdir -p %s/srv/hummingbird`, prefix)
+		if subcmd != "debian" {
+			print(`sudo chown %s: %s/srv/hummingbird`, username, prefix)
 		}
-		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/account.builder"), "add", "r1z1-127.0.0.1:6012/hummingbird", "1"); err != nil {
-			return err
+		print(`sudo chmod 0755 %s/srv/hummingbird`, prefix)
+		print(`sudo %s/usr/bin/hummingbird ring %s/etc/hummingbird/account.builder create 10 1 1`, prefix, prefix)
+		print(`sudo %s/usr/bin/hummingbird ring %s/etc/hummingbird/account.builder add r1z1-127.0.0.1:6012/hummingbird 1`, prefix, prefix)
+		print(`sudo %s/usr/bin/hummingbird ring %s/etc/hummingbird/account.builder rebalance`, prefix, prefix)
+		print(`sudo %s/usr/bin/hummingbird ring %s/etc/hummingbird/container.builder create 10 1 1`, prefix, prefix)
+		print(`sudo %s/usr/bin/hummingbird ring %s/etc/hummingbird/container.builder add r1z1-127.0.0.1:6011/hummingbird 1`, prefix, prefix)
+		print(`sudo %s/usr/bin/hummingbird ring %s/etc/hummingbird/container.builder rebalance`, prefix, prefix)
+		print(`sudo %s/usr/bin/hummingbird ring %s/etc/hummingbird/object.builder create 10 1 1`, prefix, prefix)
+		print(`sudo %s/usr/bin/hummingbird ring %s/etc/hummingbird/object.builder add r1z1-127.0.0.1:6010R127.0.0.1:8010/hummingbird 1`, prefix, prefix)
+		print(`sudo %s/usr/bin/hummingbird ring %s/etc/hummingbird/object.builder rebalance`, prefix, prefix)
+		print(`sudo rm -rf %s/etc/hummingbird/backups`, prefix)
+		if subcmd != "debian" {
+			print(`sudo chown %s: %s/etc/hummingbird/*.{builder,ring.gz}`, username, prefix)
 		}
-		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/account.builder"), "rebalance"); err != nil {
-			return err
-		}
-		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/container.builder"), "create", "10", "1", "1"); err != nil {
-			return err
-		}
-		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/container.builder"), "add", "r1z1-127.0.0.1:6011/hummingbird", "1"); err != nil {
-			return err
-		}
-		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/container.builder"), "rebalance"); err != nil {
-			return err
-		}
-		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/object.builder"), "create", "10", "1", "1"); err != nil {
-			return err
-		}
-		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/object.builder"), "add", "r1z1-127.0.0.1:6010R127.0.0.1:8010/hummingbird", "1"); err != nil {
-			return err
-		}
-		if err := runCommand(os.Args[0], "ring", path.Join(dst, "etc/hummingbird/object.builder"), "rebalance"); err != nil {
-			return err
-		}
-		if err := os.RemoveAll(path.Join(dst, "etc/hummingbird/backups")); err != nil {
-			return err
-		}
+		print(`sudo chmod 0644 %s/etc/hummingbird/*.{builder,ring.gz}`, prefix)
+		print(``)
 	}
-	if subcmd == "" {
-		adduser, err := exec.LookPath("adduser")
-		if err != nil {
-			return err
-		}
-		if err := runCommand(adduser, "--system", "--group", "--no-create-home", "hummingbird"); err != nil {
-			return err
-		}
-		usr, err := user.Lookup("hummingbird")
-		if err != nil {
-			return err
-		}
-		hummingbirdUserID, err := strconv.Atoi(usr.Uid)
-		if err != nil {
-			return err
-		}
-		hummingbirdGroupID, err := strconv.Atoi(usr.Gid)
-		if err != nil {
-			return err
-		}
-		if err := os.Chown(path.Join(dst, "srv/hummingbird"), hummingbirdUserID, hummingbirdGroupID); err != nil {
-			return err
-		}
-		if _, err = exec.LookPath("memcached"); err != nil {
-			apt, err := exec.LookPath("apt")
-			if err != nil {
-				fmt.Fprintln(os.Stderr, "WARNING: Could not determine if memcached was installed; hummingbird will need at least one memcache server.")
-			} else {
-				if err = runCommand(apt, "install", "-y", "memcached"); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	var debName string
+
 	if subcmd == "debian" {
-		if err := debianBinaryCreate(dst); err != nil {
-			return err
-		}
-		version := common.Version
-		if version == "" {
-			version = "0.0.1"
-		}
-		if version[0] == 'v' {
-			version = version[1:]
-		}
-		if err := debianControlCreate(dst, version); err != nil {
-			return err
-		}
-		if err := debianPostInstCreate(dst); err != nil {
-			return err
-		}
-		if err := filepath.Walk(dst, func(pth string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			if info.IsDir() || strings.Contains(pth, "/bin/") {
-				if err = os.Chmod(pth, 0755); err != nil {
-					return err
-				}
-			} else {
-				if err = os.Chmod(pth, 0644); err != nil {
-					return err
-				}
-			}
-			return nil
-		}); err != nil {
-			return err
-		}
-		tar, err := exec.LookPath("tar")
-		if err != nil {
-			return err
-		}
-		if err := runCommand(tar, "czf", path.Join(dst, "control.tar.gz"), "-C", dst, "control", "postinst"); err != nil {
-			return err
-		}
-		if err := runCommand(tar, "czf", path.Join(dst, "data.tar.gz"), "-C", dst, "etc", "lib", "srv", "usr", "var"); err != nil {
-			return err
-		}
-		ar, err := exec.LookPath("ar")
-		if err != nil {
-			return err
-		}
-		prevdir, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		if err = os.Chdir(dst); err != nil {
-			return err
-		}
-		debName = "hummingbird-" + version + ".deb"
-		if err = runCommand(ar, "rc", debName, "debian-binary", "control.tar.gz", "data.tar.gz"); err != nil {
-			return err
-		}
-		if err = os.Chdir(prevdir); err != nil {
-			return err
-		}
-		if err = os.Rename(path.Join(dst, debName), debName); err != nil {
-			return err
-		}
-		if err = os.Chown(debName, userID, groupID); err != nil {
-			return err
-		}
-		if err = os.Chmod(debName, 0644); err != nil {
-			return err
-		}
-		if err = os.RemoveAll(dst); err != nil {
-			return err
-		}
+		// Started this from https://medium.com/@newhouseb/hassle-free-go-in-production-528af8ee1a58
+		print(`echo 2.0 > %s/debian-binary`, prefix)
+		print(``)
+
+		print(`cat > %s/control << EOF`, prefix)
+		print(`Package: hummingbird`)
+		print(`Version: %s`, versionNoV)
+		print(`Section: net`)
+		print(`Priority: optional`)
+		print(`Architecture: amd64`)
+		print(`Depends: adduser, memcached`)
+		print(`Maintainer: Rackspace <gholt@rackspace.com>`)
+		print(`Description: Hummingbird Object Storage Software`)
+		print(`EOF`)
+		print(``)
+
+		print(`cat > %s/postinst << EOF`, prefix)
+		print(`#!/bin/sh`)
+		print(``)
+		print(`adduser --system --group --no-create-home hummingbird`)
+		print(`chown hummingbird: /srv/hummingbird`)
+		print(`EOF`)
+		print(``)
+
+		print(`cd %s`, prefix)
+		print(`tar czf control.tar.gz control postinst`)
+		print(`sudo chown -R root: etc lib srv usr var`)
+		print(`sudo find etc lib srv usr var -type d -exec chmod 0755 {} \;`)
+		print(`sudo find etc lib srv usr var -type f -exec chmod 0644 {} \;`)
+		print(`sudo find usr/bin -type f -exec chmod 0755 {} \;`)
+		print(`tar czf data.tar.gz etc lib srv usr var`)
+		print(`ar rc hummingbird-%s.deb debian-binary control.tar.gz data.tar.gz`, versionNoV)
+		print(`mv hummingbird-%s.deb ../`, versionNoV)
+		print(`cd -`)
+		print(`sudo rm -rf build`) // build type here instead of %s, prefix for safety
+		print(``)
 	}
+
 	if subcmd == "haio" {
-		if err := filepath.Walk("/etc/hummingbird", func(pth string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			if info.IsDir() {
-				if err = os.Chmod(pth, 0755); err != nil {
-					return err
-				}
-			} else {
-				if err = os.Chmod(pth, 0644); err != nil {
-					return err
-				}
-			}
-			return os.Chown(pth, userID, groupID)
-		}); err != nil {
-			return err
-		}
-		systemctl, err := exec.LookPath("systemctl")
-		if err == nil {
-			if err = runCommand(systemctl, "daemon-reload"); err != nil {
-				return err
-			}
-		}
-		if err = runCommand(sudo, "-u", username, "/usr/bin/hbrings"); err != nil {
-			return err
-		}
-		if err = runCommand(sudo, "-u", username, "/usr/bin/hbreset"); err != nil {
-			return err
-		}
-		if err = runCommand(sudo, "-u", username, "/usr/bin/hbmain", "start"); err != nil {
-			return err
-		}
-		if err = runCommand("/usr/bin/nectar", "-A", "http://127.0.0.1:8080/auth/v1.0", "-U", "test:tester", "-K", "testing", "head"); err != nil {
-			return err
-		}
-		if _, err := os.Stat(path.Join(homedir, "swift")); os.IsNotExist(err) {
-			git, err := exec.LookPath("git")
-			if err != nil {
-				return err
-			}
-			if err = runCommand(sudo, "-u", username, git, "clone", "https://github.com/openstack/swift", path.Join(homedir, "swift")); err != nil {
-				return err
-			}
-		}
-		if err = os.MkdirAll("/etc/swift", 0755); err != nil {
-			return err
-		}
-		if err = os.Chown("/etc/swift", userID, groupID); err != nil {
-			return err
-		}
-		sf, err := os.Open(path.Join(homedir, "swift/test/sample.conf"))
-		if err != nil {
-			return err
-		}
-		df, err := os.Create("/etc/swift/test.conf")
-		if err != nil {
-			return err
-		}
-		if _, err := io.Copy(df, sf); err != nil {
-			return nil
-		}
-		if err = sf.Close(); err != nil {
-			return err
-		}
-		if err = df.Close(); err != nil {
-			return err
-		}
-		apt, err := exec.LookPath("apt")
-		if err != nil {
-			return err
-		}
-		if err = runCommand(apt, "install", "-y", "python-eventlet", "python-mock", "python-netifaces", "python-nose", "python-pastedeploy", "python-pbr", "python-pyeclib", "python-setuptools", "python-swiftclient", "python-unittest2", "python-xattr"); err != nil {
-			return err
-		}
-		prevdir, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		if err = os.Chdir(path.Join(homedir, "swift/test/functional")); err != nil {
-			return err
-		}
-		nosetests, err := exec.LookPath("nosetests")
-		if err != nil {
-			return err
-		}
-		// This always fails because we don't pass 100% of Swift's tests.
-		runCommand(nosetests)
-		if err = os.Chdir(prevdir); err != nil {
-			return err
-		}
-		if err = runCommand(sudo, "-u", username, "/usr/bin/hbmain", "stop"); err != nil {
-			return err
-		}
-		if err = os.Chdir(path.Join(homedir, "go/src/github.com/troubling/hummingbird")); err != nil {
-			return err
-		}
-		git, err := exec.LookPath("git")
-		if err != nil {
-			return err
-		}
-		if err = runCommand(sudo, "-u", username, git, "remote", "rename", "origin", "upstream"); err != nil {
-			return err
-		}
-		if err = runCommand(sudo, "-u", username, git, "remote", "add", "origin", fmt.Sprintf("git@github.com:%s/hummingbird", username)); err != nil {
-			return err
-		}
+		print(`sudo systemctl daemon-reload`)
+		print(`hbrings`)
+		print(`hbreset`)
+		print(`hbmain start`)
+		print(`/usr/bin/nectar -A http://127.0.0.1:8080/auth/v1.0 -U test:tester -K testing head`)
+		print(`git clone https://github.com/openstack/swift ~/swift`)
+		print(`sudo mkdir -p /etc/swift`)
+		print(`sudo chown %s: /etc/swift`, username)
+		print(`cp ~/swift/test/sample.conf /etc/swift/test.conf`)
+		print(`sudo apt install -y python-eventlet python-mock python-netifaces python-nose python-pastedeploy python-pbr python-pyeclib python-setuptools python-swiftclient python-unittest2 python-xattr`)
+		print(`cd ~/swift/test/functional`)
+		print(`nosetests || /bin/true # This always fails because we don't pass all of Swift's tests.`)
+		print(`cd -`)
+		print(`hbmain stop`)
+		print(`cd ~/go/src/github.com/troubling/hummingbird`)
+		print(`git remote rename origin upstream`)
+		print(`git remote add origin git@github.com:%s/hummingbird`, username)
+		print(`cd -`)
+		print(``)
 	}
-	fmt.Println()
+
 	switch subcmd {
 	case "debian":
-		fmt.Println(debName, "has been built.")
+		print(`tail -3 $0 | cut -f2- -d ' '
+
+# hummingbird-%s.deb has been built.
+`, versionNoV)
 	case "haio":
-		fmt.Println(`HAIO is ready for use.
+		print(`tail -9 $0 | cut -f2- -d ' '
 
-You probably want relogin or run:
-
-source /etc/profile
-
-See https://github.com/troubling/hummingbird/blob/master/HAIO.md for more info.
+# HAIO is ready for use.
+# 
+# You probably want relogin or run:
+# 
+# source /etc/profile
+# 
+# See https://github.com/troubling/hummingbird/blob/master/HAIO.md for more info.
 `)
 	default:
-		fmt.Println(`Hummingbird is ready for use.
+		print(`tail -17 $0 | cut -f2- -d ' '
 
-For quick local testing:
-
-sudo systemctl start memcached
-sudo systemctl start hummingbird-proxy
-sudo systemctl start hummingbird-account
-sudo systemctl start hummingbird-container
-sudo systemctl start hummingbird-object
-url=` + "`" + `curl -si http://127.0.0.1:8080/auth/v1.0 -H x-auth-user:test:tester -H x-auth-key:testing | grep ^X-Storage-Url | cut -f2 -d ' ' | tr -d '\r\n'` + "`" + `
-token=` + "`" + `curl -si http://127.0.0.1:8080/auth/v1.0 -H x-auth-user:test:tester -H x-auth-key:testing | grep ^X-Auth-Token | tr -d '\r\n'` + "`" + `
-curl -i -X PUT $url/container -H "$token" ; echo
-curl -i -X PUT $url/container/object -H "$token" -T /usr/bin/hummingbird ; echo
-curl -i "$url/container?format=json" -H "$token" ; echo
-sudo find /srv/hummingbird
+# Hummingbird is ready for use.
+# 
+# For quick local testing:
+# 
+# sudo systemctl start memcached
+# sudo systemctl start hummingbird-proxy
+# sudo systemctl start hummingbird-account
+# sudo systemctl start hummingbird-container
+# sudo systemctl start hummingbird-object
+# url=` + "`" + `curl -si http://127.0.0.1:8080/auth/v1.0 -H x-auth-user:test:tester -H x-auth-key:testing | grep ^X-Storage-Url | cut -f2 -d ' ' | tr -d '\r\n'` + "`" + `
+# token=` + "`" + `curl -si http://127.0.0.1:8080/auth/v1.0 -H x-auth-user:test:tester -H x-auth-key:testing | grep ^X-Auth-Token | tr -d '\r\n'` + "`" + `
+# curl -i -X PUT $url/container -H "$token" ; echo
+# curl -i -X PUT $url/container/object -H "$token" -T /usr/bin/hummingbird ; echo
+# curl -i "$url/container?format=json" -H "$token" ; echo
+# sudo find /srv/hummingbird
 `)
 	}
+
+	err = script.Close()
+	if printErr != nil {
+		return printErr
+	}
+	if err != nil {
+		return err
+	}
+	if err = os.Chmod(scriptName, 0755); err != nil {
+		return err
+	}
+	fmt.Println("Created", scriptName)
 	return nil
-}
-
-func runCommand(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
-func hummingbirdCreate(dst string) error {
-	pth := path.Join(dst, "usr/bin/hummingbird")
-	if err := os.Remove(pth); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	if err := os.MkdirAll(path.Dir(pth), 0755); err != nil {
-		return err
-	}
-	sf, err := os.Open(os.Args[0])
-	if err != nil {
-		return err
-	}
-	df, err := os.Create(pth)
-	if err != nil {
-		return err
-	}
-	if _, err = io.Copy(df, sf); err != nil {
-		return err
-	}
-	if err = sf.Close(); err != nil {
-		return err
-	}
-	if err = df.Close(); err != nil {
-		return err
-	}
-	return os.Chmod(pth, 0755)
-}
-
-func hummingbirdConfCreate(dst string) error {
-	pth := path.Join(dst, "etc/hummingbird/hummingbird.conf")
-	if err := os.MkdirAll(path.Dir(pth), 0755); err != nil {
-		return err
-	}
-	f, err := os.Create(pth)
-	if err != nil {
-		return err
-	}
-	if _, err = f.WriteString(`[swift-hash]
-swift_hash_path_prefix = changeme
-swift_hash_path_suffix = changeme
-
-[storage-policy:0]
-name = gold
-policy_type = replication
-default = yes
-
-[storage-policy:1]
-name = silver
-policy_type = replication
-`); err != nil {
-		return err
-	}
-	return f.Close()
-}
-
-func proxyServerConfCreate(dst string) error {
-	pth := path.Join(dst, "etc/hummingbird/proxy-server.conf")
-	if err := os.MkdirAll(path.Dir(pth), 0755); err != nil {
-		return err
-	}
-	f, err := os.Create(pth)
-	if err != nil {
-		return err
-	}
-	if _, err = f.WriteString(`[DEFAULT]
-bind_ip = 127.0.0.1
-bind_port = 8080
-log_level = DEBUG
-
-[app:proxy-server]
-allow_account_management = true
-account_autocreate = true
-
-[filter:tempauth]
-user_admin_admin = admin .admin .reseller_admin
-user_test_tester = testing .admin
-user_test2_tester2 = testing2 .admin
-user_test_tester3 = testing3
-
-[filter:catch_errors]
-
-[filter:healthcheck]
-
-[filter:proxy-logging]
-
-[filter:ratelimit]
-
-[filter:dlo]
-
-[filter:slo]
-
-[filter:tempurl]
-
-[filter:staticweb]
-
-[filter:copy]
-`); err != nil {
-		return err
-	}
-	return f.Close()
-}
-
-func accountServerConfCreate(dst string, index int) error {
-	var pth string
-	var devices string
-	var port int
-	if index < 1 {
-		pth = path.Join(dst, "etc/hummingbird/account-server.conf")
-		devices = "/srv/hummingbird"
-		port = 6012
-	} else {
-		pth = path.Join(dst, fmt.Sprintf("etc/hummingbird/account-server/%d.conf", index))
-		devices = fmt.Sprintf("/srv/hb/%d", index)
-		port = 6002 + index*10
-	}
-	if err := os.MkdirAll(path.Dir(pth), 0755); err != nil {
-		return err
-	}
-	f, err := os.Create(pth)
-	if err != nil {
-		return err
-	}
-	if _, err = f.WriteString(fmt.Sprintf(`[DEFAULT]
-devices = %s
-mount_check = false
-bind_ip = 127.0.0.1
-bind_port = %d
-
-[app:account-server]
-
-[account-replicator]
-`, devices, port)); err != nil {
-		return err
-	}
-	return f.Close()
-}
-
-func containerServerConfCreate(dst string, index int) error {
-	var pth string
-	var devices string
-	var port int
-	if index < 1 {
-		pth = path.Join(dst, "etc/hummingbird/container-server.conf")
-		devices = "/srv/hummingbird"
-		port = 6011
-	} else {
-		pth = path.Join(dst, fmt.Sprintf("etc/hummingbird/container-server/%d.conf", index))
-		devices = fmt.Sprintf("/srv/hb/%d", index)
-		port = 6001 + index*10
-	}
-	if err := os.MkdirAll(path.Dir(pth), 0755); err != nil {
-		return err
-	}
-	f, err := os.Create(pth)
-	if err != nil {
-		return err
-	}
-	if _, err = f.WriteString(fmt.Sprintf(`[DEFAULT]
-devices = %s
-mount_check = false
-bind_ip = 127.0.0.1
-bind_port = %d
-
-[app:container-server]
-
-[container-replicator]
-`, devices, port)); err != nil {
-		return err
-	}
-	return f.Close()
-}
-
-func objectServerConfCreate(dst string, index int) error {
-	var pth string
-	var devices string
-	var port int
-	var repPort int
-	if index < 1 {
-		pth = path.Join(dst, "etc/hummingbird/object-server.conf")
-		devices = "/srv/hummingbird"
-		port = 6010
-		repPort = 8010
-	} else {
-		pth = path.Join(dst, fmt.Sprintf("etc/hummingbird/object-server/%d.conf", index))
-		devices = fmt.Sprintf("/srv/hb/%d", index)
-		port = 6000 + index*10
-		repPort = 8000 + index*10
-	}
-	if err := os.MkdirAll(path.Dir(pth), 0755); err != nil {
-		return err
-	}
-	f, err := os.Create(pth)
-	if err != nil {
-		return err
-	}
-	if _, err = f.WriteString(fmt.Sprintf(`[DEFAULT]
-devices = %s
-mount_check = false
-
-[app:object-server]
-bind_ip = 127.0.0.1
-bind_port = %d
-
-[object-replicator]
-bind_ip = 127.0.0.1
-bind_port = %d
-
-[object-auditor]
-`, devices, port, repPort)); err != nil {
-		return err
-	}
-	return f.Close()
-}
-
-func serviceCreate(dst, name string, index int, username, groupname string) error {
-	var pth string
-	var conf string
-	if index < 1 {
-		pth = path.Join(dst, fmt.Sprintf("lib/systemd/system/hummingbird-%s.service", name))
-		conf = ""
-	} else {
-		pth = path.Join(dst, fmt.Sprintf("lib/systemd/system/hummingbird-%s%d.service", name, index))
-		ss := strings.SplitN(name, "-", 2)
-		basename := name
-		if len(ss) == 2 {
-			basename = ss[0]
-		}
-		conf = fmt.Sprintf(" -c /etc/hummingbird/%s-server/%d.conf", basename, index)
-	}
-	if err := os.MkdirAll(path.Dir(pth), 0755); err != nil {
-		return err
-	}
-	f, err := os.Create(pth)
-	if err != nil {
-		return err
-	}
-	// See these pages for lots of options:
-	// http://0pointer.de/public/systemd-man/systemd.service.html
-	// http://0pointer.de/public/systemd-man/systemd.exec.html
-	if _, err = f.WriteString(fmt.Sprintf(`[Unit]
-Description=hummingbird-%s
-After=syslog.target network.target
-[Service]
-Type=simple
-User=%s
-Group=%s
-ExecStart=/usr/bin/hummingbird %s%s
-TimeoutStopSec=60
-Restart=on-failure
-RestartSec=5
-StandardOutput=syslog
-StandardError=syslog
-SyslogIdentifier=hummingbird-%s
-LimitCPU=infinity
-LimitFSIZE=infinity
-LimitDATA=infinity
-LimitSTACK=infinity
-LimitCORE=infinity
-LimitRSS=infinity
-LimitNOFILE=1048576
-LimitAS=infinity
-LimitNPROC=infinity
-LimitMEMLOCK=infinity
-LimitLOCKS=infinity
-LimitSIGPENDING=infinity
-LimitMSGQUEUE=infinity
-LimitNICE=infinity
-LimitRTPRIO=infinity
-LimitRTTIME=infinity
-[Install]
-WantedBy=multi-user.target
-`, name, username, groupname, name, conf, name)); err != nil {
-		return err
-	}
-	return f.Close()
-}
-
-func hballCreate(dst string) error {
-	pth := path.Join(dst, "usr/bin/hball")
-	if err := os.MkdirAll(path.Dir(pth), 0755); err != nil {
-		return err
-	}
-	f, err := os.Create(pth)
-	if err != nil {
-		return err
-	}
-	if _, err = f.WriteString(`#!/bin/bash
-
-if hash systemctl 2>/dev/null ; then
-    sudo systemctl $@ hummingbird-proxy
-    sudo systemctl $@ hummingbird-account1
-    sudo systemctl $@ hummingbird-account-replicator1
-    sudo systemctl $@ hummingbird-container1
-    sudo systemctl $@ hummingbird-container-replicator1
-    sudo systemctl $@ hummingbird-object1
-    sudo systemctl $@ hummingbird-object-replicator1
-    sudo systemctl $@ hummingbird-object-auditor1
-    sudo systemctl $@ hummingbird-account2
-    sudo systemctl $@ hummingbird-account-replicator2
-    sudo systemctl $@ hummingbird-container2
-    sudo systemctl $@ hummingbird-container-replicator2
-    sudo systemctl $@ hummingbird-object2
-    sudo systemctl $@ hummingbird-object-replicator2
-    sudo systemctl $@ hummingbird-object-auditor2
-    sudo systemctl $@ hummingbird-account3
-    sudo systemctl $@ hummingbird-account-replicator3
-    sudo systemctl $@ hummingbird-container3
-    sudo systemctl $@ hummingbird-container-replicator3
-    sudo systemctl $@ hummingbird-object3
-    sudo systemctl $@ hummingbird-object-replicator3
-    sudo systemctl $@ hummingbird-object-auditor3
-    sudo systemctl $@ hummingbird-account4
-    sudo systemctl $@ hummingbird-account-replicator4
-    sudo systemctl $@ hummingbird-container4
-    sudo systemctl $@ hummingbird-container-replicator4
-    sudo systemctl $@ hummingbird-object4
-    sudo systemctl $@ hummingbird-object-replicator4
-    sudo systemctl $@ hummingbird-object-auditor4
-else
-    hummingbird $@ all
-fi
-`); err != nil {
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	return os.Chmod(pth, 0755)
-}
-
-func hbmainCreate(dst string) error {
-	pth := path.Join(dst, "usr/bin/hbmain")
-	if err := os.MkdirAll(path.Dir(pth), 0755); err != nil {
-		return err
-	}
-	f, err := os.Create(pth)
-	if err != nil {
-		return err
-	}
-	if _, err = f.WriteString(`#!/bin/bash
-
-if hash systemctl 2>/dev/null ; then
-    sudo systemctl $@ hummingbird-proxy
-    sudo systemctl $@ hummingbird-account1
-    sudo systemctl $@ hummingbird-container1
-    sudo systemctl $@ hummingbird-object1
-    sudo systemctl $@ hummingbird-account2
-    sudo systemctl $@ hummingbird-container2
-    sudo systemctl $@ hummingbird-object2
-    sudo systemctl $@ hummingbird-account3
-    sudo systemctl $@ hummingbird-container3
-    sudo systemctl $@ hummingbird-object3
-    sudo systemctl $@ hummingbird-account4
-    sudo systemctl $@ hummingbird-container4
-    sudo systemctl $@ hummingbird-object4
-else
-    hummingbird $@ main
-fi
-`); err != nil {
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	return os.Chmod(pth, 0755)
-}
-
-func hbringsCreate(dst string) error {
-	pth := path.Join(dst, "usr/bin/hbrings")
-	if err := os.MkdirAll(path.Dir(pth), 0755); err != nil {
-		return err
-	}
-	f, err := os.Create(pth)
-	if err != nil {
-		return err
-	}
-	if _, err = f.WriteString(`#!/bin/bash
-set -e
-
-cd /etc/hummingbird
-
-rm -f *.builder *.ring.gz backups/*.builder backups/*.ring.gz
-
-hummingbird ring object.builder create 10 3 1
-hummingbird ring object.builder add r1z1-127.0.0.1:6010R127.0.0.1:8010/sdb1 1
-hummingbird ring object.builder add r1z2-127.0.0.1:6020R127.0.0.1:8020/sdb2 1
-hummingbird ring object.builder add r1z3-127.0.0.1:6030R127.0.0.1:8030/sdb3 1
-hummingbird ring object.builder add r1z4-127.0.0.1:6040R127.0.0.1:8040/sdb4 1
-hummingbird ring object.builder rebalance
-
-hummingbird ring object-1.builder create 10 2 1
-hummingbird ring object-1.builder add r1z1-127.0.0.1:6010R127.0.0.1:8010/sdb1 1
-hummingbird ring object-1.builder add r1z2-127.0.0.1:6020R127.0.0.1:8020/sdb2 1
-hummingbird ring object-1.builder add r1z3-127.0.0.1:6030R127.0.0.1:8030/sdb3 1
-hummingbird ring object-1.builder add r1z4-127.0.0.1:6040R127.0.0.1:8040/sdb4 1
-hummingbird ring object-1.builder rebalance
-
-hummingbird ring object-2.builder create 10 6 1
-hummingbird ring object-2.builder add r1z1-127.0.0.1:6010R127.0.0.1:8010/sdb1 1
-hummingbird ring object-2.builder add r1z1-127.0.0.1:6010R127.0.0.1:8010/sdb5 1
-hummingbird ring object-2.builder add r1z2-127.0.0.1:6020R127.0.0.1:8020/sdb2 1
-hummingbird ring object-2.builder add r1z2-127.0.0.1:6020R127.0.0.1:8020/sdb6 1
-hummingbird ring object-2.builder add r1z3-127.0.0.1:6030R127.0.0.1:8030/sdb3 1
-hummingbird ring object-2.builder add r1z3-127.0.0.1:6030R127.0.0.1:8030/sdb7 1
-hummingbird ring object-2.builder add r1z4-127.0.0.1:6040R127.0.0.1:8040/sdb4 1
-hummingbird ring object-2.builder add r1z4-127.0.0.1:6040R127.0.0.1:8040/sdb8 1
-hummingbird ring object-2.builder rebalance
-
-hummingbird ring container.builder create 10 3 1
-hummingbird ring container.builder add r1z1-127.0.0.1:6011/sdb1 1
-hummingbird ring container.builder add r1z2-127.0.0.1:6021/sdb2 1
-hummingbird ring container.builder add r1z3-127.0.0.1:6031/sdb3 1
-hummingbird ring container.builder add r1z4-127.0.0.1:6041/sdb4 1
-hummingbird ring container.builder rebalance
-
-hummingbird ring account.builder create 10 3 1
-hummingbird ring account.builder add r1z1-127.0.0.1:6012/sdb1 1
-hummingbird ring account.builder add r1z2-127.0.0.1:6022/sdb2 1
-hummingbird ring account.builder add r1z3-127.0.0.1:6032/sdb3 1
-hummingbird ring account.builder add r1z4-127.0.0.1:6042/sdb4 1
-hummingbird ring account.builder rebalance
-`); err != nil {
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	return os.Chmod(pth, 0755)
-}
-
-func hbresetCreate(dst string) error {
-	pth := path.Join(dst, "usr/bin/hbreset")
-	if err := os.MkdirAll(path.Dir(pth), 0755); err != nil {
-		return err
-	}
-	f, err := os.Create(pth)
-	if err != nil {
-		return err
-	}
-	if _, err = f.WriteString(`#!/bin/bash
-
-if hash systemctl 2>/dev/null ; then
-    sudo systemctl stop hummingbird-proxy || /bin/true
-    sudo systemctl stop hummingbird-account1 || /bin/true
-    sudo systemctl stop hummingbird-account-replicator1 || /bin/true
-    sudo systemctl stop hummingbird-container1 || /bin/true
-    sudo systemctl stop hummingbird-container-replicator1 || /bin/true
-    sudo systemctl stop hummingbird-object1 || /bin/true
-    sudo systemctl stop hummingbird-object-replicator1 || /bin/true
-    sudo systemctl stop hummingbird-object-auditor1 || /bin/true
-    sudo systemctl stop hummingbird-account2 || /bin/true
-    sudo systemctl stop hummingbird-account-replicator2 || /bin/true
-    sudo systemctl stop hummingbird-container2 || /bin/true
-    sudo systemctl stop hummingbird-container-replicator2 || /bin/true
-    sudo systemctl stop hummingbird-object2 || /bin/true
-    sudo systemctl stop hummingbird-object-replicator2 || /bin/true
-    sudo systemctl stop hummingbird-object-auditor2 || /bin/true
-    sudo systemctl stop hummingbird-account3 || /bin/true
-    sudo systemctl stop hummingbird-account-replicator3 || /bin/true
-    sudo systemctl stop hummingbird-container3 || /bin/true
-    sudo systemctl stop hummingbird-container-replicator3 || /bin/true
-    sudo systemctl stop hummingbird-object3 || /bin/true
-    sudo systemctl stop hummingbird-object-replicator3 || /bin/true
-    sudo systemctl stop hummingbird-object-auditor3 || /bin/true
-    sudo systemctl stop hummingbird-account4 || /bin/true
-    sudo systemctl stop hummingbird-account-replicator4 || /bin/true
-    sudo systemctl stop hummingbird-container4 || /bin/true
-    sudo systemctl stop hummingbird-container-replicator4 || /bin/true
-    sudo systemctl stop hummingbird-object4 || /bin/true
-    sudo systemctl stop hummingbird-object-replicator4 || /bin/true
-    sudo systemctl stop hummingbird-object-auditor4 || /bin/true
-else
-    hummingbird stop all
-fi
-sudo find /var/log/hummingbird /var/cache/swift -type f -exec rm -f {} \;
-sudo mountpoint -q /srv/hb && sudo umount -f /srv/hb || /bin/true
-sudo mkdir -p /srv/hb
-sudo truncate -s 5GB /srv/hb-disk
-sudo mkfs.xfs -f /srv/hb-disk
-sudo mount -o loop /srv/hb-disk /srv/hb
-sudo mkdir -p /var/cache/swift /var/cache/swift2 /var/cache/swift3 /var/cache/swift4 /var/run/swift /srv/hb/1/sdb1 /srv/hb/2/sdb2 /srv/hb/3/sdb3 /srv/hb/4/sdb4 /var/run/hummingbird /var/log/hummingbird
-sudo chown -R ${USER}: /var/run/hummingbird /var/log/hummingbird /var/cache/swift* /srv/hb*
-if hash systemctl 2>/dev/null ; then
-    sudo systemctl restart memcached
-else
-    sudo service memcached restart
-fi
-`); err != nil {
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	return os.Chmod(pth, 0755)
-}
-
-func hblogCreate(dst string) error {
-	pth := path.Join(dst, "usr/bin/hblog")
-	if err := os.MkdirAll(path.Dir(pth), 0755); err != nil {
-		return err
-	}
-	f, err := os.Create(pth)
-	if err != nil {
-		return err
-	}
-	if _, err = f.WriteString(`#!/bin/bash
-
-if hash journalctl 2>/dev/null ; then
-    journalctl -u hummingbird-$@
-else
-    echo "Unsure how to view your logs"
-    exit 1
-fi
-`); err != nil {
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	return os.Chmod(pth, 0755)
-}
-
-// Started this from https://medium.com/@newhouseb/hassle-free-go-in-production-528af8ee1a58
-
-func debianBinaryCreate(dst string) error {
-	pth := path.Join(dst, "debian-binary")
-	if err := os.MkdirAll(path.Dir(pth), 0644); err != nil {
-		return err
-	}
-	f, err := os.Create(pth)
-	if err != nil {
-		return err
-	}
-	if _, err = f.WriteString(`2.0
-`); err != nil {
-		return err
-	}
-	return f.Close()
-}
-
-func debianControlCreate(dst, version string) error {
-	pth := path.Join(dst, "control")
-	if err := os.MkdirAll(path.Dir(pth), 0644); err != nil {
-		return err
-	}
-	f, err := os.Create(pth)
-	if err != nil {
-		return err
-	}
-	if _, err = f.WriteString(fmt.Sprintf(`Package: hummingbird
-Version: %s
-Section: net
-Priority: optional
-Architecture: amd64
-Depends: adduser, memcached
-Maintainer: Rackspace <gholt@rackspace.com>
-Description: Hummingbird Object Storage Software
-`, version)); err != nil {
-		return err
-	}
-	return f.Close()
-}
-
-func debianPostInstCreate(dst string) error {
-	pth := path.Join(dst, "postinst")
-	if err := os.MkdirAll(path.Dir(pth), 0755); err != nil {
-		return err
-	}
-	f, err := os.Create(pth)
-	if err != nil {
-		return err
-	}
-	if _, err = f.WriteString(`#!/bin/sh
-
-adduser --system --group --no-create-home hummingbird
-chown hummingbird: /srv/hummingbird
-`); err != nil {
-		return err
-	}
-	return f.Close()
 }

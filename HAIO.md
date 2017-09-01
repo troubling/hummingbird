@@ -1,6 +1,6 @@
 # Hummingbird All In One (HAIO)
 
-To get started developing Hummingbird, you need to have Ubuntu 16.04, copy the [hummingbird executable](https://troubling.github.io/hummingbird/bin/hummingbird) to the system, and run `hummingbird init haio`. This will install, download, and configure everything needed to start writing and testing Hummingbird code.
+To get started developing Hummingbird you need to have Ubuntu 16.04 and then copy the [hummingbird executable](https://troubling.github.io/hummingbird/bin/hummingbird) to the system, run `hummingbird init haio`, and finally run the resulting `./hummingbird-init-haio.sh`. This will install, download, and configure everything needed to start writing and testing Hummingbird code.
 
 You may want to setup sudo to allow you to switch without entering a password; less secure, but maybe fine for a privately contained virtual machine:
 
@@ -8,7 +8,7 @@ You may want to setup sudo to allow you to switch without entering a password; l
 echo "$USER ALL=(ALL) NOPASSWD: ALL" | sudo tee -a /etc/sudoers
 ```
 
-Once done, `hummingbird init haio` will have placed all the Hummingbird code at ~/go/src/github.com/troubling/hummingbird -- the git upstream remote will be set to the official fork and the origin will be set to your username, just assuming you have forked the code on GitHub and use the same username. You can patch this up with `git remote set-url origin git@github.com:YOU/hummingbird` if needed.
+Once done, the `hummingbird-init-haio.sh` will have placed all the Hummingbird code at ~/go/src/github.com/troubling/hummingbird -- the git upstream remote will be set to the official fork and the origin will be set to your username, just assuming you have forked the code on GitHub and use the same username. You can patch this up with `git remote set-url origin git@github.com:YOU/hummingbird` if needed.
 
 A normal development loop would be to write code and then:
 
