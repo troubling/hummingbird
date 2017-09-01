@@ -614,7 +614,7 @@ func initCommand(args []string) error {
 		print(`hbreset`)
 		print(`hbmain start`)
 		print(`/usr/bin/nectar -A http://127.0.0.1:8080/auth/v1.0 -U test:tester -K testing head`)
-		print(`git clone https://github.com/openstack/swift ~/swift`)
+		print(`git clone --depth 1 https://github.com/openstack/swift ~/swift`)
 		print(`sudo mkdir -p /etc/swift`)
 		print(`sudo chown %s: /etc/swift`, username)
 		print(`cp ~/swift/test/sample.conf /etc/swift/test.conf`)
