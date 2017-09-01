@@ -73,7 +73,7 @@ func initCommand(args []string) error {
 		print(`export PATH=$PATH:/usr/local/go/bin`)
 		print(`grep -q /usr/local/go/bin /etc/profile || echo 'export PATH=$PATH:/usr/local/go/bin' | sudo tee -a /etc/profile`)
 		print(`echo "Retrieving sources; this may take a while..."`)
-		print(`/usr/local/bin/go get -t github.com/troubling/hummingbird/...`)
+		print(`/usr/local/go/bin/go get -t github.com/troubling/hummingbird/...`)
 		print(`cd ~/go/src/github.com/troubling/hummingbird`)
 		print(`go build -o nectar github.com/troubling/hummingbird/cmd/nectar/...`)
 		print(`sudo cp nectar /usr/bin/`)
