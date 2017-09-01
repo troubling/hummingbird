@@ -41,6 +41,7 @@ func initCommand(args []string) error {
 	groupname := "hummingbird"
 	userID := 0
 	groupID := 0
+	homedir := "."
 	dst := "/"
 	if subcmd != "" {
 		if len(args) < 1 {
@@ -69,6 +70,7 @@ func initCommand(args []string) error {
 		if subcmd == "haio" {
 			groupname = grp.Name
 		}
+		homedir = usr.HomeDir
 	}
 	if subcmd == "debian" {
 		dst = "build"
@@ -77,29 +79,44 @@ func initCommand(args []string) error {
 		}
 	}
 	if subcmd == "haio" {
-		if apt, err := exec.LookPath("apt"); err != nil {
-			fmt.Fprintln(os.Stderr, "Could not find 'apt'; continuing without full-service set up.")
-		} else if err = runCommand(apt, "install", "-y", "gcc", "git-core", "make", "memcached", "sqlite3", "tar", "wget", "xfsprogs"); err != nil {
+		apt, err := exec.LookPath("apt")
+		if err != nil {
 			return err
-		} else if wget, err := exec.LookPath("wget"); err != nil {
-			fmt.Fprintln(os.Stderr, "Could not find 'wget'; continuing without full-service set up.")
-		} else if err = runCommand(wget, "-nc", "https://storage.googleapis.com/golang/go1.9.linux-amd64.tar.gz"); err != nil {
+		}
+		if err = runCommand(apt, "install", "-y", "gcc", "git-core", "make", "memcached", "sqlite3", "tar", "wget", "xfsprogs"); err != nil {
 			return err
-		} else if tar, err := exec.LookPath("tar"); err != nil {
-			fmt.Fprintln(os.Stderr, "Could not find 'tar'; continuing without full-service set up.")
-		} else if err = runCommand(tar, "-C", "/usr/local", "-xzf", "go1.9.linux-amd64.tar.gz"); err != nil {
+		}
+		wget, err := exec.LookPath("wget")
+		if err != nil {
 			return err
-		} else if f, err := os.OpenFile("/etc/profile", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err != nil {
+		}
+		if err = runCommand(sudo, "-u", username, wget, "-nc", "https://storage.googleapis.com/golang/go1.9.linux-amd64.tar.gz"); err != nil {
 			return err
-		} else if _, err = f.WriteString("\nexport PATH=$PATH:/usr/local/go/bin\n"); err != nil {
+		}
+		tar, err := exec.LookPath("tar")
+		if err != nil {
 			return err
-		} else if err = f.Close(); err != nil {
+		}
+		if err = runCommand(tar, "-C", "/usr/local", "-xzf", "go1.9.linux-amd64.tar.gz"); err != nil {
 			return err
-		} else if _, err = fmt.Println("Retrieving sources; this may take a while..."); err != nil {
+		}
+		f, err := os.OpenFile("/etc/profile", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
 			return err
-		} else if err := runCommand("/usr/local/go/bin/go", "get", "-t", "github.com/troubling/hummingbird/..."); err != nil {
+		}
+		if _, err = f.WriteString("\nexport PATH=$PATH:/usr/local/go/bin\n"); err != nil {
 			return err
-		} else if err := runCommand("/usr/local/go/bin/go", "build", "-o", "/usr/bin/nectar", "github.com/troubling/hummingbird/cmd/nectar/..."); err != nil {
+		}
+		if err = f.Close(); err != nil {
+			return err
+		}
+		if _, err = fmt.Println("Retrieving sources; this may take a while..."); err != nil {
+			return err
+		}
+		if err := runCommand(sudo, "-u", username, "/usr/local/go/bin/go", "get", "-t", "github.com/troubling/hummingbird/..."); err != nil {
+			return err
+		}
+		if err := runCommand("/usr/local/go/bin/go", "build", "-o", "/usr/bin/nectar", "github.com/troubling/hummingbird/cmd/nectar/..."); err != nil {
 			return err
 		}
 	}
@@ -342,6 +359,61 @@ func initCommand(args []string) error {
 			return err
 		}
 		if err = runCommand("/usr/bin/nectar", "-A", "http://127.0.0.1:8080/auth/v1.0", "-U", "test:tester", "-K", "testing", "head"); err != nil {
+			return err
+		}
+		if _, err := os.Stat(path.Join(homedir, "swift")); os.IsNotExist(err) {
+			git, err := exec.LookPath("git")
+			if err != nil {
+				return err
+			}
+			if err = runCommand(sudo, "-u", username, git, "clone", "https://github.com/openstack/swift", path.Join(homedir, "swift")); err != nil {
+				return err
+			}
+		}
+		if err = os.MkdirAll("/etc/swift", 0755); err != nil {
+			return err
+		}
+		if err = os.Chown("/etc/swift", userID, groupID); err != nil {
+			return err
+		}
+		sf, err := os.Open(path.Join(homedir, "swift/test/sample.conf"))
+		if err != nil {
+			return err
+		}
+		df, err := os.Create("/etc/swift/test.conf")
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(df, sf); err != nil {
+			return nil
+		}
+		if err = sf.Close(); err != nil {
+			return err
+		}
+		if err = df.Close(); err != nil {
+			return err
+		}
+		apt, err := exec.LookPath("apt")
+		if err != nil {
+			return err
+		}
+		if err = runCommand(apt, "install", "-y", "python-eventlet", "python-mock", "python-netifaces", "python-nose", "python-pastedeploy", "python-pbr", "python-pyeclib", "python-setuptools", "python-swiftclient", "python-unittest2", "python-xattr"); err != nil {
+			return err
+		}
+		prevdir, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+		if err = os.Chdir(path.Join(homedir, "swift/test/functional")); err != nil {
+			return err
+		}
+		nosetests, err := exec.LookPath("nosetests")
+		if err != nil {
+			return err
+		}
+		// This always fails because we don't pass 100% of Swift's tests.
+		runCommand(nosetests)
+		if err = os.Chdir(prevdir); err != nil {
 			return err
 		}
 		if err = runCommand(sudo, "-u", username, "/usr/bin/hbmain", "stop"); err != nil {
