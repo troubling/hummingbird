@@ -419,6 +419,19 @@ func initCommand(args []string) error {
 		if err = runCommand(sudo, "-u", username, "/usr/bin/hbmain", "stop"); err != nil {
 			return err
 		}
+		if err = os.Chdir(path.Join(homedir, "go/src/github.com/troubling/hummingbird")); err != nil {
+			return err
+		}
+		git, err := exec.LookPath("git")
+		if err != nil {
+			return err
+		}
+		if err = runCommand(sudo, "-u", username, git, "remote", "rename", "origin", "upstream"); err != nil {
+			return err
+		}
+		if err = runCommand(sudo, "-u", username, git, "remote", "add", "origin", fmt.Sprintf("git@github.com:%s/hummingbird", username)); err != nil {
+			return err
+		}
 	}
 	fmt.Println()
 	switch subcmd {

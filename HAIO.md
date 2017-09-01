@@ -1,6 +1,6 @@
 # Hummingbird All In One (HAIO)
 
-These instructions assume Ubuntu 16.04, but other distributions and versions should work with some translation.
+To get started developing Hummingbird, you need to have Ubuntu 16.04, copy the [hummingbird executable](https://troubling.github.io/hummingbird/bin/hummingbird) to the system, and run `hummingbird init haio`. This will install, download, and configure everything needed to start writing and testing Hummingbird code.
 
 You may want to setup sudo to allow you to switch without entering a password; less secure, but maybe fine for a privately contained virtual machine:
 
@@ -8,46 +8,7 @@ You may want to setup sudo to allow you to switch without entering a password; l
 echo "$USER ALL=(ALL) NOPASSWD: ALL" | sudo tee -a /etc/sudoers
 ```
 
-Install OS dependencies:
-
-```sh
-sudo apt install gcc git-core make memcached sqlite3 xfsprogs
-```
-
-Install Go for your platform by following https://golang.org/doc/install  
-This will be something like:
-
-```sh
-wget https://storage.googleapis.com/golang/go1.9.linux-amd64.tar.gz
-sudo tar -C /usr/local -xzf go1.9.linux-amd64.tar.gz
-echo 'export PATH=$PATH:/usr/local/go/bin' | sudo tee -a /etc/profile
-source /etc/profile
-```
-
-Get Hummingbird and install as an HAIO:
-
-```sh
-go get -t github.com/troubling/hummingbird/...
-cd ~/go/src/github.com/troubling/hummingbird
-make haio-init
-```
-
-Start everything up and do a quick test:
-
-```sh
-hbrings
-hbreset
-hbmain start
-nectar -A http://127.0.0.1:8080/auth/v1.0 -U test:tester -K testing head
-```
-
-If you're going to be actively developing Hummingbird, you should fork the repository on GitHub and:
-
-```sh
-cd ~/go/src/github.com/troubling/hummingbird
-git remote rename origin upstream
-git remote add origin git@github.com:YOU/hummingbird
-```
+Once done, `hummingbird init haio` will have placed all the Hummingbird code at ~/go/src/github.com/troubling/hummingbird -- the git upstream remote will be set to the official fork and the origin will be set to your username, just assuming you have forked the code on GitHub and use the same username. You can patch this up with `git remote set-url origin git@github.com:YOU/hummingbird` if needed.
 
 A normal development loop would be to write code and then:
 
@@ -77,15 +38,9 @@ hblog object1  # shows logs for just the first object server
 hblog object\* # shows logs for all the object servers (can also have -f)
 ```
 
-If you want to run Openstack Swift's functional tests against Hummingbird:
+You can run Openstack Swift's functional tests against Hummingbird if you want:
 
 ```sh
-cd ~
-git clone git@github.com:openstack/swift
-sudo mkdir /etc/swift/
-sudo chown $USER: /etc/swift
-cp ~/swift/test/sample.conf /etc/swift/test.conf
-sudo apt install python-eventlet python-mock python-netifaces python-nose python-pastedeploy python-pbr python-pyeclib python-setuptools python-swiftclient python-unittest2 python-xattr
 cd ~/swift/test/functional
 nosetests
 ```
