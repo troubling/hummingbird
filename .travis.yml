@@ -15,6 +15,7 @@ install:
   - ./hummingbird-init-haio.sh
   - mkdir -p /tmp/output/bin
   - cp /usr/bin/hummingbird /tmp/output/bin
+  - sudo apt remove python-nose # since we'll be installing the pip edition
   - go get github.com/haya14busa/goverage
   - 
   - virtualenv ~/swift-venv
