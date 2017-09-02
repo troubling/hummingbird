@@ -94,11 +94,11 @@ func initCommand(args []string) error {
 
 	print(`sudo rm -f %s/usr/bin/hummingbird`, prefix)
 	print(`sudo mkdir -p %s/usr/bin`, prefix)
-    print(`if [ -e hummingbird ] ; then`)
+	print(`if [ -e hummingbird ] ; then`)
 	print(`    sudo cp hummingbird %s/usr/bin/`, prefix)
-    print(`else`)
+	print(`else`)
 	print(`    sudo cp bin/hummingbird %s/usr/bin/`, prefix)
-    print(`fi`)
+	print(`fi`)
 	print(`sudo chown root: %s/usr/bin/hummingbird`, prefix)
 	print(`sudo chmod 0755 %s/usr/bin/hummingbird`, prefix)
 	print(``)
@@ -614,7 +614,9 @@ func initCommand(args []string) error {
 	}
 
 	if subcmd == "haio" {
-		print(`sudo systemctl daemon-reload`)
+		print(`if hash systemctl 2>/dev/null ; then`)
+		print(`    sudo systemctl daemon-reload`)
+		print(`fi`)
 		print(`hbrings`)
 		print(`hbreset`)
 		print(`hbmain start`)
