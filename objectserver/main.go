@@ -408,7 +408,7 @@ func (server *ObjectServer) ObjPostHandler(writer http.ResponseWriter, request *
 		}
 	}
 
-	if err := obj.commitMeta(metadata); err != nil {
+	if err := obj.CommitMetadata(metadata); err != nil {
 		srv.GetLogger(request).Error("Error saving object meta file", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
