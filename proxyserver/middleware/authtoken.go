@@ -185,11 +185,13 @@ func (at *authToken) fetchAndValidateToken(ctx *ProxyContext, authToken string) 
 	if ctx == nil {
 		return nil, false
 	}
+	at.lock.Lock()
 	if v, ok := at.validations[authToken]; ok {
 		// Someone is currently fetching our token, wait for them to finish.
 		v.Lock()
 		v.Unlock()
 	}
+	at.lock.Unlock()
 
 	var tok *token
 	var cachedToken token
@@ -205,7 +207,9 @@ func (at *authToken) fetchAndValidateToken(ctx *ProxyContext, authToken string) 
 		lock := &sync.Mutex{}
 		lock.Lock()
 		defer lock.Unlock()
+		at.lock.Lock()
 		at.validations[authToken] = lock
+		at.lock.Unlock()
 		var err error
 		tok, err = at.validate(authToken)
 		if err != nil {
@@ -221,7 +225,9 @@ func (at *authToken) fetchAndValidateToken(ctx *ProxyContext, authToken string) 
 			}
 			ctx.Cache.Set(authToken, *tok, ttl)
 		}
+		at.lock.Lock()
 		delete(at.validations, authToken)
+		at.lock.Unlock()
 	}
 	return tok, tokenValid
 }
