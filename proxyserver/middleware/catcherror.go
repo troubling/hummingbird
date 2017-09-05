@@ -32,7 +32,7 @@ func Recover(w http.ResponseWriter, r *http.Request, msg string, recoversMetric 
 			ctx.Logger.Error(msg, zap.Any("err", err), zap.String("txn", transactionId))
 			recoversMetric.Inc(1)
 			// if we haven't set a status code yet, we can send a 500 response.
-			if started, _ := ctx.Response(); !started {
+			if started, _ := ctx.Response(); started.IsZero() {
 				srv.StandardResponse(w, http.StatusInternalServerError)
 			}
 		}
