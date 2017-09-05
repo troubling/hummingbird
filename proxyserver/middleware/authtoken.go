@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/troubling/hummingbird/common/conf"
@@ -43,8 +44,10 @@ type identity struct {
 
 type authToken struct {
 	*identity
-	next      http.Handler
-	cacheTime int
+	next        http.Handler
+	cacheTime   int
+	lock        sync.Mutex
+	validations map[string]validation
 }
 
 var authHeaders = []string{"X-Identity-Status",
@@ -245,7 +248,22 @@ func (at *authToken) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	at.next.ServeHTTP(w, r)
 }
 
-func (at *authToken) validate(token string) (*token, error) {
+type validationEntry struct {
+	Token *token
+	err   error
+}
+
+type validation struct {
+	Token string
+	Count int
+	c     chan *validationEntry
+}
+
+func NewValidation(token string) validation {
+	return validation{Token: token, Count: 1, c: make(chan *validationEntry)}
+}
+
+func (at *authToken) doValidation(v validation) (*token, error) {
 	if !strings.HasSuffix(at.authURL, "/") {
 		at.authURL += "/"
 	}
@@ -258,7 +276,7 @@ func (at *authToken) validate(token string) (*token, error) {
 		return nil, err
 	}
 	req.Header.Set("X-Auth-Token", serverAuthToken)
-	req.Header.Set("X-Subject-Token", token)
+	req.Header.Set("X-Subject-Token", v.Token)
 	req.Header.Set("User-Agent", at.userAgent)
 
 	r, err := at.client.Do(req)
@@ -290,6 +308,31 @@ func (at *authToken) validate(token string) (*token, error) {
 
 	}
 	return resp.Token, nil
+}
+
+func (at *authToken) validate(token string) (*token, error) {
+	at.lock.Lock()
+	var v validation
+	var ok bool
+	if v, ok = at.validations[token]; ok {
+		v.Count++
+	} else {
+		v = NewValidation(token)
+		go func() {
+			t, err := at.doValidation(v)
+			at.lock.Lock()
+			defer at.lock.Unlock()
+			for i := 0; i < v.Count; i++ {
+				entry := &validationEntry{Token: t, err: err}
+				v.c <- entry
+			}
+			delete(at.validations, v.Token)
+		}()
+	}
+	at.lock.Unlock()
+
+	entry := <-v.c
+	return entry.Token, entry.err
 }
 
 // serverAuth return the X-Auth-Token to use or an error.
@@ -331,8 +374,9 @@ func removeAuthHeaders(r *http.Request) {
 func NewAuthToken(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
 	return func(next http.Handler) http.Handler {
 		return &authToken{
-			next:      next,
-			cacheTime: int(config.GetInt("token_cache_time", 300)),
+			next:        next,
+			cacheTime:   int(config.GetInt("token_cache_time", 300)),
+			validations: make(map[string]validation),
 			identity: &identity{authURL: config.GetDefault("auth_uri", "http://127.0.0.1:5000/"),
 				authPlugin:      config.GetDefault("auth_plugin", "password"),
 				projectDomainID: config.GetDefault("project_domain_id", "default"),
