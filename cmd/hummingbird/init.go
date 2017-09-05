@@ -621,7 +621,9 @@ func initCommand(args []string) error {
 		print(`hbreset`)
 		print(`hbmain start`)
 		print(`/usr/bin/nectar -A http://127.0.0.1:8080/auth/v1.0 -U test:tester -K testing head`)
-		print(`git clone --depth 1 https://github.com/openstack/swift ~/swift`)
+		print(`if [ ! -e ~/swift ] ; then`)
+		print(`    git clone --depth 1 https://github.com/openstack/swift ~/swift`)
+		print(`fi`)
 		print(`sudo mkdir -p /etc/swift`)
 		print(`sudo chown %s: /etc/swift`, username)
 		print(`cp ~/swift/test/sample.conf /etc/swift/test.conf`)
@@ -631,48 +633,50 @@ func initCommand(args []string) error {
 		print(`cd -`)
 		print(`hbmain stop`)
 		print(`cd ${gopath}/src/github.com/troubling/hummingbird`)
-		print(`git remote rename origin upstream`)
-		print(`git remote add origin git@github.com:%s/hummingbird`, username)
+		print(`if ! git remote get-url upstream; then`)
+		print(`    git remote rename origin upstream`)
+		print(`    git remote add origin git@github.com:%s/hummingbird`, username)
+		print(`fi`)
 		print(`cd -`)
 		print(``)
 	}
 
 	switch subcmd {
 	case "debian":
-		print(`tail -3 $0 | cut -f2- -d ' '
-
-# hummingbird-%s.deb has been built.
-`, versionNoV)
+		print(`tail -3 $0 | cut -f2- -d ' '`)
+		print(``)
+		print(`# hummingbird-%s.deb has been built.`, versionNoV)
+		print(``)
 	case "haio":
-		print(`tail -9 $0 | cut -f2- -d ' '
-
-# HAIO is ready for use.
-# 
-# You probably want relogin or run:
-# 
-# source /etc/profile
-# 
-# See https://github.com/troubling/hummingbird/blob/master/HAIO.md for more info.
-`)
+		print(`tail -9 $0 | cut -f2- -d ' '`)
+		print(``)
+		print(`# HAIO is ready for use.`)
+		print(`# `)
+		print(`# You probably want relogin or run:`)
+		print(`# `)
+		print(`# source /etc/profile`)
+		print(`# `)
+		print(`# See https://github.com/troubling/hummingbird/blob/master/HAIO.md for more info.`)
+		print(``)
 	default:
-		print(`tail -17 $0 | cut -f2- -d ' '
-
-# Hummingbird is ready for use.
-# 
-# For quick local testing:
-# 
-# sudo systemctl start memcached
-# sudo systemctl start hummingbird-proxy
-# sudo systemctl start hummingbird-account
-# sudo systemctl start hummingbird-container
-# sudo systemctl start hummingbird-object
-# url=` + "`" + `curl -si http://127.0.0.1:8080/auth/v1.0 -H x-auth-user:test:tester -H x-auth-key:testing | grep ^X-Storage-Url | cut -f2 -d ' ' | tr -d '\r\n'` + "`" + `
-# token=` + "`" + `curl -si http://127.0.0.1:8080/auth/v1.0 -H x-auth-user:test:tester -H x-auth-key:testing | grep ^X-Auth-Token | tr -d '\r\n'` + "`" + `
-# curl -i -X PUT $url/container -H "$token" ; echo
-# curl -i -X PUT $url/container/object -H "$token" -T /usr/bin/hummingbird ; echo
-# curl -i "$url/container?format=json" -H "$token" ; echo
-# sudo find /srv/hummingbird
-`)
+		print(`tail -17 $0 | cut -f2- -d ' '`)
+		print(``)
+		print(`# Hummingbird is ready for use.`)
+		print(`# `)
+		print(`# For quick local testing:`)
+		print(`# `)
+		print(`# sudo systemctl start memcached`)
+		print(`# sudo systemctl start hummingbird-proxy`)
+		print(`# sudo systemctl start hummingbird-account`)
+		print(`# sudo systemctl start hummingbird-container`)
+		print(`# sudo systemctl start hummingbird-object`)
+		print(`# url=` + "`" + `curl -si http://127.0.0.1:8080/auth/v1.0 -H x-auth-user:test:tester -H x-auth-key:testing | grep ^X-Storage-Url | cut -f2 -d ' ' | tr -d '\r\n'` + "`" + ``)
+		print(`# token=` + "`" + `curl -si http://127.0.0.1:8080/auth/v1.0 -H x-auth-user:test:tester -H x-auth-key:testing | grep ^X-Auth-Token | tr -d '\r\n'` + "`" + ``)
+		print(`# curl -i -X PUT $url/container -H "$token" ; echo`)
+		print(`# curl -i -X PUT $url/container/object -H "$token" -T /usr/bin/hummingbird ; echo`)
+		print(`# curl -i "$url/container?format=json" -H "$token" ; echo`)
+		print(`# sudo find /srv/hummingbird`)
+		print(``)
 	}
 
 	err = script.Close()
