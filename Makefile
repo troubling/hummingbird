@@ -26,7 +26,7 @@ functional-test:
 	$(MAKE) -C functional
 
 haio: all
-	hball stop
+	if hash hball 2>/dev/null ; then hball stop ; fi
 	sudo rm -f /usr/bin/hummingbird
 	sudo cp bin/hummingbird /usr/bin/hummingbird
 	sudo chmod 0755 /usr/bin/hummingbird
