@@ -46,8 +46,8 @@ type authToken struct {
 	*identity
 	next        http.Handler
 	cacheTime   int
+	validations map[string]*sync.Mutex
 	lock        sync.Mutex
-	validations map[string]validation
 }
 
 var authHeaders = []string{"X-Identity-Status",
@@ -185,6 +185,12 @@ func (at *authToken) fetchAndValidateToken(ctx *ProxyContext, authToken string) 
 	if ctx == nil {
 		return nil, false
 	}
+	if v, ok := at.validations[authToken]; ok {
+		// Someone is currently fetching our token, wait for them to finish.
+		v.Lock()
+		v.Unlock()
+	}
+
 	var tok *token
 	var cachedToken token
 	tokenValid := false
@@ -196,6 +202,10 @@ func (at *authToken) fetchAndValidateToken(ctx *ProxyContext, authToken string) 
 	}
 
 	if tok == nil {
+		lock := &sync.Mutex{}
+		lock.Lock()
+		defer lock.Unlock()
+		at.validations[authToken] = lock
 		var err error
 		tok, err = at.validate(authToken)
 		if err != nil {
@@ -211,6 +221,7 @@ func (at *authToken) fetchAndValidateToken(ctx *ProxyContext, authToken string) 
 			}
 			ctx.Cache.Set(authToken, *tok, ttl)
 		}
+		delete(at.validations, authToken)
 	}
 	return tok, tokenValid
 }
@@ -248,22 +259,7 @@ func (at *authToken) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	at.next.ServeHTTP(w, r)
 }
 
-type validationEntry struct {
-	Token *token
-	err   error
-}
-
-type validation struct {
-	Token string
-	Count int
-	c     chan *validationEntry
-}
-
-func NewValidation(token string) validation {
-	return validation{Token: token, Count: 1, c: make(chan *validationEntry)}
-}
-
-func (at *authToken) doValidation(v validation) (*token, error) {
+func (at *authToken) validate(token string) (*token, error) {
 	if !strings.HasSuffix(at.authURL, "/") {
 		at.authURL += "/"
 	}
@@ -276,7 +272,7 @@ func (at *authToken) doValidation(v validation) (*token, error) {
 		return nil, err
 	}
 	req.Header.Set("X-Auth-Token", serverAuthToken)
-	req.Header.Set("X-Subject-Token", v.Token)
+	req.Header.Set("X-Subject-Token", token)
 	req.Header.Set("User-Agent", at.userAgent)
 
 	r, err := at.client.Do(req)
@@ -308,31 +304,6 @@ func (at *authToken) doValidation(v validation) (*token, error) {
 
 	}
 	return resp.Token, nil
-}
-
-func (at *authToken) validate(token string) (*token, error) {
-	at.lock.Lock()
-	var v validation
-	var ok bool
-	if v, ok = at.validations[token]; ok {
-		v.Count++
-	} else {
-		v = NewValidation(token)
-		go func() {
-			t, err := at.doValidation(v)
-			at.lock.Lock()
-			defer at.lock.Unlock()
-			for i := 0; i < v.Count; i++ {
-				entry := &validationEntry{Token: t, err: err}
-				v.c <- entry
-			}
-			delete(at.validations, v.Token)
-		}()
-	}
-	at.lock.Unlock()
-
-	entry := <-v.c
-	return entry.Token, entry.err
 }
 
 // serverAuth return the X-Auth-Token to use or an error.
@@ -376,7 +347,7 @@ func NewAuthToken(config conf.Section, metricsScope tally.Scope) (func(http.Hand
 		return &authToken{
 			next:        next,
 			cacheTime:   int(config.GetInt("token_cache_time", 300)),
-			validations: make(map[string]validation),
+			validations: make(map[string]*sync.Mutex),
 			identity: &identity{authURL: config.GetDefault("auth_uri", "http://127.0.0.1:5000/"),
 				authPlugin:      config.GetDefault("auth_plugin", "password"),
 				projectDomainID: config.GetDefault("project_domain_id", "default"),

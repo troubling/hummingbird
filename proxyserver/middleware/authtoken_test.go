@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -82,7 +83,8 @@ func TestSpoofBlock(t *testing.T) {
 		"X-Domain-Id":       "",
 	})
 	at := &authToken{
-		next: passthrough,
+		validations: make(map[string]*sync.Mutex),
+		next:        passthrough,
 	}
 	at.ServeHTTP(rec, req)
 	if body := rec.Body.String(); body != "stuff" {
@@ -102,7 +104,8 @@ func TestNoToken(t *testing.T) {
 		"X-Identity-Status": "Invalid",
 	})
 	at := &authToken{
-		next: passthrough,
+		validations: make(map[string]*sync.Mutex),
+		next:        passthrough,
 	}
 	at.ServeHTTP(rec, req)
 	if body := rec.Body.String(); body != "stuff" {
@@ -210,7 +213,8 @@ func TestExpiredToken(t *testing.T) {
 		"X-Domain-Id":       "",
 	})
 	at := &authToken{
-		next: passthrough,
+		validations: make(map[string]*sync.Mutex),
+		next:        passthrough,
 		identity: &identity{authURL: identityServ.URL,
 			client: &http.Client{
 				Timeout: 5 * time.Second,
@@ -287,7 +291,8 @@ func TestUnscopedToken(t *testing.T) {
 		"X-Roles":            "admin",
 	})
 	at := &authToken{
-		next: passthrough,
+		validations: make(map[string]*sync.Mutex),
+		next:        passthrough,
 		identity: &identity{authURL: identityServ.URL,
 			client: &http.Client{
 				Timeout: 5 * time.Second,
@@ -361,7 +366,8 @@ func TestProjectScopedToken(t *testing.T) {
 		"X-Roles":               "admin",
 	})
 	at := &authToken{
-		next: passthrough,
+		validations: make(map[string]*sync.Mutex),
+		next:        passthrough,
 		identity: &identity{authURL: identityServ.URL,
 			client: &http.Client{
 				Timeout: 5 * time.Second,
@@ -423,7 +429,8 @@ func TestDomainScopedToken(t *testing.T) {
 		"X-Roles":           "admin",
 	})
 	at := &authToken{
-		next: passthrough,
+		validations: make(map[string]*sync.Mutex),
+		next:        passthrough,
 		identity: &identity{authURL: identityServ.URL,
 			client: &http.Client{
 				Timeout: 5 * time.Second,
@@ -458,7 +465,8 @@ func TestGetCachedToken(t *testing.T) {
 		"X-Identity-Status": "Confirmed",
 	})
 	at := &authToken{
-		next: passthrough,
+		validations: make(map[string]*sync.Mutex),
+		next:        passthrough,
 	}
 	at.ServeHTTP(rec, req)
 	if rec.Code != 200 {
@@ -494,7 +502,8 @@ func TestWriteCachedToken(t *testing.T) {
 		"X-Identity-Status": "Confirmed",
 	})
 	at := &authToken{
-		next: passthrough,
+		validations: make(map[string]*sync.Mutex),
+		next:        passthrough,
 		identity: &identity{authURL: identityServ.URL,
 			client: &http.Client{
 				Timeout: 5 * time.Second,
