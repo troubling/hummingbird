@@ -76,10 +76,7 @@ func initCommand(args []string) error {
 		print(`go get -t github.com/troubling/hummingbird/...`)
 		print(`gopath=` + "`" + `go env | grep ^GOPATH= | cut -d '"' -f2` + "`")
 		print(`cd ${gopath}/src/github.com/troubling/hummingbird`)
-		print(`go build -o nectar github.com/troubling/hummingbird/cmd/nectar/...`)
-		print(`sudo cp nectar /usr/bin/`)
-		print(`sudo chown root: /usr/bin/nectar`)
-		print(`sudo chmod 0755 /usr/bin/nectar`)
+		print(`make haio`)
 		print(`cd -`)
 	case "debian":
 		prefix = "build"

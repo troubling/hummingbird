@@ -1,12 +1,15 @@
 HUMMINGBIRD_VERSION?=$(shell git describe --tags)
 HUMMINGBIRD_VERSION_NO_V?=$(shell git describe --tags | cut -d v -f 2)
-NECTAR_VERSION=0.0.1
 
-all: bin/hummingbird
+all: bin/hummingbird bin/nectar
 
 bin/hummingbird: */*.go */*/*.go
 	mkdir -p bin
 	go build -o bin/hummingbird -ldflags "-X common.Version=$(HUMMINGBIRD_VERSION)" github.com/troubling/hummingbird/cmd/hummingbird
+
+bin/nectar: cmd/nectar/*.go client/*.go
+	mkdir -p bin
+	go build -o bin/nectar github.com/troubling/hummingbird/cmd/nectar
 
 get:
 	go get -t $(shell go list ./... | grep -v /vendor/)
@@ -22,10 +25,11 @@ test:
 functional-test:
 	$(MAKE) -C functional
 
-haio:
+haio: all
 	hball stop
 	sudo rm -f /usr/bin/hummingbird
-	sudo `which go` build -o /usr/bin/hummingbird -ldflags "-X common.Version=$(HUMMINGBIRD_VERSION)" github.com/troubling/hummingbird/cmd/hummingbird
+	sudo cp bin/hummingbird /usr/bin/hummingbird
 	sudo chmod 0755 /usr/bin/hummingbird
-	sudo `which go` build -o /usr/bin/nectar github.com/troubling/hummingbird/cmd/nectar
+	sudo rm -f /usr/bin/nectar
+	sudo cp bin/nectar /usr/bin/nectar
 	sudo chmod 0755 /usr/bin/nectar
