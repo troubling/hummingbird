@@ -11,7 +11,7 @@ improving performance.
 Development
 -----------
 
-Follow [these instructions](aio) to install Hummingbird in a development environment.
+Follow [these instructions](HAIO.md) to install Hummingbird in a development environment.
 
 
    [1]: http://swift.openstack.org/

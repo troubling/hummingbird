@@ -1,11 +1,15 @@
 HUMMINGBIRD_VERSION?=$(shell git describe --tags)
 HUMMINGBIRD_VERSION_NO_V?=$(shell git describe --tags | cut -d v -f 2)
 
-all: bin/hummingbird
+all: bin/hummingbird bin/nectar
 
 bin/hummingbird: */*.go */*/*.go
 	mkdir -p bin
-	go build -o bin/hummingbird -ldflags "-X common.Version=$(HUMMINGBIRD_VERSION)" cmd/hummingbird/main.go
+	go build -o bin/hummingbird -ldflags "-X common.Version=$(HUMMINGBIRD_VERSION)" github.com/troubling/hummingbird/cmd/hummingbird
+
+bin/nectar: cmd/nectar/*.go client/*.go
+	mkdir -p bin
+	go build -o bin/nectar github.com/troubling/hummingbird/cmd/nectar
 
 get:
 	go get -t $(shell go list ./... | grep -v /vendor/)
@@ -18,34 +22,14 @@ test:
 	go vet $(shell go list ./... | grep -v /vendor/)
 	go test -cover $(shell go list ./... | grep -v /vendor/)
 
-install: bin/hummingbird
-	cp bin/hummingbird $(DESTDIR)/usr/bin/hummingbird
+functional-test:
+	$(MAKE) -C functional
 
-develop: bin/hummingbird
-	ln -f -s bin/hummingbird /usr/local/bin/hummingbird
-
-functionaltest:
-	cd functional && make
-
-package: all
-	# Started this from https://medium.com/@newhouseb/hassle-free-go-in-production-528af8ee1a58
-	sudo rm -rf build/usr
-	mkdir -p build/usr/local/bin
-	cp bin/hummingbird build/usr/local/bin/hummingbird
-	chmod -R 0755 build
-	sudo chown -R root: build/usr
-	echo 2.0 > build/debian-binary
-	echo "Package: hummingbird" > build/control
-	echo "Version:" ${HUMMINGBIRD_VERSION_NO_V} >> build/control
-	echo "Architecture: amd64" >> build/control
-	echo "Section: net" >> build/control
-	echo "Maintainer: Rackspace <gholt@rackspace.com>" >> build/control
-	echo "Priority: optional" >> build/control
-	echo "Description: Hummingbird Object Storage Software" >> build/control
-	tar cvzf build/data.tar.gz -C build usr
-	tar cvzf build/control.tar.gz -C build control
-	cd build && ar rc hummingbird.deb debian-binary control.tar.gz data.tar.gz && cd ..
-
-clean:
-	rm -f bin/hummingbird
-	sudo rm -rf build
+haio: all
+	if hash hball 2>/dev/null ; then hball stop ; fi
+	sudo rm -f /usr/bin/hummingbird
+	sudo cp bin/hummingbird /usr/bin/hummingbird
+	sudo chmod 0755 /usr/bin/hummingbird
+	sudo rm -f /usr/bin/nectar
+	sudo cp bin/nectar /usr/bin/nectar
+	sudo chmod 0755 /usr/bin/nectar

@@ -426,13 +426,22 @@ func (c *userClient) authenticatev3() *http.Response {
 }
 
 func (c *userClient) authenticate() *http.Response {
-	if strings.Contains(c.authurl, "/v3") {
-		return c.authenticatev3()
-	} else if strings.Contains(c.authurl, "/v2") {
-		return c.authenticatev2()
-	} else {
-		return c.authenticatev1()
+	var resp *http.Response
+	sleep := time.Second
+	for attempt := 1; attempt <= 3 && resp == nil || resp.StatusCode/100 != 2; attempt++ {
+		if resp != nil && resp.StatusCode/100 != 2 {
+			time.Sleep(sleep)
+			sleep *= 2
+		}
+		if strings.Contains(c.authurl, "/v3") {
+			resp = c.authenticatev3()
+		} else if strings.Contains(c.authurl, "/v2") {
+			resp = c.authenticatev2()
+		} else {
+			resp = c.authenticatev1()
+		}
 	}
+	return resp
 }
 
 // NewClient creates a new end-user client. It authenticates immediately, and

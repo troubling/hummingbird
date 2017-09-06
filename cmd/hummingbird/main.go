@@ -415,6 +415,14 @@ func main() {
 		fmt.Fprintln(os.Stderr, "hummingbird grep [ACCOUNT/CONTAINER/PREFIX] [SEARCH-STRING]")
 		fmt.Fprintln(os.Stderr, "  Run grep on the edge")
 		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "hummingbird init [deb | haio]")
+		fmt.Fprintln(os.Stderr, "  Creates a script to initialize a system for use with Hummingbird. This ")
+		fmt.Fprintln(os.Stderr, "  will create the standard directories, systemd service files, etc.")
+		fmt.Fprintln(os.Stderr, "  The deb option will create a script for building a Debian package that,")
+		fmt.Fprintln(os.Stderr, "  when installed, will do the same work as the init script.")
+		fmt.Fprintln(os.Stderr, "  The haio option will create a script to do similar actions, but for a")
+		fmt.Fprintln(os.Stderr, "  Hummingbird All In One developer installation.")
+		fmt.Fprintln(os.Stderr)
 		nodesFlags.Usage()
 		fmt.Fprintln(os.Stderr)
 		andrewdFlags.Usage()
@@ -489,6 +497,11 @@ func main() {
 	case "andrewd":
 		andrewdFlags.Parse(flag.Args()[1:])
 		srv.RunDaemon(tools.NewAdmin, andrewdFlags)
+	case "init":
+		if err := initCommand(flag.Args()[1:]); err != nil {
+			fmt.Fprintln(os.Stderr, "init error:", err)
+			os.Exit(1)
+		}
 	default:
 		flag.Usage()
 	}
