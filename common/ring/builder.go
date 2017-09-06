@@ -1586,7 +1586,7 @@ func CreateRing(builderPath string, partPower int, replicas float64, minPartHour
 			return err
 		}
 	}
-	err = builder.Save(path.Join(backupPath, fmt.Sprintf("%d.%s", time.Now().Unix(), path.Base(builderPath))))
+	err = builder.Save(path.Join(backupPath, fmt.Sprintf("%d.%s", time.Now().UnixNano(), path.Base(builderPath))))
 	if err != nil {
 		return err
 	}
@@ -1613,12 +1613,29 @@ func Rebalance(builderPath string, debug bool) error {
 		return err
 	}
 	fmt.Printf("Changed: %d Balance: %f Removed: %d\n", changed, balance, removed)
+	backupPath := path.Join(path.Dir(builderPath), "backups")
+	err = os.Mkdir(backupPath, 0777)
+	if err != nil {
+		e := err.(*os.PathError)
+		if e.Err != syscall.EEXIST {
+			return err
+		}
+	}
+	ts := time.Now().UnixNano()
+	err = builder.Save(path.Join(backupPath, fmt.Sprintf("%d.%s", ts, path.Base(builderPath))))
+	if err != nil {
+		return err
+	}
 	err = builder.Save(builderPath)
 	if err != nil {
 		return err
 	}
 	ringFile := strings.TrimSuffix(builderPath, ".builder") + ".ring.gz"
 	r := builder.GetRing()
+	err = r.Save(path.Join(backupPath, fmt.Sprintf("%d.%s", ts, path.Base(ringFile))))
+	if err != nil {
+		return err
+	}
 	err = r.Save(ringFile)
 	if err != nil {
 		return err
@@ -1720,7 +1737,20 @@ func WriteRing(builderPath string) error {
 			fmt.Println("Warning: Writing an empty ring.")
 		}
 	}
+	backupPath := path.Join(path.Dir(builderPath), "backups")
+	err = os.Mkdir(backupPath, 0777)
+	if err != nil {
+		e := err.(*os.PathError)
+		if e.Err != syscall.EEXIST {
+			return err
+		}
+	}
+	ts := time.Now().UnixNano()
 	ringFile := strings.TrimSuffix(builderPath, ".builder") + ".ring.gz"
+	err = r.Save(path.Join(backupPath, fmt.Sprintf("%d.%s", ts, path.Base(ringFile))))
+	if err != nil {
+		return err
+	}
 	if err := r.Save(ringFile); err != nil {
 		return err
 	}

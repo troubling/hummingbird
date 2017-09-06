@@ -335,6 +335,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "    info (display ring info)\n")
 		fmt.Fprintf(os.Stderr, "    analyze (analyze ring)\n")
 		fmt.Fprintf(os.Stderr, "    validate (validate ring)\n")
+		fmt.Fprintf(os.Stderr, "    write_ring (write the ring file)\n")
 		fmt.Fprintf(os.Stderr, "  <device> is of the form: [r<region>]z<zone>-<ip>:<port>[R<r_ip>:<r_port>]/<device_name>_<meta>\n")
 		fmt.Fprintf(os.Stderr, "  <search_flags> is at least one of: -region, -zone, -ip, -port, -replication-ip, replication-port, -device, -meta, -weight\n")
 		fmt.Fprintf(os.Stderr, "  <change_flags> is at least one of: -change-ip, -change-port, -change-replication-ip, -change-replication-port, -change-device, -change-meta")
