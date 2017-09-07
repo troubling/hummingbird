@@ -75,9 +75,9 @@ func initCommand(args []string) error {
 		print(`echo "Retrieving sources; this may take a while..."`)
 		print(`go get -t github.com/troubling/hummingbird/...`)
 		print(`gopath=` + "`" + `go env | grep ^GOPATH= | cut -d '"' -f2` + "`")
-		print(`cd ${gopath}/src/github.com/troubling/hummingbird`)
+		print(`pushd "${gopath}/src/github.com/troubling/hummingbird"`)
 		print(`make haio`)
-		print(`cd -`)
+		print(`popd`)
 	case "deb":
 		prefix = "build"
 		print(`if [ -e build ] ; then`)
@@ -627,7 +627,7 @@ func initCommand(args []string) error {
 		print(`EOF`)
 		print(``)
 
-		print(`cd %s`, prefix)
+		print(`pushd "%s"`, prefix)
 		print(`tar czf control.tar.gz control postinst`)
 		print(`sudo chown -R root: etc lib srv usr var`)
 		print(`sudo find etc lib srv usr var -type d -exec chmod 0755 {} \;`)
@@ -636,7 +636,7 @@ func initCommand(args []string) error {
 		print(`tar czf data.tar.gz etc lib srv usr var`)
 		print(`ar rc hummingbird-%s.deb debian-binary control.tar.gz data.tar.gz`, versionNoV)
 		print(`mv hummingbird-%s.deb ../`, versionNoV)
-		print(`cd -`)
+		print(`popd`)
 		print(`sudo rm -rf build`) // build type here instead of %s, prefix for safety
 		print(``)
 	}
@@ -658,16 +658,16 @@ func initCommand(args []string) error {
 		print(`sudo chmod 0755 /etc/swift`)
 		print(`cp ~/swift/test/sample.conf /etc/swift/test.conf`)
 		print(`sudo apt install -y python-eventlet python-mock python-netifaces python-nose python-pastedeploy python-pbr python-pyeclib python-setuptools python-swiftclient python-unittest2 python-xattr`)
-		print(`cd ~/swift/test/functional`)
+		print(`pushd ~/swift/test/functional`)
 		print(`nosetests || /bin/true # This always fails because we don't pass all of Swift's tests.`)
-		print(`cd -`)
+		print(`popd`)
 		print(`hbmain stop`)
-		print(`cd ${gopath}/src/github.com/troubling/hummingbird`)
+		print(`pushd "${gopath}/src/github.com/troubling/hummingbird"`)
 		print(`if ! git remote get-url upstream; then`)
 		print(`    git remote rename origin upstream`)
 		print(`    git remote add origin git@github.com:%s/hummingbird`, username)
 		print(`fi`)
-		print(`cd -`)
+		print(`popd`)
 		print(``)
 	}
 
