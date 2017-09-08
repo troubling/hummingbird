@@ -572,7 +572,7 @@ func GetReplicator(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv
 	if err != nil {
 		return nil, nil, fmt.Errorf("Unable to get hash prefix and suffix")
 	}
-	ring, err := GetRing("account", hashPathPrefix, hashPathSuffix, 0)
+	ring, err := GetRing("account", hashPathPrefix, hashPathSuffix, 0, 0)
 	if err != nil {
 		return nil, nil, fmt.Errorf("Error loading account ring")
 	}

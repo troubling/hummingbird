@@ -107,7 +107,7 @@ func TestReplicateRecalculate(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	ts, err := makeObjectServer()

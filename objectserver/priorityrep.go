@@ -167,12 +167,12 @@ func MoveParts(args []string) {
 		fmt.Println("Unable to load hash path prefix and suffix:", err)
 		return
 	}
-	oldRing, err := ring.LoadRing(flags.Arg(0), hashPathPrefix, hashPathSuffix)
+	oldRing, err := ring.LoadRing(flags.Arg(0), hashPathPrefix, hashPathSuffix, 0)
 	if err != nil {
 		fmt.Println("Unable to load old ring:", err)
 		return
 	}
-	curRing, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, *policy)
+	curRing, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, *policy, 0)
 	if err != nil {
 		fmt.Println("Unable to load current ring:", err)
 		return
@@ -225,7 +225,7 @@ func RestoreDevice(args []string) {
 		fmt.Println("Unable to load hash path prefix and suffix:", err)
 		return
 	}
-	objRing, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, *policy)
+	objRing, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, *policy, 0)
 	if err != nil {
 		fmt.Println("Unable to load ring:", err)
 		return
@@ -273,7 +273,7 @@ func RescueParts(args []string) {
 		fmt.Println("Unable to load hash path prefix and suffix:", err)
 		return
 	}
-	objRing, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, *policy)
+	objRing, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, *policy, 0)
 	if err != nil {
 		fmt.Println("Unable to load ring:", err)
 		return

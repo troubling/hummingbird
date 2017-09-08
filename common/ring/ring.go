@@ -71,12 +71,15 @@ type ringData struct {
 }
 
 type hashRing struct {
-	data   atomic.Value
-	path   string
-	prefix string
-	suffix string
-	mtime  time.Time
+	data          atomic.Value
+	path          string
+	prefix        string
+	suffix        string
+	mtime         time.Time
+	limitReplicas int
 }
+
+var _ Ring = &hashRing{} // Compile-time check for interface satisfaction
 
 type regionZone struct {
 	region, zone int
@@ -110,7 +113,11 @@ func (r *hashRing) GetNodes(partition uint64) (response []*Device) {
 	if partition >= uint64(len(d.replica2part2devId[0])) {
 		return nil
 	}
-	for i := 0; i < d.ReplicaCount; i++ {
+	c := r.limitReplicas
+	if c <= 0 {
+		c = d.ReplicaCount
+	}
+	for i := 0; i < c; i++ {
 		response = append(response, d.Devs[d.replica2part2devId[i][partition]])
 	}
 	return response
@@ -122,7 +129,11 @@ func (r *hashRing) GetJobNodes(partition uint64, localDevice int) (response []*D
 	if partition >= uint64(len(d.replica2part2devId[0])) {
 		return nil, false
 	}
-	for i := 0; i < d.ReplicaCount; i++ {
+	c := r.limitReplicas
+	if c <= 0 {
+		c = d.ReplicaCount
+	}
+	for i := 0; i < c; i++ {
 		dev := d.Devs[d.replica2part2devId[i][partition]]
 		if dev.Id == localDevice {
 			handoff = false
@@ -181,7 +192,11 @@ func (r *hashRing) GetMoreNodes(partition uint64) MoreNodes {
 
 func (r *hashRing) ReplicaCount() (cnt uint64) {
 	d := r.getData()
-	return uint64(len(d.replica2part2devId))
+	c := r.limitReplicas
+	if c <= 0 {
+		c = d.ReplicaCount
+	}
+	return uint64(c)
 }
 
 func (r *hashRing) PartitionCount() (cnt uint64) {
@@ -313,12 +328,12 @@ func (m *hashMoreNodes) Next() *Device {
 var loadedRingsLock sync.Mutex
 var loadedRings map[string]*hashRing = make(map[string]*hashRing)
 
-func LoadRing(path string, prefix string, suffix string) (Ring, error) {
+func LoadRing(path string, prefix string, suffix string, limitReplicas int) (Ring, error) {
 	loadedRingsLock.Lock()
 	defer loadedRingsLock.Unlock()
 	ring := loadedRings[path]
 	if ring == nil {
-		ring = &hashRing{prefix: prefix, suffix: suffix, path: path, mtime: time.Unix(0, 0)}
+		ring = &hashRing{prefix: prefix, suffix: suffix, path: path, mtime: time.Unix(0, 0), limitReplicas: limitReplicas}
 		if err := ring.reload(); err != nil {
 			return nil, err
 		}
@@ -367,15 +382,15 @@ func (r *hashRing) Save(filename string) error {
 // GetRing returns the current ring given the ring_type ("account", "container", "object"),
 // hash path prefix, and hash path suffix. An error is raised if the requested ring does
 // not exist.
-func GetRing(ringType, prefix, suffix string, policy int) (Ring, error) {
+func GetRing(ringType, prefix, suffix string, policy, limitReplicas int) (Ring, error) {
 	var ring Ring
 	var err error
 	ringFile := fmt.Sprintf("%s.ring.gz", ringType)
 	if policy != 0 {
 		ringFile = fmt.Sprintf("%s-%d.ring.gz", ringType, policy)
 	}
-	if ring, err = LoadRing(fmt.Sprintf("/etc/hummingbird/%s", ringFile), prefix, suffix); err != nil {
-		if ring, err = LoadRing(fmt.Sprintf("/etc/swift/%s", ringFile), prefix, suffix); err != nil {
+	if ring, err = LoadRing(fmt.Sprintf("/etc/hummingbird/%s", ringFile), prefix, suffix, limitReplicas); err != nil {
+		if ring, err = LoadRing(fmt.Sprintf("/etc/swift/%s", ringFile), prefix, suffix, limitReplicas); err != nil {
 			return nil, fmt.Errorf("Error loading %s:%d ring", ringType, policy)
 		}
 	}
