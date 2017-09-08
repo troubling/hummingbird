@@ -195,7 +195,7 @@ func TestSwiftObjectCommitMeta(t *testing.T) {
 	defer swo.Close()
 	require.True(t, swo.Exists())
 	require.Equal(t, swo.(*SwiftObject).metaFile, "")
-	err = swo.commitMeta(map[string]string{"X-Timestamp": "1234567891.123456", "X-Object-Meta-TestSwiftObjectCommitMeta": "Hello!"})
+	err = swo.CommitMetadata(map[string]string{"X-Timestamp": "1234567891.123456", "X-Object-Meta-TestSwiftObjectCommitMeta": "Hello!"})
 	require.Nil(t, err)
 
 	swo, err = swcon.New(vars, false, &wg)

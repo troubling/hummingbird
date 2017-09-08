@@ -145,7 +145,7 @@ func (o *SwiftObject) Commit(metadata map[string]string) error {
 	return nil
 }
 
-func (o *SwiftObject) commitMeta(metadata map[string]string) error {
+func (o *SwiftObject) CommitMetadata(metadata map[string]string) error {
 	if _, err := o.newFile("meta", 0); err != nil {
 		return err
 	}
