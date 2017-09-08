@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/troubling/hummingbird/common/conf"
@@ -43,8 +44,10 @@ type identity struct {
 
 type authToken struct {
 	*identity
-	next      http.Handler
-	cacheTime int
+	next        http.Handler
+	cacheTime   int
+	validations map[string]*sync.Mutex
+	lock        sync.Mutex
 }
 
 var authHeaders = []string{"X-Identity-Status",
@@ -182,6 +185,14 @@ func (at *authToken) fetchAndValidateToken(ctx *ProxyContext, authToken string) 
 	if ctx == nil {
 		return nil, false
 	}
+	at.lock.Lock()
+	if v, ok := at.validations[authToken]; ok {
+		// Someone is currently fetching our token, wait for them to finish.
+		v.Lock()
+		v.Unlock()
+	}
+	at.lock.Unlock()
+
 	var tok *token
 	var cachedToken token
 	tokenValid := false
@@ -193,6 +204,12 @@ func (at *authToken) fetchAndValidateToken(ctx *ProxyContext, authToken string) 
 	}
 
 	if tok == nil {
+		lock := &sync.Mutex{}
+		lock.Lock()
+		defer lock.Unlock()
+		at.lock.Lock()
+		at.validations[authToken] = lock
+		at.lock.Unlock()
 		var err error
 		tok, err = at.validate(authToken)
 		if err != nil {
@@ -208,6 +225,9 @@ func (at *authToken) fetchAndValidateToken(ctx *ProxyContext, authToken string) 
 			}
 			ctx.Cache.Set(authToken, *tok, ttl)
 		}
+		at.lock.Lock()
+		delete(at.validations, authToken)
+		at.lock.Unlock()
 	}
 	return tok, tokenValid
 }
@@ -331,8 +351,9 @@ func removeAuthHeaders(r *http.Request) {
 func NewAuthToken(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
 	return func(next http.Handler) http.Handler {
 		return &authToken{
-			next:      next,
-			cacheTime: int(config.GetInt("token_cache_time", 300)),
+			next:        next,
+			cacheTime:   int(config.GetInt("token_cache_time", 300)),
+			validations: make(map[string]*sync.Mutex),
 			identity: &identity{authURL: config.GetDefault("auth_uri", "http://127.0.0.1:5000/"),
 				authPlugin:      config.GetDefault("auth_plugin", "password"),
 				projectDomainID: config.GetDefault("project_domain_id", "default"),
