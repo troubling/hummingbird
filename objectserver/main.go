@@ -522,7 +522,7 @@ func (server *ObjectServer) DiskUsageHandler(writer http.ResponseWriter, request
 
 func (server *ObjectServer) LogRequest(next http.Handler) http.Handler {
 	fn := func(writer http.ResponseWriter, request *http.Request) {
-		newWriter := &srv.WebWriter{ResponseWriter: writer, Status: 500, ResponseStarted: false}
+		newWriter := &srv.WebWriter{ResponseWriter: writer, Status: 500}
 		start := time.Now()
 		logr := server.logger.With(zap.String("txn", request.Header.Get("X-Trans-Id")))
 		request = srv.SetLogger(request, logr)
@@ -543,6 +543,7 @@ func (server *ObjectServer) LogRequest(next http.Handler) http.Handler {
 			zap.String("referer", common.GetDefault(request.Header, "Referer", "-")),
 			zap.String("userAgent", common.GetDefault(request.Header, "User-Agent", "-")),
 			zap.Float64("requestTimeSeconds", time.Since(start).Seconds()),
+			zap.Float64("requestTimeToHeaderSeconds", newWriter.ResponseStarted.Sub(start).Seconds()),
 			zap.String("extraInfo", extraInfo))
 	}
 	return http.HandlerFunc(fn)

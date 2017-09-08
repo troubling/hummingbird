@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
@@ -88,7 +89,7 @@ type ProxyContext struct {
 	subrequestCopy   subrequestCopy
 	Logger           srv.LowLevelLogger
 	TxId             string
-	responseSent     bool
+	responseSent     time.Time
 	status           int
 	accountInfoCache map[string]*AccountInfo
 	depth            int
@@ -102,7 +103,7 @@ func GetProxyContext(r *http.Request) *ProxyContext {
 	return nil
 }
 
-func (ctx *ProxyContext) Response() (bool, int) {
+func (ctx *ProxyContext) Response() (time.Time, int) {
 	return ctx.responseSent, ctx.status
 }
 
@@ -224,7 +225,6 @@ func (ctx *ProxyContext) newSubrequest(method, urlStr string, body io.Reader, re
 		C:                      ctx.C,
 		TxId:                   ctx.TxId,
 		accountInfoCache:       ctx.accountInfoCache,
-		responseSent:           false,
 		status:                 500,
 		depth:                  ctx.depth + 1,
 		Source:                 source,
@@ -245,7 +245,7 @@ func (ctx *ProxyContext) serveHTTPSubrequest(writer http.ResponseWriter, subreq 
 	subctx := GetProxyContext(subreq)
 	// TODO: check subctx.depth
 	subwriter := srv.NewCustomWriter(writer, func(w http.ResponseWriter, status int) int {
-		subctx.responseSent = true
+		subctx.responseSent = time.Now()
 		subctx.status = status
 		return status
 	})
@@ -305,7 +305,6 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 		Authorize:              nil,
 		Logger:                 logr,
 		TxId:                   transId,
-		responseSent:           false,
 		status:                 500,
 		accountInfoCache:       make(map[string]*AccountInfo),
 		C:                      client.NewProxyClient(m.proxyDirectClient, m.Cache, make(map[string]*client.ContainerInfo)),
@@ -354,7 +353,7 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 			w.Header().Set("X-Source-Code", string(buf))
 		}
 
-		ctx.responseSent = true
+		ctx.responseSent = time.Now()
 		ctx.status = status
 		return status
 	})

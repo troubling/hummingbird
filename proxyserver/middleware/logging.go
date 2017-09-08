@@ -44,7 +44,9 @@ func NewRequestLogger(config conf.Section, metricsScope tally.Scope) (func(http.
 					zap.String("contentLength", common.GetDefault(writer.Header(), "Content-Length", "-")),
 					zap.String("referer", common.GetDefault(request.Header, "Referer", "-")),
 					zap.String("userAgent", common.GetDefault(request.Header, "User-Agent", "-")),
-					zap.Float64("requestTimeSeconds", time.Since(start).Seconds()))
+					zap.Float64("requestTimeSeconds", time.Since(start).Seconds()),
+					zap.Float64("requestTimeHeaderSeconds", ctx.responseSent.Sub(start).Seconds()),
+				)
 				if ctx.Source == "" {
 					requestsMetric.Inc(1)
 					metricsScope.Counter(request.Method + "_requests").Inc(1)

@@ -100,12 +100,12 @@ func NewCustomWriter(w http.ResponseWriter, f func(w http.ResponseWriter, status
 type WebWriter struct {
 	http.ResponseWriter
 	Status          int
-	ResponseStarted bool
+	ResponseStarted time.Time
 }
 
 func (w *WebWriter) WriteHeader(status int) {
 	w.Status = status
-	w.ResponseStarted = true
+	w.ResponseStarted = time.Now()
 	w.ResponseWriter.WriteHeader(status)
 }
 
@@ -113,7 +113,7 @@ func (w WebWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return w.ResponseWriter.(http.Hijacker).Hijack()
 }
 
-func (w *WebWriter) Response() (bool, int) {
+func (w *WebWriter) Response() (time.Time, int) {
 	return w.ResponseStarted, w.Status
 }
 
