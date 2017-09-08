@@ -111,8 +111,13 @@ func TestNoToken(t *testing.T) {
 
 }
 
+type mockValue struct {
+	Data    []byte
+	Timeout int
+}
+
 type mockTokenMemcacheRing struct {
-	MockValues map[string][]byte
+	MockValues map[string]*mockValue
 }
 
 func (mr *mockTokenMemcacheRing) Decr(key string, delta int64, timeout int) (int64, error) {
@@ -129,7 +134,10 @@ func (mr *mockTokenMemcacheRing) Get(key string) (interface{}, error) {
 
 func (mr *mockTokenMemcacheRing) GetStructured(key string, val interface{}) error {
 	if v, ok := mr.MockValues[key]; ok {
-		json.Unmarshal(v, val)
+		json.Unmarshal(v.Data, val)
+		if t, token_ok := val.(*token); token_ok {
+			t.MemcacheTtlAt = time.Now().Add(time.Duration(v.Timeout) * time.Second)
+		}
 		return nil
 	}
 	return errors.New("Some error")
@@ -145,7 +153,7 @@ func (mr *mockTokenMemcacheRing) Incr(key string, delta int64, timeout int) (int
 
 func (mr *mockTokenMemcacheRing) Set(key string, value interface{}, timeout int) error {
 	serl, _ := json.Marshal(value)
-	mr.MockValues[key] = serl
+	mr.MockValues[key] = &mockValue{Data: serl, Timeout: timeout}
 	return nil
 }
 
@@ -155,7 +163,7 @@ func (mr *mockTokenMemcacheRing) SetMulti(serverKey string, values map[string]in
 
 func TestExpiredToken(t *testing.T) {
 	rec := httptest.NewRecorder()
-	fakeCache := mockTokenMemcacheRing{MockValues: make(map[string][]byte)}
+	fakeCache := mockTokenMemcacheRing{MockValues: make(map[string]*mockValue)}
 	fakeContext := &ProxyContext{
 		Logger:                 zap.NewNop(),
 		ProxyContextMiddleware: &ProxyContextMiddleware{Cache: &fakeCache},
@@ -233,7 +241,7 @@ func TestExpiredToken(t *testing.T) {
 
 func TestUnscopedToken(t *testing.T) {
 	rec := httptest.NewRecorder()
-	fakeCache := mockTokenMemcacheRing{MockValues: make(map[string][]byte)}
+	fakeCache := mockTokenMemcacheRing{MockValues: make(map[string]*mockValue)}
 	fakeContext := &ProxyContext{
 		Logger:                 zap.NewNop(),
 		ProxyContextMiddleware: &ProxyContextMiddleware{Cache: &fakeCache},
@@ -305,7 +313,7 @@ func TestUnscopedToken(t *testing.T) {
 
 func TestProjectScopedToken(t *testing.T) {
 	rec := httptest.NewRecorder()
-	fakeCache := mockTokenMemcacheRing{MockValues: make(map[string][]byte)}
+	fakeCache := mockTokenMemcacheRing{MockValues: make(map[string]*mockValue)}
 	fakeContext := &ProxyContext{
 		Logger:                 zap.NewNop(),
 		ProxyContextMiddleware: &ProxyContextMiddleware{Cache: &fakeCache},
@@ -379,7 +387,7 @@ func TestProjectScopedToken(t *testing.T) {
 
 func TestDomainScopedToken(t *testing.T) {
 	rec := httptest.NewRecorder()
-	fakeCache := mockTokenMemcacheRing{MockValues: make(map[string][]byte)}
+	fakeCache := mockTokenMemcacheRing{MockValues: make(map[string]*mockValue)}
 	fakeContext := &ProxyContext{
 		Logger:                 zap.NewNop(),
 		ProxyContextMiddleware: &ProxyContextMiddleware{Cache: &fakeCache},
@@ -445,7 +453,7 @@ func TestGetCachedToken(t *testing.T) {
 	require.Nil(t, err)
 	req.Header.Set("X-Auth-Token", "abcd")
 	val := token{ExpiresAt: time.Now().Add(5 * time.Second), IssuedAt: time.Now()}
-	fakeCache := mockTokenMemcacheRing{MockValues: make(map[string][]byte)}
+	fakeCache := mockTokenMemcacheRing{MockValues: make(map[string]*mockValue)}
 	fakeCache.Set("abcd", val, 34343)
 	fakeContext := &ProxyContext{
 		Logger:                 zap.NewNop(),
@@ -474,7 +482,7 @@ func TestWriteCachedToken(t *testing.T) {
 	req, err := http.NewRequest("GET", "/someurl", nil)
 	require.Nil(t, err)
 	req.Header.Set("X-Auth-Token", "abcd")
-	fakeCache := mockTokenMemcacheRing{MockValues: make(map[string][]byte)}
+	fakeCache := mockTokenMemcacheRing{MockValues: make(map[string]*mockValue)}
 	fakeContext := &ProxyContext{
 		Logger:                 zap.NewNop(),
 		ProxyContextMiddleware: &ProxyContextMiddleware{Cache: &fakeCache},
@@ -505,16 +513,75 @@ func TestWriteCachedToken(t *testing.T) {
 		t.Fatalf("wrong code, got %d want %d", rec.Code, 200)
 	}
 	var tok token
-	var tokbyte []byte
+	var value *mockValue
 	var ok bool
-	if tokbyte, ok = fakeCache.MockValues["abcd"]; !ok {
+	if value, ok = fakeCache.MockValues["abcd"]; !ok {
 		t.Fatal("token was not cached")
 	}
-	if err := json.Unmarshal(tokbyte, &tok); err != nil {
+	if err := json.Unmarshal(value.Data, &tok); err != nil {
 		t.Fatal("token corrupt")
 	}
 	if !tok.ExpiresAt.Equal(expectedExpiry) {
 		t.Fatalf("cached element has incorrect value. expected %q, got %q", expectedExpiry, tok.ExpiresAt)
 	}
 
+}
+
+func TestPreauthCachedToken(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req, err := http.NewRequest("GET", "/someurl", nil)
+	require.Nil(t, err)
+	req.Header.Set("X-Auth-Token", "abcd")
+	fakeCache := mockTokenMemcacheRing{MockValues: make(map[string]*mockValue)}
+	cacheDur := 1 * time.Hour
+	issuedAt := time.Now().Add(-1 * time.Hour)
+	expectedExpiry := time.Now().Add(24 * time.Hour).Round(time.Second)
+	val := token{ExpiresAt: expectedExpiry, IssuedAt: issuedAt}
+	// Cache entry expires in one second, with a 1 hour duration, it'll always prevalidate
+	fakeCache.Set("abcd", val, 1)
+	fakeContext := &ProxyContext{
+		Logger:                 zap.NewNop(),
+		ProxyContextMiddleware: &ProxyContextMiddleware{Cache: &fakeCache},
+	}
+	req = req.WithContext(context.WithValue(req.Context(), "proxycontext", fakeContext))
+	identityServ := fakeIdentityServer(201, 200, fmt.Sprintf(`
+{
+  "token": {
+    "expires_at": "%s",
+    "issued_at": "%s"
+  }
+}
+	`, expectedExpiry.Format(time.RFC3339), issuedAt.Format(time.RFC3339)))
+	defer identityServ.Close()
+	passthrough := checkHeaders(t, map[string]string{
+		"X-Identity-Status": "Confirmed",
+	})
+	at := &authToken{
+		next:           passthrough,
+		cacheDur:       cacheDur,
+		preValidateDur: cacheDur / 10,
+		preValidations: make(map[string]bool),
+		identity: &identity{authURL: identityServ.URL,
+			client: &http.Client{
+				Timeout: 5 * time.Second,
+			}},
+	}
+	at.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("wrong code, got %d want %d", rec.Code, 200)
+	}
+	// Updates happen in the background.
+	time.Sleep(1 * time.Second)
+	var tok token
+	var value *mockValue
+	var ok bool
+	if value, ok = fakeCache.MockValues["abcd"]; !ok {
+		t.Fatal("token was not cached")
+	}
+	if err := json.Unmarshal(value.Data, &tok); err != nil {
+		t.Fatal("token corrupt")
+	}
+	if value.Timeout != int(cacheDur/time.Second) {
+		t.Fatalf("cached token ttl didn't get updated: %q", tok.MemcacheTtlAt)
+	}
 }

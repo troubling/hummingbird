@@ -20,9 +20,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/rand"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/troubling/hummingbird/common/conf"
@@ -47,6 +47,8 @@ type authToken struct {
 	next           http.Handler
 	cacheDur       time.Duration
 	preValidateDur time.Duration
+	preValidations map[string]bool
+	lock           sync.Mutex
 }
 
 var authHeaders = []string{"X-Identity-Status",
@@ -181,6 +183,35 @@ type identityResponse struct {
 	Token *token
 }
 
+func (at *authToken) preValidate(ctx *ProxyContext, authToken string) {
+	at.lock.Lock()
+	_, ok := at.preValidations[authToken]
+	if ok {
+		return
+	} else {
+		at.preValidations[authToken] = true
+	}
+	at.lock.Unlock()
+	go func() {
+		tok, err := at.validate(authToken)
+		if err != nil {
+			ctx.Logger.Debug("Failed to validate token", zap.Error(err))
+		}
+
+		if tok != nil {
+			ttl := at.cacheDur
+			if expiresIn := tok.ExpiresAt.Sub(time.Now()); expiresIn < ttl && expiresIn > 0 {
+				ttl = expiresIn
+			}
+			tok.MemcacheTtlAt = time.Now().Add(ttl)
+			ctx.Cache.Set(authToken, *tok, int(ttl/time.Second))
+		}
+		at.lock.Lock()
+		delete(at.preValidations, authToken)
+		at.lock.Unlock()
+	}()
+}
+
 func (at *authToken) fetchAndValidateToken(ctx *ProxyContext, authToken string) (*token, bool) {
 	if ctx == nil {
 		return nil, false
@@ -189,17 +220,16 @@ func (at *authToken) fetchAndValidateToken(ctx *ProxyContext, authToken string) 
 	var cachedToken token
 	tokenValid := false
 	if err := ctx.Cache.GetStructured(authToken, &cachedToken); err == nil {
-		validateTokenEarly := false
 		if at.preValidateDur > 0 && !cachedToken.MemcacheTtlAt.IsZero() {
-			invalidateEarlyTime := time.Now().Add(time.Duration(rand.Int63n(int64(at.preValidateDur))))
-			validateTokenEarly = cachedToken.MemcacheTtlAt.Before(invalidateEarlyTime)
+			invalidateEarlyTime := time.Now().Add(at.preValidateDur)
+			if cachedToken.MemcacheTtlAt.Before(invalidateEarlyTime) {
+				at.preValidate(ctx, authToken)
+			}
 		}
-		if !validateTokenEarly {
-			ctx.Logger.Debug("Found cache token",
-				zap.String("token", authToken))
-			tokenValid = true
-			tok = &cachedToken
-		}
+		ctx.Logger.Debug("Found cache token",
+			zap.String("token", authToken))
+		tokenValid = true
+		tok = &cachedToken
 	}
 
 	if tok == nil {
@@ -346,6 +376,7 @@ func NewAuthToken(config conf.Section, metricsScope tally.Scope) (func(http.Hand
 			next:           next,
 			cacheDur:       tokenCacheDur,
 			preValidateDur: (tokenCacheDur / 10),
+			preValidations: make(map[string]bool),
 			identity: &identity{authURL: config.GetDefault("auth_uri", "http://127.0.0.1:5000/"),
 				authPlugin:      config.GetDefault("auth_plugin", "password"),
 				projectDomainID: config.GetDefault("project_domain_id", "default"),
