@@ -582,6 +582,6 @@ func TestPreauthCachedToken(t *testing.T) {
 		t.Fatal("token corrupt")
 	}
 	if value.Timeout != int(cacheDur/time.Second) {
-		t.Fatalf("cached token ttl didn't get updated: %q", tok.MemcacheTtlAt)
+		t.Fatalf("cached token ttl didn't get updated: %v", value.Timeout)
 	}
 }

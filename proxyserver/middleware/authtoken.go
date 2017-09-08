@@ -193,19 +193,7 @@ func (at *authToken) preValidate(ctx *ProxyContext, authToken string) {
 	}
 	at.lock.Unlock()
 	go func() {
-		tok, err := at.validate(authToken)
-		if err != nil {
-			ctx.Logger.Debug("Failed to validate token", zap.Error(err))
-		}
-
-		if tok != nil {
-			ttl := at.cacheDur
-			if expiresIn := tok.ExpiresAt.Sub(time.Now()); expiresIn < ttl && expiresIn > 0 {
-				ttl = expiresIn
-			}
-			tok.MemcacheTtlAt = time.Now().Add(ttl)
-			ctx.Cache.Set(authToken, *tok, int(ttl/time.Second))
-		}
+		at.validate(ctx, authToken)
 		at.lock.Lock()
 		delete(at.preValidations, authToken)
 		at.lock.Unlock()
@@ -216,9 +204,7 @@ func (at *authToken) fetchAndValidateToken(ctx *ProxyContext, authToken string) 
 	if ctx == nil {
 		return nil, false
 	}
-	var tok *token
 	var cachedToken token
-	tokenValid := false
 	if err := ctx.Cache.GetStructured(authToken, &cachedToken); err == nil {
 		if at.preValidateDur > 0 && !cachedToken.MemcacheTtlAt.IsZero() {
 			invalidateEarlyTime := time.Now().Add(at.preValidateDur)
@@ -228,29 +214,9 @@ func (at *authToken) fetchAndValidateToken(ctx *ProxyContext, authToken string) 
 		}
 		ctx.Logger.Debug("Found cache token",
 			zap.String("token", authToken))
-		tokenValid = true
-		tok = &cachedToken
+		return &cachedToken, true
 	}
-
-	if tok == nil {
-		var err error
-		tok, err = at.validate(authToken)
-		if err != nil {
-			ctx.Logger.Debug("Failed to validate token", zap.Error(err))
-			tokenValid = false
-		}
-
-		if tok != nil {
-			tokenValid = true
-			ttl := at.cacheDur
-			if expiresIn := tok.ExpiresAt.Sub(time.Now()); expiresIn < ttl && expiresIn > 0 {
-				ttl = expiresIn
-			}
-			tok.MemcacheTtlAt = time.Now().Add(ttl)
-			ctx.Cache.Set(authToken, *tok, int(ttl/time.Second))
-		}
-	}
-	return tok, tokenValid
+	return at.validate(ctx, authToken)
 }
 
 func (at *authToken) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -286,7 +252,26 @@ func (at *authToken) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	at.next.ServeHTTP(w, r)
 }
 
-func (at *authToken) validate(token string) (*token, error) {
+func (at *authToken) validate(ctx *ProxyContext, authToken string) (*token, bool) {
+	tok, err := at.doValidate(authToken)
+	if err != nil {
+		ctx.Logger.Debug("Failed to validate token", zap.Error(err))
+		return nil, false
+	}
+
+	if tok != nil {
+		ttl := at.cacheDur
+		if expiresIn := tok.ExpiresAt.Sub(time.Now()); expiresIn < ttl && expiresIn > 0 {
+			ttl = expiresIn
+		}
+		tok.MemcacheTtlAt = time.Now().Add(ttl)
+		ctx.Cache.Set(authToken, *tok, int(ttl/time.Second))
+		return tok, true
+	}
+	return nil, false
+}
+
+func (at *authToken) doValidate(token string) (*token, error) {
 	if !strings.HasSuffix(at.authURL, "/") {
 		at.authURL += "/"
 	}
