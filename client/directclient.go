@@ -45,7 +45,10 @@ type ProxyDirectClient struct {
 
 func NewProxyDirectClient(policyList conf.PolicyList) (*ProxyDirectClient, error) {
 	var xport http.RoundTripper = &http.Transport{
-		DisableCompression: true,
+		MaxIdleConnsPerHost: 100,
+		MaxIdleConns:        0,
+		IdleConnTimeout:     5 * time.Second,
+		DisableCompression:  true,
 		Dial: (&net.Dialer{
 			Timeout:   10 * time.Second,
 			KeepAlive: 5 * time.Second,
