@@ -43,6 +43,16 @@ type Ring interface {
 	GetMoreNodes(partition uint64) MoreNodes
 	ReplicaCount() (cnt uint64)
 	PartitionCount() (cnt uint64)
+	// FullReplicaCount will differ from ReplicaCount when using an EC ring
+	// that has a Nursery (ReplicaCount) and the EC area (FullReplicaCount).
+	FullReplicaCount() uint64
+	// FullNodes will differ from GetNodes when using an EC ring that has a
+	// Nursery (GetNodes) and the EC area (FullNodes); the first nodes of
+	// FullNodes will be the same as GetNodes.
+	FullNodes(partition uint64) []*Device
+	// DataShards indicate how many replicas are for data shards in an EC
+	// system, the remaining being for parity shards.
+	DataShards() uint64
 }
 
 type MoreNodes interface {
@@ -66,6 +76,8 @@ type ringData struct {
 	Devs                                []*Device `json:"devs"`
 	ReplicaCount                        int       `json:"replica_count"`
 	PartShift                           uint64    `json:"part_shift"`
+	NurseryReplicas                     int       `json:"hbec_nursery_replicas"`
+	DataShards                          int       `json:"hbec_data_shards"`
 	replica2part2devId                  [][]uint16
 	regionCount, zoneCount, ipPortCount int
 }
@@ -77,6 +89,8 @@ type hashRing struct {
 	suffix string
 	mtime  time.Time
 }
+
+var _ Ring = &hashRing{} // Compile-time check for interface satisfaction
 
 type regionZone struct {
 	region, zone int
@@ -110,7 +124,11 @@ func (r *hashRing) GetNodes(partition uint64) (response []*Device) {
 	if partition >= uint64(len(d.replica2part2devId[0])) {
 		return nil
 	}
-	for i := 0; i < d.ReplicaCount; i++ {
+	c := d.NurseryReplicas
+	if c == 0 {
+		c = d.ReplicaCount
+	}
+	for i := 0; i < c; i++ {
 		response = append(response, d.Devs[d.replica2part2devId[i][partition]])
 	}
 	return response
@@ -122,7 +140,11 @@ func (r *hashRing) GetJobNodes(partition uint64, localDevice int) (response []*D
 	if partition >= uint64(len(d.replica2part2devId[0])) {
 		return nil, false
 	}
-	for i := 0; i < d.ReplicaCount; i++ {
+	c := d.NurseryReplicas
+	if c == 0 {
+		c = d.ReplicaCount
+	}
+	for i := 0; i < c; i++ {
 		dev := d.Devs[d.replica2part2devId[i][partition]]
 		if dev.Id == localDevice {
 			handoff = false
@@ -181,12 +203,36 @@ func (r *hashRing) GetMoreNodes(partition uint64) MoreNodes {
 
 func (r *hashRing) ReplicaCount() (cnt uint64) {
 	d := r.getData()
-	return uint64(len(d.replica2part2devId))
+	c := d.NurseryReplicas
+	if c == 0 {
+		c = d.ReplicaCount
+	}
+	return uint64(c)
 }
 
 func (r *hashRing) PartitionCount() (cnt uint64) {
 	d := r.getData()
 	return uint64(len(d.replica2part2devId[0]))
+}
+
+func (r *hashRing) FullReplicaCount() uint64 {
+	return uint64(r.getData().ReplicaCount)
+}
+
+func (r *hashRing) FullNodes(partition uint64) []*Device {
+	d := r.getData()
+	if partition >= uint64(len(d.replica2part2devId[0])) {
+		return nil
+	}
+	response := make([]*Device, d.ReplicaCount)
+	for i := 0; i < d.ReplicaCount; i++ {
+		response[i] = d.Devs[d.replica2part2devId[i][partition]]
+	}
+	return response
+}
+
+func (r *hashRing) DataShards() uint64 {
+	return uint64(r.getData().DataShards)
 }
 
 func (r *hashRing) reload() error {

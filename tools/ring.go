@@ -385,6 +385,19 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		fmt.Printf("%d partitions, %.6f replicas, %d regions, %d zones, %d devices, %.02f balance\n", builder.Parts, builder.Replicas, regions, zones, devCount, balance)
 		fmt.Printf("The minimum number of hours before a partition can be reassigned is %v (%v remaining)\n", builder.MinPartHours, time.Duration(builder.MinPartSecondsLeft())*time.Second)
 		fmt.Printf("The overload factor is %0.2f%% (%.6f)\n", builder.Overload*100, builder.Overload)
+		if builder.NurseryReplicas != 0 || builder.DataShards != 0 {
+			var msg string
+			if builder.NurseryReplicas != 0 {
+				msg = fmt.Sprintf("Nursery Replicas: %d", builder.NurseryReplicas)
+			}
+			if builder.DataShards != 0 {
+				if msg != "" {
+					msg += "  "
+				}
+				msg += fmt.Sprintf("Data Shards: %d", builder.DataShards)
+			}
+			fmt.Println(msg)
+		}
 
 		// Compare ring file against builder file
 		// TODO: Figure out how to do ring comparisons
@@ -529,6 +542,37 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		if err != nil {
 			fmt.Println(err)
 		}
+
+	case "set_nursery_replicas":
+		if len(args) < 3 {
+			flags.Usage()
+			return
+		}
+		count, err := strconv.Atoi(args[2])
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		if err = ring.SetNurseryReplicas(pth, count); err != nil {
+			fmt.Println(err)
+			return
+		}
+
+	case "set_data_shards":
+		if len(args) < 3 {
+			flags.Usage()
+			return
+		}
+		count, err := strconv.Atoi(args[2])
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		if err = ring.SetDataShards(pth, count); err != nil {
+			fmt.Println(err)
+			return
+		}
+
 	default:
 		fmt.Printf("Unknown command: %s\n", cmd)
 		flags.Usage()
