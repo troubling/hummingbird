@@ -185,18 +185,18 @@ type identityResponse struct {
 
 func (at *authToken) preValidate(ctx *ProxyContext, authToken string) {
 	at.lock.Lock()
+	defer at.lock.Unlock()
 	_, ok := at.preValidations[authToken]
 	if ok {
 		return
 	} else {
 		at.preValidations[authToken] = true
 	}
-	at.lock.Unlock()
 	go func() {
 		at.validate(ctx, authToken)
 		at.lock.Lock()
+		defer at.lock.Unlock()
 		delete(at.preValidations, authToken)
-		at.lock.Unlock()
 	}()
 }
 
