@@ -546,7 +546,7 @@ func GetServer(serverconf conf.Config, flags *flag.FlagSet) (bindIP string, bind
 	server.autoCreatePrefix = serverconf.GetDefault("app:account-server", "auto_create_account_prefix", ".")
 	server.driveRoot = serverconf.GetDefault("app:account-server", "devices", "/srv/node")
 	server.checkMounts = serverconf.GetBool("app:account-server", "mount_check", true)
-	server.diskInUse = common.NewKeyedLimit(serverconf.GetLimit("app:account-server", "disk_limit", 25, 10000))
+	server.diskInUse = common.NewKeyedLimit(serverconf.GetLimit("app:account-server", "disk_limit", 0, 0))
 	bindIP = serverconf.GetDefault("app:account-server", "bind_ip", "0.0.0.0")
 	bindPort = int(serverconf.GetInt("app:account-server", "bind_port", 6000))
 
