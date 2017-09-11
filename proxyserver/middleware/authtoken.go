@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/troubling/hummingbird/common/conf"
@@ -43,8 +44,11 @@ type identity struct {
 
 type authToken struct {
 	*identity
-	next      http.Handler
-	cacheTime int
+	next           http.Handler
+	cacheDur       time.Duration
+	preValidateDur time.Duration
+	preValidations map[string]bool
+	lock           sync.Mutex
 }
 
 var authHeaders = []string{"X-Identity-Status",
@@ -95,10 +99,11 @@ type project struct {
 }
 
 type token struct {
-	ExpiresAt time.Time `json:"expires_at"`
-	IssuedAt  time.Time `json:"issued_at"`
-	Methods   []string
-	User      struct {
+	ExpiresAt     time.Time `json:"expires_at"`
+	MemcacheTtlAt time.Time
+	IssuedAt      time.Time `json:"issued_at"`
+	Methods       []string
+	User          struct {
 		ID      string
 		Name    string
 		Email   string
@@ -178,38 +183,40 @@ type identityResponse struct {
 	Token *token
 }
 
+func (at *authToken) preValidate(ctx *ProxyContext, authToken string) {
+	at.lock.Lock()
+	defer at.lock.Unlock()
+	_, ok := at.preValidations[authToken]
+	if ok {
+		return
+	} else {
+		at.preValidations[authToken] = true
+	}
+	go func() {
+		at.validate(ctx, authToken)
+		at.lock.Lock()
+		defer at.lock.Unlock()
+		delete(at.preValidations, authToken)
+	}()
+}
+
 func (at *authToken) fetchAndValidateToken(ctx *ProxyContext, authToken string) (*token, bool) {
 	if ctx == nil {
 		return nil, false
 	}
-	var tok *token
 	var cachedToken token
-	tokenValid := false
 	if err := ctx.Cache.GetStructured(authToken, &cachedToken); err == nil {
+		if at.preValidateDur > 0 && !cachedToken.MemcacheTtlAt.IsZero() {
+			invalidateEarlyTime := time.Now().Add(at.preValidateDur)
+			if cachedToken.MemcacheTtlAt.Before(invalidateEarlyTime) {
+				at.preValidate(ctx, authToken)
+			}
+		}
 		ctx.Logger.Debug("Found cache token",
 			zap.String("token", authToken))
-		tokenValid = true
-		tok = &cachedToken
+		return &cachedToken, true
 	}
-
-	if tok == nil {
-		var err error
-		tok, err = at.validate(authToken)
-		if err != nil {
-			ctx.Logger.Debug("Failed to validate token", zap.Error(err))
-			tokenValid = false
-		}
-
-		if tok != nil {
-			tokenValid = true
-			ttl := at.cacheTime
-			if expiresIn := tok.ExpiresAt.Sub(time.Now()); expiresIn < time.Duration(at.cacheTime)*time.Second {
-				ttl = int(expiresIn / time.Second)
-			}
-			ctx.Cache.Set(authToken, *tok, ttl)
-		}
-	}
-	return tok, tokenValid
+	return at.validate(ctx, authToken)
 }
 
 func (at *authToken) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -245,7 +252,26 @@ func (at *authToken) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	at.next.ServeHTTP(w, r)
 }
 
-func (at *authToken) validate(token string) (*token, error) {
+func (at *authToken) validate(ctx *ProxyContext, authToken string) (*token, bool) {
+	tok, err := at.doValidate(authToken)
+	if err != nil {
+		ctx.Logger.Debug("Failed to validate token", zap.Error(err))
+		return nil, false
+	}
+
+	if tok != nil {
+		ttl := at.cacheDur
+		if expiresIn := tok.ExpiresAt.Sub(time.Now()); expiresIn < ttl && expiresIn > 0 {
+			ttl = expiresIn
+		}
+		tok.MemcacheTtlAt = time.Now().Add(ttl)
+		ctx.Cache.Set(authToken, *tok, int(ttl/time.Second))
+		return tok, true
+	}
+	return nil, false
+}
+
+func (at *authToken) doValidate(token string) (*token, error) {
 	if !strings.HasSuffix(at.authURL, "/") {
 		at.authURL += "/"
 	}
@@ -330,9 +356,12 @@ func removeAuthHeaders(r *http.Request) {
 
 func NewAuthToken(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
 	return func(next http.Handler) http.Handler {
+		tokenCacheDur := time.Duration(int(config.GetInt("token_cache_time", 300))) * time.Second
 		return &authToken{
-			next:      next,
-			cacheTime: int(config.GetInt("token_cache_time", 300)),
+			next:           next,
+			cacheDur:       tokenCacheDur,
+			preValidateDur: (tokenCacheDur / 10),
+			preValidations: make(map[string]bool),
 			identity: &identity{authURL: config.GetDefault("auth_uri", "http://127.0.0.1:5000/"),
 				authPlugin:      config.GetDefault("auth_plugin", "password"),
 				projectDomainID: config.GetDefault("project_domain_id", "default"),
