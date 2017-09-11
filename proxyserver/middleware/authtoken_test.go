@@ -589,7 +589,7 @@ func TestPreauthCachedToken(t *testing.T) {
 	time.Sleep(1 * time.Second)
 	var tok token
 	if err := fakeCache.GetStructured("abcd", &tok); err != nil {
-		t.Fatal("fakeCache.GetStructured error: %v", err)
+		t.Fatalf("fakeCache.GetStructured error: %v", err)
 	}
 	timeout := fakeCache.getTimeout("abcd")
 	if timeout != int(cacheDur/time.Second) {
