@@ -428,7 +428,7 @@ func (c *userClient) authenticatev3() *http.Response {
 func (c *userClient) authenticate() *http.Response {
 	var resp *http.Response
 	sleep := time.Second
-	for attempt := 1; attempt <= 3 && resp == nil || resp.StatusCode/100 != 2; attempt++ {
+	for attempt := 1; attempt <= 3 && (resp == nil || resp.StatusCode/100 != 2); attempt++ {
 		if resp != nil && resp.StatusCode/100 != 2 {
 			time.Sleep(sleep)
 			sleep *= 2
