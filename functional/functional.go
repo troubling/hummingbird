@@ -11,16 +11,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/nectar"
 )
 
 var run = common.LooksTrue(os.Getenv("HUMMINGBIRD_FUNCTIONAL_TESTS"))
 
-var defaultClient client.Client
+var defaultClient nectar.Client
 var defaultClientOnce sync.Once
 
-func getDefaultClient(t *testing.T) client.Client {
+func getDefaultClient(t *testing.T) nectar.Client {
 	defaultClientOnce.Do(func() {
 		internal, _ := strconv.ParseBool(os.Getenv("STORAGE_INTERNAL"))
 		defaultClient = getClient(t, os.Getenv("AUTH_TENANT"), os.Getenv("AUTH_USER"), os.Getenv("AUTH_PASSWORD"), os.Getenv("AUTH_KEY"), os.Getenv("STORAGE_REGION"), os.Getenv("AUTH_URL"), internal)
@@ -28,9 +28,9 @@ func getDefaultClient(t *testing.T) client.Client {
 	return defaultClient
 }
 
-func getClient(t *testing.T, tenant, user, password, key, region, authURL string, internal bool) client.Client {
+func getClient(t *testing.T, tenant, user, password, key, region, authURL string, internal bool) nectar.Client {
 	t.Log("CREATING CLIENT!")
-	c, resp := client.NewClient(tenant, user, password, key, region, authURL, internal)
+	c, resp := nectar.NewClient(tenant, user, password, key, region, authURL, internal)
 	if resp != nil {
 		bodyBytes, _ := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -48,7 +48,7 @@ func getRandomContainerName() string {
 	return fmt.Sprintf("hummingbird-functional-test-%016x", rander.Uint64())
 }
 
-func emptyAndDeleteContainer(c client.Client, container string) *http.Response {
+func emptyAndDeleteContainer(c nectar.Client, container string) *http.Response {
 	if resp := c.DeleteContainer(container, nil); resp.StatusCode != http.StatusConflict {
 		return resp
 	}

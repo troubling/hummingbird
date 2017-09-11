@@ -9,7 +9,6 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -17,21 +16,12 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
+	"github.com/troubling/nectar"
+	"github.com/troubling/nectar/nectarutil"
 )
 
 const PostQuorumTimeoutMs = 100
 const postPutTimeout = time.Second * 30
-
-func mkquery(options map[string]string) string {
-	query := ""
-	for k, v := range options {
-		query += url.QueryEscape(k) + "=" + url.QueryEscape(v) + "&"
-	}
-	if query != "" {
-		return "?" + strings.TrimRight(query, "&")
-	}
-	return ""
-}
 
 func addUpdateHeaders(prefix string, headers http.Header, devices []*ring.Device, i, replicas int) {
 	if i < len(devices) {
@@ -100,11 +90,11 @@ func (c *ProxyDirectClient) quorumResponse(r ring.Ring, partition uint64, devToR
 			var resp *http.Response
 			for dev := devs[index]; dev != nil; dev = more.Next() {
 				if req, err := devToRequest(index, dev); err != nil {
-					resp = ResponseStub(http.StatusInternalServerError, err.Error())
+					resp = nectarutil.ResponseStub(http.StatusInternalServerError, err.Error())
 				} else if r, err := c.client.Do(req); err != nil {
-					resp = ResponseStub(http.StatusInternalServerError, err.Error())
+					resp = nectarutil.ResponseStub(http.StatusInternalServerError, err.Error())
 				} else {
-					resp = StubResponse(r)
+					resp = nectarutil.StubResponse(r)
 					if r.StatusCode >= 200 && r.StatusCode < 500 {
 						break
 					}
@@ -136,7 +126,7 @@ func (c *ProxyDirectClient) quorumResponse(r ring.Ring, partition uint64, devToR
 			}
 		}
 	}
-	return ResponseStub(http.StatusServiceUnavailable, "Unknown State")
+	return nectarutil.ResponseStub(http.StatusServiceUnavailable, "Unknown State")
 }
 
 func (c *ProxyDirectClient) firstResponse(r ring.Ring, partition uint64, devToRequest func(*ring.Device) (*http.Request, error)) (resp *http.Response) {
@@ -204,9 +194,9 @@ func (c *ProxyDirectClient) firstResponse(r ring.Ring, partition uint64, devToRe
 		}
 	}
 	if internalErrors >= int(r.ReplicaCount()) {
-		return ResponseStub(http.StatusServiceUnavailable, "")
+		return nectarutil.ResponseStub(http.StatusServiceUnavailable, "")
 	} else {
-		return ResponseStub(http.StatusNotFound, "")
+		return nectarutil.ResponseStub(http.StatusNotFound, "")
 	}
 }
 
@@ -322,7 +312,7 @@ func (c *ProxyDirectClient) PostAccount(account string, headers http.Header) *ht
 
 func (c *ProxyDirectClient) GetAccount(account string, options map[string]string, headers http.Header) *http.Response {
 	partition := c.AccountRing.GetPartition(account, "", "")
-	query := mkquery(options)
+	query := nectarutil.Mkquery(options)
 	return c.firstResponse(c.AccountRing, partition, func(dev *ring.Device) (*http.Request, error) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s%s", dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), query)
@@ -387,10 +377,10 @@ func (c *ProxyDirectClient) PutContainer(account string, container string, heade
 			}
 		}
 		if policy == nil {
-			return ResponseStub(http.StatusBadRequest, fmt.Sprintf("Invalid X-Storage-Policy %q", policyName))
+			return nectarutil.ResponseStub(http.StatusBadRequest, fmt.Sprintf("Invalid X-Storage-Policy %q", policyName))
 		}
 		if policy.Deprecated {
-			return ResponseStub(http.StatusBadRequest, fmt.Sprintf("Storage Policy %q is deprecated", policyName))
+			return nectarutil.ResponseStub(http.StatusBadRequest, fmt.Sprintf("Storage Policy %q is deprecated", policyName))
 		}
 		policyIndex = policy.Index
 	}
@@ -431,7 +421,7 @@ func (c *ProxyDirectClient) PostContainer(account string, container string, head
 
 func (c *ProxyDirectClient) GetContainer(account string, container string, options map[string]string, headers http.Header) *http.Response {
 	partition := c.ContainerRing.GetPartition(account, container, "")
-	query := mkquery(options)
+	query := nectarutil.Mkquery(options)
 	return c.firstResponse(c.ContainerRing, partition, func(dev *ring.Device) (*http.Request, error) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s%s", dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), common.Urlencode(container), query)
@@ -583,25 +573,25 @@ type erroringObjectClient struct {
 }
 
 func (oc *erroringObjectClient) putObject(obj string, headers http.Header, src io.Reader) *http.Response {
-	return ResponseStub(http.StatusInternalServerError, oc.body)
+	return nectarutil.ResponseStub(http.StatusInternalServerError, oc.body)
 }
 func (oc *erroringObjectClient) postObject(obj string, headers http.Header) *http.Response {
-	return ResponseStub(http.StatusInternalServerError, oc.body)
+	return nectarutil.ResponseStub(http.StatusInternalServerError, oc.body)
 }
 func (oc *erroringObjectClient) getObject(obj string, headers http.Header) *http.Response {
-	return ResponseStub(http.StatusInternalServerError, oc.body)
+	return nectarutil.ResponseStub(http.StatusInternalServerError, oc.body)
 }
 func (oc *erroringObjectClient) grepObject(obj string, search string) *http.Response {
-	return ResponseStub(http.StatusInternalServerError, oc.body)
+	return nectarutil.ResponseStub(http.StatusInternalServerError, oc.body)
 }
 func (oc *erroringObjectClient) headObject(obj string, headers http.Header) *http.Response {
-	return ResponseStub(http.StatusInternalServerError, oc.body)
+	return nectarutil.ResponseStub(http.StatusInternalServerError, oc.body)
 }
 func (oc *erroringObjectClient) deleteObject(obj string, headers http.Header) *http.Response {
-	return ResponseStub(http.StatusInternalServerError, oc.body)
+	return nectarutil.ResponseStub(http.StatusInternalServerError, oc.body)
 }
 func (oc *erroringObjectClient) ring() (ring.Ring, *http.Response) {
-	return nil, ResponseStub(http.StatusInternalServerError, oc.body)
+	return nil, nectarutil.ResponseStub(http.StatusInternalServerError, oc.body)
 }
 
 type standardObjectClient struct {
@@ -697,11 +687,11 @@ func (oc *standardObjectClient) putObject(obj string, headers http.Header, src i
 			var resp *http.Response
 			for dev := devs[index]; dev != nil; dev = more.Next() {
 				if req, err := devToRequest(index, dev); err != nil {
-					resp = ResponseStub(http.StatusInternalServerError, err.Error())
+					resp = nectarutil.ResponseStub(http.StatusInternalServerError, err.Error())
 				} else if r, err := oc.proxyDirectClient.client.Do(req); err != nil {
-					resp = ResponseStub(http.StatusInternalServerError, err.Error())
+					resp = nectarutil.ResponseStub(http.StatusInternalServerError, err.Error())
 				} else {
-					resp = StubResponse(r)
+					resp = nectarutil.StubResponse(r)
 					if r.StatusCode >= 200 && r.StatusCode < 500 {
 						break
 					}
@@ -738,7 +728,7 @@ func (oc *standardObjectClient) putObject(obj string, headers http.Header, src i
 					}
 					return resp
 				} else if responseCount == objectReplicaCount {
-					return ResponseStub(http.StatusServiceUnavailable, "The service is currently unavailable.")
+					return nectarutil.ResponseStub(http.StatusServiceUnavailable, "The service is currently unavailable.")
 				}
 			}
 		case w := <-ready:
@@ -749,7 +739,7 @@ func (oc *standardObjectClient) putObject(obj string, headers http.Header, src i
 		if !written && len(writers) >= quorum && len(writers)+responseCount == objectReplicaCount {
 			written = true
 			if _, err := common.CopyQuorum(src, quorum, writers...); err != nil {
-				return ResponseStub(http.StatusServiceUnavailable, "The service is currently unavailable.")
+				return nectarutil.ResponseStub(http.StatusServiceUnavailable, "The service is currently unavailable.")
 			}
 			for _, w := range cWriters {
 				w.Close()
@@ -862,7 +852,7 @@ type directClient struct {
 	account string
 }
 
-var _ Client = &directClient{}
+var _ nectar.Client = &directClient{}
 
 func (c *directClient) GetURL() string {
 	return "<direct>/" + c.account
@@ -876,7 +866,7 @@ func (c *directClient) PostAccount(headers map[string]string) *http.Response {
 	return c.pc.PostAccount(c.account, common.Map2Headers(headers))
 }
 
-func (c *directClient) GetAccount(marker string, endMarker string, limit int, prefix string, delimiter string, reverse bool, headers map[string]string) ([]ContainerRecord, *http.Response) {
+func (c *directClient) GetAccount(marker string, endMarker string, limit int, prefix string, delimiter string, reverse bool, headers map[string]string) ([]*nectar.ContainerRecord, *http.Response) {
 	options := map[string]string{
 		"format":     "json",
 		"marker":     marker,
@@ -894,10 +884,10 @@ func (c *directClient) GetAccount(marker string, endMarker string, limit int, pr
 	if resp.StatusCode/100 != 2 {
 		return nil, resp
 	}
-	var accountListing []ContainerRecord
+	var accountListing []*nectar.ContainerRecord
 	if err := json.NewDecoder(resp.Body).Decode(&accountListing); err != nil {
 		resp.Body.Close()
-		return nil, ResponseStub(http.StatusInternalServerError, err.Error())
+		return nil, nectarutil.ResponseStub(http.StatusInternalServerError, err.Error())
 	}
 	resp.Body.Close()
 	return accountListing, resp
@@ -936,7 +926,7 @@ func (c *directClient) PostContainer(container string, headers map[string]string
 	return c.pc.PostContainer(c.account, container, common.Map2Headers(headers))
 }
 
-func (c *directClient) GetContainer(container string, marker string, endMarker string, limit int, prefix string, delimiter string, reverse bool, headers map[string]string) ([]ObjectRecord, *http.Response) {
+func (c *directClient) GetContainer(container string, marker string, endMarker string, limit int, prefix string, delimiter string, reverse bool, headers map[string]string) ([]*nectar.ObjectRecord, *http.Response) {
 	options := map[string]string{
 		"format":     "json",
 		"marker":     marker,
@@ -954,10 +944,10 @@ func (c *directClient) GetContainer(container string, marker string, endMarker s
 	if resp.StatusCode/100 != 2 {
 		return nil, resp
 	}
-	var containerListing []ObjectRecord
+	var containerListing []*nectar.ObjectRecord
 	if err := json.NewDecoder(resp.Body).Decode(&containerListing); err != nil {
 		resp.Body.Close()
-		return nil, ResponseStub(http.StatusInternalServerError, err.Error())
+		return nil, nectarutil.ResponseStub(http.StatusInternalServerError, err.Error())
 	}
 	resp.Body.Close()
 	return containerListing, resp
@@ -1009,11 +999,11 @@ func (c *directClient) DeleteObject(container string, obj string, headers map[st
 }
 
 func (c *directClient) Raw(method, urlAfterAccount string, headers map[string]string, body io.Reader) *http.Response {
-	return ResponseStub(http.StatusNotImplemented, "Raw requests not implemented for direct clients")
+	return nectarutil.ResponseStub(http.StatusNotImplemented, "Raw requests not implemented for direct clients")
 }
 
 // NewDirectClient creates a new direct client with the given account name.
-func NewDirectClient(account string) (Client, error) {
+func NewDirectClient(account string) (nectar.Client, error) {
 	pdc, err := NewProxyDirectClient(nil)
 	if err != nil {
 		return nil, err
