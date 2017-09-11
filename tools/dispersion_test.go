@@ -37,6 +37,7 @@ import (
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/containerserver"
+	"github.com/troubling/nectar/nectarutil"
 	"github.com/uber-go/tally"
 )
 
@@ -188,11 +189,11 @@ type testDispersionClient struct {
 }
 
 func (c *testDispersionClient) PutAccount(account string, headers http.Header) *http.Response {
-	return client.ResponseStub(200, "")
+	return nectarutil.ResponseStub(200, "")
 }
 
 func (c *testDispersionClient) PostAccount(account string, headers http.Header) *http.Response {
-	return client.ResponseStub(200, "")
+	return nectarutil.ResponseStub(200, "")
 }
 
 func (c *testDispersionClient) GetAccount(account string, options map[string]string, headers http.Header) *http.Response {
@@ -200,27 +201,27 @@ func (c *testDispersionClient) GetAccount(account string, options map[string]str
 		c.contCalls--
 		olrs := []accountserver.ContainerListingRecord{{Name: "disp-objs-0"}}
 		out, _ := json.Marshal(olrs)
-		return client.ResponseStub(200, string(out))
+		return nectarutil.ResponseStub(200, string(out))
 	}
 	olrs := []accountserver.ContainerListingRecord{}
 	out, _ := json.Marshal(olrs)
-	return client.ResponseStub(200, string(out))
+	return nectarutil.ResponseStub(200, string(out))
 }
 
 func (c *testDispersionClient) HeadAccount(account string, headers http.Header) *http.Response {
-	return client.ResponseStub(200, "")
+	return nectarutil.ResponseStub(200, "")
 }
 
 func (c *testDispersionClient) DeleteAccount(account string, headers http.Header) *http.Response {
-	return client.ResponseStub(200, "")
+	return nectarutil.ResponseStub(200, "")
 }
 
 func (c *testDispersionClient) PutContainer(account string, container string, headers http.Header) *http.Response {
-	return client.ResponseStub(200, "")
+	return nectarutil.ResponseStub(200, "")
 }
 
 func (c *testDispersionClient) PostContainer(account string, container string, headers http.Header) *http.Response {
-	return client.ResponseStub(200, "")
+	return nectarutil.ResponseStub(200, "")
 }
 
 func (c *testDispersionClient) GetContainer(account string, container string, options map[string]string, headers http.Header) *http.Response {
@@ -228,11 +229,11 @@ func (c *testDispersionClient) GetContainer(account string, container string, op
 		c.objCalls--
 		olrs := []containerserver.ObjectListingRecord{{Name: "0-12345"}}
 		out, _ := json.Marshal(olrs)
-		return client.ResponseStub(200, string(out))
+		return nectarutil.ResponseStub(200, string(out))
 	}
 	olrs := []containerserver.ObjectListingRecord{}
 	out, _ := json.Marshal(olrs)
-	return client.ResponseStub(200, string(out))
+	return nectarutil.ResponseStub(200, string(out))
 }
 
 func (c *testDispersionClient) GetContainerInfo(account string, container string) (*client.ContainerInfo, error) {
@@ -240,39 +241,39 @@ func (c *testDispersionClient) GetContainerInfo(account string, container string
 }
 
 func (c *testDispersionClient) HeadContainer(account string, container string, headers http.Header) *http.Response {
-	return client.ResponseStub(200, "")
+	return nectarutil.ResponseStub(200, "")
 }
 
 func (c *testDispersionClient) DeleteContainer(account string, container string, headers http.Header) *http.Response {
-	return client.ResponseStub(200, "")
+	return nectarutil.ResponseStub(200, "")
 }
 
 func (c *testDispersionClient) PutObject(account string, container string, obj string, headers http.Header, src io.Reader) *http.Response {
 	c.objPuts++
-	return client.ResponseStub(200, "")
+	return nectarutil.ResponseStub(200, "")
 }
 
 func (c *testDispersionClient) PostObject(account string, container string, obj string, headers http.Header) *http.Response {
-	return client.ResponseStub(200, "")
+	return nectarutil.ResponseStub(200, "")
 }
 
 func (c *testDispersionClient) GetObject(account string, container string, obj string, headers http.Header) *http.Response {
-	return client.ResponseStub(200, "")
+	return nectarutil.ResponseStub(200, "")
 }
 
 func (c *testDispersionClient) HeadObject(account string, container string, obj string, headers http.Header) *http.Response {
 	if obj == "object-init" {
-		return client.ResponseStub(404, "")
+		return nectarutil.ResponseStub(404, "")
 	}
-	return client.ResponseStub(200, "")
+	return nectarutil.ResponseStub(200, "")
 }
 
 func (c *testDispersionClient) DeleteObject(account string, container string, obj string, headers http.Header) *http.Response {
-	return client.ResponseStub(200, "")
+	return nectarutil.ResponseStub(200, "")
 }
 
 func (c *testDispersionClient) ObjectRingFor(account string, container string) (ring.Ring, *http.Response) {
-	return c.objRing, nil //client.ResponseStub(200, "")
+	return c.objRing, nil //nectarutil.ResponseStub(200, "")
 }
 
 func (c *testDispersionClient) ContainerRing() ring.Ring {

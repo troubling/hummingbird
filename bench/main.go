@@ -28,12 +28,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/nectar"
 )
 
 type Object struct {
-	c         client.Client
+	c         nectar.Client
 	state     int
 	container string
 	name      string
@@ -192,12 +192,12 @@ or
 	allowInsecureAuthCert := benchconf.GetBool("bench", "allow_insecure_auth_cert", false)
 	salt := fmt.Sprintf("%d", rand.Int63())
 
-	var cli client.Client
+	var cli nectar.Client
 	var resp *http.Response
 	if allowInsecureAuthCert {
-		cli, resp = client.NewInsecureClient(authTenant, authUser, authPassword, authKey, authRegion, authURL, authPrivateEndpoint)
+		cli, resp = nectar.NewInsecureClient(authTenant, authUser, authPassword, authKey, authRegion, authURL, authPrivateEndpoint)
 	} else {
-		cli, resp = client.NewClient(authTenant, authUser, authPassword, authKey, authRegion, authURL, authPrivateEndpoint)
+		cli, resp = nectar.NewClient(authTenant, authUser, authPassword, authKey, authRegion, authURL, authPrivateEndpoint)
 	}
 	if resp != nil {
 		msg, _ := ioutil.ReadAll(resp.Body)
@@ -292,12 +292,12 @@ func RunThrash(args []string) {
 	allowInsecureAuthCert := thrashconf.GetBool("bench", "allow_insecure_auth_cert", false)
 	salt := fmt.Sprintf("%d", rand.Int63())
 
-	var cli client.Client
+	var cli nectar.Client
 	var resp *http.Response
 	if allowInsecureAuthCert {
-		cli, resp = client.NewInsecureClient("", authUser, "", authKey, "", authURL, false)
+		cli, resp = nectar.NewInsecureClient("", authUser, "", authKey, "", authURL, false)
 	} else {
-		cli, resp = client.NewClient("", authUser, "", authKey, "", authURL, false)
+		cli, resp = nectar.NewClient("", authUser, "", authKey, "", authURL, false)
 	}
 	if err != nil {
 		msg, _ := ioutil.ReadAll(resp.Body)
