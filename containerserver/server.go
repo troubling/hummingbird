@@ -642,7 +642,7 @@ func GetServer(serverconf conf.Config, flags *flag.FlagSet) (bindIP string, bind
 		return "", 0, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 
-	server.diskInUse = common.NewKeyedLimit(serverconf.GetLimit("app:container-server", "disk_limit", 25, 10000))
+	server.diskInUse = common.NewKeyedLimit(serverconf.GetLimit("app:container-server", "disk_limit", 0, 0))
 	bindIP = serverconf.GetDefault("app:container-server", "bind_ip", "0.0.0.0")
 	bindPort = int(serverconf.GetInt("app:container-server", "bind_port", 6000))
 
