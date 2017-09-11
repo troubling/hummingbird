@@ -383,7 +383,7 @@ func (a *AutoAdmin) Run() {
 
 func (a *AutoAdmin) RunForever() {
 	go a.startWebServer()
-	//go a.di.runDispersionForever()
+	go a.di.runDispersionForever()
 	a.runningForever = true
 	for {
 		a.Run()
