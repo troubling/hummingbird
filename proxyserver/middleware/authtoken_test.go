@@ -22,6 +22,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -118,6 +119,7 @@ type mockValue struct {
 
 type mockTokenMemcacheRing struct {
 	MockValues map[string]*mockValue
+	lock       sync.Mutex
 }
 
 func (mr *mockTokenMemcacheRing) Decr(key string, delta int64, timeout int) (int64, error) {
@@ -133,6 +135,8 @@ func (mr *mockTokenMemcacheRing) Get(key string) (interface{}, error) {
 }
 
 func (mr *mockTokenMemcacheRing) GetStructured(key string, val interface{}) error {
+	mr.lock.Lock()
+	defer mr.lock.Unlock()
 	if v, ok := mr.MockValues[key]; ok {
 		json.Unmarshal(v.Data, val)
 		if t, token_ok := val.(*token); token_ok {
@@ -152,6 +156,8 @@ func (mr *mockTokenMemcacheRing) Incr(key string, delta int64, timeout int) (int
 }
 
 func (mr *mockTokenMemcacheRing) Set(key string, value interface{}, timeout int) error {
+	mr.lock.Lock()
+	defer mr.lock.Unlock()
 	serl, _ := json.Marshal(value)
 	mr.MockValues[key] = &mockValue{Data: serl, Timeout: timeout}
 	return nil
@@ -159,6 +165,15 @@ func (mr *mockTokenMemcacheRing) Set(key string, value interface{}, timeout int)
 
 func (mr *mockTokenMemcacheRing) SetMulti(serverKey string, values map[string]interface{}, timeout int) error {
 	return nil
+}
+
+func (mr *mockTokenMemcacheRing) getTimeout(key string) int {
+	mr.lock.Lock()
+	defer mr.lock.Unlock()
+	if v, ok := mr.MockValues[key]; ok {
+		return v.Timeout
+	}
+	return -1
 }
 
 func TestExpiredToken(t *testing.T) {
@@ -573,15 +588,11 @@ func TestPreauthCachedToken(t *testing.T) {
 	// Updates happen in the background.
 	time.Sleep(1 * time.Second)
 	var tok token
-	var value *mockValue
-	var ok bool
-	if value, ok = fakeCache.MockValues["abcd"]; !ok {
-		t.Fatal("token was not cached")
+	if err := fakeCache.GetStructured("abcd", &tok); err != nil {
+		t.Fatal("fakeCache.GetStructured error: %v", err)
 	}
-	if err := json.Unmarshal(value.Data, &tok); err != nil {
-		t.Fatal("token corrupt")
-	}
-	if value.Timeout != int(cacheDur/time.Second) {
-		t.Fatalf("cached token ttl didn't get updated: %v", value.Timeout)
+	timeout := fakeCache.getTimeout("abcd")
+	if timeout != int(cacheDur/time.Second) {
+		t.Fatalf("cached token ttl didn't get updated: %v", timeout)
 	}
 }
