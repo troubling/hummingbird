@@ -92,6 +92,10 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		}
 		return
 
+	case "pretend_min_part_hours_passed":
+		ring.PretendMinPartHoursPassed(pth)
+		return
+
 	case "search":
 		searchFlags := flag.NewFlagSet("search", flag.ExitOnError)
 		region := searchFlags.Int64("region", -1, "Device region.")
