@@ -17,13 +17,11 @@ package tools
 
 import (
 	"bytes"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -259,9 +257,6 @@ type probObj struct {
 type Dispersion struct {
 	logger  srv.LowLevelLogger
 	hClient client.ProxyClient
-
-	db  *sql.DB
-	dbl sync.Mutex
 
 	metricsScope tally.Scope
 
