@@ -288,6 +288,15 @@ func (b *RingBuilder) canPartMove(part uint) bool {
 	return int(b.lastPartMoves[part]) >= b.MinPartHours && !b.hasPartMoved(part)
 }
 
+func (b *RingBuilder) PretendMinPartHoursPassed() {
+	b.lastPartMovesEpoch = 0
+	if len(b.lastPartMoves) > 0 {
+		for i := 0; i < len(b.lastPartMoves); i++ {
+			b.lastPartMoves[i] = 0xff
+		}
+	}
+}
+
 // MinPartSecondsLeft returns the total seconds until a reblanace can be performed.
 func (b *RingBuilder) MinPartSecondsLeft() int {
 	elapsed := int(time.Now().Unix() - b.lastPartMovesEpoch)
@@ -1754,6 +1763,16 @@ func WriteRing(builderPath string) error {
 	if err := r.Save(ringFile); err != nil {
 		return err
 	}
+	return nil
+}
+
+func PretendMinPartHoursPassed(builderPath string) error {
+	builder, err := NewRingBuilderFromFile(builderPath, false)
+	if err != nil {
+		return err
+	}
+	builder.PretendMinPartHoursPassed()
+	builder.Save(builderPath)
 	return nil
 }
 
