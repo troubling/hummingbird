@@ -20,10 +20,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"strconv"
 	"sync"
 
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/objectserver"
 )
 
@@ -112,6 +114,25 @@ func (f *ecEngine) New(vars map[string]string, needData bool, asyncWG *sync.Wait
 	return sor, nil
 }
 
+func (f *ecEngine) ecFragGetHandler(writer http.ResponseWriter, request *http.Request) {
+	// vars := srv.GetVars(request)
+	srv.StandardResponse(writer, http.StatusNotImplemented)
+}
+
+func (f *ecEngine) ecFragPutHandler(writer http.ResponseWriter, request *http.Request) {
+	srv.StandardResponse(writer, http.StatusNotImplemented)
+}
+
+func (f *ecEngine) ecFragDeleteHandler(writer http.ResponseWriter, request *http.Request) {
+	srv.StandardResponse(writer, http.StatusNotImplemented)
+}
+
+func (f *ecEngine) RegisterHandlers(addRoute func(method, path string, handler http.HandlerFunc)) {
+	addRoute("GET", "/ec-frag/:device/:hash", f.ecFragGetHandler)
+	addRoute("PUT", "/ec-frag/:device/:hash", f.ecFragPutHandler)
+	addRoute("DELETE", "/ec-frag/:device/:hash", f.ecFragDeleteHandler)
+}
+
 // ecEngineConstructor creates a ecEngine given the object server configs.
 func ecEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.FlagSet) (objectserver.ObjectEngine, error) {
 	driveRoot := config.GetDefault("app:object-server", "devices", "/srv/node")
@@ -136,3 +157,4 @@ func init() {
 var _ objectserver.ObjectEngineConstructor = ecEngineConstructor
 var _ objectserver.Object = &ecObject{}
 var _ objectserver.ObjectEngine = &ecEngine{}
+var _ objectserver.PolicyHandlerRegistrator = &ecEngine{}
