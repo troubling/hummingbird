@@ -484,7 +484,7 @@ func (server *ContainerServer) HealthcheckHandler(writer http.ResponseWriter, re
 
 // ReconHandler delegates incoming /recon calls to the common recon handler.
 func (server *ContainerServer) ReconHandler(writer http.ResponseWriter, request *http.Request) {
-	middleware.ReconHandler(server.driveRoot, writer, request)
+	middleware.ReconHandler(server.driveRoot, server.checkMounts, writer, request)
 }
 
 //OptionsHandler delegates incoming OPTIONS calls to the common options handler.

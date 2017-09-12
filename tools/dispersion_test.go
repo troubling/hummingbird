@@ -165,12 +165,12 @@ func TestScanDispersionObjects(t *testing.T) {
 
 	metricsScope := tally.NewTestScope("hb_andrewd", map[string]string{})
 
-	bc := NewBirdCatcher(&FakeLowLevelLogger{}, c, metricsScope)
-	bc.onceFullDispersion = true
+	d := NewDispersion(&FakeLowLevelLogger{}, c, metricsScope)
+	d.onceFullDispersion = true
 
 	dummyCanceler := make(chan struct{})
 	defer close(dummyCanceler)
-	bc.scanDispersionObjs(dummyCanceler)
+	d.scanDispersionObjs(dummyCanceler)
 	for k, v := range metricsScope.Snapshot().Gauges() {
 		if strings.Index(k, "hb_andrewd.dispersion_object_p0_missing_0") >= 0 {
 			require.Equal(t, 1, int(v.Value()))

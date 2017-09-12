@@ -499,7 +499,7 @@ func (server *ObjectServer) HealthcheckHandler(writer http.ResponseWriter, reque
 }
 
 func (server *ObjectServer) ReconHandler(writer http.ResponseWriter, request *http.Request) {
-	middleware.ReconHandler(server.driveRoot, writer, request)
+	middleware.ReconHandler(server.driveRoot, server.checkMounts, writer, request)
 	return
 }
 

@@ -352,7 +352,8 @@ type AutoAdmin struct {
 	policies       conf.PolicyList
 	metricsScope   tally.Scope
 	metricsCloser  io.Closer
-	bc             *BirdCatcher
+	di             *Dispersion
+	dw             *driveWatch
 	runningForever bool
 }
 
@@ -375,23 +376,24 @@ func (a *AutoAdmin) populateDispersion() {
 func (a *AutoAdmin) Run() {
 	a.populateDispersion()
 	if !a.runningForever {
-		a.bc.runDispersionOnce()
+		a.di.runDispersionOnce()
 	}
+	a.dw.Run()
 }
 
 func (a *AutoAdmin) RunForever() {
 	go a.startWebServer()
-	go a.bc.runDispersionForever()
+	go a.di.runDispersionForever()
 	a.runningForever = true
 	for {
 		a.Run()
-		time.Sleep(60 * time.Second)
 	}
 }
 
 func (a *AutoAdmin) GetHandler() http.Handler {
 	router := srv.NewRouter()
 	router.Get("/metrics", prometheus.Handler())
+	router.Get("/drivewatch", a.dw)
 
 	return alice.New(middleware.Metrics(a.metricsScope)).Then(router)
 }
@@ -415,12 +417,13 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv.LowL
 	if err != nil {
 		return nil, nil, fmt.Errorf("Could not make client: %v", err)
 	}
+	pl := conf.LoadPolicies()
 	a := &AutoAdmin{
 		hClient:        client.NewProxyClient(pdc, nil, nil),
 		port:           int(serverconf.GetInt("andrewd", "bind_port", 7000)),
-		bindIp:         serverconf.GetDefault("andrewd", "bind_ip", "0.0.0.0"),
+		bindIp:         serverconf.GetDefault("andrewd", "bind_ip", "127.0.0.1"),
 		workDir:        serverconf.GetDefault("andrewd", "work_dir", "/var/cache/swift"),
-		policies:       conf.LoadPolicies(),
+		policies:       pl,
 		runningForever: false,
 		//containerDispersionGauge: []tally.Gauge{}, TODO- add container disp
 	}
@@ -438,8 +441,9 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv.LowL
 	if a.logger, err = srv.SetupLogger("andrewd", &logLevel, flags); err != nil {
 		return nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
-	a.bc = NewBirdCatcher(
+	a.di = NewDispersion(
 		a.logger, client.NewProxyClient(pdc, nil, nil), a.metricsScope)
 
+	a.dw = NewDriveWatch(a.logger, a.metricsScope, serverconf)
 	return a, a.logger, nil
 }
