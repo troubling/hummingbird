@@ -665,12 +665,6 @@ func initCommand(args []string) error {
 		print(`nosetests || /bin/true # This always fails because we don't pass all of Swift's tests.`)
 		print(`popd`)
 		print(`hbmain stop`)
-		print(`pushd "${gopath}/src/github.com/troubling/hummingbird"`)
-		print(`if ! git remote get-url upstream; then`)
-		print(`    git remote rename origin upstream`)
-		print(`    git remote add origin git@github.com:%s/hummingbird`, username)
-		print(`fi`)
-		print(`popd`)
 		print(``)
 	}
 
