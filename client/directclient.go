@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/troubling/hummingbird/common"
@@ -41,6 +42,8 @@ type ProxyDirectClient struct {
 	client        *http.Client
 	AccountRing   ring.Ring
 	ContainerRing ring.Ring
+	objectClients []proxyObjectClient
+	lcm           sync.RWMutex
 }
 
 func NewProxyDirectClient(policyList conf.PolicyList) (*ProxyDirectClient, error) {
@@ -72,6 +75,15 @@ func NewProxyDirectClient(policyList conf.PolicyList) (*ProxyDirectClient, error
 	c.AccountRing, err = ring.GetRing("account", hashPathPrefix, hashPathSuffix, 0)
 	if err != nil {
 		return nil, err
+	}
+	c.objectClients = make([]proxyObjectClient, len(policyList))
+	for _, policy := range policyList {
+		ring, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index)
+		if err != nil {
+			return nil, err
+		}
+		// TODO: infrastructore to be able to jam alternative object clients for different policies in here
+		c.objectClients[policy.Index] = &standardObjectClient{proxyDirectClient: c, policy: policy.Index, objectRing: ring}
 	}
 	return c, nil
 }
@@ -443,7 +455,9 @@ func (c *ProxyDirectClient) GetContainerInfo(account string, container string, m
 	key := fmt.Sprintf("container/%s/%s", account, container)
 	var ci *ContainerInfo
 	if lc != nil {
+		c.lcm.RLock()
 		ci = lc[key]
+		c.lcm.RUnlock()
 	}
 	if ci == nil && mc != nil {
 		if err := mc.GetStructured(key, &ci); err != nil {
@@ -490,6 +504,11 @@ func (c *ProxyDirectClient) GetContainerInfo(account string, container string, m
 	if ci == NilContainerInfo {
 		return nil, errors.New("No container info for testing")
 	}
+	if lc != nil && ci != nil {
+		c.lcm.Lock()
+		lc[key] = ci
+		c.lcm.Unlock()
+	}
 	return ci, nil
 }
 
@@ -530,41 +549,49 @@ func (c *ProxyDirectClient) DeleteContainer(account string, container string, he
 	})
 }
 
+func (c *ProxyDirectClient) getObjectClient(account string, container string, mc ring.MemcacheRing, lc map[string]*ContainerInfo) proxyObjectClient {
+	ci, err := c.GetContainerInfo(account, container, mc, lc)
+	if err != nil {
+		return &erroringObjectClient{err.Error()}
+	}
+	return c.objectClients[ci.StoragePolicyIndex]
+}
+
 func (c *ProxyDirectClient) PutObject(account string, container string, obj string, headers http.Header, src io.Reader, mc ring.MemcacheRing, lc map[string]*ContainerInfo) *http.Response {
-	return newObjectClient(c, account, container, mc, lc).putObject(obj, headers, src)
+	return c.getObjectClient(account, container, mc, lc).putObject(account, container, obj, headers, src)
 }
 
 func (c *ProxyDirectClient) PostObject(account string, container string, obj string, headers http.Header, mc ring.MemcacheRing, lc map[string]*ContainerInfo) *http.Response {
-	return newObjectClient(c, account, container, mc, lc).postObject(obj, headers)
+	return c.getObjectClient(account, container, mc, lc).postObject(account, container, obj, headers)
 }
 
 func (c *ProxyDirectClient) GetObject(account string, container string, obj string, headers http.Header, mc ring.MemcacheRing, lc map[string]*ContainerInfo) *http.Response {
-	return newObjectClient(c, account, container, mc, lc).getObject(obj, headers)
+	return c.getObjectClient(account, container, mc, lc).getObject(account, container, obj, headers)
 }
 
 func (c *ProxyDirectClient) GrepObject(account string, container string, obj string, search string, mc ring.MemcacheRing, lc map[string]*ContainerInfo) *http.Response {
-	return newObjectClient(c, account, container, mc, lc).grepObject(obj, search)
+	return c.getObjectClient(account, container, mc, lc).grepObject(account, container, obj, search)
 }
 
 func (c *ProxyDirectClient) HeadObject(account string, container string, obj string, headers http.Header, mc ring.MemcacheRing, lc map[string]*ContainerInfo) *http.Response {
-	return newObjectClient(c, account, container, mc, lc).headObject(obj, headers)
+	return c.getObjectClient(account, container, mc, lc).headObject(account, container, obj, headers)
 }
 
 func (c *ProxyDirectClient) DeleteObject(account string, container string, obj string, headers http.Header, mc ring.MemcacheRing, lc map[string]*ContainerInfo) *http.Response {
-	return newObjectClient(c, account, container, mc, lc).deleteObject(obj, headers)
+	return c.getObjectClient(account, container, mc, lc).deleteObject(account, container, obj, headers)
 }
 
 func (c *ProxyDirectClient) ObjectRingFor(account string, container string, mc ring.MemcacheRing, lc map[string]*ContainerInfo) (ring.Ring, *http.Response) {
-	return newObjectClient(c, account, container, mc, lc).ring()
+	return c.getObjectClient(account, container, mc, lc).ring()
 }
 
 type proxyObjectClient interface {
-	putObject(obj string, headers http.Header, src io.Reader) *http.Response
-	postObject(obj string, headers http.Header) *http.Response
-	getObject(obj string, headers http.Header) *http.Response
-	grepObject(obj string, search string) *http.Response
-	headObject(obj string, headers http.Header) *http.Response
-	deleteObject(obj string, headers http.Header) *http.Response
+	putObject(account, container, obj string, headers http.Header, src io.Reader) *http.Response
+	postObject(account, container, obj string, headers http.Header) *http.Response
+	getObject(account, container, obj string, headers http.Header) *http.Response
+	grepObject(account, container, obj string, search string) *http.Response
+	headObject(account, container, obj string, headers http.Header) *http.Response
+	deleteObject(account, container, obj string, headers http.Header) *http.Response
 	ring() (ring.Ring, *http.Response)
 }
 
@@ -572,22 +599,22 @@ type erroringObjectClient struct {
 	body string
 }
 
-func (oc *erroringObjectClient) putObject(obj string, headers http.Header, src io.Reader) *http.Response {
+func (oc *erroringObjectClient) putObject(account, container, obj string, headers http.Header, src io.Reader) *http.Response {
 	return nectarutil.ResponseStub(http.StatusInternalServerError, oc.body)
 }
-func (oc *erroringObjectClient) postObject(obj string, headers http.Header) *http.Response {
+func (oc *erroringObjectClient) postObject(account, container, obj string, headers http.Header) *http.Response {
 	return nectarutil.ResponseStub(http.StatusInternalServerError, oc.body)
 }
-func (oc *erroringObjectClient) getObject(obj string, headers http.Header) *http.Response {
+func (oc *erroringObjectClient) getObject(account, container, obj string, headers http.Header) *http.Response {
 	return nectarutil.ResponseStub(http.StatusInternalServerError, oc.body)
 }
-func (oc *erroringObjectClient) grepObject(obj string, search string) *http.Response {
+func (oc *erroringObjectClient) grepObject(account, container, obj string, search string) *http.Response {
 	return nectarutil.ResponseStub(http.StatusInternalServerError, oc.body)
 }
-func (oc *erroringObjectClient) headObject(obj string, headers http.Header) *http.Response {
+func (oc *erroringObjectClient) headObject(account, container, obj string, headers http.Header) *http.Response {
 	return nectarutil.ResponseStub(http.StatusInternalServerError, oc.body)
 }
-func (oc *erroringObjectClient) deleteObject(obj string, headers http.Header) *http.Response {
+func (oc *erroringObjectClient) deleteObject(account, container, obj string, headers http.Header) *http.Response {
 	return nectarutil.ResponseStub(http.StatusInternalServerError, oc.body)
 }
 func (oc *erroringObjectClient) ring() (ring.Ring, *http.Response) {
@@ -596,26 +623,8 @@ func (oc *erroringObjectClient) ring() (ring.Ring, *http.Response) {
 
 type standardObjectClient struct {
 	proxyDirectClient *ProxyDirectClient
-	account           string
-	container         string
 	policy            int
 	objectRing        ring.Ring
-}
-
-func newObjectClient(proxyDirectClient *ProxyDirectClient, account string, container string, mc ring.MemcacheRing, lc map[string]*ContainerInfo) proxyObjectClient {
-	ci, err := proxyDirectClient.GetContainerInfo(account, container, mc, lc)
-	if err != nil {
-		return &erroringObjectClient{body: "Could not retrieve container information."}
-	}
-	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
-	if err != nil {
-		return &erroringObjectClient{body: "Could not retrieve hash path prefix and suffix."}
-	}
-	objectRing, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, ci.StoragePolicyIndex)
-	if err != nil {
-		return &erroringObjectClient{body: fmt.Sprintf("Could not load object ring for policy %d.", ci.StoragePolicyIndex)}
-	}
-	return &standardObjectClient{proxyDirectClient: proxyDirectClient, account: account, container: container, policy: ci.StoragePolicyIndex, objectRing: objectRing}
 }
 
 // putReader is a Reader proxy that sends its reader over the ready channel the first time Read is called.
@@ -650,9 +659,9 @@ func (p *putReader) Read(b []byte) (int, error) {
 	}
 }
 
-func (oc *standardObjectClient) putObject(obj string, headers http.Header, src io.Reader) *http.Response {
-	objectPartition := oc.objectRing.GetPartition(oc.account, oc.container, obj)
-	containerPartition := oc.proxyDirectClient.ContainerRing.GetPartition(oc.account, oc.container, "")
+func (oc *standardObjectClient) putObject(account, container, obj string, headers http.Header, src io.Reader) *http.Response {
+	objectPartition := oc.objectRing.GetPartition(account, container, obj)
+	containerPartition := oc.proxyDirectClient.ContainerRing.GetPartition(account, container, "")
 	containerDevices := oc.proxyDirectClient.ContainerRing.GetNodes(containerPartition)
 	objectReplicaCount := int(oc.objectRing.ReplicaCount())
 	ready := make(chan io.WriteCloser)
@@ -666,7 +675,7 @@ func (oc *standardObjectClient) putObject(obj string, headers http.Header, src i
 		trp, wp := io.Pipe()
 		rp := &putReader{Reader: trp, cancel: cancel, w: wp, ready: ready}
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", dev.Ip, dev.Port, dev.Device, objectPartition,
-			common.Urlencode(oc.account), common.Urlencode(oc.container), common.Urlencode(obj))
+			common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj))
 		req, err := http.NewRequest("PUT", url, rp)
 		if err != nil {
 			return nil, err
@@ -748,14 +757,14 @@ func (oc *standardObjectClient) putObject(obj string, headers http.Header, src i
 	}
 }
 
-func (oc *standardObjectClient) postObject(obj string, headers http.Header) *http.Response {
-	partition := oc.objectRing.GetPartition(oc.account, oc.container, obj)
-	containerPartition := oc.proxyDirectClient.ContainerRing.GetPartition(oc.account, oc.container, "")
+func (oc *standardObjectClient) postObject(account, container, obj string, headers http.Header) *http.Response {
+	partition := oc.objectRing.GetPartition(account, container, obj)
+	containerPartition := oc.proxyDirectClient.ContainerRing.GetPartition(account, container, "")
 	containerDevices := oc.proxyDirectClient.ContainerRing.GetNodes(containerPartition)
 	objectReplicaCount := int(oc.objectRing.ReplicaCount())
 	return oc.proxyDirectClient.quorumResponse(oc.objectRing, partition, func(i int, dev *ring.Device) (*http.Request, error) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", dev.Ip, dev.Port, dev.Device, partition,
-			common.Urlencode(oc.account), common.Urlencode(oc.container), common.Urlencode(obj))
+			common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj))
 		req, err := http.NewRequest("POST", url, nil)
 		if err != nil {
 			return nil, err
@@ -770,11 +779,11 @@ func (oc *standardObjectClient) postObject(obj string, headers http.Header) *htt
 	})
 }
 
-func (oc *standardObjectClient) getObject(obj string, headers http.Header) *http.Response {
-	partition := oc.objectRing.GetPartition(oc.account, oc.container, obj)
+func (oc *standardObjectClient) getObject(account, container, obj string, headers http.Header) *http.Response {
+	partition := oc.objectRing.GetPartition(account, container, obj)
 	return oc.proxyDirectClient.firstResponse(oc.objectRing, partition, func(dev *ring.Device) (*http.Request, error) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", dev.Ip, dev.Port, dev.Device, partition,
-			common.Urlencode(oc.account), common.Urlencode(oc.container), common.Urlencode(obj))
+			common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj))
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			return nil, err
@@ -787,11 +796,11 @@ func (oc *standardObjectClient) getObject(obj string, headers http.Header) *http
 	})
 }
 
-func (oc *standardObjectClient) grepObject(obj string, search string) *http.Response {
-	partition := oc.objectRing.GetPartition(oc.account, oc.container, obj)
+func (oc *standardObjectClient) grepObject(account, container, obj string, search string) *http.Response {
+	partition := oc.objectRing.GetPartition(account, container, obj)
 	return oc.proxyDirectClient.firstResponse(oc.objectRing, partition, func(dev *ring.Device) (*http.Request, error) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s?e=%s", dev.Ip, dev.Port, dev.Device, partition,
-			common.Urlencode(oc.account), common.Urlencode(oc.container), common.Urlencode(obj), common.Urlencode(search))
+			common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj), common.Urlencode(search))
 		req, err := http.NewRequest("GREP", url, nil)
 		if err != nil {
 			return nil, err
@@ -801,11 +810,11 @@ func (oc *standardObjectClient) grepObject(obj string, search string) *http.Resp
 	})
 }
 
-func (oc *standardObjectClient) headObject(obj string, headers http.Header) *http.Response {
-	partition := oc.objectRing.GetPartition(oc.account, oc.container, obj)
+func (oc *standardObjectClient) headObject(account, container, obj string, headers http.Header) *http.Response {
+	partition := oc.objectRing.GetPartition(account, container, obj)
 	return oc.proxyDirectClient.firstResponse(oc.objectRing, partition, func(dev *ring.Device) (*http.Request, error) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", dev.Ip, dev.Port, dev.Device, partition,
-			common.Urlencode(oc.account), common.Urlencode(oc.container), common.Urlencode(obj))
+			common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj))
 		req, err := http.NewRequest("HEAD", url, nil)
 		if err != nil {
 			return nil, err
@@ -818,14 +827,14 @@ func (oc *standardObjectClient) headObject(obj string, headers http.Header) *htt
 	})
 }
 
-func (oc *standardObjectClient) deleteObject(obj string, headers http.Header) *http.Response {
-	partition := oc.objectRing.GetPartition(oc.account, oc.container, obj)
-	containerPartition := oc.proxyDirectClient.ContainerRing.GetPartition(oc.account, oc.container, "")
+func (oc *standardObjectClient) deleteObject(account, container, obj string, headers http.Header) *http.Response {
+	partition := oc.objectRing.GetPartition(account, container, obj)
+	containerPartition := oc.proxyDirectClient.ContainerRing.GetPartition(account, container, "")
 	containerDevices := oc.proxyDirectClient.ContainerRing.GetNodes(containerPartition)
 	objectReplicaCount := int(oc.objectRing.ReplicaCount())
 	return oc.proxyDirectClient.quorumResponse(oc.objectRing, partition, func(i int, dev *ring.Device) (*http.Request, error) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", dev.Ip, dev.Port, dev.Device, partition,
-			common.Urlencode(oc.account), common.Urlencode(oc.container), common.Urlencode(obj))
+			common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj))
 		req, err := http.NewRequest("DELETE", url, nil)
 		if err != nil {
 			return nil, err
