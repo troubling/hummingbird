@@ -105,7 +105,7 @@ func TestStaticWebGetObject(t *testing.T) {
 	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", &ProxyContext{
 		ProxyContextMiddleware: &ProxyContextMiddleware{next: s},
 		Logger:                 zap.NewNop(),
-		C:                      client.NewProxyClient(&client.ProxyDirectClient(), nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{"Web-Index": "index.html"}}}, zap.NewNop()),
+		C:                      client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{"Web-Index": "index.html"}}}, zap.NewNop()),
 		accountInfoCache:       map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
 	}))
 	rec := httptest.NewRecorder()

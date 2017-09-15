@@ -1049,7 +1049,6 @@ func (c *directClient) Raw(method, urlAfterAccount string, headers map[string]st
 }
 
 // NewDirectClient creates a new direct client with the given account name.
-<<<<<<< HEAD
 func NewDirectClient(account string) (nectar.Client, error) {
 	pdc, err := NewProxyDirectClient(nil, zap.NewNop())
 	if err != nil {
