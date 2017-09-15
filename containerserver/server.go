@@ -650,8 +650,14 @@ func GetServer(serverconf conf.Config, flags *flag.FlagSet) (bindIP string, bind
 	connTimeout := time.Duration(serverconf.GetFloat("app:container-server", "conn_timeout", 1.0) * float64(time.Second))
 	nodeTimeout := time.Duration(serverconf.GetFloat("app:container-server", "node_timeout", 10.0) * float64(time.Second))
 	server.updateClient = &http.Client{
-		Timeout:   nodeTimeout,
-		Transport: &http.Transport{Dial: (&net.Dialer{Timeout: connTimeout}).Dial},
+		Timeout: nodeTimeout,
+		Transport: &http.Transport{
+			Dial:                (&net.Dialer{Timeout: connTimeout}).Dial,
+			MaxIdleConnsPerHost: 100,
+			MaxIdleConns:        0,
+			IdleConnTimeout:     5 * time.Second,
+			DisableCompression:  true,
+		},
 	}
 	return bindIP, bindPort, server, server.logger, nil
 }
