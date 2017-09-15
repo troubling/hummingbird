@@ -46,7 +46,7 @@ func makeFormpostRequest(t *testing.T, body, boundary string, next http.Handler)
 	neww := httptest.NewRecorder()
 	ctx := &ProxyContext{
 		Logger: zap.NewNop(),
-		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
+		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
 			"container/AUTH_test/container": {Metadata: map[string]string{"Temp-Url-Key": "mykey"}},
 		}),
 		accountInfoCache: map[string]*AccountInfo{
@@ -164,7 +164,7 @@ func TestFpLimitReader(t *testing.T) {
 func TestAuthenticateFormpost(t *testing.T) {
 	ctx := &ProxyContext{
 		Logger: zap.NewNop(),
-		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
+		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
 			"container/a/c": {Metadata: map[string]string{
 				"Temp-Url-Key":   "containerkey",
 				"Temp-Url-Key-2": "containerkey2",

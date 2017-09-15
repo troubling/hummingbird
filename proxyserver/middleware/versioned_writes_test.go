@@ -76,7 +76,7 @@ func TestObjectPutHistory(t *testing.T) {
 			next: next,
 		},
 		Logger: zap.NewNop(),
-		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
+		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
 			"container/a/c": {
 				SysMetadata: map[string]string{
 					"Versions-Location": "c_v",
@@ -133,7 +133,7 @@ func TestObjectDeleteHistory(t *testing.T) {
 			next: next,
 		},
 		Logger: zap.NewNop(),
-		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
+		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
 			"container/a/c": {
 				SysMetadata: map[string]string{
 					"Versions-Location": "c_v",
@@ -197,7 +197,7 @@ func TestObjectDeleteStack(t *testing.T) {
 			next: next,
 		},
 		Logger: zap.NewNop(),
-		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
+		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
 			"container/a/c": {
 				SysMetadata: map[string]string{
 					"Versions-Location": "c_v",
@@ -262,7 +262,7 @@ func TestObjectDeleteStackMarker(t *testing.T) {
 			next: next,
 		},
 		Logger: zap.NewNop(),
-		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
+		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
 			"container/a/c": {
 				SysMetadata: map[string]string{
 					"Versions-Location": "c_v",

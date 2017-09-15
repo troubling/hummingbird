@@ -195,7 +195,7 @@ func TestTempurlMiddleware400PuttingManifest(t *testing.T) {
 func TestTempurlMiddleware401NoKeys(t *testing.T) {
 	r := httptest.NewRequest("PUT", "/v1/a/c/o?temp_url_sig=ABCDEF&temp_url_expires=9999999999", nil)
 	ctx := &ProxyContext{
-		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
+		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
 			"container/a/c": {Metadata: map[string]string{}},
 		}),
 		accountInfoCache: map[string]*AccountInfo{
@@ -213,7 +213,7 @@ func TestTempurlMiddleware401NoKeys(t *testing.T) {
 func TestTempurlMiddleware401WrongKeys(t *testing.T) {
 	r := httptest.NewRequest("PUT", "/v1/a/c/o?temp_url_sig=ABCDEF&temp_url_expires=9999999999", nil)
 	ctx := &ProxyContext{
-		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
+		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
 			"container/a/c": {Metadata: map[string]string{"Temp-Url-Key": "ABCD", "Temp-Url-Key-2": "012345"}},
 		}),
 		accountInfoCache: map[string]*AccountInfo{
@@ -232,7 +232,7 @@ func TestTempurlMiddlewareContainerKey(t *testing.T) {
 	r := httptest.NewRequest("GET", "/v1/a/c/o?temp_url_sig=f2d61be897a27c03ac9a0dac3a8c4f6ce3a3d623&"+
 		"temp_url_expires=9999999999", nil)
 	ctx := &ProxyContext{
-		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
+		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
 			"container/a/c": {Metadata: map[string]string{"Temp-Url-Key": "mykey"}},
 		}),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
@@ -261,7 +261,7 @@ func TestTempurlMiddlewarePath(t *testing.T) {
 	r := httptest.NewRequest("GET", "/v1/a/c/o123?temp_url_sig=058e0771c69f7e1eb1eacbd68396920fd06ff261&"+
 		"temp_url_expires=9999999999&temp_url_prefix=o", nil)
 	ctx := &ProxyContext{
-		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
+		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
 			"container/a/c": {Metadata: map[string]string{"Temp-Url-Key": "mykey"}},
 		}),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
@@ -284,7 +284,7 @@ func TestTempurlMiddlewareAccountKey(t *testing.T) {
 	r := httptest.NewRequest("GET", "/v1/a/c/o?temp_url_sig=f2d61be897a27c03ac9a0dac3a8c4f6ce3a3d623&"+
 		"temp_url_expires=9999999999", nil)
 	ctx := &ProxyContext{
-		C: client.NewProxyClient(nil, nil, map[string]*client.ContainerInfo{
+		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
 			"container/a/c": {Metadata: map[string]string{}},
 		}),
 		accountInfoCache: map[string]*AccountInfo{
