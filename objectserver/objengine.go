@@ -18,11 +18,13 @@ package objectserver
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"net/http"
 	"sync"
 
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/srv"
 )
 
 // DriveFullError can be returned by Object.SetData and Object.Delete if the disk is too full for the operation.
@@ -55,10 +57,21 @@ type Object interface {
 	Repr() string
 }
 
+type ObjectStabilizer interface {
+	Object
+	// Stabilize object- move to stable location / erasure code / do nothing / etc
+	Stabilize() error
+}
+
 // ObjectEngine is the type you have to give hummingbird to create a new object engine.
 type ObjectEngine interface {
 	// New creates a new instance of the Object, for interacting with a single object.
 	New(vars map[string]string, needData bool, asyncWG *sync.WaitGroup) (Object, error)
+}
+
+type NurseryObjectEngine interface {
+	ObjectEngine
+	GetNurseryObjects(device string, c chan ObjectStabilizer, cancel chan struct{})
 }
 
 type PolicyHandlerRegistrator interface {
@@ -94,4 +107,23 @@ func FindEngine(name string) (ObjectEngineConstructor, error) {
 		}
 	}
 	return nil, errors.New("Not found")
+}
+
+func BuildEngines(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (map[int]ObjectEngine, error) {
+	objEngines := make(map[int]ObjectEngine)
+	policies, err := cnf.GetPolicies()
+	if err != nil {
+		return objEngines, err
+	}
+	for _, policy := range policies {
+		if newEngine, err := FindEngine(policy.Type); err != nil {
+			return objEngines, fmt.Errorf("Unable to find object engine type %s: %v", policy.Type, err)
+		} else {
+			objEngines[policy.Index], err = newEngine(serverconf, policy, flags)
+			if err != nil {
+				return objEngines, fmt.Errorf("Error instantiating object engine type %s: %v", policy.Type, err)
+			}
+		}
+	}
+	return objEngines, nil
 }

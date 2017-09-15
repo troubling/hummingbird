@@ -67,11 +67,11 @@ func (q quarantineFileError) Error() string {
 	return q.msg
 }
 
-func deviceKey(dev *ring.Device, policy int) string {
+func deviceKeyId(dev string, policy int) string {
 	if policy == 0 {
-		return dev.Device
+		return dev
 	}
-	return fmt.Sprintf("%s-%d", dev.Device, policy)
+	return fmt.Sprintf("%s-%d", dev, policy)
 }
 
 func getFile(filePath string) (fp *os.File, xattrs []byte, size int64, err error) {
@@ -508,7 +508,7 @@ func (rd *replicationDevice) replicateHandoff(partition string, nodes []*ring.De
 }
 
 func (rd *replicationDevice) Key() string {
-	return deviceKey(rd.dev, rd.policy)
+	return deviceKeyId(rd.dev.Device, rd.policy)
 }
 
 func (rd *replicationDevice) cleanTemp() {
@@ -744,19 +744,23 @@ type Replicator struct {
 	stats                   map[string]map[string]*DeviceStats
 	runningDevices          map[string]ReplicationDevice
 	updatingDevices         map[string]*updateDevice
+	nurseryDevices          map[string]*nurseryDevice
 	runningDevicesLock      sync.Mutex
 	logger                  srv.LowLevelLogger
 	objectRings             map[int]ring.Ring
+	objEngines              map[int]ObjectEngine
 	containerRing           ring.Ring
 	cancelCounts            map[string]int64
 	replicateConcurrencySem chan struct{}
 	updateConcurrencySem    chan struct{}
+	nurseryConcurrencySem   chan struct{}
 	updateStat              chan statUpdate
 	onceDone                chan struct{}
 	onceWaiting             int64
 	client                  *http.Client
 	incomingSemLock         sync.Mutex
 	incomingSem             map[string]chan struct{}
+	asyncWG                 sync.WaitGroup // Used to wait on async goroutines
 }
 
 func (r *Replicator) cancelStalledDevices() {
@@ -779,21 +783,35 @@ func (r *Replicator) cancelStalledDevices() {
 			delete(r.stats["object-updater"], key)
 		}
 	}
+
+	for key, nrd := range r.nurseryDevices {
+		stats, ok := r.stats["object-nursery"][key]
+		if ok && time.Since(stats.LastCheckin) > replicateDeviceTimeout {
+			nrd.cancel()
+			delete(r.nurseryDevices, key)
+			delete(r.stats["object-nursery"], key)
+		}
+	}
 }
 
 func (r *Replicator) verifyRunningDevices() {
 	r.runningDevicesLock.Lock()
 	defer r.runningDevicesLock.Unlock()
 	expectedDevices := make(map[string]bool)
-	for policy, ring := range r.objectRings {
-		ringDevices, err := ring.LocalDevices(r.port)
+	for policy, oring := range r.objectRings {
+		ringDevices, err := oring.LocalDevices(r.port)
 		if err != nil {
 			r.logger.Error("Error getting local devices from ring", zap.Error(err))
 			return
 		}
+		objEngine, ok := r.objEngines[policy]
+		if !ok {
+			r.logger.Error("Error finding engine for policy", zap.Int("policy", policy), zap.Error(err))
+			return
+		}
 		// look for devices that aren't running but should be
 		for _, dev := range ringDevices {
-			key := deviceKey(dev, policy)
+			key := deviceKeyId(dev.Device, policy)
 			expectedDevices[key] = true
 			if len(r.devices) > 0 && !r.devices[dev.Device] {
 				continue
@@ -815,6 +833,17 @@ func (r *Replicator) verifyRunningDevices() {
 				}
 				go r.updatingDevices[key].updateLoop()
 			}
+			if _, ok := r.nurseryDevices[key]; !ok {
+				if nd, err := newNurseryDevice(dev, oring.(ring.Ring), policy, r, objEngine); err == nil {
+					r.nurseryDevices[key] = nd
+					fmt.Println("made one", nd)
+					r.stats["object-nursery"][key] = &DeviceStats{
+						LastCheckin: time.Now(), DeviceStarted: time.Now(),
+						Stats: map[string]int64{"Success": 0, "Failure": 0},
+					}
+					go r.nurseryDevices[key].stabilizeLoop()
+				}
+			}
 		}
 	}
 	// look for devices that are running but shouldn't be
@@ -828,6 +857,12 @@ func (r *Replicator) verifyRunningDevices() {
 		if _, found := expectedDevices[key]; !found {
 			ud.cancel()
 			delete(r.updatingDevices, key)
+		}
+	}
+	for key, nrd := range r.nurseryDevices {
+		if _, found := expectedDevices[key]; !found {
+			nrd.cancel()
+			delete(r.nurseryDevices, key)
 		}
 	}
 }
@@ -888,7 +923,7 @@ func (r *Replicator) reportStats() {
 
 func (r *Replicator) priorityReplicate(pri PriorityRepJob, timeout time.Duration) bool {
 	r.runningDevicesLock.Lock()
-	rd, ok := r.runningDevices[deviceKey(pri.FromDevice, pri.Policy)]
+	rd, ok := r.runningDevices[deviceKeyId(pri.FromDevice.Device, pri.Policy)]
 	r.runningDevicesLock.Unlock()
 	if ok {
 		return rd.PriorityReplicate(pri, timeout)
@@ -981,6 +1016,11 @@ func (r *Replicator) Run() {
 			r.logger.Error("Error getting local devices from ring", zap.Error(err))
 			return
 		}
+		objEngine, ok := r.objEngines[policy]
+		if !ok {
+			r.logger.Error("Error finding engine for policy", zap.Int("policy", policy), zap.Error(err))
+			return
+		}
 		for _, dev := range devices {
 			rd := newReplicationDevice(dev, policy, r)
 			key := rd.Key()
@@ -997,6 +1037,15 @@ func (r *Replicator) Run() {
 			}(r.updatingDevices[key])
 
 			r.onceWaiting += 2
+
+			if nd, err := newNurseryDevice(dev, theRing, policy, r, objEngine); err == nil {
+				r.nurseryDevices[key] = nd
+				go func(nrd *nurseryDevice) {
+					nrd.stabilizeDevice()
+					r.onceDone <- struct{}{}
+				}(r.nurseryDevices[key])
+				r.onceWaiting += 1
+			}
 		}
 	}
 	for r.onceWaiting > 0 {
@@ -1011,6 +1060,7 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 	}
 	concurrency := int(serverconf.GetInt("object-replicator", "concurrency", 1))
 	updaterConcurrency := int(serverconf.GetInt("object-updater", "concurrency", 2))
+	nurseryConcurrency := int(serverconf.GetInt("object-nursery", "concurrency", 10))
 
 	logLevelString := serverconf.GetDefault("object-replicator", "log_level", "INFO")
 	logLevel := zap.NewAtomicLevel()
@@ -1029,10 +1079,12 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 
 		runningDevices:          make(map[string]ReplicationDevice),
 		updatingDevices:         make(map[string]*updateDevice),
+		nurseryDevices:          make(map[string]*nurseryDevice),
 		cancelCounts:            make(map[string]int64),
 		objectRings:             make(map[int]ring.Ring),
 		replicateConcurrencySem: make(chan struct{}, concurrency),
 		updateConcurrencySem:    make(chan struct{}, updaterConcurrency),
+		nurseryConcurrencySem:   make(chan struct{}, nurseryConcurrency),
 		updateStat:              make(chan statUpdate),
 		devices:                 make(map[string]bool),
 		partitions:              make(map[string]bool),
@@ -1042,6 +1094,7 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 		stats: map[string]map[string]*DeviceStats{
 			"object-replicator": {},
 			"object-updater":    {},
+			"object-nursery":    {},
 		},
 	}
 
@@ -1053,7 +1106,7 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 		return nil, nil, err
 	}
 	for _, policy := range replicator.policies {
-		if policy.Type != "replication" {
+		if !(policy.Type == "replication" || policy.Type == "replication-nursery") {
 			continue
 		}
 		if replicator.objectRings[policy.Index], err = cnf.GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index); err != nil {
@@ -1062,6 +1115,9 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 	}
 	if replicator.containerRing, err = cnf.GetRing("container", hashPathPrefix, hashPathSuffix, 0); err != nil {
 		return nil, nil, fmt.Errorf("Error loading container ring: %v", err)
+	}
+	if replicator.objEngines, err = BuildEngines(serverconf, flags, cnf); err != nil {
+		return nil, nil, err
 	}
 	if replicator.logger, err = srv.SetupLogger("object-replicator", &logLevel, flags); err != nil {
 		return nil, nil, fmt.Errorf("Error setting up logger: %v", err)

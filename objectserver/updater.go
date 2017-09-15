@@ -50,7 +50,7 @@ type updateDevice struct {
 }
 
 func (ud *updateDevice) updateStat(stat string, amount int64) {
-	key := deviceKey(ud.dev, ud.policy)
+	key := deviceKeyId(ud.dev.Device, ud.policy)
 	ud.r.updateStat <- statUpdate{"object-updater", key, stat, amount}
 }
 
