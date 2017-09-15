@@ -192,6 +192,7 @@ or
 	allowInsecureAuthCert := benchconf.GetBool("bench", "allow_insecure_auth_cert", false)
 	salt := fmt.Sprintf("%d", rand.Int63())
 
+	fmt.Printf("Hbird Bench. Concurrency: %d. Object size in bytes: %d\n", concurrency, objectSize)
 	var cli nectar.Client
 	var resp *http.Response
 	if allowInsecureAuthCert {
