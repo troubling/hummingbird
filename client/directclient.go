@@ -81,14 +81,28 @@ func NewProxyDirectClient(policyList conf.PolicyList) (*ProxyDirectClient, error
 	}
 	c.objectClients = make([]proxyObjectClient, len(policyList))
 	for _, policy := range policyList {
+		// TODO: the intention is to (if it becomes necessary) have a policy type to object client
+		// constructor mapping here, similar to how object engines are loaded by policy type.
 		ring, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index)
 		if err != nil {
 			return nil, err
 		}
-		// TODO: infrastructore to be able to jam alternative object clients for different policies in here
-		c.objectClients[policy.Index] = &standardObjectClient{proxyDirectClient: c, policy: policy.Index, objectRing: ring}
+		client := &standardObjectClient{proxyDirectClient: c, policy: policy.Index, objectRing: ring}
+		if policy.Type == "hec" {
+			if replicas, err := strconv.Atoi(policy.Config["nursery_replicas"]); err == nil && replicas > 0 {
+				client.deviceLimit = replicas
+			} else {
+				client.deviceLimit = 3
+			}
+		}
+		c.objectClients[policy.Index] = client
 	}
 	return c, nil
+}
+
+func (c *ProxyDirectClient) writeNodes(r ring.Ring, partition uint64) ([]*ring.Device, ring.MoreNodes) {
+	// TODO: if the client has been configured for write affinity, devices will be filtered here.
+	return r.GetNodes(partition), r.GetMoreNodes(partition)
 }
 
 // quorumResponse returns with a response representative of a quorum of nodes.
@@ -98,8 +112,7 @@ func (c *ProxyDirectClient) quorumResponse(r ring.Ring, partition uint64, devToR
 	cancel := make(chan struct{})
 	defer close(cancel)
 	responsec := make(chan *http.Response)
-	devs := r.GetNodes(partition)
-	more := r.GetMoreNodes(partition)
+	devs, more := c.writeNodes(r, partition)
 	for i := 0; i < int(r.ReplicaCount()); i++ {
 		go func(index int) {
 			var resp *http.Response
@@ -154,7 +167,6 @@ func (c *ProxyDirectClient) firstResponse(r ring.Ring, partition uint64, devToRe
 		devs[i], devs[j] = devs[j], devs[i]
 	}
 	more := r.GetMoreNodes(partition)
-
 	internalErrors := 0
 	for requestCount := 0; requestCount < int(r.ReplicaCount()+2); requestCount++ {
 		var dev *ring.Device
@@ -628,6 +640,7 @@ type standardObjectClient struct {
 	proxyDirectClient *ProxyDirectClient
 	policy            int
 	objectRing        ring.Ring
+	deviceLimit       int
 }
 
 // putReader is a Reader proxy that sends its reader over the ready channel the first time Read is called.
@@ -662,17 +675,24 @@ func (p *putReader) Read(b []byte) (int, error) {
 	}
 }
 
+func (oc *standardObjectClient) writeNodes(r ring.Ring, partition uint64) ([]*ring.Device, ring.MoreNodes) {
+	devs, more := oc.proxyDirectClient.writeNodes(r, partition)
+	if oc.deviceLimit > 0 && len(devs) > oc.deviceLimit {
+		return devs[0:oc.deviceLimit], more
+	}
+	return devs, more
+}
+
 func (oc *standardObjectClient) putObject(account, container, obj string, headers http.Header, src io.Reader) *http.Response {
 	objectPartition := oc.objectRing.GetPartition(account, container, obj)
 	containerPartition := oc.proxyDirectClient.ContainerRing.GetPartition(account, container, "")
 	containerDevices := oc.proxyDirectClient.ContainerRing.GetNodes(containerPartition)
-	objectReplicaCount := int(oc.objectRing.ReplicaCount())
 	ready := make(chan io.WriteCloser)
 	cancel := make(chan struct{})
 	defer close(cancel)
 	responsec := make(chan *http.Response)
-	devs := oc.objectRing.GetNodes(objectPartition)
-	more := oc.objectRing.GetMoreNodes(objectPartition)
+	devs, more := oc.writeNodes(oc.objectRing, objectPartition)
+	objectReplicaCount := len(devs)
 
 	devToRequest := func(index int, dev *ring.Device) (*http.Request, error) {
 		trp, wp := io.Pipe()
@@ -717,7 +737,7 @@ func (oc *standardObjectClient) putObject(account, container, obj string, header
 		}(i)
 	}
 	responseClassCounts := make([]int, 6)
-	quorum := int(math.Ceil(float64(oc.objectRing.ReplicaCount()) / 2.0))
+	quorum := int(math.Ceil(float64(objectReplicaCount) / 2.0))
 	writers := make([]io.Writer, 0)
 	cWriters := make([]io.WriteCloser, 0)
 	responseCount := 0
