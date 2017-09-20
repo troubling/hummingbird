@@ -201,35 +201,51 @@ func SetupLogger(prefix string, atomicLevel *zap.AtomicLevel, flags *flag.FlagSe
 	})
 
 	var lowPrioFile, highPrioFile zapcore.WriteSyncer
-	var openerr error
-	if lFlag := flags.Lookup("l"); lFlag != nil && lFlag.Value.(flag.Getter).Get().(string) != "" {
-		lowPrioFile, openerr = os.OpenFile(lFlag.Value.(flag.Getter).Get().(string), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
-		if openerr != nil {
-			return nil, fmt.Errorf("Unable to open file for logger: %v", openerr)
+	var err error
+	name := "stdout"
+	if lFlag := flags.Lookup("l"); lFlag != nil {
+		name = lFlag.Value.(flag.Getter).Get().(string)
+	}
+	if name == "" {
+		name = "stdout"
+	}
+	switch name {
+	case "stdout", "stderr":
+		lowPrioFile, _, err = zap.Open(name)
+		if err != nil {
+			return nil, fmt.Errorf("Unable to open low priority logger: %s %v", name, err)
+		}
+	default:
+		lowPrioFile, err = os.OpenFile(name, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("Unable to open file for low priority logger: %s %v", name, err)
 		}
 		err := syscall.Dup2(int(lowPrioFile.(*os.File).Fd()), int(os.Stdout.Fd()))
 		if err != nil {
 			return nil, errors.New("Unable to redirect STDOUT")
 		}
-	} else {
-		lowPrioFile, _, openerr = zap.Open("stdout")
-		if openerr != nil {
-			return nil, fmt.Errorf("Unable to create logger: %v", openerr)
-		}
 	}
-	if eFlag := flags.Lookup("e"); eFlag != nil && eFlag.Value.(flag.Getter).Get().(string) != "" {
-		highPrioFile, openerr = os.OpenFile(eFlag.Value.(flag.Getter).Get().(string), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
-		if openerr != nil {
-			return nil, fmt.Errorf("Unable to open file for logger: %v", openerr)
+	name = "stderr"
+	if eFlag := flags.Lookup("e"); eFlag != nil {
+		name = eFlag.Value.(flag.Getter).Get().(string)
+	}
+	if name == "" {
+		name = "stderr"
+	}
+	switch name {
+	case "stdout", "stderr":
+		highPrioFile, _, err = zap.Open(name)
+		if err != nil {
+			return nil, fmt.Errorf("Unable to open high priority logger: %s %v", name, err)
+		}
+	default:
+		highPrioFile, err = os.OpenFile(name, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("Unable to open file for high priority logger: %s %v", name, err)
 		}
 		err := syscall.Dup2(int(highPrioFile.(*os.File).Fd()), int(os.Stderr.Fd()))
 		if err != nil {
 			return nil, errors.New("Unable to redirect STDERR")
-		}
-	} else {
-		highPrioFile, _, openerr = zap.Open("stderr")
-		if openerr != nil {
-			return nil, fmt.Errorf("Unable to create logger: %v", openerr)
 		}
 	}
 
