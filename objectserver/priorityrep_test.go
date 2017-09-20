@@ -77,6 +77,18 @@ func (p *priFakeRing) PartitionCount() (cnt uint64) {
 	return uint64(0)
 }
 
+func (p *priFakeRing) FullReplicaCount() (cnt uint64) {
+	return uint64(0)
+}
+
+func (p *priFakeRing) FullNodes(partition uint64) []*ring.Device {
+	return nil
+}
+
+func (p *priFakeRing) DataShards() uint64 {
+	return uint64(0)
+}
+
 func TestGetPartMoveJobs(t *testing.T) {
 	t.Parallel()
 	oldRing := &priFakeRing{

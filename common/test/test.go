@@ -134,6 +134,22 @@ func (r *FakeRing) ReplicaCount() uint64 {
 	return 3
 }
 
+func (r *FakeRing) FullReplicaCount() uint64 {
+	return 3
+}
+
+func (r *FakeRing) FullNodes(partition uint64) []*ring.Device {
+	if len(r.MockDevices) > 0 {
+		return r.MockDevices[0:3]
+	} else {
+		return nil
+	}
+}
+
+func (r *FakeRing) DataShards() uint64 {
+	return 0
+}
+
 type fakeMoreNodes struct {
 	dev *ring.Device
 }

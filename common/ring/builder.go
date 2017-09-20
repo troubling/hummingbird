@@ -89,6 +89,8 @@ type RingBuilderPickle struct {
 	LastPartMoves       lastPartMovesArray      `pickle:"_last_part_moves"`
 	Replica2Part2Dev    []replica2Part2DevArray `pickle:"_replica2part2dev"`
 	//DispersionGraph     map[pickle.PickleTuple][]interface{} `pickle:"_dispersion_graph"`
+	NurseryReplicas int64 `pickle:"nursery_replicas"`
+	DataShards      int64 `pickle:"data_shards"`
 }
 
 type RingBuilderDevice struct {
@@ -124,6 +126,8 @@ type RingBuilder struct {
 	replica2Part2Dev    [][]uint
 	Debug               bool
 	removedDevs         []*RingBuilderDevice
+	NurseryReplicas     int
+	DataShards          int
 }
 
 type minMax struct {
@@ -213,6 +217,8 @@ func NewRingBuilderFromFile(builderPath string, debug bool) (*RingBuilder, error
 		lastPartMovesEpoch:  rbp.LastPartMovesEpoch,
 		lastPartGatherStart: int(rbp.LastPartGatherStart),
 		Debug:               debug,
+		NurseryReplicas:     int(rbp.NurseryReplicas),
+		DataShards:          int(rbp.DataShards),
 	}
 	builder.lastPartGatherStart = 0
 	builder.lastPartMoves = rbp.LastPartMoves.Data
@@ -254,6 +260,8 @@ func (b *RingBuilder) Save(builderPath string) error {
 		Dispersion:          b.Dispersion,
 		LastPartMovesEpoch:  int64(b.lastPartMovesEpoch),
 		LastPartGatherStart: int64(b.lastPartGatherStart),
+		NurseryReplicas:     int64(b.NurseryReplicas),
+		DataShards:          int64(b.DataShards),
 	}
 
 	rbp.LastPartMoves = lastPartMovesArray{
@@ -1504,8 +1512,10 @@ func (b *RingBuilder) SetReplicas(newReplicaCount float64) {
 
 func (b *RingBuilder) GetRing() *hashRing {
 	data := ringData{
-		ReplicaCount: int(b.Replicas),
-		PartShift:    uint64(32 - b.PartPower),
+		ReplicaCount:    int(b.Replicas),
+		PartShift:       uint64(32 - b.PartPower),
+		NurseryReplicas: b.NurseryReplicas,
+		DataShards:      b.DataShards,
 	}
 	for i, dev := range b.Devs {
 		if dev != nil {
@@ -1783,4 +1793,24 @@ func Validate(builderPath string) error {
 	}
 	err = builder.Validate()
 	return err
+}
+
+func SetNurseryReplicas(builderPath string, count int) error {
+	builder, err := NewRingBuilderFromFile(builderPath, false)
+	if err != nil {
+		return err
+	}
+	builder.NurseryReplicas = count
+	builder.Save(builderPath)
+	return nil
+}
+
+func SetDataShards(builderPath string, count int) error {
+	builder, err := NewRingBuilderFromFile(builderPath, false)
+	if err != nil {
+		return err
+	}
+	builder.DataShards = count
+	builder.Save(builderPath)
+	return nil
 }

@@ -116,6 +116,25 @@ func (r *FakeRing) ReplicaCount() uint64 {
 	return 2
 }
 
+func (r *FakeRing) FullReplicaCount() uint64 {
+	return 2
+}
+
+func (r *FakeRing) FullNodes(partition uint64) (response []*ring.Device) {
+	if r.nodeCalls <= 0 {
+		return nil
+	}
+	r.nodeCalls--
+	for i := range r.Devs {
+		response = append(response, r.Devs[i])
+	}
+	return response
+}
+
+func (r *FakeRing) DataShards() uint64 {
+	return 0
+}
+
 func TestGetDispersionObjects(t *testing.T) {
 	fakeDevs := []*ring.Device{
 		{Ip: "127.0.0.1", Port: 80, Device: "sda"},
