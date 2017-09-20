@@ -203,34 +203,20 @@ func SetupLogger(prefix string, atomicLevel *zap.AtomicLevel, flags *flag.FlagSe
 	var lowPrioFile, highPrioFile zapcore.WriteSyncer
 	var openerr error
 	if lFlag := flags.Lookup("l"); lFlag != nil && lFlag.Value.(flag.Getter).Get().(string) != "" {
-		lowPrioFile, openerr = os.OpenFile(lFlag.Value.(flag.Getter).Get().(string), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
-		if openerr != nil {
-			return nil, fmt.Errorf("Unable to open file for logger: %v", openerr)
-		}
-		err := syscall.Dup2(int(lowPrioFile.(*os.File).Fd()), int(os.Stdout.Fd()))
-		if err != nil {
-			return nil, errors.New("Unable to redirect STDOUT")
-		}
+		lowPrioFile, _, openerr = zap.Open(lFlag.Value.(flag.Getter).Get().(string))
 	} else {
 		lowPrioFile, _, openerr = zap.Open("stdout")
-		if openerr != nil {
-			return nil, fmt.Errorf("Unable to create logger: %v", openerr)
-		}
+	}
+	if openerr != nil {
+		return nil, fmt.Errorf("Unable to create logger: %v", openerr)
 	}
 	if eFlag := flags.Lookup("e"); eFlag != nil && eFlag.Value.(flag.Getter).Get().(string) != "" {
-		highPrioFile, openerr = os.OpenFile(eFlag.Value.(flag.Getter).Get().(string), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
-		if openerr != nil {
-			return nil, fmt.Errorf("Unable to open file for logger: %v", openerr)
-		}
-		err := syscall.Dup2(int(highPrioFile.(*os.File).Fd()), int(os.Stderr.Fd()))
-		if err != nil {
-			return nil, errors.New("Unable to redirect STDERR")
-		}
+		highPrioFile, _, openerr = zap.Open(eFlag.Value.(flag.Getter).Get().(string))
 	} else {
 		highPrioFile, _, openerr = zap.Open("stderr")
-		if openerr != nil {
-			return nil, fmt.Errorf("Unable to create logger: %v", openerr)
-		}
+	}
+	if openerr != nil {
+		return nil, fmt.Errorf("Unable to create logger: %v", openerr)
 	}
 
 	infos := zapcore.AddSync(lowPrioFile)
