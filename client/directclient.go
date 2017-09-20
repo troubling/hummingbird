@@ -71,17 +71,21 @@ func NewProxyDirectClient(policyList conf.PolicyList) (*ProxyDirectClient, error
 	if err != nil {
 		return nil, err
 	}
-	c.ContainerRing, err = ring.GetRing("container", hashPathPrefix, hashPathSuffix, 0)
+	c.ContainerRing, err = ring.GetRing("container", hashPathPrefix, hashPathSuffix, 0, 0)
 	if err != nil {
 		return nil, err
 	}
-	c.AccountRing, err = ring.GetRing("account", hashPathPrefix, hashPathSuffix, 0)
+	c.AccountRing, err = ring.GetRing("account", hashPathPrefix, hashPathSuffix, 0, 0)
 	if err != nil {
 		return nil, err
 	}
 	c.objectClients = make([]proxyObjectClient, len(policyList))
 	for _, policy := range policyList {
-		ring, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index)
+		nurseryReplicas, err := strconv.Atoi(policy.Config["nursery_replicas"])
+		if err != nil {
+			nurseryReplicas = 0
+		}
+		ring, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index, nurseryReplicas)
 		if err != nil {
 			return nil, err
 		}

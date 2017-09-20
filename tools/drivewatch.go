@@ -639,7 +639,7 @@ func NewDriveWatch(logger srv.LowLevelLogger,
 	}
 	pMap := map[int]ringData{}
 	for _, p := range pl {
-		objectRing, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, p.Index)
+		objectRing, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, p.Index, 0)
 		if err != nil {
 			panic(fmt.Sprintf("Could not load ring with policy: %d", p.Index))
 		}

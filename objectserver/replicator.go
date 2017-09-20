@@ -1064,11 +1064,11 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv
 		if policy.Type != "replication" {
 			continue
 		}
-		if replicator.objectRings[policy.Index], err = GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index); err != nil {
+		if replicator.objectRings[policy.Index], err = GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index, 0); err != nil {
 			return nil, nil, fmt.Errorf("Unable to load ring for Policy %d.", policy.Index)
 		}
 	}
-	if replicator.containerRing, err = GetRing("container", hashPathPrefix, hashPathSuffix, 0); err != nil {
+	if replicator.containerRing, err = GetRing("container", hashPathPrefix, hashPathSuffix, 0, 0); err != nil {
 		return nil, nil, fmt.Errorf("Error loading container ring: %v", err)
 	}
 	if replicator.logger, err = srv.SetupLogger("object-replicator", &logLevel, flags); err != nil {

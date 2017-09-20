@@ -523,7 +523,7 @@ func TestGetReplicator(t *testing.T) {
 	GetHashPrefixAndSuffix = func() (pfx string, sfx string, err error) {
 		return "changeme", "changeme", nil
 	}
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	config, err := conf.StringConfig("[container-replicator]\nmount_check=false\nbind_port=1000")

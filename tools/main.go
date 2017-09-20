@@ -69,7 +69,7 @@ func getRing(ringPath, ringType string, policyNum int) (ring.Ring, string) {
 	// try to find it in usual spots
 	prefix, suffix := getAffixes()
 	if ringPath != "" {
-		r, err := ring.LoadRing(ringPath, prefix, suffix)
+		r, err := ring.LoadRing(ringPath, prefix, suffix, 0)
 		if err != nil {
 			fmt.Println("Unable to load ring ", ringPath)
 			os.Exit(1)
@@ -90,7 +90,7 @@ func getRing(ringPath, ringType string, policyNum int) (ring.Ring, string) {
 		ringType = "object"
 	}
 
-	r, err := ring.GetRing(ringType, prefix, suffix, policyNum)
+	r, err := ring.GetRing(ringType, prefix, suffix, policyNum, 0)
 	if err != nil {
 		if policyNum > 0 {
 			fmt.Printf("Unable to load %v-%v ring\n", ringType, policyNum)

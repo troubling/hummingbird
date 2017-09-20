@@ -137,7 +137,7 @@ func NewEnvironment(settings ...string) *Environment {
 	}()
 
 	testRing := &test.FakeRing{}
-	objectserver.GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	objectserver.GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return testRing, nil
 	}
 	log.SetFlags(log.LstdFlags | log.Lshortfile)

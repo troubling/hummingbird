@@ -376,7 +376,7 @@ func TestListObjFiles(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	repl, err := newTestReplicator()
@@ -434,7 +434,7 @@ func TestCancelListObjFiles(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	repl, err := newTestReplicator()
@@ -464,7 +464,7 @@ func TestPriorityRepHandler404(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	t.Parallel()
@@ -494,7 +494,7 @@ func TestSyncFile(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	deviceRoot, err := ioutil.TempDir("", "")
@@ -546,7 +546,7 @@ func TestSyncFileExists(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	deviceRoot, err := ioutil.TempDir("", "")
@@ -596,7 +596,7 @@ func TestSyncFileNewerExists(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	deviceRoot, err := ioutil.TempDir("", "")
@@ -641,7 +641,7 @@ func TestReplicateLocal(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	deviceRoot, err := ioutil.TempDir("", "")
@@ -680,7 +680,7 @@ func TestReplicateHandoff(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	deviceRoot, err := ioutil.TempDir("", "")
@@ -722,7 +722,7 @@ func TestCleanTemp(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	deviceRoot, err := ioutil.TempDir("", "")
@@ -753,7 +753,7 @@ func TestReplicate(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
@@ -776,7 +776,7 @@ func TestCancelReplicate(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
@@ -801,7 +801,7 @@ func TestListPartitions(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	deviceRoot, err := ioutil.TempDir("", "")
@@ -836,7 +836,7 @@ func TestReplicatePartition(t *testing.T) {
 	}()
 
 	testRing := &test.FakeRing{MockGetMoreNodes: &NoMoreNodes{}}
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return testRing, nil
 	}
 	deviceRoot, err := ioutil.TempDir("", "")
@@ -874,7 +874,7 @@ func TestProcessPriorityJobs(t *testing.T) {
 	}()
 
 	testRing := &test.FakeRing{MockGetMoreNodes: &NoMoreNodes{}}
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return testRing, nil
 	}
 	deviceRoot, err := ioutil.TempDir("", "")
@@ -922,7 +922,7 @@ func TestCancelStalledDevices(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
@@ -975,7 +975,7 @@ func TestVerifyDevices(t *testing.T) {
 		conf.LoadPolicies = oldLoadPolicies
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{MockLocalDevices: []*ring.Device{{Device: "sda"}}}, nil
 	}
 	conf.LoadPolicies = func() conf.PolicyList {
@@ -1013,7 +1013,7 @@ func TestReportStats(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
@@ -1106,7 +1106,7 @@ func TestPriorityReplicate(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
@@ -1135,7 +1135,7 @@ func TestGetDeviceProgress(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
@@ -1174,7 +1174,7 @@ func TestRunLoopOnceDone(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
@@ -1192,7 +1192,7 @@ func TestRunLoopStatUpdate(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
@@ -1237,7 +1237,7 @@ func TestReplicationLocal(t *testing.T) {
 	}()
 
 	testRing := &test.FakeRing{}
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return testRing, nil
 	}
 	ts, err := makeObjectServer()
@@ -1288,7 +1288,7 @@ func TestReplicationHandoff(t *testing.T) {
 	}()
 
 	testRing := &test.FakeRing{}
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return testRing, nil
 	}
 	ts, err := makeObjectServer()
@@ -1352,7 +1352,7 @@ func TestReplicationHandoffQuorumDelete(t *testing.T) {
 	}()
 
 	testRing := &test.FakeRing{}
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return testRing, nil
 	}
 	ts, err := makeObjectServer()
@@ -1414,7 +1414,7 @@ func TestAllDifferentRegionsSync(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	deviceRoot, err := ioutil.TempDir("", "")
@@ -1469,7 +1469,7 @@ func TestAllSameRegionsSync(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	deviceRoot, err := ioutil.TempDir("", "")
@@ -1524,7 +1524,7 @@ func TestHalfSameRegionsSync(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	deviceRoot, err := ioutil.TempDir("", "")
@@ -1586,7 +1586,7 @@ func TestHalfSameRegionsSyncHandoffNotExists(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	deviceRoot, err := ioutil.TempDir("", "")
@@ -1653,7 +1653,7 @@ func TestHalfSameRegionsSyncHandoffYesExists(t *testing.T) {
 		GetRing = oldGetRing
 	}()
 
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	GetRing = func(ringType, prefix, suffix string, policy int, limitReplicas int) (ring.Ring, error) {
 		return &test.FakeRing{}, nil
 	}
 	deviceRoot, err := ioutil.TempDir("", "")
