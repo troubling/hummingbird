@@ -555,7 +555,7 @@ func initCommand(args []string) error {
 		print(`#!/bin/bash`)
 		print(``)
 		print(`if hash journalctl 2>/dev/null ; then`)
-		print(`    journalctl -u hummingbird-\$@`)
+		print(`    journalctl -t hummingbird-\$@`)
 		print(`else`)
 		print(`    echo "Unsure how to view your logs"`)
 		print(`    exit 1`)
