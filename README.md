@@ -13,5 +13,4 @@ Development
 
 Follow [these instructions](HAIO.md) to install Hummingbird in a development environment.
 
-
    [1]: http://swift.openstack.org/
