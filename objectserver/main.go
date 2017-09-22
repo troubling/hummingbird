@@ -273,7 +273,8 @@ func (server *ObjectServer) ObjPutHandler(writer http.ResponseWriter, request *h
 			}
 		}
 		if inm := request.Header.Get("If-None-Match"); inm != "*" && strings.Contains(inm, metadata["ETag"]) {
-			srv.StandardResponse(writer, http.StatusPreconditionFailed)
+            srv.GetLogger(request).Error("GLH", zap.String("inm", inm), zap.String("metadata[ETag]", metadata["ETag"]))
+			srv.StandardResponse(writer, http.StatusPreconditionFailed+1) // GLH
 			return
 		}
 	}
