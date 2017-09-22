@@ -226,7 +226,7 @@ func (oto *objectTrackerObject) commit(metadata map[string]string, deletion bool
 	if err != nil {
 		return err
 	}
-    timestamp := timestampTime.UnixNano()
+	timestamp := timestampTime.UnixNano()
 	metastore := make(kvt.Store, len(metadata))
 	for k, v := range metadata {
 		if v == "" {
