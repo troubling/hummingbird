@@ -29,6 +29,24 @@ func updateMetaChexorFNV64a(chexorFNV64a uint64, hsh, metahash string) uint64 {
 	return chexorFNV64a ^ h.Sum64()
 }
 
+// kvtCondense discards metadata based on the Swift object metadata rules. A
+// Swift POST must contain all the metadata desired with no earlier metadata
+// carried forward except Content-Length, Content-Type, delete, ETag, and any
+// starting with X-Object-Sysmeta-.
+func kvtCondense(s kvt.Store) {
+	var newestTimestamp int64
+	for _, vt := range s {
+		if vt.Timestamp > newestTimestamp {
+			newestTimestamp = vt.Timestamp
+		}
+	}
+	for k, vt := range s {
+		if vt.Timestamp < newestTimestamp && (k != "Content-Length" && k != "Content-Type" && k != "deleted" && k != "ETag" && !strings.HasPrefix(k, "X-Object-Sysmeta-")) {
+			delete(s, k)
+		}
+	}
+}
+
 // ObjectTracker will track a set of objects for a path.
 //
 // This is the "index.db" per disk. Right now it just handles whole objects,
@@ -391,6 +409,7 @@ func (ot *ObjectTracker) Commit(f fs.AtomicFileWriter, hsh string, shard int, ti
 				)
 			} else {
 				metastore.Absorb(dbMetastore)
+				kvtCondense(metastore)
 				var newMetadata []byte
 				if newMetadata, err = json.Marshal(metastore); err != nil {
 					if _, err2 := json.Marshal(dbMetastore); err2 != nil {
