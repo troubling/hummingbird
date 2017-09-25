@@ -653,7 +653,7 @@ func initCommand(args []string) error {
 		print(`hbreset`)
 		print(`hbmain start`)
 		print(`if [ ! -e ~/swift ] ; then`)
-		print(`    git clone --depth 1 https://github.com/openstack/swift ~/swift`)
+		print(`    git clone https://github.com/openstack/swift ~/swift`)
 		print(`fi`)
 		print(`sudo mkdir -p /etc/swift`)
 		print(`sudo chown %s: /etc/swift`, username)

@@ -7,17 +7,27 @@ language: go
 go:
   - 1.9
 
+matrix:
+  include:
+    - env: HYBRID=YES
+    - env: HYBRID=NO
+
 install:
-  - sudo apt-get -y install build-essential memcached rsync xfsprogs git-core libffi-dev python-dev liberasurecode-dev python-virtualenv curl libjerasure-dev
-  - 
+  - sudo apt-get install liberasurecode-dev libjerasure-dev
   - make get all
   - bin/hummingbird init haio
   - ./hummingbird-init-haio.sh
-  - mkdir -p /tmp/output/bin
-  - cp /usr/bin/hummingbird /tmp/output/bin
   - sudo apt remove python-nose # since we'll be installing the pip edition
   - go get github.com/haya14busa/goverage
-  - 
+  - mkdir -p /tmp/output
+  - |
+    if [ "$HYBRID" = "YES" ] ; then
+      cd ~/swift
+      git checkout stable/pike
+    else
+      mkdir -p /tmp/output/bin
+      cp /usr/bin/hummingbird /tmp/output/bin
+    fi
   - virtualenv ~/swift-venv
   - ~/swift-venv/bin/pip install -U pip setuptools python-subunit nose-htmloutput nose-exclude
   - ~/swift-venv/bin/pip install -r ~/swift/requirements.txt
@@ -34,35 +44,31 @@ install:
   - printf "[swift-hash]\nswift_hash_path_prefix = changeme\nswift_hash_path_suffix = changeme\n" > /etc/swift/swift.conf
 
 script:
-  - test -z "$(find . -name '*.go' | xargs gofmt -l -s)" || (echo "You need to run 'make fmt'"; exit 1)
-  - go vet github.com/troubling/hummingbird/...
-  - goverage -coverprofile=/tmp/coverage.out github.com/troubling/hummingbird/...
-  - go tool cover -html=/tmp/coverage.out -o "/tmp/output/coverage.html"
-  - 
-  - hbreset
-  - hummingbird start object
-  - hummingbird start container
-  - hummingbird start account
-  - PATH=$PATH:~/swift-venv/bin swift-init start proxy
-  - PATH=$PATH:~/swift-venv/bin nosetests -e test_unicode_metadata --with-html --html-file=/tmp/output/functional_swiftproxy.html ~/swift/test/functional
-  - PATH=$PATH:~/swift-venv/bin swift-init stop proxy
-  - 
-  - hbreset
-  - hummingbird start main
   - |
+    if [ "$HYBRID" = "YES" ] ; then
+      hummingbird start object
+      hummingbird start container
+      hummingbird start account
+      PATH=$PATH:~/swift-venv/bin swift-init start proxy
+      PATH=$PATH:~/swift-venv/bin nosetests -e test_unicode_metadata --with-html --html-file=/tmp/output/functional_swiftproxy.html ~/swift/test/functional
+    else
+      test -z "$(find . -name '*.go' | xargs gofmt -l -s)" || (echo "You need to run 'make fmt'"; exit 1)
+      go vet github.com/troubling/hummingbird/...
+      goverage -coverprofile=/tmp/coverage.out github.com/troubling/hummingbird/...
+      go tool cover -html=/tmp/coverage.out -o "/tmp/output/coverage.html"
+      hummingbird start main
       PATH=$PATH:~/swift-venv/bin nosetests --with-html --html-file=/tmp/output/functional_hbproxy.html ~/swift/test/functional \
-      --exclude-test=test.functional.test_account.TestAccount.test_unicode_metadata `# violates rfc specifying 7-bit clean headers, go server rejects.` \
-      --exclude-test=test.functional.test_container.TestContainer.test_unicode_metadata \
-      --exclude-test=test.functional.tests.TestFile.testBadHeaders `# Go's http server returns 400 not 501 for Transfer-Encoding: gzip,chunked` \
-      --exclude-test=test.functional.tests.TestFileUTF8.testBadHeaders \
-      --exclude-test=test.functional.tests.TestFile.testGetResponseHeaders `# silly checking for Connection: header.  Let the server do its job.` \
-      --exclude-test=test.functional.tests.TestFileUTF8.testGetResponseHeaders \
-      --exclude-test=test.functional.test_slo.TestSlo.test_slo_typo_etag `# these slo fields are optional and we can't easily detect typos.` \
-      --exclude-test=test.functional.test_slo.TestSlo.test_slo_typo_size \
-      --exclude-test=test.functional.test_slo.TestSloUTF8.test_slo_typo_etag \
-      --exclude-test=test.functional.test_slo.TestSloUTF8.test_slo_typo_size
-  - 
-  - echo "<html><body><h1>Files</h1><ul>$(for file in `find /tmp/output -type f -printf "%P\n" | sort`; do echo "<li><a href='$file'>$file</a></li>"; done)</ul></body></html>" > /tmp/output/index.html
+        --exclude-test=test.functional.test_account.TestAccount.test_unicode_metadata `# violates rfc specifying 7-bit clean headers, go server rejects.` \
+        --exclude-test=test.functional.test_container.TestContainer.test_unicode_metadata \
+        --exclude-test=test.functional.tests.TestFile.testBadHeaders `# Go's http server returns 400 not 501 for Transfer-Encoding: gzip,chunked` \
+        --exclude-test=test.functional.tests.TestFileUTF8.testBadHeaders \
+        --exclude-test=test.functional.tests.TestFile.testGetResponseHeaders `# silly checking for Connection: header.  Let the server do its job.` \
+        --exclude-test=test.functional.tests.TestFileUTF8.testGetResponseHeaders \
+        --exclude-test=test.functional.test_slo.TestSlo.test_slo_typo_etag `# these slo fields are optional and we can't easily detect typos.` \
+        --exclude-test=test.functional.test_slo.TestSlo.test_slo_typo_size \
+        --exclude-test=test.functional.test_slo.TestSloUTF8.test_slo_typo_etag \
+        --exclude-test=test.functional.test_slo.TestSloUTF8.test_slo_typo_size
+    fi
 
 deploy:
   skip_cleanup: true
