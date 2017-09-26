@@ -124,6 +124,7 @@ func (oto *objectTrackerObject) load() error {
 			oto.metadata[k] = *vt.Value
 		}
 	}
+	oto.metadata["X-Timestamp"] = common.CanonicalTimestamp(float64(oto.timestamp) / 1000000000.0)
 	oto.loaded = true
 	return nil
 }

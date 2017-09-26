@@ -408,6 +408,10 @@ func (ot *ObjectTracker) Commit(f fs.AtomicFileWriter, hsh string, shard int, ti
 					zap.Binary("dbMetadata", dbMetadata),
 				)
 			} else {
+				if f == nil {
+					delete(metastore, "Content-Length")
+					delete(metastore, "ETag")
+				}
 				metastore.Absorb(dbMetastore)
 				kvtCondense(metastore)
 				var newMetadata []byte
@@ -574,6 +578,10 @@ func (ot *ObjectTracker) Commit(f fs.AtomicFileWriter, hsh string, shard int, ti
 		}
 		metaChexorFNV64a = uint64(chexorFNV64ai)
 	}
+	if f == nil && !deletion {
+		// We keep the original timestamp if just committing new metadata.
+		timestamp = removeOlderTimestamp
+	}
 	var pth string
 	pth, err = ot.wholeObjectPath(hsh, shard, timestamp)
 	if err != nil {
@@ -623,7 +631,7 @@ func (ot *ObjectTracker) Commit(f fs.AtomicFileWriter, hsh string, shard int, ti
 	if err == nil {
 		err = tx.Commit()
 	}
-	if err == nil && removeOlderPath != "" {
+	if err == nil && removeOlderPath != "" && (f != nil || deletion) {
 		if err2 := os.Remove(removeOlderPath); err2 != nil {
 			ot.logger.Error(
 				"error removing older file",
