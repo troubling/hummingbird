@@ -273,8 +273,7 @@ func (server *ObjectServer) ObjPutHandler(writer http.ResponseWriter, request *h
 			}
 		}
 		if inm := request.Header.Get("If-None-Match"); inm != "*" && strings.Contains(inm, metadata["ETag"]) {
-			srv.GetLogger(request).Error("GLH", zap.String("inm", inm), zap.String("metadata[ETag]", metadata["ETag"]))
-			srv.StandardResponse(writer, http.StatusPreconditionFailed+1) // GLH
+			srv.StandardResponse(writer, http.StatusPreconditionFailed)
 			return
 		}
 	}
@@ -316,7 +315,6 @@ func (server *ObjectServer) ObjPutHandler(writer http.ResponseWriter, request *h
 	}
 	requestEtag := strings.Trim(strings.ToLower(request.Header.Get("ETag")), "\"")
 	if requestEtag != "" && requestEtag != metadata["ETag"] {
-		fmt.Println("GLH", requestEtag, metadata["ETag"], request.Header, metadata)
 		http.Error(writer, "Unprocessable Entity", 422)
 		return
 	}
