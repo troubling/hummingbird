@@ -140,6 +140,15 @@ func NewObjectTracker(pth string, ringPartPower, diskPartPower uint, chexorsMod 
 
 func (ot *ObjectTracker) init(dbi int) error {
 	db := ot.dbs[dbi]
+	if _, err := db.Exec(`
+        PRAGMA synchronous = NORMAL;
+        PRAGMA cache_size = -4096;
+        PRAGMA temp_store = MEMORY;
+        PRAGMA journal_mode = WAL;
+        PRAGMA busy_timeout = 25000;
+    `, nil); err != nil {
+		return err
+	}
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -225,9 +234,8 @@ func (ot *ObjectTracker) init(dbi int) error {
                 deletion INTEGER NOT NULL,
                 metahash TEXT, -- NULLable because not everyone stores the metadata
                 metadata BLOB,
-                CONSTRAINT ix_objects_hash_shard PRIMARY KEY (hash, shard)
+                CONSTRAINT ix_objects_hash_shard_timestamp PRIMARY KEY (hash, shard, timestamp)
             );
-            CREATE INDEX ix_objects_hash_shard_timestamp ON objects (hash, shard, timestamp);
             CREATE INDEX ix_objects_hash_shard_chexorRemainder ON objects (hash, shard, chexorRemainder);
         `)
 		if err != nil {
