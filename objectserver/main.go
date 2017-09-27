@@ -633,6 +633,13 @@ func (server *ObjectServer) GetHandler(config conf.Config, metricsPrefix string)
 	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Invalid path: %s", r.URL.Path), http.StatusBadRequest)
 	})
+	for policy, objEngine := range server.objEngines {
+		if rhoe, ok := objEngine.(PolicyHandlerRegistrator); ok {
+			rhoe.RegisterHandlers(func(method, path string, handler http.HandlerFunc) {
+				router.HandlePolicy(method, path, policy, commonHandlers.ThenFunc(handler))
+			})
+		}
+	}
 	return alice.New(middleware.Metrics(metricsScope)).Append(middleware.GrepObject).Then(router)
 }
 

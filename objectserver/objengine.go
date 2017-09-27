@@ -19,6 +19,7 @@ import (
 	"errors"
 	"flag"
 	"io"
+	"net/http"
 	"sync"
 
 	"github.com/troubling/hummingbird/common/conf"
@@ -58,6 +59,10 @@ type Object interface {
 type ObjectEngine interface {
 	// New creates a new instance of the Object, for interacting with a single object.
 	New(vars map[string]string, needData bool, asyncWG *sync.WaitGroup) (Object, error)
+}
+
+type PolicyHandlerRegistrator interface {
+	RegisterHandlers(addRoute func(method, path string, handler http.HandlerFunc))
 }
 
 // ObjectEngineConstructor> is a function that, given configs and flags, returns an ObjectEngine
