@@ -347,7 +347,7 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 			}
 		}
 
-		if m.debugResponses {
+		if m.debugResponses && status/100 != 2 {
 			buf := make([]byte, 1024)
 			runtime.Stack(buf, false)
 			w.Header().Set("X-Source-Code", string(buf))

@@ -27,9 +27,11 @@ func NewDebugResponses(debugHeader bool) func(http.Handler) http.Handler {
 		if debugHeader {
 			return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 				next.ServeHTTP(srv.NewCustomWriter(writer, func(w http.ResponseWriter, status int) int {
-					buf := make([]byte, 1024)
-					runtime.Stack(buf, false)
-					w.Header().Set("X-Source-Code", string(buf))
+					if status/100 != 2 {
+						buf := make([]byte, 1024)
+						runtime.Stack(buf, false)
+						w.Header().Set("X-Source-Code", string(buf))
+					}
 					return status
 				}), request)
 			})
