@@ -41,6 +41,22 @@ func (p PolicyList) Default() int {
 	return 0
 }
 
+func (p PolicyList) NameLookup(s string) *Policy {
+	// a map would be faster, but this only happens on container PUT, so how fast does it need to be?
+	s = strings.ToUpper(strings.TrimSpace(s))
+	for _, v := range p {
+		if s == strings.ToUpper(v.Name) {
+			return v
+		}
+		for _, a := range v.Aliases {
+			if s == strings.ToUpper(a) {
+				return v
+			}
+		}
+	}
+	return nil
+}
+
 func (p PolicyList) GetPolicyInfo() []map[string]interface{} {
 	policyInfo := []map[string]interface{}{}
 	for _, v := range p {

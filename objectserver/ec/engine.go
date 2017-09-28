@@ -16,102 +16,92 @@
 package ec
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 
+	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/objectserver"
 )
 
-type ecObject struct {
-	metadata map[string]string
-}
-
-// Metadata returns the object's metadata.
-func (o *ecObject) Metadata() map[string]string {
-	return o.metadata
-}
-
 // ContentLength parses and returns the Content-Length for the object.
-func (o *ecObject) ContentLength() int64 {
-	if contentLength, err := strconv.ParseInt(o.metadata["Content-Length"], 10, 64); err != nil {
-		return -1
-	} else {
-		return contentLength
-	}
-}
-
-// Quarantine removes the object's underlying files to the Quarantined directory on the device.
-func (o *ecObject) Quarantine() error {
-	return errors.New("Unimplemented")
-}
-
-// Exists returns true if the object exists, that is if it has a .data file.
-func (o *ecObject) Exists() bool {
-	return false
-}
-
-// Copy copies all data from the underlying .data file to the given writers.
-func (o *ecObject) Copy(dsts ...io.Writer) (written int64, err error) {
-	return 0, errors.New("Unimplemented")
-}
-
-// CopyRange copies data in the range of start to end from the underlying .data file to the writer.
-func (o *ecObject) CopyRange(w io.Writer, start int64, end int64) (int64, error) {
-	return 0, errors.New("Unimplemented")
-}
-
-// Repr returns a string that identifies the object in some useful way, used for logging.
-func (o *ecObject) Repr() string {
-	return fmt.Sprintf("ecObject(%s:%s)", o.metadata["name"], o.metadata["X-Timestamp"])
-}
-
-// SetData is called to set the object's data.  It takes a size (if available, otherwise set to zero).
-func (o *ecObject) SetData(size int64) (io.Writer, error) {
-	return nil, errors.New("Unimplemented")
-}
-
-// CommitMetadata updates the object's metadata (e.g. POST).
-func (o *ecObject) CommitMetadata(map[string]string) error {
-	return errors.New("Unimplemented")
-}
-
-// Commit commits an open data file to disk, given the metadata.
-func (o *ecObject) Commit(metadata map[string]string) error {
-	return errors.New("Unimplemented")
-}
-
-// Delete deletes the object.
-func (o *ecObject) Delete(metadata map[string]string) error {
-	return errors.New("Unimplemented")
-}
-
-// Close releases any resources used by the instance of ecObject
-func (o *ecObject) Close() error {
-	return errors.New("Unimplemented")
-}
-
 type ecEngine struct {
 	driveRoot      string
 	hashPathPrefix string
 	hashPathSuffix string
 	reserve        int64
 	policy         int
+	reclaimAge     int64
+}
+
+func nurseryDir(vars map[string]string, driveRoot string, hashPathPrefix string, hashPathSuffix string, policy int) string {
+	h := md5.New()
+	io.WriteString(h, hashPathPrefix+"/"+vars["account"]+"/"+vars["container"]+"/"+vars["obj"]+hashPathSuffix)
+	digest := h.Sum(nil)
+	return filepath.Join(driveRoot, vars["device"], objectserver.PolicyDir(policy), "nursery",
+		strconv.Itoa(int(digest[0]>>1)), strconv.Itoa(int((digest[0]<<6|digest[1]>>2)&127)),
+		strconv.Itoa(int((digest[1]<<5|digest[2]>>3)&127)), hex.EncodeToString(digest))
 }
 
 // New returns an instance of ecObject with the given parameters. Metadata is read in and if needData is true, the file is opened.  AsyncWG is a waitgroup if the object spawns any async operations
 func (f *ecEngine) New(vars map[string]string, needData bool, asyncWG *sync.WaitGroup) (objectserver.Object, error) {
-	sor := &ecObject{metadata: map[string]string{
-		"name":        "/a/c/o",
-		"X-Timestamp": "",
-	}}
-	return sor, nil
+	var err error
+	obj := &ecObject{
+		location:   locationNursery,
+		reserve:    f.reserve,
+		asyncWG:    asyncWG,
+		nurseryDir: nurseryDir(vars, f.driveRoot, f.hashPathPrefix, f.hashPathSuffix, f.policy),
+		tmpDir:     objectserver.TempDirPath(f.driveRoot, vars["device"]),
+		reclaimAge: f.reclaimAge,
+	}
+	dataFile, metaFile := objectserver.ObjectFiles(obj.nurseryDir)
+	if filepath.Ext(dataFile) == ".data" {
+		obj.exists = true
+		if needData {
+			if obj.file, err = os.Open(dataFile); err != nil {
+				return nil, err
+			}
+			if obj.metadata, err = objectserver.OpenObjectMetadata(obj.file.Fd(), metaFile); err != nil {
+				obj.Quarantine()
+				return nil, fmt.Errorf("Error getting metadata: %v", err)
+			}
+		} else {
+			if obj.metadata, err = objectserver.ObjectMetadata(dataFile, metaFile); err != nil {
+				obj.Quarantine()
+				return nil, fmt.Errorf("Error getting metadata: %v", err)
+			}
+		}
+		// baby audit
+		var stat os.FileInfo
+		if obj.file != nil {
+			if stat, err = obj.file.Stat(); err != nil {
+				obj.Close()
+				return nil, fmt.Errorf("Error statting file: %v", err)
+			}
+		} else if stat, err = os.Stat(dataFile); err != nil {
+			return nil, fmt.Errorf("Error statting file: %v", err)
+		}
+		if contentLength, err := strconv.ParseInt(obj.metadata["Content-Length"], 10, 64); err != nil {
+			obj.Quarantine()
+			return nil, fmt.Errorf("Unable to parse content-length: %s", obj.metadata["Content-Length"])
+		} else if stat.Size() != contentLength {
+			obj.Quarantine()
+			return nil, fmt.Errorf("File size doesn't match content-length: %d vs %d", stat.Size(), contentLength)
+		}
+	} else {
+		obj.metadata, _ = objectserver.ObjectMetadata(dataFile, metaFile) // ignore errors if deleted
+	}
+	return obj, nil
 }
 
 func (f *ecEngine) ecFragGetHandler(writer http.ResponseWriter, request *http.Request) {
@@ -146,7 +136,9 @@ func ecEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.Fl
 		hashPathPrefix: hashPathPrefix,
 		hashPathSuffix: hashPathSuffix,
 		reserve:        reserve,
-		policy:         policy.Index}, nil
+		policy:         policy.Index,
+		reclaimAge:     int64(config.GetInt("app:object-server", "reclaim_age", int64(common.ONE_WEEK))),
+	}, nil
 }
 
 func init() {
@@ -155,6 +147,5 @@ func init() {
 
 // make sure these things satisfy interfaces at compile time
 var _ objectserver.ObjectEngineConstructor = ecEngineConstructor
-var _ objectserver.Object = &ecObject{}
 var _ objectserver.ObjectEngine = &ecEngine{}
 var _ objectserver.PolicyHandlerRegistrator = &ecEngine{}
