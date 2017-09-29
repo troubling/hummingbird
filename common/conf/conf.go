@@ -235,13 +235,12 @@ func normalGetHashPrefixAndSuffix() (prefix string, suffix string, err error) {
 			var ok bool
 			prefix, _ = conf.Get("swift-hash", "swift_hash_path_prefix")
 			if suffix, ok = conf.Get("swift-hash", "swift_hash_path_suffix"); !ok {
-				err = errors.New("Hash path suffix not defined")
-				return
+				return prefix, suffix, errors.New("Hash path suffix not defined")
 			}
-			break
+			return prefix, suffix, nil
 		}
 	}
-	return
+	return "", "", fmt.Errorf("No conf found; looked for %s", configLocations)
 }
 
 func ReadResellerOptions(conf Section, defaults map[string][]string) ([]string, map[string]map[string][]string) {
