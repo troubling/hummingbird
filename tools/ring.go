@@ -363,7 +363,6 @@ func RingBuildCmd(flags *flag.FlagSet) {
 			fmt.Println(err)
 			return
 		}
-		fmt.Printf("%s, build version %d", pth, builder.Version)
 		regions := 0
 		zones := 0
 		devCount := 0
@@ -382,7 +381,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 			zones = len(zoneSet)
 			balance = builder.GetBalance()
 		}
-		fmt.Printf("%d partitions, %.6f replicas, %d regions, %d zones, %d devices, %.02f balance\n", builder.Parts, builder.Replicas, regions, zones, devCount, balance)
+		fmt.Printf("%s, build version %d, %d partitions, %.6f replicas, %d regions, %d zones, %d devices, %.02f balance\n", pth, builder.Version, builder.Parts, builder.Replicas, regions, zones, devCount, balance)
 		fmt.Printf("The minimum number of hours before a partition can be reassigned is %v (%v remaining)\n", builder.MinPartHours, time.Duration(builder.MinPartSecondsLeft())*time.Second)
 		fmt.Printf("The overload factor is %0.2f%% (%.6f)\n", builder.Overload*100, builder.Overload)
 
