@@ -413,19 +413,27 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv.LowL
 	if !serverconf.HasSection("andrewd") {
 		return nil, nil, fmt.Errorf("Unable to find andrewd config section")
 	}
-	pdc, err := client.NewProxyDirectClient(nil)
+	logLevelString := serverconf.GetDefault("andrewd", "log_level", "INFO")
+	logLevel := zap.NewAtomicLevel()
+	logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
+	logger, err := srv.SetupLogger("andrewd", &logLevel, flags)
 	if err != nil {
-		return nil, nil, fmt.Errorf("Could not make client: %v", err)
+		return nil, nil, fmt.Errorf("Error setting up logger: %v", err)
+	}
+	pdc, pdcerr := client.NewProxyDirectClient(nil, logger)
+	if pdcerr != nil {
+		return nil, nil, fmt.Errorf("Could not make client: %v", pdcerr)
 	}
 	pl := conf.LoadPolicies()
 	a := &AutoAdmin{
-		hClient:        client.NewProxyClient(pdc, nil, nil),
+		hClient:        client.NewProxyClient(pdc, nil, nil, logger),
 		port:           int(serverconf.GetInt("andrewd", "bind_port", 7000)),
 		bindIp:         serverconf.GetDefault("andrewd", "bind_ip", "127.0.0.1"),
 		workDir:        serverconf.GetDefault("andrewd", "work_dir", "/var/cache/swift"),
 		policies:       pl,
 		runningForever: false,
 		//containerDispersionGauge: []tally.Gauge{}, TODO- add container disp
+		logger: logger,
 	}
 
 	a.metricsScope, a.metricsCloser = tally.NewRootScope(tally.ScopeOptions{
@@ -435,14 +443,8 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv.LowL
 		Separator:      promreporter.DefaultSeparator,
 	}, time.Second)
 
-	logLevelString := serverconf.GetDefault("andrewd", "log_level", "INFO")
-	logLevel := zap.NewAtomicLevel()
-	logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
-	if a.logger, err = srv.SetupLogger("andrewd", &logLevel, flags); err != nil {
-		return nil, nil, fmt.Errorf("Error setting up logger: %v", err)
-	}
 	a.di = NewDispersion(
-		a.logger, client.NewProxyClient(pdc, nil, nil), a.metricsScope)
+		a.logger, client.NewProxyClient(pdc, nil, nil, logger), a.metricsScope)
 
 	a.dw = NewDriveWatch(a.logger, a.metricsScope, serverconf)
 	return a, a.logger, nil

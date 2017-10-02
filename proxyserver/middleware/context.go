@@ -307,7 +307,7 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 		TxId:                   transId,
 		status:                 500,
 		accountInfoCache:       make(map[string]*AccountInfo),
-		C:                      client.NewProxyClient(m.proxyDirectClient, m.Cache, make(map[string]*client.ContainerInfo)),
+		C:                      client.NewProxyClient(m.proxyDirectClient, m.Cache, make(map[string]*client.ContainerInfo), logr),
 	}
 	// we'll almost certainly need the AccountInfo and ContainerInfo for the current path, so pre-fetch them in parallel.
 	apiRequest, account, container, _ := getPathParts(request)

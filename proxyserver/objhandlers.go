@@ -16,6 +16,7 @@
 package proxyserver
 
 import (
+	"io"
 	"mime"
 	"net/http"
 	"path/filepath"
@@ -212,6 +213,11 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 		return
 	}
 	resp := ctx.C.PutObject(vars["account"], vars["container"], vars["obj"], request.Header, request.Body)
+	if resp.StatusCode/100 == 5 {
+		longBuf := make([]byte, 4096)
+		bytes, _ := io.ReadFull(resp.Body, longBuf)
+		ctx.Logger.Debug("object PUT error", zap.String("body", string(longBuf[:bytes])))
+	}
 	resp.Body.Close()
 	writer.Header().Set("Etag", resp.Header.Get("Etag"))
 	if modified, err := common.ParseDate(request.Header.Get("X-Timestamp")); err == nil {

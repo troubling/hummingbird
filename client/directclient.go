@@ -17,8 +17,10 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
+	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/nectar"
 	"github.com/troubling/nectar/nectarutil"
+	"go.uber.org/zap"
 )
 
 const PostQuorumTimeoutMs = 100
@@ -42,11 +44,12 @@ type ProxyDirectClient struct {
 	client        *http.Client
 	AccountRing   ring.Ring
 	ContainerRing ring.Ring
-	objectClients []proxyObjectClient
+	objectClients map[int]proxyObjectClient
 	lcm           sync.RWMutex
+	Logger        srv.LowLevelLogger
 }
 
-func NewProxyDirectClient(policyList conf.PolicyList) (*ProxyDirectClient, error) {
+func NewProxyDirectClient(policyList conf.PolicyList, logger srv.LowLevelLogger) (*ProxyDirectClient, error) {
 	var xport http.RoundTripper = &http.Transport{
 		MaxIdleConnsPerHost: 100,
 		MaxIdleConns:        0,
@@ -66,6 +69,7 @@ func NewProxyDirectClient(policyList conf.PolicyList) (*ProxyDirectClient, error
 			Transport: xport,
 			Timeout:   120 * time.Minute,
 		},
+		Logger: logger,
 	}
 	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
 	if err != nil {
@@ -79,7 +83,7 @@ func NewProxyDirectClient(policyList conf.PolicyList) (*ProxyDirectClient, error
 	if err != nil {
 		return nil, err
 	}
-	c.objectClients = make([]proxyObjectClient, len(policyList))
+	c.objectClients = make(map[int]proxyObjectClient)
 	for _, policy := range policyList {
 		// TODO: the intention is to (if it becomes necessary) have a policy type to object client
 		// constructor mapping here, similar to how object engines are loaded by policy type.
@@ -87,7 +91,7 @@ func NewProxyDirectClient(policyList conf.PolicyList) (*ProxyDirectClient, error
 		if err != nil {
 			return nil, err
 		}
-		client := &standardObjectClient{proxyDirectClient: c, policy: policy.Index, objectRing: ring}
+		client := &standardObjectClient{proxyDirectClient: c, policy: policy.Index, objectRing: ring, Logger: logger}
 		if policy.Type == "hec" {
 			if replicas, err := strconv.Atoi(policy.Config["nursery_replicas"]); err == nil && replicas > 0 {
 				client.deviceLimit = replicas
@@ -118,8 +122,10 @@ func (c *ProxyDirectClient) quorumResponse(r ring.Ring, partition uint64, devToR
 			var resp *http.Response
 			for dev := devs[index]; dev != nil; dev = more.Next() {
 				if req, err := devToRequest(index, dev); err != nil {
+					c.Logger.Error("unable to get response", zap.Error(err))
 					resp = nectarutil.ResponseStub(http.StatusInternalServerError, err.Error())
 				} else if r, err := c.client.Do(req); err != nil {
+					c.Logger.Error("unable to get response", zap.Error(err))
 					resp = nectarutil.ResponseStub(http.StatusInternalServerError, err.Error())
 				} else {
 					resp = nectarutil.StubResponse(r)
@@ -180,6 +186,7 @@ func (c *ProxyDirectClient) firstResponse(r ring.Ring, partition uint64, devToRe
 		}
 		req, err := devToRequest(dev)
 		if err != nil {
+			c.Logger.Error("firstResponse devToRequest error", zap.Error(err))
 			internalErrors++
 			continue
 		}
@@ -187,6 +194,7 @@ func (c *ProxyDirectClient) firstResponse(r ring.Ring, partition uint64, devToRe
 		go func(r *http.Request) {
 			response, err := c.client.Do(r)
 			if err != nil {
+				c.Logger.Error("firstResponse response", zap.Error(err))
 				if response != nil {
 					response.Body.Close()
 				}
@@ -228,15 +236,16 @@ func (c *ProxyDirectClient) firstResponse(r ring.Ring, partition uint64, devToRe
 }
 
 type proxyClient struct {
-	pdc *ProxyDirectClient
-	mc  ring.MemcacheRing
-	lc  map[string]*ContainerInfo
+	pdc    *ProxyDirectClient
+	mc     ring.MemcacheRing
+	lc     map[string]*ContainerInfo
+	Logger srv.LowLevelLogger
 }
 
 var _ ProxyClient = &proxyClient{}
 
-func NewProxyClient(pdc *ProxyDirectClient, mc ring.MemcacheRing, lc map[string]*ContainerInfo) ProxyClient {
-	return &proxyClient{pdc: pdc, mc: mc, lc: lc}
+func NewProxyClient(pdc *ProxyDirectClient, mc ring.MemcacheRing, lc map[string]*ContainerInfo, logger srv.LowLevelLogger) ProxyClient {
+	return &proxyClient{pdc: pdc, mc: mc, lc: lc, Logger: logger}
 }
 
 func (c *proxyClient) invalidateContainerInfo(account string, container string) {
@@ -641,6 +650,7 @@ type standardObjectClient struct {
 	policy            int
 	objectRing        ring.Ring
 	deviceLimit       int
+	Logger            srv.LowLevelLogger
 }
 
 // putReader is a Reader proxy that sends its reader over the ready channel the first time Read is called.
@@ -719,8 +729,10 @@ func (oc *standardObjectClient) putObject(account, container, obj string, header
 			var resp *http.Response
 			for dev := devs[index]; dev != nil; dev = more.Next() {
 				if req, err := devToRequest(index, dev); err != nil {
+					oc.Logger.Error("unable create PUT request", zap.Error(err))
 					resp = nectarutil.ResponseStub(http.StatusInternalServerError, err.Error())
 				} else if r, err := oc.proxyDirectClient.client.Do(req); err != nil {
+					oc.Logger.Error("unable to PUT object", zap.Error(err))
 					resp = nectarutil.ResponseStub(http.StatusInternalServerError, err.Error())
 				} else {
 					resp = nectarutil.StubResponse(r)
@@ -919,6 +931,7 @@ func (c *directClient) GetAccount(marker string, endMarker string, limit int, pr
 	var accountListing []*nectar.ContainerRecord
 	if err := json.NewDecoder(resp.Body).Decode(&accountListing); err != nil {
 		resp.Body.Close()
+		// FIXME. Log something.
 		return nil, nectarutil.ResponseStub(http.StatusInternalServerError, err.Error())
 	}
 	resp.Body.Close()
@@ -979,6 +992,7 @@ func (c *directClient) GetContainer(container string, marker string, endMarker s
 	var containerListing []*nectar.ObjectRecord
 	if err := json.NewDecoder(resp.Body).Decode(&containerListing); err != nil {
 		resp.Body.Close()
+		// FIXME. Log something.
 		return nil, nectarutil.ResponseStub(http.StatusInternalServerError, err.Error())
 	}
 	resp.Body.Close()
@@ -1034,6 +1048,7 @@ func (c *directClient) Raw(method, urlAfterAccount string, headers map[string]st
 	return nectarutil.ResponseStub(http.StatusNotImplemented, "Raw requests not implemented for direct clients")
 }
 
+/*
 // NewDirectClient creates a new direct client with the given account name.
 func NewDirectClient(account string) (nectar.Client, error) {
 	pdc, err := NewProxyDirectClient(nil)
@@ -1042,3 +1057,4 @@ func NewDirectClient(account string) (nectar.Client, error) {
 	}
 	return &directClient{account: account, pc: NewProxyClient(pdc, nil, nil)}, nil
 }
+*/
