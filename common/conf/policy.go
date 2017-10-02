@@ -59,7 +59,7 @@ func (p PolicyList) GetPolicyInfo() []map[string]interface{} {
 }
 
 // LoadPolicies loads policies, probably from /etc/swift/swift.conf
-func normalLoadPolicies() PolicyList {
+func GetPolicies() (PolicyList, error) {
 	policies := map[int]*Policy{0: {
 		Index:      0,
 		Type:       "replication",
@@ -105,9 +105,5 @@ func normalLoadPolicies() PolicyList {
 	if !defaultFound {
 		policies[0].Default = true
 	}
-	return PolicyList(policies)
+	return PolicyList(policies), nil
 }
-
-type loadPoliciesFunc func() PolicyList
-
-var LoadPolicies loadPoliciesFunc = normalLoadPolicies

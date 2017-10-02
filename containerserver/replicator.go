@@ -568,16 +568,16 @@ func (r *Replicator) Run() {
 	r.reportStats()
 }
 
-// GetReplicator uses the config settings and command-line flags to configure and return a replicator daemon struct.
-func GetReplicator(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv.LowLevelLogger, error) {
+// NewReplicator uses the config settings and command-line flags to configure and return a replicator daemon struct.
+func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (srv.Daemon, srv.LowLevelLogger, error) {
 	if !serverconf.HasSection("container-replicator") {
 		return nil, nil, fmt.Errorf("Unable to find container-replicator config section")
 	}
-	hashPathPrefix, hashPathSuffix, err := GetHashPrefixAndSuffix()
+	hashPathPrefix, hashPathSuffix, err := cnf.GetHashPrefixAndSuffix()
 	if err != nil {
 		return nil, nil, fmt.Errorf("Unable to get hash prefix and suffix")
 	}
-	ring, err := GetRing("container", hashPathPrefix, hashPathSuffix, 0)
+	ring, err := cnf.GetRing("container", hashPathPrefix, hashPathSuffix, 0)
 	if err != nil {
 		return nil, nil, fmt.Errorf("Error loading container ring")
 	}

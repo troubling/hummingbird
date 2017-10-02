@@ -351,13 +351,15 @@ func (d *AuditorDaemon) RunForever() {
 }
 
 // NewAuditor returns a new AuditorDaemon with the given conf.
-func NewAuditor(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv.LowLevelLogger, error) {
+func NewAuditor(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (srv.Daemon, srv.LowLevelLogger, error) {
 	var err error
 	if !serverconf.HasSection("object-auditor") {
 		return nil, nil, fmt.Errorf("Unable to find object-auditor config section")
 	}
 	d := &AuditorDaemon{}
-	d.policies = conf.LoadPolicies()
+	if d.policies, err = cnf.GetPolicies(); err != nil {
+		return nil, nil, err
+	}
 	d.driveRoot = serverconf.GetDefault("object-auditor", "devices", "/srv/node")
 	d.checkMounts = serverconf.GetBool("object-auditor", "mount_check", true)
 

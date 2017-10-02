@@ -52,7 +52,7 @@ func (l SyncRealmList) ValidateSyncTo(syncHeader string) bool {
 
 var syncRealmConfigLocations = []string{"/etc/hummingbird/container-sync-realms.conf", "/etc/swift/container-sync-realms.conf"}
 
-func GetSyncRealms() SyncRealmList {
+func GetSyncRealms() (SyncRealmList, error) {
 	resp := make(map[string]SyncRealm)
 	for _, loc := range syncRealmConfigLocations {
 		if conf, err := LoadConfig(loc); err == nil {
@@ -71,5 +71,5 @@ func GetSyncRealms() SyncRealmList {
 			}
 		}
 	}
-	return SyncRealmList(resp)
+	return SyncRealmList(resp), nil
 }

@@ -41,15 +41,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// GetHashPrefixAndSuffix is a pointer to hummingbird's function of the same name, for overriding in tests.
-var GetHashPrefixAndSuffix = conf.GetHashPrefixAndSuffix
-
-// GetSyncRealms is a pointer to hummingbird's function of the same name, for overriding in tests.
-var GetSyncRealms = conf.GetSyncRealms
-
-// LoadPolicies is a pointer to hummingbird's function of the same name, for overriding in tests.
-var LoadPolicies = conf.LoadPolicies
-
 // ContainerServer contains all of the information for a running container server.
 type ContainerServer struct {
 	driveRoot        string
@@ -620,15 +611,22 @@ func (server *ContainerServer) GetHandler(config conf.Config, metricsPrefix stri
 	return alice.New(middleware.Metrics(metricsScope)).Append(middleware.GrepObject).Then(router)
 }
 
-// GetServer parses configs and command-line flags, returning a configured server object and the ip and port it should bind on.
-func GetServer(serverconf conf.Config, flags *flag.FlagSet) (bindIP string, bindPort int, serv srv.Server, logger srv.LowLevelLogger, err error) {
-	server := &ContainerServer{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: "", policyList: conf.LoadPolicies()}
-	server.syncRealms = GetSyncRealms()
-	server.hashPathPrefix, server.hashPathSuffix, err = GetHashPrefixAndSuffix()
+// NewServer parses configs and command-line flags, returning a configured server object and the ip and port it should bind on.
+func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (bindIP string, bindPort int, serv srv.Server, logger srv.LowLevelLogger, err error) {
+	server := &ContainerServer{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: ""}
+	server.syncRealms, err = cnf.GetSyncRealms()
 	if err != nil {
 		return "", 0, nil, nil, err
 	}
-	policies := LoadPolicies()
+	server.hashPathPrefix, server.hashPathSuffix, err = cnf.GetHashPrefixAndSuffix()
+	if err != nil {
+		return "", 0, nil, nil, err
+	}
+	policies, err := cnf.GetPolicies()
+	if err != nil {
+		return "", 0, nil, nil, err
+	}
+	server.policyList = policies
 	server.defaultPolicy = policies.Default()
 	server.autoCreatePrefix = serverconf.GetDefault("app:container-server", "auto_create_account_prefix", ".")
 	server.driveRoot = serverconf.GetDefault("app:container-server", "devices", "/srv/node")

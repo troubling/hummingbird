@@ -451,22 +451,22 @@ func main() {
 		processControlCommand(gracefulShutdownServer)
 	case "proxy":
 		proxyFlags.Parse(flag.Args()[1:])
-		srv.RunServers(proxyserver.GetServer, proxyFlags)
+		srv.RunServers(proxyserver.NewServer, proxyFlags)
 	case "container":
 		containerFlags.Parse(flag.Args()[1:])
-		srv.RunServers(containerserver.GetServer, containerFlags)
+		srv.RunServers(containerserver.NewServer, containerFlags)
 	case "container-replicator":
 		containerReplicatorFlags.Parse(flag.Args()[1:])
-		srv.RunDaemon(containerserver.GetReplicator, containerReplicatorFlags)
+		srv.RunDaemon(containerserver.NewReplicator, containerReplicatorFlags)
 	case "account":
 		accountFlags.Parse(flag.Args()[1:])
-		srv.RunServers(accountserver.GetServer, accountFlags)
+		srv.RunServers(accountserver.NewServer, accountFlags)
 	case "account-replicator":
 		accountReplicatorFlags.Parse(flag.Args()[1:])
-		srv.RunDaemon(accountserver.GetReplicator, accountReplicatorFlags)
+		srv.RunDaemon(accountserver.NewReplicator, accountReplicatorFlags)
 	case "object":
 		objectFlags.Parse(flag.Args()[1:])
-		srv.RunServers(objectserver.GetServer, objectFlags)
+		srv.RunServers(objectserver.NewServer, objectFlags)
 	case "object-replicator":
 		objectReplicatorFlags.Parse(flag.Args()[1:])
 		srv.RunDaemon(objectserver.NewReplicator, objectReplicatorFlags)
@@ -494,7 +494,7 @@ func main() {
 		tools.RingBuildCmd(ringBuilderFlags)
 	case "nodes":
 		nodesFlags.Parse(flag.Args()[1:])
-		tools.Nodes(nodesFlags)
+		tools.Nodes(nodesFlags, srv.DefaultConfigLoader{})
 	case "andrewd":
 		andrewdFlags.Parse(flag.Args()[1:])
 		srv.RunDaemon(tools.NewAdmin, andrewdFlags)

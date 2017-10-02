@@ -102,23 +102,6 @@ func getRing(ringPath, ringType string, policyNum int) (ring.Ring, string) {
 	return r, ringType
 }
 
-func policyByName(policyName string) *conf.Policy {
-	if policyName == "" {
-		return nil
-	}
-
-	policyList := conf.LoadPolicies()
-	for _, v := range policyList {
-		if v.Name == policyName {
-			return v
-		}
-	}
-
-	fmt.Println("No policy named ", policyName)
-	os.Exit(1)
-	return nil
-}
-
 func storageDirectory(datadir string, partNum uint64, nameHash string) string {
 	partition := fmt.Sprintf("%v", partNum)
 	return filepath.Join(datadir, partition, nameHash[len(nameHash)-3:], nameHash)
@@ -278,7 +261,7 @@ func parseArg0(arg0 string) (string, string, string) {
 	return arg0, "", ""
 }
 
-func Nodes(flags *flag.FlagSet) {
+func Nodes(flags *flag.FlagSet, cnf srv.ConfigLoader) {
 	var account, container, object string
 	if flags.NArg() == 1 {
 		account, container, object = parseArg0(flags.Arg(0))
@@ -290,12 +273,25 @@ func Nodes(flags *flag.FlagSet) {
 	partition := flags.Lookup("p").Value.(flag.Getter).Get().(string)
 	policyName := flags.Lookup("P").Value.(flag.Getter).Get().(string)
 	allHandoffs := flags.Lookup("a").Value.(flag.Getter).Get().(bool)
-	policy := policyByName(policyName)
-	var policyNum int
-	if policy != nil {
-		policyNum = policy.Index
-	} else {
+
+	policies, err := cnf.GetPolicies()
+	if err != nil {
+		fmt.Println("Unable to load policies:", err)
+		os.Exit(1)
+	}
+	var policyNum int = -1
+	if policyName == "" {
 		policyNum = 0
+	} else {
+		for _, v := range policies {
+			if v.Name == policyName {
+				policyNum = v.Index
+			}
+		}
+		if policyNum == -1 {
+			fmt.Println("No policy named ", policyName)
+			os.Exit(1)
+		}
 	}
 
 	var r ring.Ring
@@ -408,16 +404,18 @@ func (a *AutoAdmin) startWebServer() {
 	}
 }
 
-func NewAdmin(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv.LowLevelLogger, error) {
-
+func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (srv.Daemon, srv.LowLevelLogger, error) {
 	if !serverconf.HasSection("andrewd") {
 		return nil, nil, fmt.Errorf("Unable to find andrewd config section")
 	}
-	pdc, err := client.NewProxyDirectClient(nil)
+	pdc, err := client.NewProxyDirectClient(nil, srv.DefaultConfigLoader{})
 	if err != nil {
 		return nil, nil, fmt.Errorf("Could not make client: %v", err)
 	}
-	pl := conf.LoadPolicies()
+	pl, err := cnf.GetPolicies()
+	if err != nil {
+		return nil, nil, err
+	}
 	a := &AutoAdmin{
 		hClient:        client.NewProxyClient(pdc, nil, nil),
 		port:           int(serverconf.GetInt("andrewd", "bind_port", 7000)),
@@ -444,6 +442,6 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv.LowL
 	a.di = NewDispersion(
 		a.logger, client.NewProxyClient(pdc, nil, nil), a.metricsScope)
 
-	a.dw = NewDriveWatch(a.logger, a.metricsScope, serverconf)
+	a.dw = NewDriveWatch(a.logger, a.metricsScope, serverconf, cnf)
 	return a, a.logger, nil
 }
