@@ -42,7 +42,7 @@ type ProxyDirectClient struct {
 	client        *http.Client
 	AccountRing   ring.Ring
 	ContainerRing ring.Ring
-	objectClients []proxyObjectClient
+	objectClients map[int]proxyObjectClient
 	lcm           sync.RWMutex
 }
 
@@ -79,7 +79,7 @@ func NewProxyDirectClient(policyList conf.PolicyList) (*ProxyDirectClient, error
 	if err != nil {
 		return nil, err
 	}
-	c.objectClients = make([]proxyObjectClient, len(policyList))
+	c.objectClients = make(map[int]proxyObjectClient)
 	for _, policy := range policyList {
 		// TODO: the intention is to (if it becomes necessary) have a policy type to object client
 		// constructor mapping here, similar to how object engines are loaded by policy type.
