@@ -52,11 +52,6 @@ const (
 	handoffToAllMod              = 5
 )
 
-var (
-	// GetRing is a local pointer to the hummingbird function, for overriding in tests
-	GetRing = ring.GetRing
-)
-
 type PriorityRepJob struct {
 	Partition  uint64         `json:"partition"`
 	FromDevice *ring.Device   `json:"from_device"`
@@ -744,6 +739,7 @@ type Replicator struct {
 	reclaimAge          int64
 	reserve             int64
 	incomingLimitPerDev int64
+	policies            conf.PolicyList
 
 	stats                   map[string]map[string]*DeviceStats
 	runningDevices          map[string]ReplicationDevice
@@ -1009,7 +1005,7 @@ func (r *Replicator) Run() {
 	r.reportStats()
 }
 
-func NewReplicator(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv.LowLevelLogger, error) {
+func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (srv.Daemon, srv.LowLevelLogger, error) {
 	if !serverconf.HasSection("object-replicator") {
 		return nil, nil, fmt.Errorf("Unable to find object-replicator config section")
 	}
@@ -1049,19 +1045,22 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv
 		},
 	}
 
-	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
+	hashPathPrefix, hashPathSuffix, err := cnf.GetHashPrefixAndSuffix()
 	if err != nil {
 		return nil, nil, fmt.Errorf("Unable to get hash prefix and suffix")
 	}
-	for _, policy := range conf.LoadPolicies() {
+	if replicator.policies, err = cnf.GetPolicies(); err != nil {
+		return nil, nil, err
+	}
+	for _, policy := range replicator.policies {
 		if policy.Type != "replication" {
 			continue
 		}
-		if replicator.objectRings[policy.Index], err = GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index); err != nil {
+		if replicator.objectRings[policy.Index], err = cnf.GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index); err != nil {
 			return nil, nil, fmt.Errorf("Unable to load ring for Policy %d.", policy.Index)
 		}
 	}
-	if replicator.containerRing, err = GetRing("container", hashPathPrefix, hashPathSuffix, 0); err != nil {
+	if replicator.containerRing, err = cnf.GetRing("container", hashPathPrefix, hashPathSuffix, 0); err != nil {
 		return nil, nil, fmt.Errorf("Error loading container ring: %v", err)
 	}
 	if replicator.logger, err = srv.SetupLogger("object-replicator", &logLevel, flags); err != nil {

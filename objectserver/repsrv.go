@@ -29,7 +29,6 @@ import (
 
 	"github.com/justinas/alice"
 	"github.com/troubling/hummingbird/common"
-	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/pickle"
 	"github.com/troubling/hummingbird/common/srv"
@@ -275,7 +274,7 @@ func (r *Replicator) GetHandler() http.Handler {
 	router := srv.NewRouter()
 	router.Post("/priorityrep", commonHandlers.ThenFunc(r.priorityRepHandler))
 	router.Get("/progress", commonHandlers.ThenFunc(r.ProgressReportHandler))
-	for _, policy := range conf.LoadPolicies() {
+	for _, policy := range r.policies {
 		router.HandlePolicy("REPCONN", "/:device/:partition", policy.Index, commonHandlers.ThenFunc(r.objRepConnHandler))
 		router.HandlePolicy("REPLICATE", "/:device/:partition/:suffixes", policy.Index, commonHandlers.ThenFunc(r.objReplicateHandler))
 		router.HandlePolicy("REPLICATE", "/:device/:partition", policy.Index, commonHandlers.ThenFunc(r.objReplicateHandler))

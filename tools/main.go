@@ -103,23 +103,6 @@ func getRing(ringPath, ringType string, policyNum int) (ring.Ring, string) {
 	return r, ringType
 }
 
-func policyByName(policyName string) *conf.Policy {
-	if policyName == "" {
-		return nil
-	}
-
-	policyList := conf.LoadPolicies()
-	for _, v := range policyList {
-		if v.Name == policyName {
-			return v
-		}
-	}
-
-	fmt.Println("No policy named ", policyName)
-	os.Exit(1)
-	return nil
-}
-
 func storageDirectory(datadir string, partNum uint64, nameHash string, policy *conf.Policy) string {
 	if policy.Type == "hec" {
 		if digest, err := hex.DecodeString(nameHash); err == nil {
@@ -167,7 +150,7 @@ func getPathHash(ringType, account, container, object string) string {
 	return fmt.Sprintf("%032x", h.Sum(nil))
 }
 
-func printRingLocations(r ring.Ring, ringType, datadir, account, container, object, partition string, allHandoffs bool, policyIdx int) {
+func printRingLocations(r ring.Ring, ringType, datadir, account, container, object, partition string, allHandoffs bool, policy *conf.Policy) {
 	if r == nil {
 		fmt.Println("No ring specified")
 		os.Exit(1)
@@ -220,7 +203,7 @@ func printRingLocations(r ring.Ring, ringType, datadir, account, container, obje
 	}
 	fmt.Printf("\n\n")
 	for _, v := range primaries {
-		cmd := curlHeadCommand(v.Ip, v.Port, v.Device, partNum, target, policyIdx)
+		cmd := curlHeadCommand(v.Ip, v.Port, v.Device, partNum, target, policy.Index)
 		fmt.Println(cmd)
 	}
 	handoffs = r.GetMoreNodes(partNum)
@@ -228,15 +211,12 @@ func printRingLocations(r ring.Ring, ringType, datadir, account, container, obje
 		if handoffLimit != -1 && i == handoffLimit {
 			break
 		}
-		cmd := curlHeadCommand(v.Ip, v.Port, v.Device, partNum, target, policyIdx)
+		cmd := curlHeadCommand(v.Ip, v.Port, v.Device, partNum, target, policy.Index)
 		fmt.Printf("%v # [Handoff]\n", cmd)
 	}
 
 	fmt.Printf("\n\nUse your own device location of servers:\n")
 	fmt.Printf("such as \"export DEVICE=/srv/node\"\n")
-
-	pl := conf.LoadPolicies()
-	policy := pl[policyIdx]
 
 	if pathHash != "" {
 		for _, v := range primaries {
@@ -265,10 +245,10 @@ func printRingLocations(r ring.Ring, ringType, datadir, account, container, obje
 	fmt.Printf("\nnote: `/srv/node*` is used as default value of `devices`, the real value is set in the config file on each storage node.\n")
 }
 
-func printItemLocations(r ring.Ring, ringType, account, container, object, partition string, allHandoffs bool, policyIdx int) {
+func printItemLocations(r ring.Ring, ringType, account, container, object, partition string, allHandoffs bool, policy *conf.Policy) {
 	location := ""
-	if policyIdx > 0 {
-		location = fmt.Sprintf("%vs-%d", ringType, policyIdx)
+	if policy.Index > 0 {
+		location = fmt.Sprintf("%vs-%d", ringType, policy.Index)
 	} else {
 		location = fmt.Sprintf("%vs", ringType)
 	}
@@ -276,7 +256,7 @@ func printItemLocations(r ring.Ring, ringType, account, container, object, parti
 	fmt.Printf("Container\t%v\n", container)
 	fmt.Printf("Object   \t%v\n", object)
 
-	printRingLocations(r, ringType, location, account, container, object, partition, allHandoffs, policyIdx)
+	printRingLocations(r, ringType, location, account, container, object, partition, allHandoffs, policy)
 }
 
 func parseArg0(arg0 string) (string, string, string) {
@@ -292,7 +272,7 @@ func parseArg0(arg0 string) (string, string, string) {
 	return arg0, "", ""
 }
 
-func Nodes(flags *flag.FlagSet) {
+func Nodes(flags *flag.FlagSet, cnf srv.ConfigLoader) {
 	var account, container, object string
 	if flags.NArg() == 1 {
 		account, container, object = parseArg0(flags.Arg(0))
@@ -304,12 +284,25 @@ func Nodes(flags *flag.FlagSet) {
 	partition := flags.Lookup("p").Value.(flag.Getter).Get().(string)
 	policyName := flags.Lookup("P").Value.(flag.Getter).Get().(string)
 	allHandoffs := flags.Lookup("a").Value.(flag.Getter).Get().(bool)
-	policy := policyByName(policyName)
-	var policyIdx int
-	if policy != nil {
-		policyIdx = policy.Index
+
+	policies, err := cnf.GetPolicies()
+	if err != nil {
+		fmt.Println("Unable to load policies:", err)
+		os.Exit(1)
+	}
+	var policy *conf.Policy
+	if policyName == "" {
+		policy = policies[0]
 	} else {
-		policyIdx = 0
+		for _, v := range policies {
+			if v.Name == policyName {
+				policy = v
+			}
+		}
+		if policy == nil {
+			fmt.Println("No policy named ", policyName)
+			os.Exit(1)
+		}
 	}
 
 	var r ring.Ring
@@ -317,22 +310,22 @@ func Nodes(flags *flag.FlagSet) {
 	inferredType := inferRingType(account, container, object)
 	ringPath := flags.Lookup("r").Value.(flag.Getter).Get().(string)
 	if ringPath != "" {
-		r, ringType = getRing(ringPath, "", policyIdx)
+		r, ringType = getRing(ringPath, "", policy.Index)
 		if inferredType != "" && ringType != inferredType {
 			fmt.Printf("Error %v specified but ring type: %v\n", inferredType, ringType)
 			os.Exit(1)
 		}
-		if ringType == "object" && policyIdx == 0 {
+		if ringType == "object" && policy.Index == 0 {
 			_, ringFileName := path.Split(ringPath)
 			if strings.HasPrefix(ringFileName, "object") && strings.Contains(ringFileName, "-") {
 				polSuff := strings.Split(ringFileName, "-")[1]
 				if polN, err := strconv.ParseInt(polSuff[:(len(polSuff)-len(".ring.gz"))], 10, 64); err == nil {
-					policyIdx = int(polN)
+					policy = policies[int(polN)]
 				}
 			}
 		}
 	} else {
-		r, ringType = getRing("", inferredType, policyIdx)
+		r, ringType = getRing("", inferredType, policy.Index)
 	}
 
 	if partition != "" {
@@ -354,7 +347,7 @@ func Nodes(flags *flag.FlagSet) {
 		}
 	}
 
-	printItemLocations(r, ringType, account, container, object, partition, allHandoffs, policyIdx)
+	printItemLocations(r, ringType, account, container, object, partition, allHandoffs, policy)
 }
 
 type AutoAdmin struct {
@@ -422,8 +415,7 @@ func (a *AutoAdmin) startWebServer() {
 	}
 }
 
-func NewAdmin(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv.LowLevelLogger, error) {
-
+func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (srv.Daemon, srv.LowLevelLogger, error) {
 	if !serverconf.HasSection("andrewd") {
 		return nil, nil, fmt.Errorf("Unable to find andrewd config section")
 	}
@@ -434,11 +426,14 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv.LowL
 	if err != nil {
 		return nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
-	pdc, pdcerr := client.NewProxyDirectClient(nil, logger)
+	pdc, pdcerr := client.NewProxyDirectClient(nil, srv.DefaultConfigLoader{}, logger)
 	if pdcerr != nil {
 		return nil, nil, fmt.Errorf("Could not make client: %v", pdcerr)
 	}
-	pl := conf.LoadPolicies()
+	pl, err := cnf.GetPolicies()
+	if err != nil {
+		return nil, nil, err
+	}
 	a := &AutoAdmin{
 		hClient:        client.NewProxyClient(pdc, nil, nil, logger),
 		port:           int(serverconf.GetInt("andrewd", "bind_port", 7000)),
@@ -460,6 +455,6 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv.LowL
 	a.di = NewDispersion(
 		a.logger, client.NewProxyClient(pdc, nil, nil, logger), a.metricsScope)
 
-	a.dw = NewDriveWatch(a.logger, a.metricsScope, serverconf)
+	a.dw = NewDriveWatch(a.logger, a.metricsScope, serverconf, cnf)
 	return a, a.logger, nil
 }
