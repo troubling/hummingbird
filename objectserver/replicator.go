@@ -64,13 +64,6 @@ type PriorityRepJob struct {
 	Policy     int            `json:"policy"`
 }
 
-// minimal ring interface for replication
-type replicationRing interface {
-	GetJobNodes(partition uint64, localDevice int) (response []*ring.Device, handoff bool)
-	GetMoreNodes(partition uint64) ring.MoreNodes
-	LocalDevices(localPort int) (devs []*ring.Device, err error)
-}
-
 type quarantineFileError struct {
 	msg string
 }
@@ -757,7 +750,7 @@ type Replicator struct {
 	updatingDevices         map[string]*updateDevice
 	runningDevicesLock      sync.Mutex
 	logger                  srv.LowLevelLogger
-	objectRings             map[int]replicationRing
+	objectRings             map[int]ring.Ring
 	containerRing           ring.Ring
 	cancelCounts            map[string]int64
 	replicateConcurrencySem chan struct{}
@@ -1041,7 +1034,7 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet) (srv.Daemon, srv
 		runningDevices:          make(map[string]ReplicationDevice),
 		updatingDevices:         make(map[string]*updateDevice),
 		cancelCounts:            make(map[string]int64),
-		objectRings:             make(map[int]replicationRing),
+		objectRings:             make(map[int]ring.Ring),
 		replicateConcurrencySem: make(chan struct{}, concurrency),
 		updateConcurrencySem:    make(chan struct{}, updaterConcurrency),
 		updateStat:              make(chan statUpdate),
