@@ -1,0 +1,38 @@
+---
+- name: Copy /etc/hummingbird/object-server.conf
+  template:
+    src: etc/object-server.j2
+    dest: /etc/hummingbird/object-server.conf
+    mode: 0644
+    owner: hummingbird
+    group: hummingbird
+- name: Copy object server systemd files
+  copy:
+    src: systemd/hummingbird-object.service
+    dest: /lib/systemd/system/hummingbird-object.service
+    mode: 0644
+- name: Start object server service
+  service:
+    name: hummingbird-object
+    enabled: yes
+    state: restarted
+- name: Copy object replicator systemd files
+  copy:
+    src: systemd/hummingbird-object-replicator.service
+    dest: /lib/systemd/system/hummingbird-object-replicator.service
+    mode: 0644
+- name: Start  object replicator service
+  service:
+    name: hummingbird-object-replicator
+    enabled: yes
+    state: restarted
+- name: Copy andrewd systemd files
+  copy:
+    src: systemd/hummingbird-andrewd.service
+    dest: /lib/systemd/system/hummingbird-andrewd.service
+    mode: 0644
+- name: Start andrewd service
+  service:
+    name: hummingbird-andrewd
+    enabled: yes
+    state: restarted

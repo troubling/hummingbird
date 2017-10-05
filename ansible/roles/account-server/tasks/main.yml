@@ -1,0 +1,28 @@
+---
+- name: Copy account server config
+  template:
+    src: etc/account-server.j2
+    dest: /etc/hummingbird/account-server.conf
+    mode: 0644
+    owner: hummingbird
+    group: hummingbird
+- name: Copy account server systemd files
+  copy:
+    src: systemd/hummingbird-account.service
+    dest: /lib/systemd/system/hummingbird-account.service
+    mode: 0644
+- name: Start account service
+  service:
+    name: hummingbird-account
+    enabled: yes
+    state: restarted
+- name: Copy account replicator systemd files
+  copy:
+    src: systemd/hummingbird-account-replicator.service
+    dest: /lib/systemd/system/hummingbird-account-replicator.service
+    mode: 0644
+- name: Start account replicator service
+  service: 
+    name: hummingbird-account-replicator
+    enabled: yes
+    state: restarted

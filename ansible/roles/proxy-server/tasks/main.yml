@@ -1,0 +1,19 @@
+---
+- name: Copy proxy server config
+  template:
+    src: etc/proxy-server.j2
+    dest: /etc/hummingbird/proxy-server.conf
+    mode: 0644
+    owner: hummingbird
+    group: hummingbird
+- name: Copy proxy server systemd files
+  copy:
+    src: systemd/hummingbird-proxy.service
+    dest: /lib/systemd/system/hummingbird-proxy.service
+    mode: 0644
+- name: Start proxy service
+  service:
+    name: hummingbird-proxy
+    enabled: yes
+    state: restarted
+

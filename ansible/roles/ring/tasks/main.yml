@@ -1,0 +1,22 @@
+---
+- name: Copy account rings
+  copy:
+    src: /etc/hummingbird/account.ring.gz
+    dest: /etc/hummingbird/account.ring.gz
+    mode: 0644
+    owner: hummingbird
+    group: hummingbird
+- name: Copy container rings
+  copy:
+    src: /etc/hummingbird/container.ring.gz
+    dest: /etc/hummingbird/container.ring.gz
+    mode: 0644
+    owner: hummingbird
+    group: hummingbird
+- name: Copy object rings
+  copy:
+    src: /etc/hummingbird/object.ring.gz
+    dest: /etc/hummingbird/object.ring.gz
+    mode: 0644
+    owner: hummingbird
+    group: hummingbird

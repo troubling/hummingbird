@@ -1,0 +1,67 @@
+---
+- name: Add hummingbird user
+  user: 
+    name: hummingbird
+    createhome: no
+    system: yes
+- name: Install memcache
+  apt:
+    name: memcached
+    state: present
+- name: Configure memcached
+  lineinfile:
+    path: /etc/memcached.conf
+    regexp: '^127\.0\.0\.1'
+    line: '-l {{ service_ip }}'
+- name: Restart memcached
+  service:
+    enabled: yes
+    name: memcached
+    state: restarted
+- name: Download latest hummingbird binary
+  get_url:
+    url: https://troubling.github.io/hummingbird/bin/hummingbird
+    dest: /usr/local/bin/hummingbird
+    mode: 0755
+- name: Create /etc/hummingbird
+  file:
+    path: /etc/hummingbird
+    state: directory
+    mode: 0755
+    owner: hummingbird
+    group: hummingbird
+- name: Copy /etc/hummingbird/hummingbird.conf
+  copy:
+    src: etc/hummingbird.conf
+    dest: /etc/hummingbird/hummingbird.conf
+    mode: 0644
+    owner: hummingbird
+    group: hummingbird
+- name: Create /var/cache/swift
+  file:
+    path: /var/cache/swift
+    state: directory
+    mode: 0755
+    owner: hummingbird
+    group: hummingbird
+- name: Create /var/log/hummingbird
+  file:
+    path: /var/log/hummingbird
+    state: directory
+    mode: 0755
+    owner: hummingbird
+    group: hummingbird
+- name: Create /var/run/hummingbird
+  file:
+    path: /var/run/hummingbird
+    state: directory
+    mode: 0755
+    owner: hummingbird
+    group: hummingbird
+- name: create /srv/hummingbird
+  file:
+    path: /srv/hummingbird
+    state: directory
+    mode: 0755
+    owner: hummingbird
+    group: hummingbird

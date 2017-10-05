@@ -1,0 +1,18 @@
+[hummingbird]
+# Hosts running hummingbird go here
+#   service_ip: the ip you want non-public services to run on
+#127.0.0.1 service_ip=127.0.0.1
+
+[hummingbird:vars]
+# Devices that the object servers will use
+obj_devs='[]' l example: '["xvde", "xvdf", "xvdg"]'
+# If you are using SSDs for conatiner/account services, add them to meta_devs
+meta_devs='[]' ; exmple: '["xvdb", "xvdc", "xvdd"]'
+proxy_port=8080
+object_port=6000
+container_port=6001
+account_port=6002
+object_replicator_port=6500
+# If you are using keystone, set the auth_uri and auth_url below:
+auth_uri=http://127.0.0.1:5000/
+auth_url=http://127.0.0.1:35357/

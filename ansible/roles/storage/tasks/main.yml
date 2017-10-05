@@ -1,0 +1,55 @@
+---
+- name: Ensure hummingbird services are stopped
+  systemd:
+    name: "{{ item }}"
+    state: stopped
+  with_items:
+    - hummingbird-proxy
+    - hummingbird-account
+    - hummingbird-account-replicator
+    - hummingbird-container
+    - hummingbird-container-replicator
+    - hummingbird-object
+    - hummingbird-object-replicator
+    - hummingbird-andrewd
+- name: Create XFS partitions
+  parted:
+    device: /dev/{{item}}
+    label: gpt
+    number: 1
+    part_type: primary
+    state: present
+  with_items: "{{ obj_devs }}"
+- name: Unmount filesystems
+  mount:
+    path: /srv/node/{{item}}1
+    state: absent
+  with_items: "{{ obj_devs }}"
+- name: Create XFS filesystems
+  filesystem:
+    fstype: xfs
+    dev: /dev/{{item}}1
+    force: yes  # NOTE: This will force the filesystem to be re-formatted each run
+  with_items: "{{ obj_devs }}"
+- name: Create dirs for mounts
+  file:
+    path: /srv/node/{{item}}1
+    state: directory
+    mode: 0755
+    owner: root
+    group: root
+  with_items: "{{ obj_devs }}"
+- name: Mount filesystems
+  mount:
+    path: /srv/node/{{item}}1
+    src: /dev/{{item}}1
+    fstype: xfs
+    opts: "noatime,nodiratime,nobarrier"
+    state: mounted
+  with_items: "{{ obj_devs }}"
+- name: Set permissions of mounted dirs
+  file:
+    path: /srv/node/{{item}}1
+    owner: hummingbird
+    group: hummingbird
+  with_items: "{{ obj_devs }}"

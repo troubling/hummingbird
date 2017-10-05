@@ -1,0 +1,11 @@
+[DEFAULT]
+bind_ip = {{ service_ip }}
+bind_port = {{ account_port }}
+devices = /srv/node
+mount_check = true
+user = hummingbird
+
+[app:account-server]
+disk_limit = 0/0
+
+[account-replicator]
