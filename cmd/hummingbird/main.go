@@ -35,6 +35,7 @@ import (
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/containerserver"
 	"github.com/troubling/hummingbird/objectserver"
+	_ "github.com/troubling/hummingbird/objectserver/ec"
 	"github.com/troubling/hummingbird/proxyserver"
 	"github.com/troubling/hummingbird/tools"
 )

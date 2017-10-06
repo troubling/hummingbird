@@ -394,19 +394,11 @@ func (c *ProxyDirectClient) PutContainer(account string, container string, heade
 		c.policyList = conf.LoadPolicies()
 	}
 	policyDefault := c.policyList.Default()
-	policyName := headers.Get("X-Storage-Policy")
-	if policyName != "" {
-		var policy *conf.Policy
-		for _, v := range c.policyList {
-			if v.Name == policyName {
-				policy = v
-				break
-			}
-		}
+	if policyName := strings.TrimSpace(headers.Get("X-Storage-Policy")); policyName != "" {
+		policy := c.policyList.NameLookup(policyName)
 		if policy == nil {
 			return nectarutil.ResponseStub(http.StatusBadRequest, fmt.Sprintf("Invalid X-Storage-Policy %q", policyName))
-		}
-		if policy.Deprecated {
+		} else if policy.Deprecated {
 			return nectarutil.ResponseStub(http.StatusBadRequest, fmt.Sprintf("Storage Policy %q is deprecated", policyName))
 		}
 		policyIndex = policy.Index
@@ -422,7 +414,9 @@ func (c *ProxyDirectClient) PutContainer(account string, container string, heade
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
-		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(policyIndex))
+		if policyIndex != -1 {
+			req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(policyIndex))
+		}
 		req.Header.Set("X-Backend-Storage-Policy-Default", strconv.Itoa(policyDefault))
 		req.Header.Set("X-Account-Partition", strconv.FormatUint(accountPartition, 10))
 		addUpdateHeaders("X-Account", req.Header, accountDevices, i, containerReplicaCount)
