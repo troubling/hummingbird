@@ -372,6 +372,14 @@ func main() {
 		andrewdFlags.PrintDefaults()
 	}
 
+	objectInfoFlags := flag.NewFlagSet("", flag.ExitOnError)
+	objectInfoFlags.Bool("n", false, "Don't verify file contents against stored etag")
+	objectInfoFlags.String("P", "", "Specify which policy to use")
+	objectInfoFlags.Usage = func() {
+		fmt.Fprintf(os.Stderr, "hummingbird object-info [ARGS] OBJECT_FILE\n")
+		objectInfoFlags.PrintDefaults()
+	}
+
 	/* main flag parser, which doesn't do much */
 
 	flag.Usage = func() {
@@ -428,6 +436,8 @@ func main() {
 		nodesFlags.Usage()
 		fmt.Fprintln(os.Stderr)
 		andrewdFlags.Usage()
+		fmt.Fprintln(os.Stderr)
+		objectInfoFlags.Usage()
 	}
 
 	flag.Parse()
@@ -499,6 +509,9 @@ func main() {
 	case "andrewd":
 		andrewdFlags.Parse(flag.Args()[1:])
 		srv.RunDaemon(tools.NewAdmin, andrewdFlags)
+	case "object-info":
+		objectInfoFlags.Parse(flag.Args()[1:])
+		tools.ObjectInfo(objectInfoFlags)
 	case "init":
 		if err := initCommand(flag.Args()[1:]); err != nil {
 			fmt.Fprintln(os.Stderr, "init error:", err)
