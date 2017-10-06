@@ -128,7 +128,7 @@ func storageDirectory(datadir string, partNum uint64, nameHash string, policy *c
 				strconv.Itoa(int(digest[0]>>1)), strconv.Itoa(int((digest[0]<<6|digest[1]>>2)&127)),
 				strconv.Itoa(int((digest[1]<<5|digest[2]>>3)&127)), nameHash)
 		}
-		fmt.Println("Couldn't decode hash: %v\n", nameHash)
+		fmt.Printf("Couldn't decode hash: %v\n", nameHash)
 		os.Exit(1)
 	}
 	partition := fmt.Sprintf("%v", partNum)
