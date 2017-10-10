@@ -21,6 +21,7 @@ install:
   - go get github.com/haya14busa/goverage
   - mkdir -p /tmp/output
   - |
+    set -e
     if [ "$HYBRID" = "YES" ] ; then
       cd ~/swift
       git checkout stable/pike
@@ -45,6 +46,7 @@ install:
 
 script:
   - |
+    set -e
     if [ "$HYBRID" = "YES" ] ; then
       hummingbird start object
       hummingbird start container
