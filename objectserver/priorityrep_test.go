@@ -64,7 +64,7 @@ func (p *priFakeRing) GetMoreNodes(partition uint64) ring.MoreNodes { return nil
 
 func (p *priFakeRing) GetNodes(partition uint64) (response []*ring.Device) {
 	for _, p := range p.mapping[partition] {
-		response = append(response, &ring.Device{Id: p, Device: fmt.Sprintf("drive%d", p), Ip: "127.0.0.1", Port: p})
+		response = append(response, &ring.Device{Id: p, Device: fmt.Sprintf("drive%d", p), Ip: "127.0.0.1", Port: p, Region: p % 2})
 	}
 	return
 }
@@ -109,7 +109,7 @@ func TestGetRestoreDeviceJobs(t *testing.T) {
 			1: {1, 3},
 		},
 	}
-	jobs := getRestoreDeviceJobs(ring, "127.0.0.1", "drive1")
+	jobs := getRestoreDeviceJobs(ring, "127.0.0.1", "drive1", false, []uint64{})
 	require.EqualValues(t, 2, len(jobs))
 	require.EqualValues(t, 0, jobs[0].Partition)
 	require.EqualValues(t, 2, jobs[0].FromDevice.Id)
@@ -117,6 +117,19 @@ func TestGetRestoreDeviceJobs(t *testing.T) {
 	require.EqualValues(t, 1, jobs[1].Partition)
 	require.EqualValues(t, 3, jobs[1].FromDevice.Id)
 	require.EqualValues(t, 1, jobs[1].ToDevices[0].Id)
+}
+
+func TestGetRestoreDeviceJobsSameRegion(t *testing.T) {
+	t.Parallel()
+	ring := &priFakeRing{
+		mapping: map[uint64][]int{
+			0: {1, 2},
+			1: {1, 3},
+		},
+	}
+	jobs := getRestoreDeviceJobs(ring, "127.0.0.1", "drive1", true, []uint64{})
+	require.EqualValues(t, 1, len(jobs))
+	require.EqualValues(t, jobs[0].FromDevice.Region, jobs[0].ToDevices[0].Region)
 }
 
 func TestPriRepJobs(t *testing.T) {
