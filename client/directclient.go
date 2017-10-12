@@ -17,6 +17,7 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
+	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/nectar"
 	"github.com/troubling/nectar/nectarutil"
 )
@@ -46,7 +47,7 @@ type ProxyDirectClient struct {
 	lcm           sync.RWMutex
 }
 
-func NewProxyDirectClient(policyList conf.PolicyList) (*ProxyDirectClient, error) {
+func NewProxyDirectClient(policyList conf.PolicyList, cnf srv.ConfigLoader) (*ProxyDirectClient, error) {
 	var xport http.RoundTripper = &http.Transport{
 		MaxIdleConnsPerHost: 100,
 		MaxIdleConns:        0,
@@ -67,15 +68,22 @@ func NewProxyDirectClient(policyList conf.PolicyList) (*ProxyDirectClient, error
 			Timeout:   120 * time.Minute,
 		},
 	}
-	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
+	if c.policyList == nil {
+		policyList, err := cnf.GetPolicies()
+		if err != nil {
+			return nil, err
+		}
+		c.policyList = policyList
+	}
+	hashPathPrefix, hashPathSuffix, err := cnf.GetHashPrefixAndSuffix()
 	if err != nil {
 		return nil, err
 	}
-	c.ContainerRing, err = ring.GetRing("container", hashPathPrefix, hashPathSuffix, 0)
+	c.ContainerRing, err = cnf.GetRing("container", hashPathPrefix, hashPathSuffix, 0)
 	if err != nil {
 		return nil, err
 	}
-	c.AccountRing, err = ring.GetRing("account", hashPathPrefix, hashPathSuffix, 0)
+	c.AccountRing, err = cnf.GetRing("account", hashPathPrefix, hashPathSuffix, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +91,7 @@ func NewProxyDirectClient(policyList conf.PolicyList) (*ProxyDirectClient, error
 	for _, policy := range policyList {
 		// TODO: the intention is to (if it becomes necessary) have a policy type to object client
 		// constructor mapping here, similar to how object engines are loaded by policy type.
-		ring, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index)
+		ring, err := cnf.GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index)
 		if err != nil {
 			return nil, err
 		}
@@ -390,9 +398,6 @@ func (c *ProxyDirectClient) PutContainer(account string, container string, heade
 	accountPartition := c.AccountRing.GetPartition(account, "", "")
 	accountDevices := c.AccountRing.GetNodes(accountPartition)
 	policyIndex := -1
-	if c.policyList == nil {
-		c.policyList = conf.LoadPolicies()
-	}
 	policyDefault := c.policyList.Default()
 	if policyName := strings.TrimSpace(headers.Get("X-Storage-Policy")); policyName != "" {
 		policy := c.policyList.NameLookup(policyName)
@@ -1030,7 +1035,7 @@ func (c *directClient) Raw(method, urlAfterAccount string, headers map[string]st
 
 // NewDirectClient creates a new direct client with the given account name.
 func NewDirectClient(account string) (nectar.Client, error) {
-	pdc, err := NewProxyDirectClient(nil)
+	pdc, err := NewProxyDirectClient(nil, srv.DefaultConfigLoader{})
 	if err != nil {
 		return nil, err
 	}

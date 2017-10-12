@@ -643,7 +643,7 @@ func (server *ObjectServer) GetHandler(config conf.Config, metricsPrefix string)
 	return alice.New(middleware.Metrics(metricsScope)).Append(middleware.GrepObject).Then(router)
 }
 
-func GetServer(serverconf conf.Config, flags *flag.FlagSet) (bindIP string, bindPort int, serv srv.Server, logger srv.LowLevelLogger, err error) {
+func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (bindIP string, bindPort int, serv srv.Server, logger srv.LowLevelLogger, err error) {
 	server := &ObjectServer{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: "",
 		allowedHeaders: map[string]bool{
 			"Content-Disposition":   true,
@@ -653,12 +653,16 @@ func GetServer(serverconf conf.Config, flags *flag.FlagSet) (bindIP string, bind
 			"X-Static-Large-Object": true,
 		},
 	}
-	server.hashPathPrefix, server.hashPathSuffix, err = conf.GetHashPrefixAndSuffix()
+	server.hashPathPrefix, server.hashPathSuffix, err = cnf.GetHashPrefixAndSuffix()
 	if err != nil {
 		return "", 0, nil, nil, err
 	}
 	server.objEngines = make(map[int]ObjectEngine)
-	for _, policy := range conf.LoadPolicies() {
+	policies, err := cnf.GetPolicies()
+	if err != nil {
+		return "", 0, nil, nil, err
+	}
+	for _, policy := range policies {
 		if newEngine, err := FindEngine(policy.Type); err != nil {
 			return "", 0, nil, nil, fmt.Errorf("Unable to find object engine type %s: %v", policy.Type, err)
 		} else {

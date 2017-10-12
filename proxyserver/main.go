@@ -168,16 +168,15 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 	return pipeline.Then(router)
 }
 
-func GetServer(serverconf conf.Config, flags *flag.FlagSet) (string, int, srv.Server, srv.LowLevelLogger, error) {
-	var err error
+func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (bindIP string, bindPort int, serv srv.Server, logger srv.LowLevelLogger, err error) {
 	server := &ProxyServer{}
 	server.mc, err = ring.NewMemcacheRingFromConfig(serverconf)
 	if err != nil {
 		return "", 0, nil, nil, err
 	}
 
-	bindIP := serverconf.GetDefault("DEFAULT", "bind_ip", "0.0.0.0")
-	bindPort := serverconf.GetInt("DEFAULT", "bind_port", 8080)
+	bindIP = serverconf.GetDefault("DEFAULT", "bind_ip", "0.0.0.0")
+	bindPort = int(serverconf.GetInt("DEFAULT", "bind_port", 8080))
 
 	logLevelString := serverconf.GetDefault("app:proxy-server", "log_level", "INFO")
 	server.logLevel = zap.NewAtomicLevel()
@@ -186,8 +185,11 @@ func GetServer(serverconf conf.Config, flags *flag.FlagSet) (string, int, srv.Se
 	if server.logger, err = srv.SetupLogger("proxy-server", &server.logLevel, flags); err != nil {
 		return "", 0, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
-	policies := conf.LoadPolicies()
-	server.proxyDirectClient, err = client.NewProxyDirectClient(policies)
+	policies, err := cnf.GetPolicies()
+	if err != nil {
+		return "", 0, nil, nil, err
+	}
+	server.proxyDirectClient, err = client.NewProxyDirectClient(policies, cnf)
 	if err != nil {
 		return "", 0, nil, nil, fmt.Errorf("Error setting up proxyDirectClient: %v", err)
 	}

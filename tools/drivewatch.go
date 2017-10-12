@@ -631,15 +631,18 @@ func (dw *driveWatch) Run() {
 }
 
 func NewDriveWatch(logger srv.LowLevelLogger,
-	metricsScope tally.Scope, serverconf conf.Config) *driveWatch {
-	pl := conf.LoadPolicies()
-	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
+	metricsScope tally.Scope, serverconf conf.Config, cnf srv.ConfigLoader) *driveWatch {
+	pl, err := cnf.GetPolicies()
+	if err != nil {
+		panic(fmt.Sprintf("Unable to load policies: %v", err))
+	}
+	hashPathPrefix, hashPathSuffix, err := cnf.GetHashPrefixAndSuffix()
 	if err != nil {
 		panic(fmt.Sprintf("Unable to load hash path prefix and suffix: %v", err))
 	}
 	pMap := map[int]ringData{}
 	for _, p := range pl {
-		objectRing, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, p.Index)
+		objectRing, err := cnf.GetRing("object", hashPathPrefix, hashPathSuffix, p.Index)
 		if err != nil {
 			panic(fmt.Sprintf("Could not load ring with policy: %d", p.Index))
 		}
