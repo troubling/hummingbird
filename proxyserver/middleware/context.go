@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -348,8 +348,7 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 		}
 
 		if m.debugResponses && status/100 != 2 {
-			buf := make([]byte, 1024)
-			runtime.Stack(buf, false)
+			buf := debug.Stack()
 			w.Header().Set("X-Source-Code", string(buf))
 		}
 

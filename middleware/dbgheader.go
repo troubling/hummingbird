@@ -17,7 +17,7 @@ package middleware
 
 import (
 	"net/http"
-	"runtime"
+	"runtime/debug"
 
 	"github.com/troubling/hummingbird/common/srv"
 )
@@ -28,8 +28,7 @@ func NewDebugResponses(debugHeader bool) func(http.Handler) http.Handler {
 			return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 				next.ServeHTTP(srv.NewCustomWriter(writer, func(w http.ResponseWriter, status int) int {
 					if status/100 != 2 {
-						buf := make([]byte, 1024)
-						runtime.Stack(buf, false)
+						buf := debug.Stack()
 						w.Header().Set("X-Source-Code", string(buf))
 					}
 					return status
