@@ -98,28 +98,11 @@ func SendPriRepJob(job *PriorityRepJob, client *http.Client) (string, bool) {
 		job.Partition, job.FromDevice.Ip, job.FromDevice.Device), true
 }
 
-type partOk struct {
-	part uint64
-	ok   bool
-}
-
 // doPriRepJobs executes a list of PriorityRepJobs, limiting concurrent jobs per device to deviceMax.
 func doPriRepJobs(jobs []*PriorityRepJob, deviceMax int, client *http.Client) []uint64 {
 	limiter := &devLimiter{inUse: make(map[int]int), max: deviceMax, somethingFinished: make(chan struct{}, 1)}
 	wg := sync.WaitGroup{}
-	partChan := make(chan partOk)
-	numJobs := len(jobs)
 	badParts := []uint64{}
-	go func() {
-		defer close(partChan)
-		for i := 0; i < numJobs; i++ {
-			pc := <-partChan
-			if !pc.ok {
-				badParts = append(badParts, pc.part)
-			}
-		}
-	}()
-
 	for len(jobs) > 0 {
 		foundDoable := false
 		for i := range jobs {
@@ -133,7 +116,9 @@ func doPriRepJobs(jobs []*PriorityRepJob, deviceMax int, client *http.Client) []
 				defer limiter.finished(job)
 				res, ok := SendPriRepJob(job, client)
 				fmt.Println(res)
-				partChan <- partOk{job.Partition, ok}
+				if !ok {
+					badParts = append(badParts, job.Partition)
+				}
 			}(jobs[i])
 			jobs = append(jobs[:i], jobs[i+1:]...)
 			break
@@ -143,7 +128,6 @@ func doPriRepJobs(jobs []*PriorityRepJob, deviceMax int, client *http.Client) []
 		}
 	}
 	wg.Wait()
-	<-partChan // wait for this to close
 	return badParts
 }
 
