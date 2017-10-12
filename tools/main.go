@@ -17,6 +17,7 @@ package tools
 
 import (
 	"crypto/md5"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
@@ -119,7 +120,17 @@ func policyByName(policyName string) *conf.Policy {
 	return nil
 }
 
-func storageDirectory(datadir string, partNum uint64, nameHash string) string {
+func storageDirectory(datadir string, partNum uint64, nameHash string, policy *conf.Policy) string {
+	if policy.Type == "hec" {
+		if digest, err := hex.DecodeString(nameHash); err == nil {
+			// Stolen from ec engine
+			return filepath.Join(datadir, "nursery",
+				strconv.Itoa(int(digest[0]>>1)), strconv.Itoa(int((digest[0]<<6|digest[1]>>2)&127)),
+				strconv.Itoa(int((digest[1]<<5|digest[2]>>3)&127)), nameHash)
+		}
+		fmt.Printf("Couldn't decode hash: %v\n", nameHash)
+		os.Exit(1)
+	}
 	partition := fmt.Sprintf("%v", partNum)
 	return filepath.Join(datadir, partition, nameHash[len(nameHash)-3:], nameHash)
 }
@@ -156,7 +167,7 @@ func getPathHash(ringType, account, container, object string) string {
 	return fmt.Sprintf("%032x", h.Sum(nil))
 }
 
-func printRingLocations(r ring.Ring, ringType, datadir, account, container, object, partition string, allHandoffs bool, policy int) {
+func printRingLocations(r ring.Ring, ringType, datadir, account, container, object, partition string, allHandoffs bool, policyIdx int) {
 	if r == nil {
 		fmt.Println("No ring specified")
 		os.Exit(1)
@@ -209,7 +220,7 @@ func printRingLocations(r ring.Ring, ringType, datadir, account, container, obje
 	}
 	fmt.Printf("\n\n")
 	for _, v := range primaries {
-		cmd := curlHeadCommand(v.Ip, v.Port, v.Device, partNum, target, policy)
+		cmd := curlHeadCommand(v.Ip, v.Port, v.Device, partNum, target, policyIdx)
 		fmt.Println(cmd)
 	}
 	handoffs = r.GetMoreNodes(partNum)
@@ -217,23 +228,26 @@ func printRingLocations(r ring.Ring, ringType, datadir, account, container, obje
 		if handoffLimit != -1 && i == handoffLimit {
 			break
 		}
-		cmd := curlHeadCommand(v.Ip, v.Port, v.Device, partNum, target, policy)
+		cmd := curlHeadCommand(v.Ip, v.Port, v.Device, partNum, target, policyIdx)
 		fmt.Printf("%v # [Handoff]\n", cmd)
 	}
 
 	fmt.Printf("\n\nUse your own device location of servers:\n")
 	fmt.Printf("such as \"export DEVICE=/srv/node\"\n")
 
+	pl := conf.LoadPolicies()
+	policy := pl[policyIdx]
+
 	if pathHash != "" {
 		for _, v := range primaries {
-			fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v\"\n", v.Ip, v.Device, storageDirectory(datadir, partNum, pathHash))
+			fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v\"\n", v.Ip, v.Device, storageDirectory(datadir, partNum, pathHash, policy))
 		}
 		handoffs = r.GetMoreNodes(partNum)
 		for i, v := 0, handoffs.Next(); v != nil; i, v = i+1, handoffs.Next() {
 			if handoffLimit != -1 && i == handoffLimit {
 				break
 			}
-			fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v\" # [Handoff]\n", v.Ip, v.Device, storageDirectory(datadir, partNum, pathHash))
+			fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v\" # [Handoff]\n", v.Ip, v.Device, storageDirectory(datadir, partNum, pathHash, policy))
 		}
 	} else {
 		for _, v := range primaries {
@@ -251,10 +265,10 @@ func printRingLocations(r ring.Ring, ringType, datadir, account, container, obje
 	fmt.Printf("\nnote: `/srv/node*` is used as default value of `devices`, the real value is set in the config file on each storage node.\n")
 }
 
-func printItemLocations(r ring.Ring, ringType, account, container, object, partition string, allHandoffs bool, policy int) {
+func printItemLocations(r ring.Ring, ringType, account, container, object, partition string, allHandoffs bool, policyIdx int) {
 	location := ""
-	if policy > 0 {
-		location = fmt.Sprintf("%vs-%d", ringType, policy)
+	if policyIdx > 0 {
+		location = fmt.Sprintf("%vs-%d", ringType, policyIdx)
 	} else {
 		location = fmt.Sprintf("%vs", ringType)
 	}
@@ -262,7 +276,7 @@ func printItemLocations(r ring.Ring, ringType, account, container, object, parti
 	fmt.Printf("Container\t%v\n", container)
 	fmt.Printf("Object   \t%v\n", object)
 
-	printRingLocations(r, ringType, location, account, container, object, partition, allHandoffs, policy)
+	printRingLocations(r, ringType, location, account, container, object, partition, allHandoffs, policyIdx)
 }
 
 func parseArg0(arg0 string) (string, string, string) {
@@ -291,11 +305,11 @@ func Nodes(flags *flag.FlagSet) {
 	policyName := flags.Lookup("P").Value.(flag.Getter).Get().(string)
 	allHandoffs := flags.Lookup("a").Value.(flag.Getter).Get().(bool)
 	policy := policyByName(policyName)
-	var policyNum int
+	var policyIdx int
 	if policy != nil {
-		policyNum = policy.Index
+		policyIdx = policy.Index
 	} else {
-		policyNum = 0
+		policyIdx = 0
 	}
 
 	var r ring.Ring
@@ -303,22 +317,22 @@ func Nodes(flags *flag.FlagSet) {
 	inferredType := inferRingType(account, container, object)
 	ringPath := flags.Lookup("r").Value.(flag.Getter).Get().(string)
 	if ringPath != "" {
-		r, ringType = getRing(ringPath, "", policyNum)
+		r, ringType = getRing(ringPath, "", policyIdx)
 		if inferredType != "" && ringType != inferredType {
 			fmt.Printf("Error %v specified but ring type: %v\n", inferredType, ringType)
 			os.Exit(1)
 		}
-		if ringType == "object" && policyNum == 0 {
+		if ringType == "object" && policyIdx == 0 {
 			_, ringFileName := path.Split(ringPath)
 			if strings.HasPrefix(ringFileName, "object") && strings.Contains(ringFileName, "-") {
 				polSuff := strings.Split(ringFileName, "-")[1]
 				if polN, err := strconv.ParseInt(polSuff[:(len(polSuff)-len(".ring.gz"))], 10, 64); err == nil {
-					policyNum = int(polN)
+					policyIdx = int(polN)
 				}
 			}
 		}
 	} else {
-		r, ringType = getRing("", inferredType, policyNum)
+		r, ringType = getRing("", inferredType, policyIdx)
 	}
 
 	if partition != "" {
@@ -340,7 +354,7 @@ func Nodes(flags *flag.FlagSet) {
 		}
 	}
 
-	printItemLocations(r, ringType, account, container, object, partition, allHandoffs, policyNum)
+	printItemLocations(r, ringType, account, container, object, partition, allHandoffs, policyIdx)
 }
 
 type AutoAdmin struct {
