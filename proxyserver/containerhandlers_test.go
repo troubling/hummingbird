@@ -22,6 +22,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.uber.org/zap"
+
 	"github.com/stretchr/testify/require"
 	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common/srv"
@@ -39,7 +41,7 @@ func TestOptionsHandler(t *testing.T) {
 	ctx := &middleware.ProxyContext{
 		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
 			"container/a/c": {Metadata: map[string]string{"Access-Control-Allow-Origin": "there.com"}},
-		}),
+		}, zap.NewNop()),
 	}
 	r = r.WithContext(context.WithValue(r.Context(), "proxycontext", ctx))
 	r = srv.SetVars(r, map[string]string{"account": "a", "container": "c"})
@@ -75,7 +77,7 @@ func TestOptionsHandlerStar(t *testing.T) {
 	ctx := &middleware.ProxyContext{
 		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
 			"container/a/c": {Metadata: map[string]string{"Access-Control-Allow-Origin": "*"}},
-		}),
+		}, zap.NewNop()),
 	}
 	r = r.WithContext(context.WithValue(r.Context(), "proxycontext", ctx))
 	r = srv.SetVars(r, map[string]string{"account": "a", "container": "c"})
@@ -98,7 +100,7 @@ func TestOptionsHandlerNotSetup(t *testing.T) {
 	ctx := &middleware.ProxyContext{
 		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
 			"container/a/c": {Metadata: map[string]string{}},
-		}),
+		}, zap.NewNop()),
 	}
 	r = r.WithContext(context.WithValue(r.Context(), "proxycontext", ctx))
 	r = srv.SetVars(r, map[string]string{"account": "a", "container": "c"})
