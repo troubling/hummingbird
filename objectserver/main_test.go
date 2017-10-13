@@ -45,11 +45,10 @@ import (
 
 type TestServer struct {
 	*httptest.Server
-	host      string
-	port      int
-	root      string
-	objServer *ObjectServer
-	//ring       *test.FakeRing
+	host       string
+	port       int
+	root       string
+	objServer  *ObjectServer
 	confLoader *srv.TestConfigLoader
 }
 

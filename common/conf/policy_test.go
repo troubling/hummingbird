@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLoadPolicy(t *testing.T) {
+func TestGetPolicies(t *testing.T) {
 	tempFile, _ := ioutil.TempFile("", "INI")
 	tempFile.Write([]byte("[swift-hash]\nswift_hash_path_prefix = changeme\nswift_hash_path_suffix = changeme\n" +
 		"[storage-policy:0]\nname = gold\naliases = yellow, orange\npolicy_type = replication\ndefault = yes\n" +
