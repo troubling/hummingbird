@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"os"
 	"strconv"
@@ -98,9 +99,10 @@ func SendPriRepJob(job *PriorityRepJob, client *http.Client) (string, bool) {
 }
 
 // doPriRepJobs executes a list of PriorityRepJobs, limiting concurrent jobs per device to deviceMax.
-func doPriRepJobs(jobs []*PriorityRepJob, deviceMax int, client *http.Client) {
+func doPriRepJobs(jobs []*PriorityRepJob, deviceMax int, client *http.Client) []uint64 {
 	limiter := &devLimiter{inUse: make(map[int]int), max: deviceMax, somethingFinished: make(chan struct{}, 1)}
 	wg := sync.WaitGroup{}
+	badParts := []uint64{}
 	for len(jobs) > 0 {
 		foundDoable := false
 		for i := range jobs {
@@ -112,8 +114,11 @@ func doPriRepJobs(jobs []*PriorityRepJob, deviceMax int, client *http.Client) {
 			go func(job *PriorityRepJob) {
 				defer wg.Done()
 				defer limiter.finished(job)
-				res, _ := SendPriRepJob(job, client)
+				res, ok := SendPriRepJob(job, client)
 				fmt.Println(res)
+				if !ok {
+					badParts = append(badParts, job.Partition)
+				}
 			}(jobs[i])
 			jobs = append(jobs[:i], jobs[i+1:]...)
 			break
@@ -123,6 +128,7 @@ func doPriRepJobs(jobs []*PriorityRepJob, deviceMax int, client *http.Client) {
 		}
 	}
 	wg.Wait()
+	return badParts
 }
 
 // getPartMoveJobs takes two rings and creates a list of jobs for any partition moves between them.
@@ -185,21 +191,50 @@ func MoveParts(args []string) {
 }
 
 // getRestoreDeviceJobs takes an ip address and device name, and creates a list of jobs to restore that device's data from peers.
-func getRestoreDeviceJobs(theRing ring.Ring, ip string, devName string) []*PriorityRepJob {
+func getRestoreDeviceJobs(theRing ring.Ring, ip string, devName string, sameRegionOnly bool, overrideParts []uint64) []*PriorityRepJob {
 	jobs := make([]*PriorityRepJob, 0)
-	for partition := uint64(0); true; partition++ {
+	for i := uint64(0); true; i++ {
+		partition := i
+		if len(overrideParts) > 0 {
+			if int(partition) < len(overrideParts) {
+				partition = overrideParts[partition]
+			} else {
+				break
+			}
+		}
 		devs := theRing.GetNodes(partition)
 		if devs == nil {
 			break
 		}
-		for i, dev := range devs {
+		var toDev *ring.Device
+		for _, dev := range devs {
 			if dev.Device == devName && (dev.Ip == ip || dev.ReplicationIp == ip) {
-				src := devs[(i+1)%len(devs)]
+				toDev = dev
+				break
+			}
+		}
+		if toDev != nil {
+			foundJob := false
+			for len(devs) > 0 {
+				rd := rand.Intn(len(devs))
+				src := devs[rd]
+				devs = append(devs[:rd], devs[rd+1:]...)
+				if src.Device == toDev.Device && (src.Ip == toDev.Ip || src.ReplicationIp == toDev.ReplicationIp) {
+					continue
+				}
+				if sameRegionOnly && src.Region != toDev.Region {
+					continue
+				}
 				jobs = append(jobs, &PriorityRepJob{
 					Partition:  partition,
 					FromDevice: src,
-					ToDevices:  []*ring.Device{dev},
+					ToDevices:  []*ring.Device{toDev},
 				})
+				foundJob = true
+				break
+			}
+			if !foundJob {
+				fmt.Printf("Could not find job for partition: %d\n", partition)
 			}
 		}
 	}
@@ -210,6 +245,7 @@ func getRestoreDeviceJobs(theRing ring.Ring, ip string, devName string) []*Prior
 func RestoreDevice(args []string) {
 	flags := flag.NewFlagSet("restoredevice", flag.ExitOnError)
 	policy := flags.Int("p", 0, "policy index to use")
+	sameRegion := flags.Bool("s", false, "restore device from same region")
 	flags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "USAGE: hummingbird restoredevice [ip] [device]\n")
 		flags.PrintDefaults()
@@ -231,9 +267,24 @@ func RestoreDevice(args []string) {
 		return
 	}
 	client := &http.Client{Timeout: time.Hour}
-	jobs := getRestoreDeviceJobs(objRing, flags.Arg(0), flags.Arg(1))
-	fmt.Println("Job count:", len(jobs))
-	doPriRepJobs(jobs, 2, client)
+	badParts := []uint64{}
+	for {
+		jobs := getRestoreDeviceJobs(objRing, flags.Arg(0), flags.Arg(1), *sameRegion, badParts)
+		lastRun := len(jobs)
+		fmt.Println("Job count:", len(jobs))
+		badParts = doPriRepJobs(jobs, 2, client)
+		if len(badParts) == 0 {
+			break
+		} else {
+			fmt.Printf("Finished run of partitions. retrying %d.\n", len(badParts))
+			fmt.Println("NOTE: This will loop on any partitions not found on any primary")
+			if lastRun == len(badParts) {
+				time.Sleep(time.Minute * 5)
+			} else {
+				time.Sleep(time.Second * 5)
+			}
+		}
+	}
 	fmt.Println("Done sending jobs.")
 }
 
