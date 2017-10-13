@@ -246,6 +246,8 @@ func RestoreDevice(args []string) {
 	flags := flag.NewFlagSet("restoredevice", flag.ExitOnError)
 	policy := flags.Int("p", 0, "policy index to use")
 	sameRegion := flags.Bool("s", false, "restore device from same region")
+	ringLoc := flags.String("r", "", "Specify which ring file to use")
+	conc := flags.Int("c", 2, "limit of per device concurrency priority repl calls")
 	flags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "USAGE: hummingbird restoredevice [ip] [device]\n")
 		flags.PrintDefaults()
@@ -261,10 +263,20 @@ func RestoreDevice(args []string) {
 		fmt.Println("Unable to load hash path prefix and suffix:", err)
 		return
 	}
-	objRing, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, *policy)
-	if err != nil {
-		fmt.Println("Unable to load ring:", err)
-		return
+	var objRing ring.Ring
+	if *ringLoc == "" {
+		objRing, err = ring.GetRing("object", hashPathPrefix, hashPathSuffix, *policy)
+		if err != nil {
+			fmt.Println("Unable to load ring:", err)
+			return
+		}
+	} else {
+		objRing, err = ring.LoadRing(*ringLoc, hashPathPrefix, hashPathSuffix)
+		if err != nil {
+			fmt.Println("Unable to load ring:", err)
+			return
+		}
+
 	}
 	client := &http.Client{Timeout: time.Hour}
 	badParts := []uint64{}
@@ -272,7 +284,7 @@ func RestoreDevice(args []string) {
 		jobs := getRestoreDeviceJobs(objRing, flags.Arg(0), flags.Arg(1), *sameRegion, badParts)
 		lastRun := len(jobs)
 		fmt.Println("Job count:", len(jobs))
-		badParts = doPriRepJobs(jobs, 2, client)
+		badParts = doPriRepJobs(jobs, *conc, client)
 		if len(badParts) == 0 {
 			break
 		} else {
