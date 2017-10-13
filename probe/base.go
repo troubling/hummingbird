@@ -32,6 +32,7 @@ import (
 
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
+	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/common/test"
 	"github.com/troubling/hummingbird/objectserver"
 )
@@ -131,42 +132,11 @@ var environments uint64 = 0
 
 // NewEnvironment creates a new environment.  Arguments should be a series of key, value pairs that are added to the object server configuration file.
 func NewEnvironment(settings ...string) *Environment {
-	oldGetRing := objectserver.GetRing
-	defer func() {
-		objectserver.GetRing = oldGetRing
-	}()
-
-	testRing := &test.FakeRing{}
-	objectserver.GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return testRing, nil
-	}
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	oldLoadPolicies := conf.LoadPolicies
-	conf.LoadPolicies = func() conf.PolicyList {
-		return conf.PolicyList(map[int]*conf.Policy{
-			0: {
-				Index:      0,
-				Type:       "replication",
-				Name:       "Policy-0",
-				Aliases:    nil,
-				Default:    false,
-				Deprecated: false,
-			},
-			1: {
-				Index:      1,
-				Type:       "replication",
-				Name:       "Policy-1",
-				Aliases:    nil,
-				Default:    false,
-				Deprecated: false,
-			},
-		})
-	}
-	defer func() {
-		conf.LoadPolicies = oldLoadPolicies
-	}()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
 	env := &Environment{ring: testRing}
-	env.hashPrefix, env.hashSuffix, _ = conf.GetHashPrefixAndSuffix()
+	env.hashPrefix, env.hashSuffix, _ = confLoader.GetHashPrefixAndSuffix()
 	for i := 0; i < 4; i++ {
 		driveRoot, _ := ioutil.TempDir("", "")
 		os.MkdirAll(filepath.Join(driveRoot, "sda", "objects"), 0755)
@@ -192,20 +162,20 @@ func NewEnvironment(settings ...string) *Environment {
 		configString += fmt.Sprintf("bind_ip=%s\n", trsHost)
 		configString += "[object-auditor]\n"
 		conf, _ := conf.StringConfig(configString)
-		_, _, server, _, err := objectserver.GetServer(conf, &flag.FlagSet{})
+		_, _, server, _, err := objectserver.NewServer(conf, &flag.FlagSet{}, confLoader)
 		if err != nil {
 			log.Fatal(err)
 		}
 		ts.Config.Handler = server.GetHandler(conf, fmt.Sprintf("probe_%d_%d", atomic.AddUint64(&environments, 1), i))
 
-		replicator, _, err := objectserver.NewReplicator(conf, &flag.FlagSet{})
+		replicator, _, err := objectserver.NewReplicator(conf, &flag.FlagSet{}, confLoader)
 		if err != nil {
 			log.Fatal(err)
 		}
 		trs.Config.Handler = replicator.(*objectserver.Replicator).GetHandler()
 
 		replicatorServer := &TestReplicatorWebServer{Server: trs, host: host, port: port, root: driveRoot, replicator: replicator.(*objectserver.Replicator)}
-		auditor, _, err := objectserver.NewAuditor(conf, &flag.FlagSet{})
+		auditor, _, err := objectserver.NewAuditor(conf, &flag.FlagSet{}, confLoader)
 		if err != nil {
 			log.Fatal(err)
 		}

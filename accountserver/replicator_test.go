@@ -35,6 +35,7 @@ import (
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
+	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/common/test"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -579,22 +580,12 @@ func TestVerifyDevicesRemoveMissing(t *testing.T) {
 	require.Equal(t, 0, len(r.runningDevices))
 }
 
-func TestGetReplicator(t *testing.T) {
-	oldGetRing := GetRing
-	oldGetHashes := GetHashPrefixAndSuffix
-	defer func() {
-		GetHashPrefixAndSuffix = oldGetHashes
-		GetRing = oldGetRing
-	}()
-	GetHashPrefixAndSuffix = func() (pfx string, sfx string, err error) {
-		return "changeme", "changeme", nil
-	}
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
+func TestNewReplicator(t *testing.T) {
 	config, err := conf.StringConfig("[account-replicator]\nmount_check=false\nbind_port=1000")
 	require.Nil(t, err)
-	r, logger, err := GetReplicator(config, &flag.FlagSet{})
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	r, logger, err := NewReplicator(config, &flag.FlagSet{}, confLoader)
 	require.Nil(t, err)
 	require.NotNil(t, logger)
 	replicator, ok := r.(*Replicator)
@@ -609,16 +600,16 @@ func TestGetReplicator(t *testing.T) {
 
 	config, err = conf.StringConfig("")
 	require.Nil(t, err)
-	r, logger, err = GetReplicator(config, &flag.FlagSet{})
+	r, logger, err = NewReplicator(config, &flag.FlagSet{}, confLoader)
 	require.NotNil(t, err)
 	require.Nil(t, logger)
 
-	GetHashPrefixAndSuffix = func() (pfx string, sfx string, err error) {
+	confLoader.GetHashPrefixAndSuffixFunc = func() (pfx string, sfx string, err error) {
 		return "", "", errors.New("I AM A BAD CONFIGURATION")
 	}
 	config, err = conf.StringConfig("[account-replicator]\nmount_check=false\nbind_port=1000")
 	require.Nil(t, err)
-	r, logger, err = GetReplicator(config, &flag.FlagSet{})
+	r, logger, err = NewReplicator(config, &flag.FlagSet{}, confLoader)
 	require.NotNil(t, err)
 	require.Nil(t, logger)
 }

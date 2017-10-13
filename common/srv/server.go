@@ -290,6 +290,78 @@ func (d DefaultConfigLoader) GetRing(ringType, prefix, suffix string, policy int
 	return ring.GetRing(ringType, prefix, suffix, policy)
 }
 
+type TestConfigLoader struct {
+	DefaultConfigLoader
+	GetHashPrefixAndSuffixFunc func() (string, string, error)
+	GetPoliciesFunc            func() (conf.PolicyList, error)
+	GetSyncRealmsFunc          func() (conf.SyncRealmList, error)
+	GetRingFunc                func(ringType, prefix, suffix string, policy int) (ring.Ring, error)
+}
+
+func (t *TestConfigLoader) GetHashPrefixAndSuffix() (string, string, error) {
+	if t.GetHashPrefixAndSuffixFunc != nil {
+		return t.GetHashPrefixAndSuffixFunc()
+	} else {
+		return t.DefaultConfigLoader.GetHashPrefixAndSuffix()
+	}
+}
+
+func (t *TestConfigLoader) GetPolicies() (conf.PolicyList, error) {
+	if t.GetPoliciesFunc != nil {
+		return t.GetPoliciesFunc()
+	} else {
+		return t.DefaultConfigLoader.GetPolicies()
+	}
+}
+
+func (t *TestConfigLoader) GetSyncRealms() (conf.SyncRealmList, error) {
+	if t.GetSyncRealmsFunc != nil {
+		return t.GetSyncRealmsFunc()
+	} else {
+		return t.DefaultConfigLoader.GetSyncRealms()
+	}
+}
+
+func (t *TestConfigLoader) GetRing(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	if t.GetRingFunc != nil {
+		return t.GetRingFunc(ringType, prefix, suffix, policy)
+	} else {
+		return t.DefaultConfigLoader.GetRing(ringType, prefix, suffix, policy)
+	}
+}
+
+func NewTestConfigLoader(testRing ring.Ring) *TestConfigLoader {
+	confLoader := &TestConfigLoader{
+		GetRingFunc: func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+			return testRing, nil
+		},
+		GetPoliciesFunc: func() (conf.PolicyList, error) {
+			return conf.PolicyList(map[int]*conf.Policy{
+				0: {
+					Index:      0,
+					Type:       "replication",
+					Name:       "Policy-0",
+					Aliases:    nil,
+					Default:    false,
+					Deprecated: false,
+				},
+				1: {
+					Index:      1,
+					Type:       "replication",
+					Name:       "Policy-1",
+					Aliases:    nil,
+					Default:    false,
+					Deprecated: false,
+				},
+			}), nil
+		},
+		GetHashPrefixAndSuffixFunc: func() (string, string, error) {
+			return "changeme", "changeme", nil
+		},
+	}
+	return confLoader
+}
+
 /* http.Server that knows how to shut down gracefully */
 
 type HummingbirdServer struct {

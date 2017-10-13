@@ -36,7 +36,7 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/pickle"
-	"github.com/troubling/hummingbird/common/ring"
+	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/common/test"
 
 	"github.com/stretchr/testify/assert"
@@ -49,6 +49,8 @@ type TestServer struct {
 	port      int
 	root      string
 	objServer *ObjectServer
+	//ring       *test.FakeRing
+	confLoader *srv.TestConfigLoader
 }
 
 func (t *TestServer) Close() {
@@ -68,7 +70,7 @@ func (t *TestServer) Do(method string, path string, body io.ReadCloser) (*http.R
 
 var testObjectServers uint64 = 0
 
-func makeObjectServer(settings ...string) (*TestServer, error) {
+func makeObjectServer(confLoader *srv.TestConfigLoader, settings ...string) (*TestServer, error) {
 	driveRoot, err := ioutil.TempDir("", "")
 	if err != nil {
 		return nil, err
@@ -81,7 +83,7 @@ func makeObjectServer(settings ...string) (*TestServer, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, _, server, _, err := GetServer(conf, &flag.FlagSet{})
+	_, _, server, _, err := NewServer(conf, &flag.FlagSet{}, confLoader)
 	if err != nil {
 		return nil, err
 	}
@@ -98,26 +100,20 @@ func makeObjectServer(settings ...string) (*TestServer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &TestServer{Server: ts, host: host, port: port, root: driveRoot, objServer: server.(*ObjectServer)}, nil
+	return &TestServer{Server: ts, host: host, port: port, root: driveRoot, objServer: server.(*ObjectServer), confLoader: confLoader}, nil
 }
 
 func TestReplicateRecalculate(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
-	ts, err := makeObjectServer()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	assert.Nil(t, err)
 	defer ts.Close()
 	os.MkdirAll(filepath.Join(ts.root, "sda", "objects", "1", "fff", "ffffffffffffffffffffffffffffffff"), 0755)
 	f, _ := os.Create(filepath.Join(ts.root, "sda", "objects", "1", "fff", "ffffffffffffffffffffffffffffffff", "1425753549.99999.data"))
 	f.Close()
 
-	trs1, err := makeReplicatorWebServer()
+	trs1, err := makeReplicatorWebServer(confLoader)
 	require.Nil(t, err)
 	defer trs1.Close()
 	trs1.replicator.deviceRoot = ts.objServer.driveRoot
@@ -150,7 +146,9 @@ func TestReplicateRecalculate(t *testing.T) {
 }
 
 func TestBasicPutGet(t *testing.T) {
-	ts, err := makeObjectServer()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	assert.Nil(t, err)
 	defer ts.Close()
 
@@ -172,7 +170,9 @@ func TestBasicPutGet(t *testing.T) {
 }
 
 func TestBasicPutDelete(t *testing.T) {
-	ts, err := makeObjectServer()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	assert.Nil(t, err)
 	defer ts.Close()
 
@@ -200,7 +200,9 @@ func TestBasicPutDelete(t *testing.T) {
 }
 
 func TestBasicPutPostGet(t *testing.T) {
-	ts, err := makeObjectServer()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	assert.Nil(t, err)
 	defer ts.Close()
 
@@ -232,7 +234,9 @@ func TestBasicPutPostGet(t *testing.T) {
 }
 
 func TestPostContentType(t *testing.T) {
-	ts, err := makeObjectServer()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	assert.Nil(t, err)
 	defer ts.Close()
 
@@ -257,7 +261,9 @@ func TestPostContentType(t *testing.T) {
 }
 
 func TestPostNotFound(t *testing.T) {
-	ts, err := makeObjectServer()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	assert.Nil(t, err)
 	defer ts.Close()
 
@@ -272,7 +278,9 @@ func TestPostNotFound(t *testing.T) {
 }
 
 func TestGetRanges(t *testing.T) {
-	ts, err := makeObjectServer()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	assert.Nil(t, err)
 	defer ts.Close()
 
@@ -320,7 +328,9 @@ func TestGetRanges(t *testing.T) {
 }
 
 func TestBadEtag(t *testing.T) {
-	ts, err := makeObjectServer()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	assert.Nil(t, err)
 	defer ts.Close()
 
@@ -337,7 +347,9 @@ func TestBadEtag(t *testing.T) {
 }
 
 func TestCorrectEtag(t *testing.T) {
-	ts, err := makeObjectServer()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	assert.Nil(t, err)
 	defer ts.Close()
 
@@ -356,7 +368,9 @@ func TestCorrectEtag(t *testing.T) {
 }
 
 func TestUppercaseEtag(t *testing.T) {
-	ts, err := makeObjectServer()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	assert.Nil(t, err)
 	defer ts.Close()
 
@@ -396,7 +410,9 @@ func (f *fakeResponse) WriteHeader(s int) {
 }
 
 func TestDisconnectOnPut(t *testing.T) {
-	ts, err := makeObjectServer()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	assert.Nil(t, err)
 	defer ts.Close()
 
@@ -414,7 +430,9 @@ func TestDisconnectOnPut(t *testing.T) {
 }
 
 func TestEmptyDevice(t *testing.T) {
-	ts, err := makeObjectServer()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	assert.Nil(t, err)
 	defer ts.Close()
 
@@ -427,7 +445,9 @@ func TestEmptyDevice(t *testing.T) {
 }
 
 func TestEmptyPartition(t *testing.T) {
-	ts, err := makeObjectServer()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	assert.Nil(t, err)
 	defer ts.Close()
 
@@ -440,7 +460,9 @@ func TestEmptyPartition(t *testing.T) {
 }
 
 func TestEmptyAccount(t *testing.T) {
-	ts, err := makeObjectServer()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	assert.Nil(t, err)
 	defer ts.Close()
 
@@ -453,7 +475,9 @@ func TestEmptyAccount(t *testing.T) {
 }
 
 func TestEmptyContainer(t *testing.T) {
-	ts, err := makeObjectServer()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	assert.Nil(t, err)
 	defer ts.Close()
 
@@ -466,7 +490,9 @@ func TestEmptyContainer(t *testing.T) {
 }
 
 func TestEmptyObject(t *testing.T) {
-	ts, err := makeObjectServer()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	assert.Nil(t, err)
 	defer ts.Close()
 
@@ -479,7 +505,9 @@ func TestEmptyObject(t *testing.T) {
 }
 
 func TestBasicPutDeleteAt(t *testing.T) {
-	ts, err := makeObjectServer()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	assert.Nil(t, err)
 	defer ts.Close()
 
@@ -560,7 +588,9 @@ func (s *slowReader) Close() error {
 }
 
 func TestAcquireDevice(t *testing.T) {
-	ts, err := makeObjectServer("disk_limit", "1/10")
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader, "disk_limit", "1/10")
 	assert.Nil(t, err)
 	defer ts.Close()
 
@@ -614,7 +644,9 @@ func TestAcquireDevice(t *testing.T) {
 }
 
 func TestAccountAcquireDevice(t *testing.T) {
-	ts, err := makeObjectServer("account_rate_limit", "1/0")
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader, "account_rate_limit", "1/0")
 	assert.Nil(t, err)
 	defer ts.Close()
 

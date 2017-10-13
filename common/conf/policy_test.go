@@ -35,7 +35,8 @@ func TestLoadPolicy(t *testing.T) {
 		defer os.Remove(tempFile.Name())
 	}()
 	configLocations = []string{tempFile.Name()}
-	policyList := LoadPolicies()
+	policyList, err := GetPolicies()
+	require.Nil(t, err)
 	require.Equal(t, policyList[0].Name, "gold")
 	require.Equal(t, policyList[0].Default, true)
 	require.Equal(t, policyList[0].Deprecated, false)
@@ -59,7 +60,8 @@ func TestGetPolicyInfo(t *testing.T) {
 		defer os.Remove(tempFile.Name())
 	}()
 	configLocations = []string{tempFile.Name()}
-	policyList := LoadPolicies()
+	policyList, err := GetPolicies()
+	require.Nil(t, err)
 	policyInfo := policyList.GetPolicyInfo()
 	require.Equal(t, 2, len(policyInfo))
 	expectedGold := map[string]interface{}{"name": "gold",
@@ -83,7 +85,8 @@ func TestNoPolicies(t *testing.T) {
 		defer os.Remove(tempFile.Name())
 	}()
 	configLocations = []string{tempFile.Name()}
-	policyList := LoadPolicies()
+	policyList, err := GetPolicies()
+	require.Nil(t, err)
 	require.Equal(t, policyList[0].Name, "Policy-0")
 	require.Equal(t, policyList[0].Default, true)
 	require.Equal(t, policyList[0].Deprecated, false)

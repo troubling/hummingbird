@@ -29,11 +29,14 @@ import (
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/pickle"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/common/test"
 	"go.uber.org/zap"
 )
 
 func TestExpirerContainer(t *testing.T) {
-	ts, err := makeObjectServer()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	require.Nil(t, err)
 	defer ts.Close()
 	server := ts.objServer
@@ -56,7 +59,9 @@ func TestExpirerContainer(t *testing.T) {
 }
 
 func TestUpdateDeleteAt(t *testing.T) {
-	ts, err := makeObjectServer()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	require.Nil(t, err)
 	server := ts.objServer
 	defer ts.Close()
@@ -107,7 +112,9 @@ func TestUpdateDeleteAt(t *testing.T) {
 }
 
 func TestUpdateDeleteAtNoHeaders(t *testing.T) {
-	ts, err := makeObjectServer()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	require.Nil(t, err)
 	server := ts.objServer
 	defer ts.Close()
@@ -138,7 +145,9 @@ func TestUpdateDeleteAtNoHeaders(t *testing.T) {
 }
 
 func TestUpdateContainer(t *testing.T) {
-	ts, err := makeObjectServer()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	require.Nil(t, err)
 	server := ts.objServer
 	defer ts.Close()
@@ -192,7 +201,9 @@ func TestUpdateContainer(t *testing.T) {
 }
 
 func TestUpdateContainerNoHeaders(t *testing.T) {
-	ts, err := makeObjectServer()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	require.Nil(t, err)
 	server := ts.objServer
 	defer ts.Close()

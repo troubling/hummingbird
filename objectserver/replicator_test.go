@@ -39,23 +39,24 @@ import (
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
+	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/common/test"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 )
 
-func newTestReplicator(settings ...string) (*Replicator, error) {
-	return newTestReplicatorWithFlags(settings, &flag.FlagSet{})
+func newTestReplicator(confLoader *srv.TestConfigLoader, settings ...string) (*Replicator, error) {
+	return newTestReplicatorWithFlags(confLoader, settings, &flag.FlagSet{})
 }
 
-func newTestReplicatorWithFlags(settings []string, flags *flag.FlagSet) (*Replicator, error) {
+func newTestReplicatorWithFlags(confLoader *srv.TestConfigLoader, settings []string, flags *flag.FlagSet) (*Replicator, error) {
 	configString := "[object-replicator]\nmount_check=false\n"
 	for i := 0; i < len(settings); i += 2 {
 		configString += fmt.Sprintf("%s=%s\n", settings[i], settings[i+1])
 	}
 	conf, _ := conf.StringConfig(configString)
-	replicator, _, err := NewReplicator(conf, flags)
+	replicator, _, err := NewReplicator(conf, flags, confLoader)
 	if err != nil {
 		return nil, err
 	}
@@ -256,16 +257,16 @@ func (t *TestReplicatorWebServer) Do(method string, path string, body io.ReadClo
 	return http.DefaultClient.Do(req)
 }
 
-func makeReplicatorWebServer(settings ...string) (*TestReplicatorWebServer, error) {
-	return makeReplicatorWebServerWithFlags(settings, &flag.FlagSet{})
+func makeReplicatorWebServer(confLoader *srv.TestConfigLoader, settings ...string) (*TestReplicatorWebServer, error) {
+	return makeReplicatorWebServerWithFlags(confLoader, settings, &flag.FlagSet{})
 }
 
-func makeReplicatorWebServerWithFlags(settings []string, flags *flag.FlagSet) (*TestReplicatorWebServer, error) {
+func makeReplicatorWebServerWithFlags(confLoader *srv.TestConfigLoader, settings []string, flags *flag.FlagSet) (*TestReplicatorWebServer, error) {
 	deviceRoot, err := ioutil.TempDir("", "")
 	if err != nil {
 		return nil, err
 	}
-	replicator, err := newTestReplicatorWithFlags(settings, flags)
+	replicator, err := newTestReplicatorWithFlags(confLoader, settings, flags)
 	if err != nil {
 		return nil, err
 	}
@@ -371,15 +372,9 @@ func TestGetFileBadMetadata(t *testing.T) {
 }
 
 func TestListObjFiles(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
-	repl, err := newTestReplicator()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	repl, err := newTestReplicator(confLoader)
 	require.Nil(t, err)
 	rd := newReplicationDevice(&ring.Device{}, 0, repl)
 	dir, err := ioutil.TempDir("", "")
@@ -429,15 +424,9 @@ func TestListObjFiles(t *testing.T) {
 }
 
 func TestCancelListObjFiles(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
-	repl, err := newTestReplicator()
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	repl, err := newTestReplicator(confLoader)
 	require.Nil(t, err)
 	rd := newReplicationDevice(&ring.Device{}, 0, repl)
 	dir, err := ioutil.TempDir("", "")
@@ -459,19 +448,13 @@ func TestCancelListObjFiles(t *testing.T) {
 }
 
 func TestPriorityRepHandler404(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
 	t.Parallel()
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	replicator, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 	replicator.deviceRoot = deviceRoot
 	w := httptest.NewRecorder()
@@ -489,18 +472,12 @@ func TestPriorityRepHandler404(t *testing.T) {
 }
 
 func TestSyncFile(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	replicator, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 
 	filename := filepath.Join(deviceRoot, "objects", "1", "aaa", "00000000000000000000000000000000", "1472940619.68559")
@@ -541,18 +518,12 @@ func TestSyncFile(t *testing.T) {
 }
 
 func TestSyncFileExists(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	replicator, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 
 	filename := filepath.Join(deviceRoot, "objects", "1", "aaa", "00000000000000000000000000000000", "1472940619.68559")
@@ -591,18 +562,12 @@ func TestSyncFileExists(t *testing.T) {
 }
 
 func TestSyncFileNewerExists(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	replicator, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")
 
 	filename := filepath.Join(deviceRoot, "objects", "1", "aaa", "00000000000000000000000000000000", "1472940619.68559")
 	require.Nil(t, os.MkdirAll(filepath.Dir(filename), 0777))
@@ -636,18 +601,12 @@ func TestSyncFileNewerExists(t *testing.T) {
 }
 
 func TestReplicateLocal(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	replicator, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 	objPath := filepath.Join(deviceRoot, "objects")
 	partition := "1"
@@ -675,18 +634,12 @@ func TestReplicateLocal(t *testing.T) {
 }
 
 func TestReplicateHandoff(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	replicator, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 	partition := "1"
 	objPath := filepath.Join(deviceRoot, "objects")
@@ -717,18 +670,12 @@ func TestReplicateHandoff(t *testing.T) {
 }
 
 func TestCleanTemp(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no", "devices", deviceRoot)
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	replicator, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no", "devices", deviceRoot)
 	require.Nil(t, err)
 	rd := newPatchableReplicationDevice(replicator)
 	rd.dev.Device = "sda"
@@ -748,15 +695,9 @@ func TestCleanTemp(t *testing.T) {
 }
 
 func TestReplicate(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	replicator, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 	rd := newPatchableReplicationDevice(replicator)
 	rd._listPartitions = func() ([]string, []string, error) {
@@ -771,15 +712,9 @@ func TestReplicate(t *testing.T) {
 }
 
 func TestCancelReplicate(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	replicator, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 	rd := newPatchableReplicationDevice(replicator)
 	rd._listPartitions = func() ([]string, []string, error) {
@@ -796,18 +731,12 @@ func TestCancelReplicate(t *testing.T) {
 }
 
 func TestListPartitions(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no", "devices", deviceRoot)
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	replicator, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no", "devices", deviceRoot)
 	require.Nil(t, err)
 	objPath := filepath.Join(deviceRoot, "sda", "objects")
 	require.Nil(t, os.MkdirAll(filepath.Join(objPath, "1"), 0777))
@@ -830,19 +759,12 @@ func TestListPartitions(t *testing.T) {
 }
 
 func TestReplicatePartition(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	testRing := &test.FakeRing{MockGetMoreNodes: &NoMoreNodes{}}
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return testRing, nil
-	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no", "devices", deviceRoot)
+	testRing := &test.FakeRing{MockGetMoreNodes: &NoMoreNodes{}}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	replicator, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no", "devices", deviceRoot)
 	require.Nil(t, err)
 	require.Nil(t, err)
 	rd := newPatchableReplicationDevice(replicator)
@@ -868,19 +790,12 @@ func TestReplicatePartition(t *testing.T) {
 }
 
 func TestProcessPriorityJobs(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	testRing := &test.FakeRing{MockGetMoreNodes: &NoMoreNodes{}}
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return testRing, nil
-	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
-	replicator, err := newTestReplicator()
+	testRing := &test.FakeRing{MockGetMoreNodes: &NoMoreNodes{}}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	replicator, err := newTestReplicator(confLoader)
 	require.Nil(t, err)
 	rd := newPatchableReplicationDevice(replicator)
 	rd.priRep = make(chan PriorityRepJob, 1)
@@ -917,15 +832,9 @@ func TestProcessPriorityJobs(t *testing.T) {
 }
 
 func TestCancelStalledDevices(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	replicator, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 	type repDev struct {
 		mockReplicationDevice
@@ -968,18 +877,10 @@ func TestCancelStalledDevices(t *testing.T) {
 }
 
 func TestVerifyDevices(t *testing.T) {
-	oldGetRing := GetRing
-	oldLoadPolicies := conf.LoadPolicies
-	defer func() {
-		GetRing = oldGetRing
-		conf.LoadPolicies = oldLoadPolicies
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{MockLocalDevices: []*ring.Device{{Device: "sda"}}}, nil
-	}
-	conf.LoadPolicies = func() conf.PolicyList {
-		return conf.PolicyList(map[int]*conf.Policy{0: {Index: 0, Type: "replication", Name: "gold", Aliases: []string{}, Default: true, Deprecated: false, Config: map[string]string{"policy_type": "replication", "default": "yes", "name": "gold"}}})
+	testRing := &test.FakeRing{MockLocalDevices: []*ring.Device{{Device: "sda"}}}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	confLoader.GetPoliciesFunc = func() (conf.PolicyList, error) {
+		return conf.PolicyList(map[int]*conf.Policy{0: {Index: 0, Type: "replication", Name: "gold", Aliases: []string{}, Default: true, Deprecated: false, Config: map[string]string{"policy_type": "replication", "default": "yes", "name": "gold"}}}), nil
 	}
 	oldNewReplicationDevice := newReplicationDevice
 	defer func() {
@@ -992,7 +893,7 @@ func TestVerifyDevices(t *testing.T) {
 		return oldNewReplicationDevice(dev, policy, r)
 	}
 	canceled := false
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	replicator, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 	replicator.runningDevices = map[string]ReplicationDevice{
 		"sdb": &mockReplicationDevice{
@@ -1008,15 +909,9 @@ func TestVerifyDevices(t *testing.T) {
 }
 
 func TestReportStats(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	replicator, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 	replicator.stats = map[string]map[string]*DeviceStats{
 		"object-replicator": {
@@ -1101,15 +996,9 @@ func TestReportStats(t *testing.T) {
 }
 
 func TestPriorityReplicate(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	replicator, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 	priorityReplicateCalled := false
 	replicator.runningDevices = map[string]ReplicationDevice{
@@ -1130,15 +1019,9 @@ func TestPriorityReplicate(t *testing.T) {
 }
 
 func TestGetDeviceProgress(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	replicator, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 	replicator.stats = map[string]map[string]*DeviceStats{
 		"object-replicator": {
@@ -1169,15 +1052,9 @@ func TestGetDeviceProgress(t *testing.T) {
 }
 
 func TestRunLoopOnceDone(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	replicator, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 	replicator.onceWaiting = 10
 	replicator.onceDone = make(chan struct{}, 1)
@@ -1187,15 +1064,9 @@ func TestRunLoopOnceDone(t *testing.T) {
 }
 
 func TestRunLoopStatUpdate(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	replicator, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 	replicator.stats = map[string]map[string]*DeviceStats{
 		"object-replicator": {
@@ -1231,20 +1102,13 @@ func TestRunLoopStatUpdate(t *testing.T) {
 }
 
 func TestReplicationLocal(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
 	testRing := &test.FakeRing{}
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return testRing, nil
-	}
-	ts, err := makeObjectServer()
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	assert.Nil(t, err)
 	defer ts.Close()
 
-	ts2, err := makeObjectServer()
+	ts2, err := makeObjectServer(confLoader)
 	assert.Nil(t, err)
 	defer ts2.Close()
 
@@ -1258,12 +1122,12 @@ func TestReplicationLocal(t *testing.T) {
 	require.Nil(t, err)
 	require.Equal(t, 201, resp.StatusCode)
 
-	trs1, err := makeReplicatorWebServer()
+	trs1, err := makeReplicatorWebServer(confLoader)
 	require.Nil(t, err)
 	defer trs1.Close()
 	trs1.replicator.deviceRoot = ts.objServer.driveRoot
 
-	trs2, err := makeReplicatorWebServer()
+	trs2, err := makeReplicatorWebServer(confLoader)
 	require.Nil(t, err)
 	defer trs2.Close()
 	trs2.replicator.deviceRoot = ts2.objServer.driveRoot
@@ -1282,20 +1146,13 @@ func TestReplicationLocal(t *testing.T) {
 }
 
 func TestReplicationHandoff(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
 	testRing := &test.FakeRing{}
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return testRing, nil
-	}
-	ts, err := makeObjectServer()
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	assert.Nil(t, err)
 	defer ts.Close()
 
-	ts2, err := makeObjectServer()
+	ts2, err := makeObjectServer(confLoader)
 	assert.Nil(t, err)
 	defer ts2.Close()
 
@@ -1315,11 +1172,11 @@ func TestReplicationHandoff(t *testing.T) {
 	require.Nil(t, err)
 	require.Equal(t, 200, resp.StatusCode)
 
-	trs1, err := makeReplicatorWebServer()
+	trs1, err := makeReplicatorWebServer(confLoader)
 	require.Nil(t, err)
 	defer trs1.Close()
 	trs1.replicator.deviceRoot = ts.objServer.driveRoot
-	trs2, err := makeReplicatorWebServer()
+	trs2, err := makeReplicatorWebServer(confLoader)
 	require.Nil(t, err)
 	defer trs2.Close()
 	trs2.replicator.deviceRoot = ts2.objServer.driveRoot
@@ -1346,20 +1203,13 @@ func TestReplicationHandoff(t *testing.T) {
 }
 
 func TestReplicationHandoffQuorumDelete(t *testing.T) {
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
 	testRing := &test.FakeRing{}
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return testRing, nil
-	}
-	ts, err := makeObjectServer()
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
 	assert.Nil(t, err)
 	defer ts.Close()
 
-	ts2, err := makeObjectServer()
+	ts2, err := makeObjectServer(confLoader)
 	assert.Nil(t, err)
 	defer ts2.Close()
 
@@ -1376,19 +1226,19 @@ func TestReplicationHandoffQuorumDelete(t *testing.T) {
 	flags := flag.NewFlagSet("hbird flags", flag.ContinueOnError)
 	flags.Bool("q", false, "boolean value")
 	flags.Parse([]string{})
-	trs1, err := makeReplicatorWebServerWithFlags([]string{}, flags)
+	trs1, err := makeReplicatorWebServerWithFlags(confLoader, []string{}, flags)
 	require.Nil(t, err)
 	require.False(t, trs1.replicator.quorumDelete)
 	trs1.Close()
 
 	flags.Parse([]string{"-q"})
-	trs1, err = makeReplicatorWebServerWithFlags([]string{}, flags)
+	trs1, err = makeReplicatorWebServerWithFlags(confLoader, []string{}, flags)
 	require.Nil(t, err)
 	require.True(t, trs1.replicator.quorumDelete)
 	defer trs1.Close()
 	trs1.replicator.deviceRoot = ts.objServer.driveRoot
 
-	trs2, err := makeReplicatorWebServer()
+	trs2, err := makeReplicatorWebServer(confLoader)
 	require.Nil(t, err)
 	defer trs2.Close()
 	trs2.replicator.deviceRoot = ts2.objServer.driveRoot
@@ -1409,18 +1259,12 @@ func TestReplicationHandoffQuorumDelete(t *testing.T) {
 
 func TestAllDifferentRegionsSync(t *testing.T) {
 	// syncing a file in non handoff partition to 3 devs in separate remote regions
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	replicator, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 
 	filename := filepath.Join(deviceRoot, "objects", "1", "aaa", "00000000000000000000000000000000", "1472940619.68559")
@@ -1464,18 +1308,12 @@ func TestAllDifferentRegionsSync(t *testing.T) {
 
 func TestAllSameRegionsSync(t *testing.T) {
 	// syncing a file in non handoff partition to 3 devs in local region
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	replicator, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 
 	filename := filepath.Join(deviceRoot, "objects", "1", "aaa", "00000000000000000000000000000000", "1472940619.68559")
@@ -1519,18 +1357,12 @@ func TestAllSameRegionsSync(t *testing.T) {
 
 func TestHalfSameRegionsSync(t *testing.T) {
 	// syncing a file in non handoff part in reg0 to dev in reg1 and 2 devs in reg2
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	replicator, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 
 	filename := filepath.Join(deviceRoot, "objects", "1", "aaa", "00000000000000000000000000000000", "1472940619.68559")
@@ -1581,18 +1413,12 @@ func TestHalfSameRegionsSyncHandoffNotExists(t *testing.T) {
 	// syncing a file in handoff part in reg0 to dev in reg1 and
 	// 2 devs in reg2. file is on neither remote dev
 
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	replicator, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 
 	filename := filepath.Join(deviceRoot, "objects", "1", "aaa", "00000000000000000000000000000000", "1472940619.68559")
@@ -1648,18 +1474,12 @@ func TestHalfSameRegionsSyncHandoffNotExists(t *testing.T) {
 func TestHalfSameRegionsSyncHandoffYesExists(t *testing.T) {
 	// syncing a file in handoff part in reg0 to dev in reg1 and
 	// 2 devs in reg2. file already on remote that you are only checking
-	oldGetRing := GetRing
-	defer func() {
-		GetRing = oldGetRing
-	}()
-
-	GetRing = func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
-		return &test.FakeRing{}, nil
-	}
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
-	replicator, err := newTestReplicator("bind_port", "1234", "check_mounts", "no")
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	replicator, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
 
 	filename := filepath.Join(deviceRoot, "objects", "1", "aaa", "00000000000000000000000000000000", "1472940619.68559")
