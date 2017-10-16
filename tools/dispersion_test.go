@@ -118,8 +118,8 @@ func (r *FakeRing) ReplicaCount() uint64 {
 
 func TestGetDispersionObjects(t *testing.T) {
 	fakeDevs := []*ring.Device{
-		{Ip: "127.0.0.1", Port: 80, Device: "sda"},
-		{Ip: "127.0.0.1", Port: 80, Device: "sdb"}}
+		{Ip: "127.0.0.1", Port: 80, Device: "sda", Scheme: "http"},
+		{Ip: "127.0.0.1", Port: 80, Device: "sdb", Scheme: "http"}}
 
 	oring := &FakeRing{Devs: fakeDevs, nodeCalls: 3}
 	dObjs := make(chan string)
@@ -160,14 +160,14 @@ func TestScanDispersionObjects(t *testing.T) {
 	require.Nil(t, err)
 	c := &testDispersionClient{objRing: &FakeRing{
 		Devs: []*ring.Device{
-			{Device: "sda", Ip: host, Port: port},
-			{Device: "sdb", Ip: host, Port: port},
-			{Device: "sdc", Ip: host, Port: port}}, nodeCalls: 3},
+			{Device: "sda", Ip: host, Port: port, Scheme: "http"},
+			{Device: "sdb", Ip: host, Port: port, Scheme: "http"},
+			{Device: "sdc", Ip: host, Port: port, Scheme: "http"}}, nodeCalls: 3},
 		contCalls: 1, objCalls: 1}
 
 	metricsScope := tally.NewTestScope("hb_andrewd", map[string]string{})
 
-	d := NewDispersion(&FakeLowLevelLogger{}, c, metricsScope)
+	d, _ := NewDispersion(&FakeLowLevelLogger{}, c, metricsScope, "", "")
 	d.onceFullDispersion = true
 
 	dummyCanceler := make(chan struct{})

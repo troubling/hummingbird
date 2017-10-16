@@ -165,6 +165,8 @@ or
     delete = yes
     allow_insecure_auth_cert = no
     single_container = false
+    cert_file = <cert_file_path>
+    key_file = <key_file_path>
 `)
 		os.Exit(1)
 	}
@@ -175,7 +177,7 @@ or
 		os.Exit(1)
 	}
 
-	authURL := benchconf.GetDefault("bench", "auth", "http://localhost:8080/auth/v1.0")
+	authURL := benchconf.GetDefault("bench", "auth", "https://localhost:8080/auth/v1.0")
 	authTenant := benchconf.GetDefault("bench", "tenant", "")
 	authUser := benchconf.GetDefault("bench", "user", "test:tester")
 	authPassword := benchconf.GetDefault("bench", "password", "")
@@ -190,6 +192,8 @@ or
 	singleContainer := benchconf.GetBool("bench", "single_container", false)
 	verbose := benchconf.GetBool("bench", "verbose", false)
 	allowInsecureAuthCert := benchconf.GetBool("bench", "allow_insecure_auth_cert", false)
+	certFile := benchconf.GetDefault("bench", "cert_file", "")
+	keyFile := benchconf.GetDefault("bench", "key_file", "")
 	salt := fmt.Sprintf("%d", rand.Int63())
 
 	fmt.Printf("Hbird Bench. Concurrency: %d. Object size in bytes: %d\n", concurrency, objectSize)
@@ -198,7 +202,7 @@ or
 	if allowInsecureAuthCert {
 		cli, resp = nectar.NewInsecureClient(authTenant, authUser, authPassword, authKey, authRegion, authURL, authPrivateEndpoint)
 	} else {
-		cli, resp = nectar.NewClient(authTenant, authUser, authPassword, authKey, authRegion, authURL, authPrivateEndpoint)
+		cli, resp = nectar.NewClient(authTenant, authUser, authPassword, authKey, authRegion, authURL, authPrivateEndpoint, certFile, keyFile)
 	}
 	if resp != nil {
 		msg, _ := ioutil.ReadAll(resp.Body)
@@ -274,6 +278,9 @@ func RunThrash(args []string) {
 		fmt.Println("    num_objects = 5000")
 		fmt.Println("    gets_per_object = 5")
 		fmt.Println("    allow_insecure_auth_cert = no")
+		fmt.Println("    cert_file = <cert_file_path>")
+		fmt.Println("    key_file = <key_file_path>")
+
 		os.Exit(1)
 	}
 
@@ -283,14 +290,16 @@ func RunThrash(args []string) {
 		os.Exit(1)
 	}
 
-	authURL := thrashconf.GetDefault("thrash", "auth", "http://localhost:8080/auth/v1.0")
+	authURL := thrashconf.GetDefault("thrash", "auth", "https://localhost:8080/auth/v1.0")
 	authUser := thrashconf.GetDefault("thrash", "user", "test:tester")
 	authKey := thrashconf.GetDefault("thrash", "key", "testing")
 	concurrency := int(thrashconf.GetInt("thrash", "concurrency", 16))
 	objectSize := thrashconf.GetInt("thrash", "object_size", 131072)
 	numObjects := thrashconf.GetInt("thrash", "num_objects", 5000)
 	numGets := int(thrashconf.GetInt("thrash", "gets_per_object", 5))
-	allowInsecureAuthCert := thrashconf.GetBool("bench", "allow_insecure_auth_cert", false)
+	allowInsecureAuthCert := thrashconf.GetBool("thrash", "allow_insecure_auth_cert", false)
+	certFile := thrashconf.GetDefault("thrash", "cert_file", "")
+	keyFile := thrashconf.GetDefault("thrash", "key_file", "")
 	salt := fmt.Sprintf("%d", rand.Int63())
 
 	var cli nectar.Client
@@ -298,7 +307,7 @@ func RunThrash(args []string) {
 	if allowInsecureAuthCert {
 		cli, resp = nectar.NewInsecureClient("", authUser, "", authKey, "", authURL, false)
 	} else {
-		cli, resp = nectar.NewClient("", authUser, "", authKey, "", authURL, false)
+		cli, resp = nectar.NewClient("", authUser, "", authKey, "", authURL, false, certFile, keyFile)
 	}
 	if err != nil {
 		msg, _ := ioutil.ReadAll(resp.Body)

@@ -158,7 +158,7 @@ func (r *repConn) Close() {
 }
 
 func NewRepConn(dev *ring.Device, partition string, policy int, headers map[string]string) (RepConn, error) {
-	url := fmt.Sprintf("http://%s:%d/%s/%s", dev.ReplicationIp, dev.ReplicationPort, dev.Device, partition)
+	url := fmt.Sprintf("%s://%s:%d/%s/%s", dev.Scheme, dev.ReplicationIp, dev.ReplicationPort, dev.Device, partition)
 	req, err := http.NewRequest("REPCONN", url, nil)
 	if err != nil {
 		return nil, err

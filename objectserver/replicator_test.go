@@ -57,7 +57,7 @@ func newTestReplicatorWithFlags(confLoader *srv.TestConfigLoader, settings []str
 		configString += fmt.Sprintf("%s=%s\n", settings[i], settings[i+1])
 	}
 	conf, _ := conf.StringConfig(configString)
-	_, _, replicator, _, err := NewReplicator(conf, flags, confLoader)
+	_, replicator, _, err := NewReplicator(conf, flags, confLoader)
 	if err != nil {
 		return nil, conf, err
 	}
@@ -1128,8 +1128,8 @@ func TestReplicationLocal(t *testing.T) {
 	require.Nil(t, err)
 	defer trs2.Close()
 	trs2.replicator.deviceRoot = ts2.objServer.driveRoot
-	ldev := &ring.Device{ReplicationIp: trs1.host, ReplicationPort: trs1.port, Device: "sda"}
-	rdev := &ring.Device{ReplicationIp: trs2.host, ReplicationPort: trs2.port, Device: "sda"}
+	ldev := &ring.Device{ReplicationIp: trs1.host, ReplicationPort: trs1.port, Device: "sda", Scheme: "http"}
+	rdev := &ring.Device{ReplicationIp: trs2.host, ReplicationPort: trs2.port, Device: "sda", Scheme: "http"}
 	testRing.MockLocalDevices = []*ring.Device{ldev}
 	testRing.MockGetJobNodes = []*ring.Device{rdev}
 
@@ -1178,8 +1178,8 @@ func TestReplicationHandoff(t *testing.T) {
 	defer trs2.Close()
 	trs2.replicator.deviceRoot = ts2.objServer.driveRoot
 
-	ldev := &ring.Device{ReplicationIp: trs1.host, ReplicationPort: trs1.port, Device: "sda"}
-	rdev := &ring.Device{ReplicationIp: trs2.host, ReplicationPort: trs2.port, Device: "sda"}
+	ldev := &ring.Device{ReplicationIp: trs1.host, ReplicationPort: trs1.port, Device: "sda", Scheme: "http"}
+	rdev := &ring.Device{ReplicationIp: trs2.host, ReplicationPort: trs2.port, Device: "sda", Scheme: "http"}
 	testRing.MockLocalDevices = []*ring.Device{ldev}
 	testRing.MockGetJobNodes = []*ring.Device{rdev}
 	testRing.MockGetJobNodesHandoff = true
@@ -1240,8 +1240,8 @@ func TestReplicationHandoffQuorumDelete(t *testing.T) {
 	defer trs2.Close()
 	trs2.replicator.deviceRoot = ts2.objServer.driveRoot
 
-	ldev := &ring.Device{ReplicationIp: trs1.host, ReplicationPort: trs1.port, Device: "sda"}
-	rdev := &ring.Device{ReplicationIp: trs2.host, ReplicationPort: trs2.port, Device: "sda"}
+	ldev := &ring.Device{ReplicationIp: trs1.host, ReplicationPort: trs1.port, Device: "sda", Scheme: "http"}
+	rdev := &ring.Device{ReplicationIp: trs2.host, ReplicationPort: trs2.port, Device: "sda", Scheme: "http"}
 	testRing.MockLocalDevices = []*ring.Device{ldev}
 	testRing.MockGetJobNodes = []*ring.Device{rdev}
 

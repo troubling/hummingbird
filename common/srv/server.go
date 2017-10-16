@@ -18,6 +18,7 @@ package srv
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"io"
@@ -39,6 +40,7 @@ import (
 	"github.com/troubling/hummingbird/common/ring"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/net/http2"
 )
 
 var responseTemplate = "<html><h1>%s</h1><p>%s</p></html>"
@@ -85,6 +87,12 @@ var responseBodies = map[int]string{
 type customWriter struct {
 	http.ResponseWriter
 	f func(w http.ResponseWriter, status int) int
+}
+
+type IpPort struct {
+	Ip                string
+	Port              int
+	CertFile, KeyFile string
 }
 
 func (w *customWriter) WriteHeader(status int) {
@@ -383,8 +391,7 @@ func NewTestConfigLoader(testRing ring.Ring) *TestConfigLoader {
 /* http.Server that knows how to shut down gracefully */
 
 type HummingbirdServer struct {
-	http.Server
-	Listener net.Listener
+	*http.Server
 	logger   LowLevelLogger
 	finalize func()
 }
@@ -423,7 +430,7 @@ type Server interface {
 	Finalize() // This is called before stoping gracefully so that a server can clean up before closing
 }
 
-func RunServers(getServer func(conf.Config, *flag.FlagSet, ConfigLoader) (string, int, Server, LowLevelLogger, error), flags *flag.FlagSet) {
+func RunServers(getServer func(conf.Config, *flag.FlagSet, ConfigLoader) (IpPort, Server, LowLevelLogger, error), flags *flag.FlagSet) {
 	var servers []*HummingbirdServer
 
 	if flags.NArg() != 0 {
@@ -439,7 +446,7 @@ func RunServers(getServer func(conf.Config, *flag.FlagSet, ConfigLoader) (string
 	var wg *sync.WaitGroup
 
 	for _, config := range configs {
-		ip, port, server, logger, err := getServer(config, flags, DefaultConfigLoader{})
+		ipPort, server, logger, err := getServer(config, flags, DefaultConfigLoader{})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
 			os.Exit(1)
@@ -448,27 +455,53 @@ func RunServers(getServer func(conf.Config, *flag.FlagSet, ConfigLoader) (string
 		if len(configs) == 1 {
 			metricsPrefix = fmt.Sprintf("hb_%s", server.Type())
 		} else {
-			metricsPrefix = fmt.Sprintf("hb_%s_%s_%d", server.Type(), ip, port)
+			metricsPrefix = fmt.Sprintf("hb_%s_%s_%d", server.Type(), ipPort.Ip, ipPort.Port)
 		}
 		metricsPrefix = strings.Replace(metricsPrefix, "-", "_", -1)
 		metricsPrefix = strings.Replace(metricsPrefix, ".", "_", -1)
-		sock, err := RetryListen(ip, port)
+		sock, err := RetryListen(ipPort.Ip, ipPort.Port)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error listening: %v\n", err)
 			logger.Error("Error listening", zap.Error(err))
 			os.Exit(1)
 		}
-		srv := HummingbirdServer{
-			Server: http.Server{
+		var srv HummingbirdServer
+		if ipPort.CertFile != "" && ipPort.KeyFile != "" {
+			tlsConf := &tls.Config{
+				ClientAuth:               tls.RequireAndVerifyClientCert,
+				PreferServerCipherSuites: true,
+				MinVersion:               tls.VersionTLS12,
+			}
+			httpServer := http.Server{
 				Handler:      server.GetHandler(config, metricsPrefix),
 				ReadTimeout:  24 * time.Hour,
 				WriteTimeout: 24 * time.Hour,
-			},
-			Listener: sock,
-			logger:   logger,
-			finalize: server.Finalize,
+				TLSConfig:    tlsConf,
+			}
+			err := http2.ConfigureServer(&httpServer, nil)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error enabling http2 on server: %v\n", err)
+				logger.Error("Error enabling http2 on server", zap.Error(err))
+				os.Exit(1)
+			}
+			srv = HummingbirdServer{
+				Server:   &httpServer,
+				logger:   logger,
+				finalize: server.Finalize,
+			}
+			go srv.ServeTLS(sock, ipPort.CertFile, ipPort.KeyFile)
+		} else {
+			srv = HummingbirdServer{
+				Server: &http.Server{
+					Handler:      server.GetHandler(config, metricsPrefix),
+					ReadTimeout:  24 * time.Hour,
+					WriteTimeout: 24 * time.Hour,
+				},
+				logger:   logger,
+				finalize: server.Finalize,
+			}
+			go srv.Serve(sock)
 		}
-		go srv.Serve(sock)
 		ch := server.Background(flags)
 		if ch != nil {
 			if wg == nil {
@@ -481,7 +514,7 @@ func RunServers(getServer func(conf.Config, *flag.FlagSet, ConfigLoader) (string
 			}(ch)
 		}
 		servers = append(servers, &srv)
-		logger.Info("Server started", zap.Int("port", port))
+		logger.Info("Server started", zap.Int("port", ipPort.Port))
 	}
 
 	if wg != nil {

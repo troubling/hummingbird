@@ -23,8 +23,10 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
+	"golang.org/x/net/http2"
 )
 
 // walk through the nursery and check every object (and tombstone) if it is
@@ -128,6 +130,20 @@ var newNurseryDevice = func(dev *ring.Device, oring ring.Ring, policy int, r *Re
 	if !ok {
 		return nil, fmt.Errorf("Not a nursery object engine")
 	}
+	transport := &http.Transport{
+		MaxIdleConnsPerHost: 100,
+		MaxIdleConns:        0,
+	}
+	if r.CertFile != "" && r.KeyFile != "" {
+		tlsConf, err := common.NewClientTLSConfig(r.CertFile, r.KeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("Error getting TLS config: %v", err)
+		}
+		transport.TLSClientConfig = tlsConf
+		if err = http2.ConfigureTransport(transport); err != nil {
+			return nil, fmt.Errorf("Error setting up http2: %v", err)
+		}
+	}
 	return &nurseryDevice{
 		r:         r,
 		dev:       dev,
@@ -135,7 +151,7 @@ var newNurseryDevice = func(dev *ring.Device, oring ring.Ring, policy int, r *Re
 		oring:     oring,
 		passStart: time.Now(),
 		canchan:   make(chan struct{}),
-		client:    http.Client{Timeout: 10 * time.Second},
+		client:    http.Client{Timeout: 10 * time.Second, Transport: transport},
 		objEngine: noe,
 	}, nil
 }

@@ -39,6 +39,7 @@ import (
 	"github.com/uber-go/tally"
 	promreporter "github.com/uber-go/tally/prometheus"
 	"go.uber.org/zap"
+	"golang.org/x/net/http2"
 )
 
 // ContainerServer contains all of the information for a running container server.
@@ -621,20 +622,22 @@ func (server *ContainerServer) GetHandler(config conf.Config, metricsPrefix stri
 }
 
 // NewServer parses configs and command-line flags, returning a configured server object and the ip and port it should bind on.
-func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (bindIP string, bindPort int, serv srv.Server, logger srv.LowLevelLogger, err error) {
+func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (srv.IpPort, srv.Server, srv.LowLevelLogger, error) {
+	var err error
+	var ipPort srv.IpPort
 	server := &ContainerServer{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: ""}
 	server.syncRealms, err = cnf.GetSyncRealms()
 	if err != nil {
-		return "", 0, nil, nil, err
+		return ipPort, nil, nil, err
 	}
 	server.hashPathPrefix, server.hashPathSuffix, err = cnf.GetHashPrefixAndSuffix()
 	if err != nil {
-		return "", 0, nil, nil, err
+		return ipPort, nil, nil, err
 	}
 	server.reconCachePath = serverconf.GetDefault("app:container-server", "recon_cache_path", "/var/cache/swift")
 	policies, err := cnf.GetPolicies()
 	if err != nil {
-		return "", 0, nil, nil, err
+		return ipPort, nil, nil, err
 	}
 	server.policyList = policies
 	server.defaultPolicy = policies.Default()
@@ -647,25 +650,38 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 	server.logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
 
 	if server.logger, err = srv.SetupLogger("container-server", &server.logLevel, flags); err != nil {
-		return "", 0, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
+		return ipPort, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 
 	server.diskInUse = common.NewKeyedLimit(serverconf.GetLimit("app:container-server", "disk_limit", 0, 0))
-	bindIP = serverconf.GetDefault("app:container-server", "bind_ip", "0.0.0.0")
-	bindPort = int(serverconf.GetInt("app:container-server", "bind_port", common.DefaultContainerServerPort))
-
+	bindIP := serverconf.GetDefault("app:container-server", "bind_ip", "0.0.0.0")
+	bindPort := int(serverconf.GetInt("app:container-server", "bind_port", common.DefaultContainerServerPort))
+	certFile := serverconf.GetDefault("app:container-server", "cert_file", "")
+	keyFile := serverconf.GetDefault("app:container-server", "key_file", "")
 	server.containerEngine = newLRUEngine(server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, 32)
 	connTimeout := time.Duration(serverconf.GetFloat("app:container-server", "conn_timeout", 1.0) * float64(time.Second))
 	nodeTimeout := time.Duration(serverconf.GetFloat("app:container-server", "node_timeout", 10.0) * float64(time.Second))
-	server.updateClient = &http.Client{
-		Timeout: nodeTimeout,
-		Transport: &http.Transport{
-			Dial:                (&net.Dialer{Timeout: connTimeout}).Dial,
-			MaxIdleConnsPerHost: 100,
-			MaxIdleConns:        0,
-			IdleConnTimeout:     5 * time.Second,
-			DisableCompression:  true,
-		},
+	transport := &http.Transport{
+		Dial:                (&net.Dialer{Timeout: connTimeout}).Dial,
+		MaxIdleConnsPerHost: 100,
+		MaxIdleConns:        0,
+		IdleConnTimeout:     5 * time.Second,
+		DisableCompression:  true,
 	}
-	return bindIP, bindPort, server, server.logger, nil
+	if certFile != "" && keyFile != "" {
+		tlsConf, err := common.NewClientTLSConfig(certFile, keyFile)
+		if err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error getting TLS config: %v", err)
+		}
+		transport.TLSClientConfig = tlsConf
+		if err = http2.ConfigureTransport(transport); err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error setting up http2: %v", err)
+		}
+	}
+	server.updateClient = &http.Client{
+		Timeout:   nodeTimeout,
+		Transport: transport,
+	}
+	ipPort = srv.IpPort{Ip: bindIP, Port: bindPort, CertFile: certFile, KeyFile: keyFile}
+	return ipPort, server, server.logger, nil
 }

@@ -86,7 +86,7 @@ func TestReconReportTimePass(t *testing.T) {
 	host, ports, _ := net.SplitHostPort(u.Host)
 	port, _ := strconv.Atoi(ports)
 
-	servers := []ipPort{{ip: host, port: port}}
+	servers := []ipPort{{ip: host, port: port, scheme: "http"}}
 	client := http.Client{Timeout: 10 * time.Second}
 	w := bufio.NewWriter(os.Stdout)
 	require.Equal(t, true, reconReportTime(client, servers, w))
@@ -116,7 +116,7 @@ func TestReconReportRingMd5Fail(t *testing.T) {
 	host, ports, _ := net.SplitHostPort(u.Host)
 	port, _ := strconv.Atoi(ports)
 
-	servers := []ipPort{{ip: host, port: port}}
+	servers := []ipPort{{ip: host, port: port, scheme: "http"}}
 	client := http.Client{Timeout: 10 * time.Second}
 	w := bufio.NewWriter(os.Stdout)
 	require.Equal(t, false, reconReportRingMd5(
@@ -147,7 +147,7 @@ func TestReconReportRingMd5Pass(t *testing.T) {
 	host, ports, _ := net.SplitHostPort(u.Host)
 	port, _ := strconv.Atoi(ports)
 
-	servers := []ipPort{{ip: host, port: port}}
+	servers := []ipPort{{ip: host, port: port, scheme: "http"}}
 	client := http.Client{Timeout: 10 * time.Second}
 	w := bufio.NewWriter(os.Stdout)
 	require.Equal(t, true, reconReportRingMd5(
@@ -197,7 +197,7 @@ func TestReconReportQuarantine(t *testing.T) {
 	host1, ports1, _ := net.SplitHostPort(u.Host)
 	port1, _ := strconv.Atoi(ports1)
 
-	servers := []ipPort{{ip: host, port: port}, {ip: host1, port: port1}}
+	servers := []ipPort{{ip: host, port: port, scheme: "http"}, {ip: host1, port: port1, scheme: "http"}}
 	client := http.Client{Timeout: 10 * time.Second}
 	var buf bytes.Buffer
 	w := bufio.NewWriter(&buf)
@@ -253,7 +253,7 @@ func TestReconReportAsync(t *testing.T) {
 	host1, ports1, _ := net.SplitHostPort(u.Host)
 	port1, _ := strconv.Atoi(ports1)
 
-	servers := []ipPort{{ip: host, port: port}, {ip: host1, port: port1}}
+	servers := []ipPort{{ip: host, port: port, scheme: "http"}, {ip: host1, port: port1, scheme: "http"}}
 	client := http.Client{Timeout: 10 * time.Second}
 	var buf bytes.Buffer
 	w := bufio.NewWriter(&buf)

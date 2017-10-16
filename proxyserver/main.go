@@ -172,30 +172,34 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 	return pipeline.Then(router)
 }
 
-func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (bindIP string, bindPort int, serv srv.Server, logger srv.LowLevelLogger, err error) {
+func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (srv.IpPort, srv.Server, srv.LowLevelLogger, error) {
+	var err error
+	var ipPort srv.IpPort
 	server := &ProxyServer{}
 	server.mc, err = ring.NewMemcacheRingFromConfig(serverconf)
 	if err != nil {
-		return "", 0, nil, nil, err
+		return ipPort, nil, nil, err
 	}
 
-	bindIP = serverconf.GetDefault("DEFAULT", "bind_ip", "0.0.0.0")
-	bindPort = int(serverconf.GetInt("DEFAULT", "bind_port", common.DefaultProxyServerPort))
+	bindIP := serverconf.GetDefault("DEFAULT", "bind_ip", "0.0.0.0")
+	bindPort := int(serverconf.GetInt("DEFAULT", "bind_port", common.DefaultProxyServerPort))
+	certFile := serverconf.GetDefault("DEFAULT", "cert_file", "")
+	keyFile := serverconf.GetDefault("DEFAULT", "key_file", "")
 
 	logLevelString := serverconf.GetDefault("app:proxy-server", "log_level", "INFO")
 	server.logLevel = zap.NewAtomicLevel()
 	server.logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
 	server.accountAutoCreate = serverconf.GetBool("app:proxy-server", "account_autocreate", false)
 	if server.logger, err = srv.SetupLogger("proxy-server", &server.logLevel, flags); err != nil {
-		return "", 0, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
+		return ipPort, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 	policies, err := cnf.GetPolicies()
 	if err != nil {
-		return "", 0, nil, nil, err
+		return ipPort, nil, nil, err
 	}
-	server.proxyDirectClient, err = client.NewProxyDirectClient(policies, cnf, server.logger)
+	server.proxyDirectClient, err = client.NewProxyDirectClient(policies, cnf, server.logger, certFile, keyFile)
 	if err != nil {
-		return "", 0, nil, nil, fmt.Errorf("Error setting up proxyDirectClient: %v", err)
+		return ipPort, nil, nil, fmt.Errorf("Error setting up proxyDirectClient: %v", err)
 	}
 	info := map[string]interface{}{
 		"version":                  common.Version,
@@ -208,5 +212,6 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 		info[k] = v
 	}
 	middleware.RegisterInfo("swift", info)
-	return bindIP, int(bindPort), server, server.logger, nil
+	ipPort = srv.IpPort{Ip: bindIP, Port: int(bindPort), CertFile: certFile, KeyFile: keyFile}
+	return ipPort, server, server.logger, nil
 }

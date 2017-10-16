@@ -30,6 +30,7 @@ import (
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"golang.org/x/net/http2"
 )
 
 type DirectObject struct {
@@ -125,6 +126,8 @@ func RunDBench(args []string) {
 		fmt.Println("    minimum_partition_number = 1000000000")
 		fmt.Println("    check_mounted = false")
 		fmt.Println("    #drive_list = sdb1,sdb2")
+		fmt.Println("    #cert_file = /etc/hummingbird/server.crt")
+		fmt.Println("    #key_file = /etc/hummingbird/server.key")
 		os.Exit(1)
 	}
 
@@ -148,16 +151,33 @@ func RunDBench(args []string) {
 	numPartitions := int64(100)
 	minPartition := benchconf.GetInt("dbench", "minimum_partition_number", 1000000000)
 	delete := benchconf.GetBool("dbench", "delete", true)
+	certFile := benchconf.GetDefault("dbench", "cert_file", "")
+	keyFile := benchconf.GetDefault("dbench", "key_file", "")
 
 	deviceList := GetDevices(address, checkMounted)
 	if driveList != "" {
 		deviceList = strings.Split(driveList, ",")
 	}
 
+	transport := &http.Transport{
+		MaxIdleConnsPerHost: 100,
+		MaxIdleConns:        0,
+		IdleConnTimeout:     5 * time.Second,
+	}
+	if certFile != "" && keyFile != "" {
+		tlsConf, err := common.NewClientTLSConfig(certFile, keyFile)
+		if err != nil {
+			fmt.Printf("Error getting TLS config: %v", err)
+			os.Exit(1)
+		}
+		transport.TLSClientConfig = tlsConf
+		if err = http2.ConfigureTransport(transport); err != nil {
+			fmt.Printf("Error setting up http2: %v", err)
+			os.Exit(1)
+		}
+	}
 	client := &http.Client{
-		Transport: &http.Transport{
-			MaxIdleConnsPerHost: 300,
-		},
+		Transport: transport,
 	}
 
 	data := make([]byte, objectSize)

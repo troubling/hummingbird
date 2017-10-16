@@ -279,7 +279,7 @@ func (o *nurseryObject) canStabilize(ring ring.Ring, dev *ring.Device, policy in
 		if device.Ip == dev.Ip && device.Port == dev.Port && device.Device == device.Device {
 			continue
 		}
-		url := fmt.Sprintf("http://%s:%d/%s/%d%s", device.Ip, device.Port, device.Device, partition, common.Urlencode(metadata["name"]))
+		url := fmt.Sprintf("%s://%s:%d/%s/%d%s", device.Scheme, device.Ip, device.Port, device.Device, partition, common.Urlencode(metadata["name"]))
 		req, err := http.NewRequest("HEAD", url, nil)
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.FormatInt(int64(policy), 10))
 		req.Header.Set("User-Agent", "nursery-stabilizer")
@@ -315,7 +315,7 @@ func (o *nurseryObject) notifyPeers(ring ring.Ring, dev *ring.Device, policy int
 		if device.Ip == dev.Ip && device.Port == dev.Port && device.Device == device.Device {
 			continue
 		}
-		url := fmt.Sprintf("http://%s:%d/stabilize/%s/%d%s", device.Ip, device.ReplicationPort, device.Device, partition, common.Urlencode(metadata["name"]))
+		url := fmt.Sprintf("%s://%s:%d/stabilize/%s/%d%s", device.Scheme, device.Ip, device.ReplicationPort, device.Device, partition, common.Urlencode(metadata["name"]))
 		if req, err := http.NewRequest("POST", url, nil); err == nil {
 			req.Header.Set("X-Backend-Storage-Policy-Index", strconv.FormatInt(int64(policy), 10))
 			req.Header.Set("X-Backend-Nursery-Stabilize", "true")

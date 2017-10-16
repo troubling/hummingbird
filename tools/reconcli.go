@@ -33,10 +33,11 @@ import (
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/objectserver"
+	"golang.org/x/net/http2"
 )
 
 func queryHostRecon(client http.Client, s ipPort, endpoint string) ([]byte, error) {
-	serverUrl := fmt.Sprintf("http://%s:%d/recon/%s", s.ip, s.port, endpoint)
+	serverUrl := fmt.Sprintf("%s://%s:%d/recon/%s", s.scheme, s.ip, s.port, endpoint)
 	req, err := http.NewRequest("GET", serverUrl, nil)
 	if err != nil {
 		return nil, err
@@ -92,8 +93,8 @@ func reconReportRingMd5(client http.Client, servers []ipPort, ringMap map[string
 		for fName, md5sum := range ringMap {
 			if rData[fName] != md5sum {
 				fmt.Fprintf(w,
-					"!! http://%s:%d/recon/ringmd5 (%s => %s) doesn't "+
-						"match on disk md5sum\n",
+					"!! %s://%s:%d/recon/ringmd5 (%s => %s) doesn't "+
+						"match on disk md5sum\n", server.scheme,
 					server.ip, server.port, filepath.Base(fName), md5sum)
 				allMatch = false
 			}
@@ -135,8 +136,8 @@ func reconReportMainConfMd5(client http.Client, servers []ipPort, w io.Writer) b
 		for fName, md5sum := range md5Map {
 			if rData[fName] != md5sum {
 				fmt.Fprintf(w,
-					"!! http://%s:%d/recon/hummingbirdconfmd5 (%s => %s) doesn't "+
-						"match on disk md5sum\n",
+					"!! %s://%s:%d/recon/hummingbirdconfmd5 (%s => %s) doesn't "+
+						"match on disk md5sum\n", server.scheme,
 					server.ip, server.port, filepath.Base(fName), md5sum)
 				allMatch = false
 			}
@@ -175,9 +176,9 @@ func reconReportTime(client http.Client, servers []ipPort, w io.Writer) bool {
 		remoteTime := rData["time"].Round(time.Microsecond)
 		if remoteTime.Before(preCall) || remoteTime.After(postCall) {
 			fmt.Fprintf(w,
-				"!! http://%s:%d/recon/hummingbirdtime current time is %s "+
+				"!! %s://%s:%d/recon/hummingbirdtime current time is %s "+
 					"but remote time is %s, differs by %.2f nsecs\n",
-				server.ip, server.port, postCall.Format(time.StampMicro), remoteTime.Format(time.StampMicro), float64(postCall.Sub(remoteTime)))
+				server.scheme, server.ip, server.port, postCall.Format(time.StampMicro), remoteTime.Format(time.StampMicro), float64(postCall.Sub(remoteTime)))
 		} else {
 			successes++
 		}
@@ -473,7 +474,25 @@ func ReconClient(flags *flag.FlagSet, cnf srv.ConfigLoader) bool {
 	if jsonOut {
 		w = bufio.NewWriter(&buf)
 	}
-	client := http.Client{Timeout: 10 * time.Second}
+	transport := &http.Transport{
+		MaxIdleConnsPerHost: 100,
+		MaxIdleConns:        0,
+	}
+	certFile := flags.Lookup("certFile").Value.(flag.Getter).Get().(string)
+	keyFile := flags.Lookup("keyFile").Value.(flag.Getter).Get().(string)
+	if certFile != "" && keyFile != "" {
+		tlsConf, err := common.NewClientTLSConfig(certFile, keyFile)
+		if err != nil {
+			fmt.Printf("Error getting TLS config: %v\n", err)
+			return false
+		}
+		transport.TLSClientConfig = tlsConf
+		if err = http2.ConfigureTransport(transport); err != nil {
+			fmt.Printf("Error setting up http2: %v\n", err)
+			return false
+		}
+	}
+	client := http.Client{Timeout: 10 * time.Second, Transport: transport}
 	_, allWeightedServers := getRingData(oring, false)
 	fmt.Fprintln(w, strings.Repeat("=", 79))
 	fmt.Fprintf(w, "--> Starting reconnaissance on %d hosts\n", len(allWeightedServers))

@@ -149,6 +149,7 @@ func testServer(t *testing.T, h http.Handler) (*ring.Device, func()) {
 	port, err := strconv.Atoi(portstring)
 	require.Nil(t, err)
 	dev := &ring.Device{
+		Scheme: "http",
 		Ip:     host,
 		Port:   port,
 		Device: "sdb",
@@ -519,7 +520,7 @@ func TestNewReplicator(t *testing.T) {
 	require.Nil(t, err)
 	testRing := &test.FakeRing{}
 	confLoader := srv.NewTestConfigLoader(testRing)
-	_, _, r, logger, err := NewReplicator(config, &flag.FlagSet{}, confLoader)
+	_, r, logger, err := NewReplicator(config, &flag.FlagSet{}, confLoader)
 	require.Nil(t, err)
 	require.NotNil(t, logger)
 	replicator, ok := r.(*Replicator)
@@ -534,7 +535,7 @@ func TestNewReplicator(t *testing.T) {
 
 	config, err = conf.StringConfig("")
 	require.Nil(t, err)
-	_, _, r, logger, err = NewReplicator(config, &flag.FlagSet{}, confLoader)
+	_, r, logger, err = NewReplicator(config, &flag.FlagSet{}, confLoader)
 	require.NotNil(t, err)
 	require.Nil(t, logger)
 
@@ -543,7 +544,7 @@ func TestNewReplicator(t *testing.T) {
 	}
 	config, err = conf.StringConfig("[container-replicator]\nmount_check=false\nbind_port=1000")
 	require.Nil(t, err)
-	_, _, r, logger, err = NewReplicator(config, &flag.FlagSet{}, confLoader)
+	_, r, logger, err = NewReplicator(config, &flag.FlagSet{}, confLoader)
 	require.NotNil(t, err)
 	require.Nil(t, logger)
 }

@@ -46,6 +46,7 @@ import (
 	"github.com/uber-go/tally"
 	promreporter "github.com/uber-go/tally/prometheus"
 	"go.uber.org/zap"
+	"golang.org/x/net/http2"
 )
 
 var (
@@ -110,7 +111,7 @@ func (rd *replicationDevice) sendReplicationMessage(dev *ring.Device, part uint6
 	if err != nil {
 		return 0, nil, err
 	}
-	req, err := http.NewRequest("REPLICATE", fmt.Sprintf("http://%s:%d/%s/%d/%s",
+	req, err := http.NewRequest("REPLICATE", fmt.Sprintf("%s://%s:%d/%s/%d/%s", dev.Scheme,
 		dev.Ip, dev.Port, dev.Device, part, ringHash), bytes.NewBuffer(body))
 	if err != nil {
 		return 0, nil, err
@@ -155,7 +156,7 @@ func (rd *replicationDevice) rsync(dev *ring.Device, c ReplicableContainer, part
 		return fmt.Errorf("Error opening databae: %v", err)
 	}
 	defer release()
-	req, err := http.NewRequest("PUT", fmt.Sprintf("http://%s:%d/%s/tmp/%s", dev.Ip, dev.Port, dev.Device, tmpFilename), fp)
+	req, err := http.NewRequest("PUT", fmt.Sprintf("%s://%s:%d/%s/tmp/%s", dev.Scheme, dev.Ip, dev.Port, dev.Device, tmpFilename), fp)
 	if err != nil {
 		return fmt.Errorf("creating request: %v", err)
 	}
@@ -244,6 +245,7 @@ func (rd *replicationDevice) replicateDatabaseToDevice(dev *ring.Device, c Repli
 			accountNode := accountNodes[ringIndex%len(accountNodes)]
 			if accountUpdateHelper(
 				info,
+				accountNode.Scheme,
 				fmt.Sprintf("%s:%d", accountNode.Ip, accountNode.Port),
 				accountNode.Device,
 				fmt.Sprintf("%d", accountPartition),
@@ -702,21 +704,24 @@ func (r *Replicator) Run() {
 }
 
 // NewReplicator uses the config settings and command-line flags to configure and return a replicator daemon struct.
-func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (ip string, port int, server srv.Server, logger srv.LowLevelLogger, err error) {
+func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (srv.IpPort, srv.Server, srv.LowLevelLogger, error) {
+	var ipPort srv.IpPort
+	var err error
+	var logger srv.LowLevelLogger
 	if !serverconf.HasSection("container-replicator") {
-		return "", 0, nil, nil, fmt.Errorf("Unable to find container-replicator config section")
+		return ipPort, nil, nil, fmt.Errorf("Unable to find container-replicator config section")
 	}
 	hashPathPrefix, hashPathSuffix, err := cnf.GetHashPrefixAndSuffix()
 	if err != nil {
-		return "", 0, nil, nil, fmt.Errorf("Unable to get hash prefix and suffix: %s", err)
+		return ipPort, nil, nil, fmt.Errorf("Unable to get hash prefix and suffix: %s", err)
 	}
 	ring, err := cnf.GetRing("container", hashPathPrefix, hashPathSuffix, 0)
 	if err != nil {
-		return "", 0, nil, nil, fmt.Errorf("Error loading container ring: %s", err)
+		return ipPort, nil, nil, fmt.Errorf("Error loading container ring: %s", err)
 	}
 	accountRing, err := cnf.GetRing("account", hashPathPrefix, hashPathSuffix, 0)
 	if err != nil {
-		return "", 0, nil, nil, fmt.Errorf("Error loading account ring: %s", err)
+		return ipPort, nil, nil, fmt.Errorf("Error loading account ring: %s", err)
 	}
 	concurrency := int(serverconf.GetInt("container-replicator", "concurrency", 4))
 
@@ -725,11 +730,29 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 	logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
 
 	if logger, err = srv.SetupLogger("container-replicator", &logLevel, flags); err != nil {
-		return "", 0, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
+		return ipPort, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
-	ip = serverconf.GetDefault("container-replicator", "bind_ip", "0.0.0.0")
-	port = int(serverconf.GetInt("container-replicator", "bind_port", common.DefaultContainerReplicatorPort))
-	server = &Replicator{
+	ip := serverconf.GetDefault("container-replicator", "bind_ip", "0.0.0.0")
+	port := int(serverconf.GetInt("container-replicator", "bind_port", common.DefaultContainerReplicatorPort))
+	certFile := serverconf.GetDefault("container-replicator", "cert_file", "")
+	keyFile := serverconf.GetDefault("container-replicator", "key_file", "")
+
+	transport := &http.Transport{
+		Dial:                (&net.Dialer{Timeout: time.Second}).Dial,
+		MaxIdleConnsPerHost: 100,
+		MaxIdleConns:        0,
+	}
+	if certFile != "" && keyFile != "" {
+		tlsConf, err := common.NewClientTLSConfig(certFile, keyFile)
+		if err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error getting TLS config: %v", err)
+		}
+		transport.TLSClientConfig = tlsConf
+		if err = http2.ConfigureTransport(transport); err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error setting up http2: %v", err)
+		}
+	}
+	server := &Replicator{
 		runningDevices: make(map[string]*replicationDevice),
 		perUsync:       3000,
 		maxUsyncs:      25,
@@ -747,9 +770,10 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 		accountRing:    accountRing,
 		client: &http.Client{
 			Timeout:   time.Minute * 15,
-			Transport: &http.Transport{Dial: (&net.Dialer{Timeout: time.Second}).Dial},
+			Transport: transport,
 		},
 		logLevel: logLevel,
 	}
-	return ip, port, server, logger, nil
+	ipPort = srv.IpPort{Ip: ip, Port: port, CertFile: certFile, KeyFile: keyFile}
+	return ipPort, server, logger, nil
 }

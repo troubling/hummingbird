@@ -52,6 +52,7 @@ type MoreNodes interface {
 type Device struct {
 	Id              int     `json:"id"`
 	Device          string  `json:"device"`
+	Scheme          string  `json:"scheme"`
 	Ip              string  `json:"ip"`
 	Meta            string  `json:"meta"`
 	Port            int     `json:"port"`
@@ -244,6 +245,9 @@ func (r *hashRing) reload() error {
 		}
 		if d.ReplicationPort == 0 {
 			d.ReplicationPort = d.Port + 500
+		}
+		if d.Scheme == "" {
+			d.Scheme = "http"
 		}
 		regionCount[d.Region] = true
 		zoneCount[regionZone{d.Region, d.Zone}] = true

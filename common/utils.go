@@ -17,6 +17,7 @@ package common
 
 import (
 	"crypto/md5"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -548,4 +549,16 @@ func GetAllRingFileMd5s() (map[string]string, error) {
 	} else {
 		return ringMap, err
 	}
+}
+
+func NewClientTLSConfig(certFile, keyFile string) (*tls.Config, error) {
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, fmt.Errorf("Unable to load cert %s %s: %s", certFile, keyFile, err.Error())
+	}
+	tlsConf := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	}
+	return tlsConf, nil
 }

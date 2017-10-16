@@ -83,6 +83,7 @@ func TestUpdateDeleteAt(t *testing.T) {
 	req.Header.Add("X-Delete-At-Partition", "678")
 	req.Header.Add("X-Delete-At-Host", u.Host)
 	req.Header.Add("X-Delete-At-Device", "sdb")
+	req.Header.Add("X-Delete-At-Scheme", "http")
 	req.Header.Add("X-Timestamp", "12345.6789")
 
 	dl := zap.NewNop()
@@ -170,6 +171,7 @@ func TestUpdateContainer(t *testing.T) {
 	req.Header.Add("X-Container-Partition", "1")
 	req.Header.Add("X-Container-Host", u.Host)
 	req.Header.Add("X-Container-Device", "sdb")
+	req.Header.Add("X-Container-Scheme", "http")
 	req.Header.Add("X-Timestamp", "12345.6789")
 
 	dl := zap.NewNop()

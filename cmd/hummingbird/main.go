@@ -328,9 +328,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "    validate (validate ring)\n")
 		fmt.Fprintf(os.Stderr, "    write_ring (write the ring file)\n")
 		fmt.Fprintf(os.Stderr, "    pretend_min_part_hours_passed (reset min_part_hours)\n")
-		fmt.Fprintf(os.Stderr, "  <device> is of the form: [r<region>]z<zone>-<ip>:<port>[R<r_ip>:<r_port>]/<device_name>_<meta>\n")
-		fmt.Fprintf(os.Stderr, "  <search_flags> is at least one of: -region, -zone, -ip, -port, -replication-ip, replication-port, -device, -meta, -weight\n")
-		fmt.Fprintf(os.Stderr, "  <change_flags> is at least one of: -change-ip, -change-port, -change-replication-ip, -change-replication-port, -change-device, -change-meta")
+		fmt.Fprintf(os.Stderr, "  <device> is of the form: [r<region>]z<zone>[s<scheme>]-<ip>:<port>[R<r_ip>:<r_port>]/<device_name>_<meta>\n")
+		fmt.Fprintf(os.Stderr, "  <scheme> can be either http or https\n")
+		fmt.Fprintf(os.Stderr, "  <search_flags> is at least one of: -region, -zone, -scheme, -ip, -port, -replication-ip, replication-port, -device, -meta, -weight\n")
+		fmt.Fprintf(os.Stderr, "  <change_flags> is at least one of: -change-ip, -change-port, -change-replication-ip, -change-replication-port, -change-device, -change-meta, -change-scheme")
 		ringBuilderFlags.PrintDefaults()
 	}
 
@@ -379,6 +380,8 @@ func main() {
 	reconFlags.Bool("rp", false, "Get cluster replication partition/sec stats")
 	reconFlags.Bool("rc", false, "List all drives with replicator cancellations")
 	reconFlags.Bool("json", false, "Output in json. {\"ok\": true|false, \"msg\": \"text-output\"}")
+	reconFlags.String("certfile", "", "Cert file to use for setting up https client")
+	reconFlags.String("keyfile", "", "Key file to use for setting up https client")
 	reconFlags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "hummingbird recon [ARGS] \n")
 		reconFlags.PrintDefaults()
