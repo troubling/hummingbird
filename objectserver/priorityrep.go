@@ -191,7 +191,7 @@ func MoveParts(args []string) {
 }
 
 // getRestoreDeviceJobs takes an ip address and device name, and creates a list of jobs to restore that device's data from peers.
-func getRestoreDeviceJobs(theRing ring.Ring, ip string, devName string, sameRegionOnly bool, overrideParts []uint64) []*PriorityRepJob {
+func getRestoreDeviceJobs(theRing ring.Ring, ip string, devName string, sameRegionOnly bool, allPeers bool, overrideParts []uint64) []*PriorityRepJob {
 	jobs := make([]*PriorityRepJob, 0)
 	for i := uint64(0); true; i++ {
 		partition := i
@@ -231,7 +231,9 @@ func getRestoreDeviceJobs(theRing ring.Ring, ip string, devName string, sameRegi
 					ToDevices:  []*ring.Device{toDev},
 				})
 				foundJob = true
-				break
+				if !allPeers {
+					break
+				}
 			}
 			if !foundJob {
 				fmt.Printf("Could not find job for partition: %d\n", partition)
@@ -248,6 +250,7 @@ func RestoreDevice(args []string) {
 	sameRegion := flags.Bool("s", false, "restore device from same region")
 	ringLoc := flags.String("r", "", "Specify which ring file to use")
 	conc := flags.Int("c", 2, "limit of per device concurrency priority repl calls")
+	full := flags.Bool("f", false, "send priority replicate calls to every peer primary (slow)")
 	flags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "USAGE: hummingbird restoredevice [ip] [device]\n")
 		flags.PrintDefaults()
@@ -281,9 +284,13 @@ func RestoreDevice(args []string) {
 	client := &http.Client{Timeout: time.Hour}
 	badParts := []uint64{}
 	for {
-		jobs := getRestoreDeviceJobs(objRing, flags.Arg(0), flags.Arg(1), *sameRegion, badParts)
+		jobs := getRestoreDeviceJobs(objRing, flags.Arg(0), flags.Arg(1), *sameRegion, *full, badParts)
 		lastRun := len(jobs)
 		fmt.Println("Job count:", len(jobs))
+		for i := len(jobs) - 1; i > 0; i-- { // shuffle jobs list
+			j := rand.Intn(i + 1)
+			jobs[j], jobs[i] = jobs[i], jobs[j]
+		}
 		badParts = doPriRepJobs(jobs, *conc, client)
 		if len(badParts) == 0 {
 			break
