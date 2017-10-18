@@ -1,0 +1,11 @@
+[DEFAULT]
+bind_ip = {{ service_ip }}
+bind_port = {{ container_port }}
+devices = /srv/node
+mount_check = true
+user = hummingbird
+
+[app:container-server]
+disk_limit = 0/0
+
+[container-replicator]

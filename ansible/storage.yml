@@ -1,0 +1,20 @@
+---
+- hosts: hummingbird
+  become: yes
+  pre_tasks:
+    - name: Ensure hummingbird services are not running
+      systemd:
+        name: "{{ item }}"
+        state: stopped
+      with_items:
+        - hummingbird-proxy
+        - hummingbird-account
+        - hummingbird-account-replicator
+        - hummingbird-container
+        - hummingbird-container-replicator
+        - hummingbird-object
+        - hummingbird-object-replicator
+        - hummingbird-andrewd
+  roles:
+    - storage
+    - metadata

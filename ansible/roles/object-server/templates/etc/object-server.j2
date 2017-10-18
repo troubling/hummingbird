@@ -1,0 +1,15 @@
+[DEFAULT]
+bind_ip = {{ service_ip }}
+bind_port = {{ object_port }}
+devices = /srv/node
+mount_check = true
+user = hummingbird
+
+[app:object-server]
+disk_limit = 0/0
+account_rate_limit = 0/0
+
+[object-replicator]
+bind_port = {{ object_replicator_port }}
+
+[object-auditor]
