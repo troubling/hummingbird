@@ -289,20 +289,7 @@ func Nodes(flags *flag.FlagSet, cnf srv.ConfigLoader) {
 		fmt.Println("Unable to load policies:", err)
 		os.Exit(1)
 	}
-	var policy *conf.Policy
-	if policyName == "" {
-		policy = policies[0]
-	} else {
-		for _, v := range policies {
-			if v.Name == policyName {
-				policy = v
-			}
-		}
-		if policy == nil {
-			fmt.Println("No policy named ", policyName)
-			os.Exit(1)
-		}
-	}
+	policy := policyByName(policyName, policies)
 
 	var r ring.Ring
 	var ringType string
@@ -428,15 +415,31 @@ func printObjMeta(metadata map[string]string) {
 	printMetadata("Other Metadata:", otherMetadata)
 }
 
-func ObjectInfo(flags *flag.FlagSet) {
+func policyByName(name string, policies conf.PolicyList) *conf.Policy {
+	if name == "" {
+		return policies[0]
+	}
+	for _, v := range policies {
+		if v.Name == name {
+			return v
+		}
+	}
+	fmt.Println("No policy named ", name)
+	os.Exit(1)
+	return nil
+}
+
+func ObjectInfo(flags *flag.FlagSet, cnf srv.ConfigLoader) {
 	object := flags.Arg(0)
 	noEtag := flags.Lookup("n").Value.(flag.Getter).Get().(bool)
 	policyName := flags.Lookup("P").Value.(flag.Getter).Get().(string)
 
-	var namedPolicy *conf.Policy
-	if policyName != "" {
-		namedPolicy = policyByName(policyName)
+	policies, err := cnf.GetPolicies()
+	if err != nil {
+		fmt.Println("Unable to load policies:", err)
+		os.Exit(1)
 	}
+	namedPolicy := policyByName(policyName, policies)
 
 	stat, statErr := os.Stat(object)
 	if statErr != nil {
@@ -451,23 +454,23 @@ func ObjectInfo(flags *flag.FlagSet) {
 	}
 	re := regexp.MustCompile(`objects-(\d*)`)
 	match := re.FindStringSubmatch(fullPath)
-	var policyIdx int
+	var policy *conf.Policy
 	if match == nil {
-		policyIdx = 0
+		policy = policies[0]
 	} else {
-		var convErr error
-		policyIdx, convErr = strconv.Atoi(match[1])
+		policyIdx, convErr := strconv.Atoi(match[1])
 		if convErr != nil {
 			fmt.Printf("Invalid policy index: %v\n", match[1])
 			os.Exit(1)
 		}
+		policy = policies[policyIdx]
 	}
-	if namedPolicy != nil && namedPolicy.Index != policyIdx {
+	if namedPolicy != nil && namedPolicy != policy {
 		fmt.Printf("Warning: Ring does not match policy!\n")
 		fmt.Printf("Double check your policy name!\n")
 	}
 
-	ring, _ := getRing("", "object", policyIdx)
+	ring, _ := getRing("", "object", policy.Index)
 
 	hashDir := filepath.Dir(fullPath)
 	dataFile, metaFile := objectserver.ObjectFiles(hashDir)
@@ -525,7 +528,7 @@ func ObjectInfo(flags *flag.FlagSet) {
 	}
 
 	account, container, object := getACO(path)
-	printItemLocations(ring, "object", account, container, object, "", false, policyIdx)
+	printItemLocations(ring, "object", account, container, object, "", false, policy)
 }
 
 type AutoAdmin struct {

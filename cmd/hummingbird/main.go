@@ -511,7 +511,7 @@ func main() {
 		srv.RunDaemon(tools.NewAdmin, andrewdFlags)
 	case "oinfo":
 		objectInfoFlags.Parse(flag.Args()[1:])
-		tools.ObjectInfo(objectInfoFlags)
+		tools.ObjectInfo(objectInfoFlags, srv.DefaultConfigLoader{})
 	case "init":
 		if err := initCommand(flag.Args()[1:]); err != nil {
 			fmt.Fprintln(os.Stderr, "init error:", err)
