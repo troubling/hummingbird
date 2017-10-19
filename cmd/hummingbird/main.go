@@ -376,7 +376,7 @@ func main() {
 	objectInfoFlags.Bool("n", false, "Don't verify file contents against stored etag")
 	objectInfoFlags.String("P", "", "Specify which policy to use")
 	objectInfoFlags.Usage = func() {
-		fmt.Fprintf(os.Stderr, "hummingbird object-info [ARGS] OBJECT_FILE\n")
+		fmt.Fprintf(os.Stderr, "hummingbird oinfo [ARGS] OBJECT_FILE\n")
 		objectInfoFlags.PrintDefaults()
 	}
 
@@ -509,7 +509,7 @@ func main() {
 	case "andrewd":
 		andrewdFlags.Parse(flag.Args()[1:])
 		srv.RunDaemon(tools.NewAdmin, andrewdFlags)
-	case "object-info":
+	case "oinfo":
 		objectInfoFlags.Parse(flag.Args()[1:])
 		tools.ObjectInfo(objectInfoFlags)
 	case "init":
