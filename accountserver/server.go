@@ -41,9 +41,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// GetHashPrefixAndSuffix is a pointer to hummingbird's function of the same name, for overriding in tests.
-var GetHashPrefixAndSuffix = conf.GetHashPrefixAndSuffix
-
 // AccountServer contains all of the information for a running account server.
 type AccountServer struct {
 	driveRoot        string
@@ -537,10 +534,14 @@ func (server *AccountServer) GetHandler(config conf.Config, metricsPrefix string
 	return alice.New(middleware.Metrics(metricsScope)).Append(middleware.GrepObject).Then(router)
 }
 
-// GetServer parses configs and command-line flags, returning a configured server object and the ip and port it should bind on.
-func GetServer(serverconf conf.Config, flags *flag.FlagSet) (bindIP string, bindPort int, serv srv.Server, logger srv.LowLevelLogger, err error) {
-	server := &AccountServer{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: "", policyList: conf.LoadPolicies()}
-	server.hashPathPrefix, server.hashPathSuffix, err = GetHashPrefixAndSuffix()
+// NewServer parses configs and command-line flags, returning a configured server object and the ip and port it should bind on.
+func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (bindIP string, bindPort int, serv srv.Server, logger srv.LowLevelLogger, err error) {
+	server := &AccountServer{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: ""}
+	server.hashPathPrefix, server.hashPathSuffix, err = cnf.GetHashPrefixAndSuffix()
+	if err != nil {
+		return "", 0, nil, nil, err
+	}
+	server.policyList, err = cnf.GetPolicies()
 	if err != nil {
 		return "", 0, nil, nil, err
 	}

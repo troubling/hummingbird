@@ -31,10 +31,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
+	"github.com/troubling/hummingbird/common/srv"
 	"github.com/uber-go/tally"
 )
 
-func getDw(settings ...string) (*driveWatch, error) {
+func getDw(testRing ring.Ring, settings ...string) (*driveWatch, error) {
+	confLoader := srv.NewTestConfigLoader(testRing)
+
 	sqlDir, err := ioutil.TempDir("", "")
 	if err != nil {
 		return nil, err
@@ -50,7 +53,7 @@ func getDw(settings ...string) (*driveWatch, error) {
 	}
 
 	metricsScope := tally.NewTestScope("hb_andrewd", map[string]string{})
-	dw := NewDriveWatch(&FakeLowLevelLogger{}, metricsScope, confStr)
+	dw := NewDriveWatch(&FakeLowLevelLogger{}, metricsScope, confStr, confLoader)
 	return dw, nil
 
 }
@@ -82,7 +85,8 @@ func TestGatherReconData(t *testing.T) {
 	host, ports, _ := net.SplitHostPort(u.Host)
 	port, _ := strconv.Atoi(ports)
 
-	dw, _ := getDw()
+	fr := &FakeRing{}
+	dw, _ := getDw(fr)
 	defer closeDw(dw)
 
 	allWeightedServers := []ipPort{{ip: host, port: port}}
@@ -94,7 +98,7 @@ func TestGatherReconData(t *testing.T) {
 
 func TestGetRingData(t *testing.T) {
 	t.Parallel()
-	fr := FakeRing{}
+	fr := &FakeRing{}
 
 	fr.Devs = append(fr.Devs,
 		&ring.Device{Id: 1, Device: "sdb1", Ip: "1.2", Port: 1, Weight: 1})
@@ -105,11 +109,11 @@ func TestGetRingData(t *testing.T) {
 	fr.Devs = append(fr.Devs,
 		&ring.Device{Id: 2, Device: "sdb1", Ip: "1.2", Port: 3, Weight: 0})
 
-	dw, _ := getDw()
+	dw, _ := getDw(fr)
 	defer closeDw(dw)
 	p := conf.Policy{Name: "hat"}
 
-	allRingDevices, allWeightedServers := dw.getRingData(ringData{r: &fr, p: &p, builderPath: "hey"})
+	allRingDevices, allWeightedServers := dw.getRingData(ringData{r: fr, p: &p, builderPath: "hey"})
 
 	require.Equal(t, len(allRingDevices), 4)
 	require.Equal(t, len(allWeightedServers), 2)
@@ -139,7 +143,7 @@ func TestPopulateDbWithRing(t *testing.T) {
 	}))
 
 	defer ts.Close()
-	fr := FakeRing{}
+	fr := &FakeRing{}
 
 	u, _ := url.Parse(ts.URL)
 	host, ports, _ := net.SplitHostPort(u.Host)
@@ -152,12 +156,12 @@ func TestPopulateDbWithRing(t *testing.T) {
 	fr.Devs = append(fr.Devs,
 		&ring.Device{Id: 2, Device: "sdb3", Ip: host, Port: port, Weight: 5.5})
 
-	dw, _ := getDw()
+	dw, _ := getDw(fr)
 	defer closeDw(dw)
 
 	p := conf.Policy{Name: "hat"}
 
-	rd := ringData{r: &fr, p: &p, builderPath: "hey"}
+	rd := ringData{r: fr, p: &p, builderPath: "hey"}
 	dw.updateDb(rd)
 
 	db, err := dw.getDbAndLock()
@@ -209,7 +213,7 @@ func TestUpdateDb(t *testing.T) {
 	}))
 
 	defer ts.Close()
-	fr := FakeRing{}
+	fr := &FakeRing{}
 
 	u, _ := url.Parse(ts.URL)
 	host, ports, _ := net.SplitHostPort(u.Host)
@@ -218,9 +222,9 @@ func TestUpdateDb(t *testing.T) {
 	fr.Devs = append(fr.Devs,
 		&ring.Device{Id: 1, Device: "sdb1", Ip: host, Port: port, Weight: 1.1})
 	p := conf.Policy{Name: "hat"}
-	rd := ringData{r: &fr, p: &p, builderPath: "hey"}
+	rd := ringData{r: fr, p: &p, builderPath: "hey"}
 
-	dw, _ := getDw()
+	dw, _ := getDw(fr)
 	defer closeDw(dw)
 
 	db, _ := dw.getDbAndLock()
@@ -275,11 +279,11 @@ func TestUpdateRing(t *testing.T) {
 	}))
 
 	defer ts.Close()
-	fr := FakeRing{}
+	fr := &FakeRing{}
 	u, _ := url.Parse(ts.URL)
 	host, ports, _ := net.SplitHostPort(u.Host)
 	port, _ := strconv.Atoi(ports)
-	dw, _ := getDw()
+	dw, _ := getDw(fr)
 
 	db, _ := dw.getDbAndLock()
 	defer closeDw(dw)
@@ -304,7 +308,7 @@ func TestUpdateRing(t *testing.T) {
 	p := conf.Policy{Name: "hat"}
 
 	ringBuilderPath := fmt.Sprintf("%s/object.builder", dw.sqlDir)
-	rd := ringData{r: &fr, p: &p, builderPath: ringBuilderPath}
+	rd := ringData{r: fr, p: &p, builderPath: ringBuilderPath}
 	err = ring.CreateRing(ringBuilderPath, 4, 1, 1, false)
 	require.Equal(t, err, nil)
 
@@ -360,12 +364,12 @@ func TestUpdateRing(t *testing.T) {
 func TestProduceReport(t *testing.T) {
 	t.Parallel()
 
-	dw, _ := getDw()
-	defer closeDw(dw)
 	p := conf.Policy{Name: "hat"}
-	fr := FakeRing{}
+	fr := &FakeRing{}
+	dw, _ := getDw(fr)
+	defer closeDw(dw)
 
-	rd := ringData{r: &fr, p: &p, builderPath: "hey"}
+	rd := ringData{r: fr, p: &p, builderPath: "hey"}
 	dw.updateDb(rd)
 
 	db, err := dw.getDbAndLock()
@@ -409,13 +413,12 @@ func TestProduceReport(t *testing.T) {
 func TestNeedRingUpdate(t *testing.T) {
 	t.Parallel()
 
-	dw, _ := getDw()
-	defer closeDw(dw)
-
 	p := conf.Policy{Name: "hat"}
 
-	fr := FakeRing{}
-	rd := ringData{r: &fr, p: &p, builderPath: "hey"}
+	fr := &FakeRing{}
+	rd := ringData{r: fr, p: &p, builderPath: "hey"}
+	dw, _ := getDw(fr)
+	defer closeDw(dw)
 
 	require.True(t, dw.needRingUpdate(rd)) // will update ring on init run
 

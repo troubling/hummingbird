@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLoadPolicy(t *testing.T) {
+func TestGetPolicies(t *testing.T) {
 	tempFile, _ := ioutil.TempFile("", "INI")
 	tempFile.Write([]byte("[swift-hash]\nswift_hash_path_prefix = changeme\nswift_hash_path_suffix = changeme\n" +
 		"[storage-policy:0]\nname = gold\naliases = yellow, orange\npolicy_type = replication\ndefault = yes\n" +
@@ -35,7 +35,8 @@ func TestLoadPolicy(t *testing.T) {
 		defer os.Remove(tempFile.Name())
 	}()
 	configLocations = []string{tempFile.Name()}
-	policyList := LoadPolicies()
+	policyList, err := GetPolicies()
+	require.Nil(t, err)
 	require.Equal(t, policyList[0].Name, "gold")
 	require.Equal(t, policyList[0].Default, true)
 	require.Equal(t, policyList[0].Deprecated, false)
@@ -59,7 +60,8 @@ func TestGetPolicyInfo(t *testing.T) {
 		defer os.Remove(tempFile.Name())
 	}()
 	configLocations = []string{tempFile.Name()}
-	policyList := LoadPolicies()
+	policyList, err := GetPolicies()
+	require.Nil(t, err)
 	policyInfo := policyList.GetPolicyInfo()
 	require.Equal(t, 2, len(policyInfo))
 	expectedGold := map[string]interface{}{"name": "gold",
@@ -83,7 +85,8 @@ func TestNoPolicies(t *testing.T) {
 		defer os.Remove(tempFile.Name())
 	}()
 	configLocations = []string{tempFile.Name()}
-	policyList := LoadPolicies()
+	policyList, err := GetPolicies()
+	require.Nil(t, err)
 	require.Equal(t, policyList[0].Name, "Policy-0")
 	require.Equal(t, policyList[0].Default, true)
 	require.Equal(t, policyList[0].Deprecated, false)

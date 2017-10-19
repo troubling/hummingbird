@@ -49,7 +49,7 @@ type ProxyDirectClient struct {
 	Logger        srv.LowLevelLogger
 }
 
-func NewProxyDirectClient(policyList conf.PolicyList, logger srv.LowLevelLogger) (*ProxyDirectClient, error) {
+func NewProxyDirectClient(policyList conf.PolicyList, cnf srv.ConfigLoader, logger srv.LowLevelLogger) (*ProxyDirectClient, error) {
 	var xport http.RoundTripper = &http.Transport{
 		MaxIdleConnsPerHost: 100,
 		MaxIdleConns:        0,
@@ -71,15 +71,22 @@ func NewProxyDirectClient(policyList conf.PolicyList, logger srv.LowLevelLogger)
 		},
 		Logger: logger,
 	}
-	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
+	if c.policyList == nil {
+		policyList, err := cnf.GetPolicies()
+		if err != nil {
+			return nil, err
+		}
+		c.policyList = policyList
+	}
+	hashPathPrefix, hashPathSuffix, err := cnf.GetHashPrefixAndSuffix()
 	if err != nil {
 		return nil, err
 	}
-	c.ContainerRing, err = ring.GetRing("container", hashPathPrefix, hashPathSuffix, 0)
+	c.ContainerRing, err = cnf.GetRing("container", hashPathPrefix, hashPathSuffix, 0)
 	if err != nil {
 		return nil, err
 	}
-	c.AccountRing, err = ring.GetRing("account", hashPathPrefix, hashPathSuffix, 0)
+	c.AccountRing, err = cnf.GetRing("account", hashPathPrefix, hashPathSuffix, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +94,7 @@ func NewProxyDirectClient(policyList conf.PolicyList, logger srv.LowLevelLogger)
 	for _, policy := range policyList {
 		// TODO: the intention is to (if it becomes necessary) have a policy type to object client
 		// constructor mapping here, similar to how object engines are loaded by policy type.
-		ring, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index)
+		ring, err := cnf.GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index)
 		if err != nil {
 			return nil, err
 		}
@@ -399,9 +406,6 @@ func (c *ProxyDirectClient) PutContainer(account string, container string, heade
 	accountPartition := c.AccountRing.GetPartition(account, "", "")
 	accountDevices := c.AccountRing.GetNodes(accountPartition)
 	policyIndex := -1
-	if c.policyList == nil {
-		c.policyList = conf.LoadPolicies()
-	}
 	policyDefault := c.policyList.Default()
 	if policyName := strings.TrimSpace(headers.Get("X-Storage-Policy")); policyName != "" {
 		policy := c.policyList.NameLookup(policyName)
@@ -1044,7 +1048,7 @@ func (c *directClient) Raw(method, urlAfterAccount string, headers map[string]st
 
 // NewDirectClient creates a new direct client with the given account name.
 func NewDirectClient(account string) (nectar.Client, error) {
-	pdc, err := NewProxyDirectClient(nil, zap.NewNop())
+	pdc, err := NewProxyDirectClient(nil, srv.DefaultConfigLoader{}, zap.NewNop())
 	if err != nil {
 		return nil, err
 	}

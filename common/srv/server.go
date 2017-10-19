@@ -36,6 +36,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/ring"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -264,6 +265,103 @@ func SetupLogger(prefix string, atomicLevel *zap.AtomicLevel, flags *flag.FlagSe
 	return logger, nil
 }
 
+type ConfigLoader interface {
+	GetHashPrefixAndSuffix() (string, string, error)
+	GetPolicies() (conf.PolicyList, error)
+	GetSyncRealms() (conf.SyncRealmList, error)
+	GetRing(ringType, prefix, suffix string, policy int) (ring.Ring, error)
+}
+
+type DefaultConfigLoader struct{}
+
+func (d DefaultConfigLoader) GetHashPrefixAndSuffix() (string, string, error) {
+	return conf.GetHashPrefixAndSuffix()
+}
+
+func (d DefaultConfigLoader) GetPolicies() (conf.PolicyList, error) {
+	return conf.GetPolicies()
+}
+
+func (d DefaultConfigLoader) GetSyncRealms() (conf.SyncRealmList, error) {
+	return conf.GetSyncRealms()
+}
+
+func (d DefaultConfigLoader) GetRing(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	return ring.GetRing(ringType, prefix, suffix, policy)
+}
+
+type TestConfigLoader struct {
+	DefaultConfigLoader
+	GetHashPrefixAndSuffixFunc func() (string, string, error)
+	GetPoliciesFunc            func() (conf.PolicyList, error)
+	GetSyncRealmsFunc          func() (conf.SyncRealmList, error)
+	GetRingFunc                func(ringType, prefix, suffix string, policy int) (ring.Ring, error)
+}
+
+func (t *TestConfigLoader) GetHashPrefixAndSuffix() (string, string, error) {
+	if t.GetHashPrefixAndSuffixFunc != nil {
+		return t.GetHashPrefixAndSuffixFunc()
+	} else {
+		return t.DefaultConfigLoader.GetHashPrefixAndSuffix()
+	}
+}
+
+func (t *TestConfigLoader) GetPolicies() (conf.PolicyList, error) {
+	if t.GetPoliciesFunc != nil {
+		return t.GetPoliciesFunc()
+	} else {
+		return t.DefaultConfigLoader.GetPolicies()
+	}
+}
+
+func (t *TestConfigLoader) GetSyncRealms() (conf.SyncRealmList, error) {
+	if t.GetSyncRealmsFunc != nil {
+		return t.GetSyncRealmsFunc()
+	} else {
+		return t.DefaultConfigLoader.GetSyncRealms()
+	}
+}
+
+func (t *TestConfigLoader) GetRing(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+	if t.GetRingFunc != nil {
+		return t.GetRingFunc(ringType, prefix, suffix, policy)
+	} else {
+		return t.DefaultConfigLoader.GetRing(ringType, prefix, suffix, policy)
+	}
+}
+
+func NewTestConfigLoader(testRing ring.Ring) *TestConfigLoader {
+	confLoader := &TestConfigLoader{
+		GetRingFunc: func(ringType, prefix, suffix string, policy int) (ring.Ring, error) {
+			return testRing, nil
+		},
+		GetPoliciesFunc: func() (conf.PolicyList, error) {
+			return conf.PolicyList(map[int]*conf.Policy{
+				0: {
+					Index:      0,
+					Type:       "replication",
+					Name:       "Policy-0",
+					Aliases:    nil,
+					Default:    false,
+					Deprecated: false,
+				},
+				1: {
+					Index:      1,
+					Type:       "replication",
+					Name:       "Policy-1",
+					Aliases:    nil,
+					Default:    false,
+					Deprecated: false,
+				},
+			}), nil
+		},
+		GetHashPrefixAndSuffixFunc: func() (string, string, error) {
+			return "changeme", "changeme", nil
+		},
+	}
+	return confLoader
+}
+
 /* http.Server that knows how to shut down gracefully */
 
 type HummingbirdServer struct {
@@ -306,7 +404,7 @@ type Server interface {
 	Finalize() // This is called before stoping gracefully so that a server can clean up before closing
 }
 
-func RunServers(GetServer func(conf.Config, *flag.FlagSet) (string, int, Server, LowLevelLogger, error), flags *flag.FlagSet) {
+func RunServers(getServer func(conf.Config, *flag.FlagSet, ConfigLoader) (string, int, Server, LowLevelLogger, error), flags *flag.FlagSet) {
 	var servers []*HummingbirdServer
 
 	if flags.NArg() != 0 {
@@ -321,7 +419,7 @@ func RunServers(GetServer func(conf.Config, *flag.FlagSet) (string, int, Server,
 	}
 
 	for _, config := range configs {
-		ip, port, server, logger, err := GetServer(config, flags)
+		ip, port, server, logger, err := getServer(config, flags, DefaultConfigLoader{})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
 			os.Exit(1)
@@ -409,7 +507,7 @@ type Daemon interface {
 	RunForever()
 }
 
-func RunDaemon(GetDaemon func(conf.Config, *flag.FlagSet) (Daemon, LowLevelLogger, error), flags *flag.FlagSet) {
+func RunDaemon(getDaemon func(conf.Config, *flag.FlagSet, ConfigLoader) (Daemon, LowLevelLogger, error), flags *flag.FlagSet) {
 	var daemons []Daemon
 
 	if flags.NArg() != 0 {
@@ -427,7 +525,7 @@ func RunDaemon(GetDaemon func(conf.Config, *flag.FlagSet) (Daemon, LowLevelLogge
 	once := flags.Lookup("once").Value.(flag.Getter).Get() == true
 
 	for _, config := range configs {
-		if daemon, logger, err := GetDaemon(config, flags); err == nil {
+		if daemon, logger, err := getDaemon(config, flags, DefaultConfigLoader{}); err == nil {
 			if once {
 				daemon.Run()
 				fmt.Fprintf(os.Stderr, "Daemon pass completed.\n")

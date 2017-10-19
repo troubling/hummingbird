@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/common/test"
 	"go.uber.org/zap"
 )
@@ -583,24 +584,14 @@ func TestDiskUsage(t *testing.T) {
 	require.Equal(t, string(expected), string(rsp.Body.Bytes()))
 }
 
-func TestGetServer(t *testing.T) {
-	oldgethash := GetHashPrefixAndSuffix
-	oldgetsync := GetSyncRealms
-	defer func() {
-		GetHashPrefixAndSuffix = oldgethash
-		GetSyncRealms = oldgetsync
-	}()
-	GetHashPrefixAndSuffix = func() (string, string, error) {
-		return "changeme", "changeme", nil
-	}
-	GetSyncRealms = func() conf.SyncRealmList {
-		return conf.SyncRealmList(map[string]conf.SyncRealm{})
-	}
+func TestNewServer(t *testing.T) {
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
 
 	configString := "[app:container-server]\ndevices=whatever\nmount_check=false\nbind_ip=127.0.0.2\nbind_port=1000\nlog_level=INFO\n"
 	conf, err := conf.StringConfig(configString)
 	require.Nil(t, err)
-	bindIP, bindPort, s, logger, err := GetServer(conf, &flag.FlagSet{})
+	bindIP, bindPort, s, logger, err := NewServer(conf, &flag.FlagSet{}, confLoader)
 	require.Nil(t, err)
 	server, ok := s.(*ContainerServer)
 	require.True(t, ok)
