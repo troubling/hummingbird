@@ -35,3 +35,8 @@ hummingbird:
           34316463363061633363623339383864626162323661396262303562656433343233
 ```
 
+Then when you execute it, just pass in:
+
+```
+sudo ./ansible/bin/ansible-playbook -i hosts.yml hummingbird.yml --vault-id @prompt
+```
