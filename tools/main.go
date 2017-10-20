@@ -26,6 +26,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -42,6 +43,7 @@ import (
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/middleware"
+	"github.com/troubling/hummingbird/objectserver"
 )
 
 func getAffixes() (string, string) {
@@ -131,7 +133,7 @@ func curlHeadCommand(ipStr string, port int, device string, partNum uint64, targ
 	return fmt.Sprintf("curl -g -I -XHEAD \"http://%v:%v/%v/%v/%v\"%v", formatted_ip, port, device, partNum, common.Urlencode(target), policyStr)
 }
 
-func getPathHash(ringType, account, container, object string) string {
+func getPathHash(account, container, object string) string {
 	prefix, suffix := getAffixes()
 	if object != "" && container == "" {
 		fmt.Println("container is required if object is provided")
@@ -186,7 +188,7 @@ func printRingLocations(r ring.Ring, ringType, datadir, account, container, obje
 
 	pathHash := ""
 	if account != "" && partition == "" {
-		pathHash = getPathHash(ringType, account, container, object)
+		pathHash = getPathHash(account, container, object)
 	}
 	fmt.Printf("Partition\t%v\n", partNum)
 	fmt.Printf("Hash     \t%v\n\n", pathHash)
@@ -252,9 +254,6 @@ func printItemLocations(r ring.Ring, ringType, account, container, object, parti
 	} else {
 		location = fmt.Sprintf("%vs", ringType)
 	}
-	fmt.Printf("\nAccount  \t%v\n", account)
-	fmt.Printf("Container\t%v\n", container)
-	fmt.Printf("Object   \t%v\n", object)
 
 	printRingLocations(r, ringType, location, account, container, object, partition, allHandoffs, policy)
 }
@@ -290,20 +289,7 @@ func Nodes(flags *flag.FlagSet, cnf srv.ConfigLoader) {
 		fmt.Println("Unable to load policies:", err)
 		os.Exit(1)
 	}
-	var policy *conf.Policy
-	if policyName == "" {
-		policy = policies[0]
-	} else {
-		for _, v := range policies {
-			if v.Name == policyName {
-				policy = v
-			}
-		}
-		if policy == nil {
-			fmt.Println("No policy named ", policyName)
-			os.Exit(1)
-		}
-	}
+	policy := policyByName(policyName, policies)
 
 	var r ring.Ring
 	var ringType string
@@ -347,7 +333,202 @@ func Nodes(flags *flag.FlagSet, cnf srv.ConfigLoader) {
 		}
 	}
 
+	fmt.Printf("\nAccount  \t%v\n", account)
+	fmt.Printf("Container\t%v\n", container)
+	fmt.Printf("Object   \t%v\n", object)
 	printItemLocations(r, ringType, account, container, object, partition, allHandoffs, policy)
+}
+
+func getACO(path string) (account, container, object string) {
+	stuff := strings.SplitN(path, "/", 4)
+	if len(stuff) != 4 {
+		fmt.Printf("Path is invalid for object %v\n", path)
+		os.Exit(1)
+	}
+	return stuff[1], stuff[2], stuff[3]
+}
+
+func printObjMeta(metadata map[string]string) {
+	userMetadata := make(map[string]string)
+	sysMetadata := make(map[string]string)
+	transientSysMetadata := make(map[string]string)
+	otherMetadata := make(map[string]string)
+
+	path := metadata["name"]
+	delete(metadata, "name")
+	if path != "" {
+		account, container, object := getACO(path)
+		objHash := getPathHash(account, container, object)
+		fmt.Printf("Path: %s\n", path)
+		fmt.Printf("  Account: %s\n", account)
+		fmt.Printf("  Container: %s\n", container)
+		fmt.Printf("  Object: %s\n", object)
+		fmt.Printf("  Object hash: %s\n", objHash)
+	} else {
+		fmt.Printf("Path: Not found in metadata\n")
+	}
+	contentType := metadata["Content-Type"]
+	delete(metadata, "Content-Type")
+	if contentType != "" {
+		fmt.Printf("Content-Type: %v\n", contentType)
+	} else {
+		fmt.Printf("Content-Type: Not found in metadata\n")
+	}
+	timestamp := metadata["X-Timestamp"]
+	delete(metadata, "X-Timestamp")
+	if timestamp != "" {
+		t, timeErr := common.ParseDate(timestamp)
+		if timeErr != nil {
+			fmt.Printf("Timestamp error: %v\n", timeErr)
+			os.Exit(1)
+		}
+		fmt.Printf("Timestamp: %s (%s)\n", t.Format(time.RFC3339), timestamp)
+	} else {
+		fmt.Printf("Timestamp: Not found in metadata\n")
+	}
+
+	for key, value := range metadata {
+		if strings.HasPrefix(key, "X-Object-Meta-") {
+			userMetadata[key] = value
+		} else if strings.HasPrefix(key, "X-Object-SysMeta-") {
+			sysMetadata[key] = value
+		} else if strings.HasPrefix(key, "X-Object-Transient-Sysmeta-") {
+			transientSysMetadata[key] = value
+		} else {
+			otherMetadata[key] = value
+		}
+	}
+	printMetadata := func(title string, items map[string]string) {
+		fmt.Printf("%s\n", title)
+		if len(items) > 0 {
+			for key, value := range items {
+				fmt.Printf("  %s: %s\n", key, value)
+			}
+		} else {
+			fmt.Printf("  No metadata found\n")
+		}
+	}
+
+	printMetadata("System Metadata:", sysMetadata)
+	printMetadata("Transient System Metadata:", transientSysMetadata)
+	printMetadata("User Metadata:", userMetadata)
+	printMetadata("Other Metadata:", otherMetadata)
+}
+
+func policyByName(name string, policies conf.PolicyList) *conf.Policy {
+	if name == "" {
+		return policies[0]
+	}
+	for _, v := range policies {
+		if v.Name == name {
+			return v
+		}
+	}
+	fmt.Println("No policy named ", name)
+	os.Exit(1)
+	return nil
+}
+
+func ObjectInfo(flags *flag.FlagSet, cnf srv.ConfigLoader) {
+	object := flags.Arg(0)
+	noEtag := flags.Lookup("n").Value.(flag.Getter).Get().(bool)
+	policyName := flags.Lookup("P").Value.(flag.Getter).Get().(string)
+
+	policies, err := cnf.GetPolicies()
+	if err != nil {
+		fmt.Println("Unable to load policies:", err)
+		os.Exit(1)
+	}
+	namedPolicy := policyByName(policyName, policies)
+
+	stat, statErr := os.Stat(object)
+	if statErr != nil {
+		fmt.Printf("Error statting file: %v\n", statErr)
+		os.Exit(1)
+	}
+
+	fullPath, pathErr := filepath.Abs(object)
+	if pathErr != nil {
+		fmt.Printf("Error getting abs path: %v\n", pathErr)
+		os.Exit(1)
+	}
+	re := regexp.MustCompile(`objects-(\d*)`)
+	match := re.FindStringSubmatch(fullPath)
+	var policy *conf.Policy
+	if match == nil {
+		policy = policies[0]
+	} else {
+		policyIdx, convErr := strconv.Atoi(match[1])
+		if convErr != nil {
+			fmt.Printf("Invalid policy index: %v\n", match[1])
+			os.Exit(1)
+		}
+		policy = policies[policyIdx]
+	}
+	if namedPolicy != nil && namedPolicy != policy {
+		fmt.Printf("Warning: Ring does not match policy!\n")
+		fmt.Printf("Double check your policy name!\n")
+	}
+
+	ring, _ := getRing("", "object", policy.Index)
+
+	hashDir := filepath.Dir(fullPath)
+	dataFile, metaFile := objectserver.ObjectFiles(hashDir)
+	metadata, metaErr := objectserver.ObjectMetadata(dataFile, metaFile)
+	if metaErr != nil {
+		fmt.Printf("Error fetching metadata: %v\n", metaErr)
+		os.Exit(1)
+	}
+
+	etag := metadata["ETag"]
+	delete(metadata, "ETag")
+	length := metadata["Content-Length"]
+	delete(metadata, "Content-Length")
+	path := metadata["name"]
+
+	printObjMeta(metadata)
+
+	if noEtag == false {
+		fp, openErr := os.Open(fullPath)
+		if openErr != nil {
+			fmt.Printf("Error opening file (%v): %v\n", fullPath, openErr)
+			os.Exit(1)
+		}
+		hasher := md5.New()
+		if _, err := io.Copy(hasher, fp); err != nil {
+			fmt.Printf("Error copying file: %v\n", err)
+			os.Exit(1)
+		}
+		hash := hex.EncodeToString(hasher.Sum(nil))
+		if etag != "" {
+			if etag == hash {
+				fmt.Printf("ETag: %v (valid)\n", etag)
+			} else {
+				fmt.Printf("ETag: %v doesn't match file hash of %v!\n", etag, hash)
+			}
+		} else {
+			fmt.Printf("ETag: Not found in metadata\n")
+		}
+	} else {
+		fmt.Printf("ETag: %v (not checked)\n", etag)
+	}
+	if length != "" {
+		l, convErr := strconv.Atoi(length)
+		if convErr != nil {
+			fmt.Printf("Invalid length: %v\n", length)
+			os.Exit(1)
+		}
+		if int64(l) == stat.Size() {
+			fmt.Printf("Content-Length: %v (valid)\n", length)
+		} else {
+			print("Content-Length: %v doesn't match file length of %v\n", length, stat.Size())
+		}
+	} else {
+		fmt.Printf("Content-Length: Not found in metadata\n")
+	}
+
+	account, container, object := getACO(path)
+	printItemLocations(ring, "object", account, container, object, "", false, policy)
 }
 
 type AutoAdmin struct {
