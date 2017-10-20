@@ -31,8 +31,8 @@
     owner: hummingbird
     group: hummingbird
 - name: Copy /etc/hummingbird/hummingbird.conf
-  copy:
-    src: etc/hummingbird.conf
+  template:
+    src: etc/hummingbird.conf.j2
     dest: /etc/hummingbird/hummingbird.conf
     mode: 0644
     owner: hummingbird
