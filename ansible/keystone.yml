@@ -1,0 +1,39 @@
+---
+- hosts: admin
+  become: yes
+  tasks:
+    - name: Install make
+      package:
+        name: make
+        state: present
+    - name: Install Docker
+      package:
+        name: docker.io
+        state: present
+    - name: Make sure the hummingbird user is in the docker group
+      user:
+        name: hummingbird
+        append: yes
+        groups: docker
+    - name: Check out dockerized keystone
+      git:
+        repo: https://github.com/nadeemsyed/dockerized-keystone.git
+        dest: /srv/dockerized-keystone
+        force: yes
+    - name: Update bootstrap
+      lineinfile:
+        path: /srv/dockerized-keystone/bootstrap-keystone.sh
+        regexp: "{{ item.regex }}"
+        line: "{{ item.line }}"
+      with_items:
+        - { regex: '^    --bootstrap-admin-url',    line: '    --bootstrap-admin-url http://{{ service_ip }}:35357' }
+        - { regex: '^    --bootstrap-public-url',   line: '    --bootstrap-public-url http://{{ service_ip }}:5000' }
+        - { regex: '^    --bootstrap-internal-url', line: '    --bootstra-internal-url http://{{ service_ip }}:5000' }
+        - { regex: '^export OS_AUTH_URL',       line: 'export OS_AUTH_URL=http://{{ service_ip }}:5000/v3' }
+        - { regex: '^openstack endpoint create --region RegionOne swift public',  line: 'openstack endpoint create --region RegionOne swift public "{{ keystone_swift_endpoint }}/v1/AUTH_\$(tennant_id)s"' }
+        - { regex: '^openstack endpoint create --region RegionOne swift private', line: 'openstack endpoint create --region RegionOne swift private "{{ keystone_swift_endpoint }}/v1/AUTH_\$(tennant_id)s"' }
+        - { regex: '^openstack endpoint create --region RegionOne swift admin',   line: 'openstack endpoint create --region RegionOne swift admin "{{ keystone_swift_endpoint }}/v1"' }
+    - name: Bootstrap Keystone Docker
+      make:
+        chdir: /srv/dockerized-keystone
+        target: bootstrap

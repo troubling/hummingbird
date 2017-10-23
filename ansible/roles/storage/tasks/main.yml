@@ -1,17 +1,5 @@
 ---
-- name: Ensure hummingbird services are stopped
-  systemd:
-    name: "{{ item }}"
-    state: stopped
-  with_items:
-    - hummingbird-proxy
-    - hummingbird-account
-    - hummingbird-account-replicator
-    - hummingbird-container
-    - hummingbird-container-replicator
-    - hummingbird-object
-    - hummingbird-object-replicator
-    - hummingbird-andrewd
+# NOTE: Only run this if you want to format the devices!
 - name: Create XFS partitions
   parted:
     device: /dev/{{item}}
