@@ -659,7 +659,7 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 	if err != nil {
 		return "", 0, nil, nil, err
 	}
-	if server.objEngines, err = BuildEngines(serverconf, flags, cnf); err != nil {
+	if server.objEngines, err = buildEngines(serverconf, flags, cnf); err != nil {
 		return "", 0, nil, nil, err
 	}
 

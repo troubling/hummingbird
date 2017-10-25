@@ -40,43 +40,83 @@ import (
 
 // NurseryObject implements an Object that is compatible with Swift's object
 // server. The difference with this object is that on initial write objects are
-// written to a nursery (the existing 'objects' dir) and on write they do not
-// have any affect on the hashes.pkl.  After they are written a
-// nursery-stabilizer will walk the dirs and for each object HEAD the other
+// written to a nursery (the existing 'objects' dir) but after they are written
+// a nursery-stabilizer will walk the dirs and for each object HEAD the other
 // primaries looking for that object. If all primaries have this object (based
-// on x-timestamp) it will rename the object to a new 'stable-objects' dir. On
-// subsequent GETs to the object both the nursery and stable locations will be
+// on x-timestamp) it will rename the object to a new 'stable-objects' dir.
+
+// from /srv/node/c1u0/objects/12345/abc/aabbcc...abc/1009988.data
+// to   /srv/node/c1u0/stable-objects/12345/aabbcc...abc/1009988.data
+
+// On subsequent GETs to the object both the nursery and stable locations will be
 // listdired to find the most recent data.
 
-//TODO: figure out rest of this and explain it :p
-// What this does is divide the
-// responsibilies of the replicator. These are as follows: 1. Handoff
-// objects: during PUT a device was down and object was put somewhere else
-// 2. Out-of-place OOP object: Object was written to a primary but the ring
-// was changed and is now not on a primary. These objects are out of place
-// due to an "ring event" 3. Missing object: Object was lost due to a disk
-// "failure event".
+// if the object does not get a match for all other primaries, nothing is done.
+// It waits for replication to "fix" the object
 
-// Now instead of one very resource intensive and slow process that handles
-// all possibilities of problems we will have one daemon scan for handoff
-// objects and use a centralized admin daemon kick off coordinated jobs for
-// cleaning up after ring changes and disk failures.
+// What is the point of this? First it keeps the 'objects' dir small. In the objects
+// dir there is a hashes.pkl file that has a map {'abc':
+// md5-of-all-file-names-in-tree}. As it stands, on every write the suffix for
+// the object's suffix in cleared. It is then the job of the replicator to
+// listdir all the object-dirs under that suffix to regenerate the md5. The
+// purpose of this is to validate that every local object under that hash-suffix has
+// its other primaries populated. It sends the hash to the remote node, if it
+// matches then you are guaranteed they have the same files. If it does not
+// match it sends the file it has to the remote. The problem is as the # of
+// objects in on the device increases the replicator will have to do
+// many listdirs for each write (one for each object-dir within the suffix).
+// All of this work is, in many cases, completely redundant as in a properly
+// running cluster almost all writes will get 201s from all primaries. This
+// extra work has 2 main consequences. First, it causes a very high load on the
+// cluster doing mostly nothing. Second- objects that did not 201 on every
+// primary, which are in a more fragile state, have to wait longer for the
+// replicator to deal with them.
+
+// The idea with this patch is once objects get fully written (.data or .ts is
+// on all primaries) they are moved to stable-objects. the replicator daemon
+// will not walk this directory (which should hold the vast majority of the
+// data on the server.) When there is a drive lost it relies on priority
+// replication calls (spawned from andrewd) to repopulate the data. the
+// priority replication itself will be much faster because it will not have to
+// populate hashes.pkls at all- there are none in the stable-objects dir. This
+// should ease stress on XFS and prevent it from being as much of a bottleneck.
+
+// The normal replicator is left to only walk the 'objects' dir. By default
+// hashes.pkl is no longer used (writes will not invalidate a hash, hashes
+// generated for remote calls are thrown away). Everytime the replicator
+// processes a partition it will have to build all its hashes from scratch. If
+// replication is running too slow, you can set the cache_hash_dirs setting to
+// true. This will force it to use the hashes.pkl the way it was originally
+// intended. All writes will invalidate the hash, the replicator will use it
+// and only run listdirs on the missing suffixes.
+
+// Migrations. If you have an existing swift cluster and wish to migrate to
+// this policy there is a migration path. just change the policy_type in your
+// swift.conf from "replication" to "replication_nursery". You will also want
+// to add "cache_hash_dirs = true" as well. This will continue the use of the
+// hashes.pkl files to keep replication moving until the object stabilzer has
+// moved the majority of objects to the stable-objects dir. Once the
+// nursery-stabilizer can complete a pass within about a day (depending on
+// cluster) you can set "cache_hash_dirs = false" (or remove). You will need
+// to keep an eye on replication pass times and nursery pass times - similar to
+// keeping an eye replication currently. At a later date this will hopefully be
+// more automated.
 
 type nurseryObject struct {
-	file             *os.File
-	afw              fs.AtomicFileWriter
-	nurseryHashDir   string
-	stableHashDir    string
-	tempDir          string
-	dataFile         string
-	metaFile         string
-	stabilized       bool
-	workingClass     string
-	metadata         map[string]string
-	reserve          int64
-	reclaimAge       int64
-	nurseryMigration bool
-	asyncWG          *sync.WaitGroup // Used to keep track of async goroutines
+	file           *os.File
+	afw            fs.AtomicFileWriter
+	nurseryHashDir string
+	stableHashDir  string
+	tempDir        string
+	dataFile       string
+	metaFile       string
+	stabilized     bool
+	workingClass   string
+	metadata       map[string]string
+	reserve        int64
+	reclaimAge     int64
+	cacheHashDirs  bool
+	asyncWG        *sync.WaitGroup // Used to keep track of async goroutines
 }
 
 // Metadata returns the object's metadata.
@@ -190,7 +230,7 @@ func (o *nurseryObject) Commit(metadata map[string]string) error {
 			dir.Sync()
 			dir.Close()
 		}
-		if o.nurseryMigration {
+		if o.cacheHashDirs {
 			InvalidateHash(o.nurseryHashDir)
 		}
 	}()
@@ -221,47 +261,52 @@ func (o *nurseryObject) Close() error {
 }
 
 func (o *nurseryObject) Stabilize() error {
-	if fs.Exists(o.stableHashDir) {
-		plock, err := fs.LockPath(o.stableHashDir, 10*time.Second)
-		defer plock.Close()
-		if err != nil {
-			return err
-		}
-	} else {
+	if o.stabilized {
+		return nil
+	}
+	if !fs.Exists(o.stableHashDir) {
 		if err := os.MkdirAll(o.stableHashDir, 0755); err != nil {
 			return err
 		}
-		plock, err := fs.LockPath(o.stableHashDir, 10*time.Second)
-		defer plock.Close()
-		if err != nil {
+	}
+	plock, err := fs.LockPath(o.stableHashDir, 10*time.Second)
+	defer plock.Close()
+	if err != nil {
+		return err
+	}
+	sObjDataPath := filepath.Join(o.stableHashDir, filepath.Base(o.dataFile))
+	if fs.Exists(sObjDataPath) {
+		os.Remove(o.dataFile)
+	} else {
+		if err := os.Rename(o.dataFile, sObjDataPath); err != nil {
 			return err
 		}
 	}
-	sObjDataPath := filepath.Join(o.stableHashDir, filepath.Base(o.dataFile))
-
-	if err := os.Rename(o.dataFile, sObjDataPath); err != nil {
-		return err
-	}
 	if o.metaFile != "" {
 		sObjMetaPath := filepath.Join(o.stableHashDir, filepath.Base(o.metaFile))
-		if err := os.Rename(o.metaFile, sObjMetaPath); err != nil {
-			return err
+		if fs.Exists(sObjMetaPath) {
+			os.Remove(o.metaFile)
+		} else {
+			if err := os.Rename(o.metaFile, sObjMetaPath); err != nil {
+				return err
+			}
 		}
 	}
 	HashCleanupListDir(o.stableHashDir, o.reclaimAge)
 	os.Remove(o.nurseryHashDir)
+	os.Remove(filepath.Dir(o.nurseryHashDir)) // try to remove suffix dir
 	return nil
 }
 
 type nurseryEngine struct {
-	driveRoot        string
-	hashPathPrefix   string
-	hashPathSuffix   string
-	reserve          int64
-	reclaimAge       int64
-	logger           srv.LowLevelLogger
-	policy           int
-	nurseryMigration bool
+	driveRoot      string
+	hashPathPrefix string
+	hashPathSuffix string
+	reserve        int64
+	reclaimAge     int64
+	logger         srv.LowLevelLogger
+	policy         int
+	cacheHashDirs  bool
 }
 
 func neObjectFiles(nurseryDir, stableDir string) (string, string, bool) {
@@ -287,16 +332,35 @@ func neObjectFiles(nurseryDir, stableDir string) (string, string, bool) {
 			metaFile = filename
 		}
 		if strings.HasSuffix(filename, ".ts") || strings.HasSuffix(filename, ".data") {
-			directory := nurseryDir
-			isStable := common.StringInSlice(filename, stableFileList)
-			if isStable {
-				directory = stableDir
-			}
-			if metaFile != "" {
-				return filepath.Join(directory, filename), filepath.Join(directory, metaFile), isStable
+			directory := ""
+			isStable := false
+			if common.StringInSlice(filename, nurseryFileList) {
+				directory = nurseryDir
 			} else {
+				if common.StringInSlice(filename, stableFileList) {
+					directory = stableDir
+					isStable = true
+				}
+			}
+			if directory == "" {
+				return "", "", false
+			}
+			if metaFile == "" {
 				return filepath.Join(directory, filename), "", isStable
 			}
+			mDirectory := ""
+			if common.StringInSlice(metaFile, nurseryFileList) {
+				mDirectory = nurseryDir
+			} else {
+				if common.StringInSlice(metaFile, stableFileList) {
+					mDirectory = stableDir
+					// TODO: dfg: what happens when .data is stable as .meta is in nursery?
+				}
+			}
+			if mDirectory == "" {
+				return filepath.Join(directory, filename), "", isStable
+			}
+			return filepath.Join(directory, filename), filepath.Join(mDirectory, metaFile), isStable
 		}
 	}
 	return "", "", false
@@ -317,38 +381,54 @@ func nurseryHashDirs(vars map[string]string, driveRoot string, hashPathPrefix st
 func (f *nurseryEngine) New(vars map[string]string, needData bool, asyncWG *sync.WaitGroup) (Object, error) {
 	//TODO the vars map is lame. it expects there to always be "account", "container", etc. this should be moved into a separate struct. this struct will handle the hashDir, suffix crap. until them i'm going to make this a little worse :p
 	var err error
-	sor := &nurseryObject{reclaimAge: f.reclaimAge, reserve: f.reserve, asyncWG: asyncWG, nurseryMigration: f.nurseryMigration}
+	sor := &nurseryObject{reclaimAge: f.reclaimAge, reserve: f.reserve, asyncWG: asyncWG, cacheHashDirs: f.cacheHashDirs}
 	sor.nurseryHashDir, sor.stableHashDir = nurseryHashDirs(vars, f.driveRoot, f.hashPathPrefix, f.hashPathSuffix, f.policy)
 	if vars["nurseryHashDir"] != "" {
 		// this is being built by walking the disk- the nurseryHashDir is where it was found. not necessarily where it should be.
 		sor.nurseryHashDir = vars["nurseryHashDir"]
 	}
 	sor.tempDir = TempDirPath(f.driveRoot, vars["device"])
-	sor.dataFile, sor.metaFile, sor.stabilized = neObjectFiles(sor.nurseryHashDir, sor.stableHashDir)
-	if sor.Exists() {
-		var stat os.FileInfo
-		if needData {
-			if sor.file, err = os.Open(sor.dataFile); err != nil {
-				return nil, err
+	var stat os.FileInfo
+	loadAttrs := func() error {
+		sor.dataFile, sor.metaFile, sor.stabilized = neObjectFiles(sor.nurseryHashDir, sor.stableHashDir)
+		if sor.Exists() {
+			if needData {
+				if sor.file, err = os.Open(sor.dataFile); err != nil {
+					return err
+				}
+				if sor.metadata, err = OpenObjectMetadata(sor.file.Fd(), sor.metaFile); err != nil {
+					//sor.Quarantine()
+					return fmt.Errorf("Error getting OpenObjectMetadata: %v", err)
+				}
+			} else {
+				if sor.metadata, err = ObjectMetadata(sor.dataFile, sor.metaFile); err != nil {
+					//sor.Quarantine()
+					return fmt.Errorf("Error getting ObjectMetadata: %v", err)
+				}
 			}
-			if sor.metadata, err = OpenObjectMetadata(sor.file.Fd(), sor.metaFile); err != nil {
-				sor.Quarantine()
-				return nil, fmt.Errorf("Error getting metadata: %v", err)
+			if sor.file != nil {
+				if stat, err = sor.file.Stat(); err != nil {
+					sor.Close()
+					return fmt.Errorf("Error file statting nurseryEngine New file: %v", err)
+				}
+			} else if stat, err = os.Stat(sor.dataFile); err != nil {
+				return fmt.Errorf("Error os statting nurseryEngine New file: %v", err)
 			}
 		} else {
-			if sor.metadata, err = ObjectMetadata(sor.dataFile, sor.metaFile); err != nil {
-				sor.Quarantine()
-				return nil, fmt.Errorf("Error getting metadata: %v", err)
-			}
+			sor.metadata, _ = ObjectMetadata(sor.dataFile, sor.metaFile) // ignore errors if deleted
 		}
-		if sor.file != nil {
-			if stat, err = sor.file.Stat(); err != nil {
-				sor.Close()
-				return nil, fmt.Errorf("Error statting file: %v", err)
-			}
-		} else if stat, err = os.Stat(sor.dataFile); err != nil {
-			return nil, fmt.Errorf("Error statting file: %v", err)
+		return nil
+	}
+	if err := loadAttrs(); err != nil {
+		// if file gets stabilized between listdir and loading, allow one more check
+		err = loadAttrs()
+		if err != nil {
+			// this quarantines in more places than before
+			sor.Quarantine()
+			return nil, err
 		}
+	}
+	if err == nil && sor.Exists() {
 		if contentLength, err := strconv.ParseInt(sor.metadata["Content-Length"], 10, 64); err != nil {
 			sor.Quarantine()
 			return nil, fmt.Errorf("Unable to parse content-length: %s", sor.metadata["Content-Length"])
@@ -356,8 +436,6 @@ func (f *nurseryEngine) New(vars map[string]string, needData bool, asyncWG *sync
 			sor.Quarantine()
 			return nil, fmt.Errorf("File size doesn't match content-length: %d vs %d", stat.Size(), contentLength)
 		}
-	} else {
-		sor.metadata, _ = ObjectMetadata(sor.dataFile, sor.metaFile) // ignore errors if deleted
 	}
 	return sor, nil
 }
@@ -458,16 +536,16 @@ func nurseryEngineConstructor(config conf.Config, policy *conf.Policy, flags *fl
 	if err != nil {
 		return nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
-	nurseryMigration := config.GetBool("app:object-server", "nursery_migration", false)
+	cacheHashDirs := common.LooksTrue(policy.Config["cache_hash_dirs"])
 	return &nurseryEngine{
-		driveRoot:        driveRoot,
-		hashPathPrefix:   hashPathPrefix,
-		hashPathSuffix:   hashPathSuffix,
-		reserve:          reserve,
-		reclaimAge:       reclaimAge,
-		logger:           logger,
-		nurseryMigration: nurseryMigration,
-		policy:           policy.Index}, nil
+		driveRoot:      driveRoot,
+		hashPathPrefix: hashPathPrefix,
+		hashPathSuffix: hashPathSuffix,
+		reserve:        reserve,
+		reclaimAge:     reclaimAge,
+		logger:         logger,
+		cacheHashDirs:  cacheHashDirs,
+		policy:         policy.Index}, nil
 }
 
 func init() {

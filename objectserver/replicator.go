@@ -154,8 +154,8 @@ type replicationDevice struct {
 		beginReplication(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse)
 		listObjFiles(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool)
 		syncFile(objFile string, dst []*syncFileArg, handoff bool) (syncs int, insync int, err error)
-		replicateLocal(partition string, nodes []*ring.Device, moreNodes ring.MoreNodes)
-		replicateHandoff(partition string, nodes []*ring.Device)
+		replicateMismatchedHashes(partition string, nodes []*ring.Device, moreNodes ring.MoreNodes)
+		replicateWholePartition(partition string, nodes []*ring.Device, isHandoff bool)
 		cleanTemp()
 		listPartitions() ([]string, []string, error)
 		replicatePartition(partition string)
@@ -347,7 +347,7 @@ func (rd *replicationDevice) beginReplication(dev *ring.Device, partition string
 	}
 }
 
-func (rd *replicationDevice) replicateLocal(partition string, nodes []*ring.Device, moreNodes ring.MoreNodes) {
+func (rd *replicationDevice) replicateMismatchedHashes(partition string, nodes []*ring.Device, moreNodes ring.MoreNodes) {
 	path := filepath.Join(rd.r.deviceRoot, rd.dev.Device, PolicyDir(rd.policy), partition)
 	syncCount := 0
 	startGetHashesRemote := time.Now()
@@ -382,7 +382,7 @@ func (rd *replicationDevice) replicateLocal(partition string, nodes []*ring.Devi
 	recalc := []string{}
 	hashes, err := GetHashes(rd.r.deviceRoot, rd.dev.Device, partition, recalc, rd.r.reclaimAge, rd.policy, rd.r.logger)
 	if err != nil {
-		rd.r.logger.Error("[replicateLocal] error getting local hashes", zap.Error(err))
+		rd.r.logger.Error("[replicateMismatchedHashes] error getting local hashes", zap.Error(err))
 		return
 	}
 	for suffix, localHash := range hashes {
@@ -395,7 +395,7 @@ func (rd *replicationDevice) replicateLocal(partition string, nodes []*ring.Devi
 	}
 	hashes, err = GetHashes(rd.r.deviceRoot, rd.dev.Device, partition, recalc, rd.r.reclaimAge, rd.policy, rd.r.logger)
 	if err != nil {
-		rd.r.logger.Error("[replicateLocal] error recalculating local hashes", zap.Error(err))
+		rd.r.logger.Error("[replicateMismatchedHashes] error recalculating local hashes", zap.Error(err))
 		return
 	}
 	timeGetHashesLocal := float64(time.Now().Sub(startGetHashesLocal)) / float64(time.Second)
@@ -439,7 +439,7 @@ func (rd *replicationDevice) replicateLocal(partition string, nodes []*ring.Devi
 	}
 	timeSyncing := float64(time.Now().Sub(startSyncing)) / float64(time.Second)
 	if syncCount > 0 {
-		rd.r.logger.Info("[replicateLocal]",
+		rd.r.logger.Info("[replicateMismatchedHashes]",
 			zap.String("Partition", path),
 			zap.Any("Files Synced", syncCount),
 			zap.Float64("timeGetHashesRemote", timeGetHashesRemote),
@@ -448,7 +448,7 @@ func (rd *replicationDevice) replicateLocal(partition string, nodes []*ring.Devi
 	}
 }
 
-func (rd *replicationDevice) replicateHandoff(partition string, nodes []*ring.Device) {
+func (rd *replicationDevice) replicateWholePartition(partition string, nodes []*ring.Device, isHandoff bool) {
 	path := filepath.Join(rd.r.deviceRoot, rd.dev.Device, PolicyDir(rd.policy), partition)
 	syncCount := 0
 	remoteConnections := make(map[int]RepConn)
@@ -488,7 +488,7 @@ func (rd *replicationDevice) replicateHandoff(partition string, nodes []*ring.De
 			if rd.r.quorumDelete {
 				success = insync >= len(nodes)/2+1
 			}
-			if success {
+			if success && isHandoff {
 				os.Remove(objFile)
 				os.Remove(filepath.Dir(objFile))
 			}
@@ -503,7 +503,7 @@ func (rd *replicationDevice) replicateHandoff(partition string, nodes []*ring.De
 		}
 	}
 	if syncCount > 0 {
-		rd.r.logger.Info("[replicateHandoff]", zap.String("Partition", path), zap.Any("Files Synced", syncCount))
+		rd.r.logger.Info("[replicateWholePartition]", zap.String("Partition", path), zap.Any("Files Synced", syncCount))
 	}
 }
 
@@ -532,10 +532,15 @@ func (rd *replicationDevice) replicatePartition(partition string) {
 		return
 	}
 	nodes, handoff := rd.r.objectRings[rd.policy].GetJobNodes(partitioni, rd.dev.Id)
-	if handoff {
-		rd.i.replicateHandoff(partition, nodes)
+	policy := rd.r.policies[rd.policy]
+	if policy == nil {
+		return
+	}
+	if handoff || (policy.Type == "replication-nursery" &&
+		!common.LooksTrue(policy.Config["cache_hash_dirs"])) {
+		rd.i.replicateWholePartition(partition, nodes, handoff)
 	} else {
-		rd.i.replicateLocal(partition, nodes, rd.r.objectRings[rd.policy].GetMoreNodes(partitioni))
+		rd.i.replicateMismatchedHashes(partition, nodes, rd.r.objectRings[rd.policy].GetMoreNodes(partitioni))
 	}
 	rd.updateStat("PartitionsDone", 1)
 }
@@ -696,15 +701,20 @@ func (rd *replicationDevice) processPriorityJobs() {
 				if handoff {
 					jobType = "handoff"
 				}
+				policy := rd.r.policies[rd.policy]
+				if policy == nil {
+					return
+				}
 				rd.r.logger.Info("PriorityReplicationJob",
 					zap.Uint64("partition", pri.Partition),
 					zap.String("jobType", jobType),
 					zap.String("From Device", pri.FromDevice.Device),
 					zap.String("To Device", strings.Join(toDevicesArr, ",")))
-				if handoff {
-					rd.i.replicateHandoff(partition, pri.ToDevices)
+				if handoff || (policy.Type == "replication-nursery" &&
+					!common.LooksTrue(policy.Config["cache_hash_dirs"])) {
+					rd.i.replicateWholePartition(partition, pri.ToDevices, handoff)
 				} else {
-					rd.i.replicateLocal(partition, pri.ToDevices, &NoMoreNodes{})
+					rd.i.replicateMismatchedHashes(partition, pri.ToDevices, &NoMoreNodes{})
 				}
 			}()
 			rd.updateStat("PriorityRepsDone", 1)
@@ -836,7 +846,6 @@ func (r *Replicator) verifyRunningDevices() {
 			if _, ok := r.nurseryDevices[key]; !ok {
 				if nd, err := newNurseryDevice(dev, oring.(ring.Ring), policy, r, objEngine); err == nil {
 					r.nurseryDevices[key] = nd
-					fmt.Println("made one", nd)
 					r.stats["object-nursery"][key] = &DeviceStats{
 						LastCheckin: time.Now(), DeviceStarted: time.Now(),
 						Stats: map[string]int64{"Success": 0, "Failure": 0},
@@ -1116,7 +1125,7 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 	if replicator.containerRing, err = cnf.GetRing("container", hashPathPrefix, hashPathSuffix, 0); err != nil {
 		return nil, nil, fmt.Errorf("Error loading container ring: %v", err)
 	}
-	if replicator.objEngines, err = BuildEngines(serverconf, flags, cnf); err != nil {
+	if replicator.objEngines, err = buildEngines(serverconf, flags, cnf); err != nil {
 		return nil, nil, err
 	}
 	if replicator.logger, err = srv.SetupLogger("object-replicator", &logLevel, flags); err != nil {

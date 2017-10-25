@@ -109,7 +109,7 @@ func FindEngine(name string) (ObjectEngineConstructor, error) {
 	return nil, errors.New("Not found")
 }
 
-func BuildEngines(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (map[int]ObjectEngine, error) {
+func buildEngines(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (map[int]ObjectEngine, error) {
 	objEngines := make(map[int]ObjectEngine)
 	policies, err := cnf.GetPolicies()
 	if err != nil {
