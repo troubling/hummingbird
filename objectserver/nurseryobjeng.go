@@ -84,17 +84,18 @@ import (
 // The normal replicator is left to only walk the 'objects' dir. By default
 // hashes.pkl is no longer used (writes will not invalidate a hash, hashes
 // generated for remote calls are thrown away). Everytime the replicator
-// processes a partition it will have to build all its hashes from scratch. If
-// replication is running too slow, you can set the cache_hash_dirs setting to
-// true. This will force it to use the hashes.pkl the way it was originally
-// intended. All writes will invalidate the hash, the replicator will use it
-// and only run listdirs on the missing suffixes.
+// processes a partition it will treat it like a handoff partition and try to
+// verify / send every file in the tree.  If replication is running too slow,
+// you can set the cache_hash_dirs setting to true. This will force it to use
+// the hashes.pkl the way it was originally intended. All writes will
+// invalidate the hash, the replicator will use it and only run listdirs on the
+// missing suffixes.
 
 // Migrations. If you have an existing swift cluster and wish to migrate to
 // this policy there is a migration path. just change the policy_type in your
 // swift.conf from "replication" to "replication_nursery". You will also want
 // to add "cache_hash_dirs = true" as well. This will continue the use of the
-// hashes.pkl files to keep replication moving until the object stabilzer has
+// hashes.pkl files to keep replication moving until the object stabilizer has
 // moved the majority of objects to the stable-objects dir. Once the
 // nursery-stabilizer can complete a pass within about a day (depending on
 // cluster) you can set "cache_hash_dirs = false" (or remove). You will need
