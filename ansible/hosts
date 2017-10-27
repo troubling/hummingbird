@@ -20,3 +20,9 @@ authtoken_username=swift
 authtoken_password=password
 hash_prefix=changeme
 hash_suffix=changeme
+
+[keystone]
+127.0.0.1 service_ip=127.0.0.1 ansible_connection=local
+
+[keystone:vars]
+keystone_swift_endpoint=127.0.0.1:8080

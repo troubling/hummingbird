@@ -2,4 +2,4 @@
 - hosts: admin
   become: yes
   roles:
-    - dockerized_keystone
+    - dockerized-keystone

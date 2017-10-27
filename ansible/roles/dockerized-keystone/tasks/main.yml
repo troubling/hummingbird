@@ -23,21 +23,23 @@
 - name: Check out dockerized keystone
   git:
     repo: https://github.com/nadeemsyed/dockerized-keystone.git
-    dest: /srv/dockerized-keystone
+    dest: /srv/dockerized-keystnone
     force: yes
+- name: Update Makefile
+  lineinfile:
+    path: /srv/dockerized-keystone/Makefile
+    regexp: '^\tdocker run -t -d -h 127.0.0.1 --link mysql:mysql -p'
+    line: "\tdocker run -t -d -h {{ service_ip }} --link mysql:mysql -p 0.0.0.0:35357:35357 -p 0.0.0.0:5000:5000 \\"
+    state: present
 - name: Update bootstrap
   lineinfile:
     path: /srv/dockerized-keystone/bootstrap-keystone.sh
     regexp: "{{ item.regex }}"
     line: "{{ item.line }}"
   with_items:
-    - { regex: '^    --bootstrap-admin-url',    line: '    --bootstrap-admin-url http://{{ service_ip }}:35357' }
-    - { regex: '^    --bootstrap-public-url',   line: '    --bootstrap-public-url http://{{ service_ip }}:5000' }
-    - { regex: '^    --bootstrap-internal-url', line: '    --bootstra-internal-url http://{{ service_ip }}:5000' }
-    - { regex: '^export OS_AUTH_URL',       line: 'export OS_AUTH_URL=http://{{ service_ip }}:5000/v3' }
-    - { regex: '^openstack endpoint create --region RegionOne swift public',  line: 'openstack endpoint create --region RegionOne swift public "{{ keystone_swift_endpoint }}/v1/AUTH_\$(tennant_id)s"' }
-    - { regex: '^openstack endpoint create --region RegionOne swift private', line: 'openstack endpoint create --region RegionOne swift private "{{ keystone_swift_endpoint }}/v1/AUTH_\$(tennant_id)s"' }
-    - { regex: '^openstack endpoint create --region RegionOne swift admin',   line: 'openstack endpoint create --region RegionOne swift admin "{{ keystone_swift_endpoint }}/v1"' }
+    - { regex: '^openstack endpoint create --region RegionOne swift public',  line: 'openstack endpoint create --region RegionOne swift public "$HTTP://{{ keystone_swift_endpoint }}/v1/AUTH_\$(tennant_id)s"' }
+    - { regex: '^openstack endpoint create --region RegionOne swift private', line: 'openstack endpoint create --region RegionOne swift private "$HTTP://{{ keystone_swift_endpoint }}/v1/AUTH_\$(tennant_id)s"' }
+    - { regex: '^openstack endpoint create --region RegionOne swift admin',   line: 'openstack endpoint create --region RegionOne swift admin "$HTTP://{{ keystone_swift_endpoint }}/v1"' }
 - name: Remove keystone container if it is running
   docker_container:
     name: keystone
