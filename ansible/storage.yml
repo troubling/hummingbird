@@ -15,6 +15,9 @@
         - hummingbird-object
         - hummingbird-object-replicator
         - hummingbird-andrewd
+      register: command_result
+      failed_when: "command_result|failed and ('find' not in command_result.msg and 'found' not in command_result.msg)"
   roles:
+    - common
     - storage
     - metadata

@@ -12,11 +12,12 @@
     path: /srv/node/{{item}}1
     state: absent
   with_items: "{{meta_devs}}"
+  when: reset == "yes"
 - name: Create XFS Filesystems
   filesystem:
     fstype: xfs
     dev: /dev/{{item}}1
-    force: yes
+    force: "{{ reset }}"
   with_items: "{{meta_devs}}"
 - name: Create dirs for mounts
   file:
