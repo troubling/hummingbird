@@ -1,8 +1,55 @@
-Ansible notes
-===========
+Hansible
+========
+
+TL;DR
+-----
+
+1.  Install the latest version of [Ansible](http://docs.ansible.com/ansible/latest/intro_installation.html)
+1.  Edit the hosts file to have the hosts you want and modify variables as needed.
+1.  Run the storage playbook `ansible-playbook -i hosts storage.yml` to partition and format the devices.
+1.  Run the hummingbird playbook `ansible-playbook -i hosts hummingbird.yml` to install and configure the latest hummingbird.
+1.  Create rings for the cluster.
+1.  Run the ring playbook `ansible-playbook -i hosts ring.yml` to copy the rings to each server.
+
+Inventory
+---------
+
+Each storage node should be listed in the `hummingbird` group.  The 'service_ip' variable is the ip that the non-public services will listen on.  
+
+### hummingbird group variables
+
+Variable | Description
+-------- | -----------
+`obj_devs` | A list of devices used as storage for the object server.  This can also be overriden at the server level.
+`meta_devs` | A list of devices used as storage for the container and account servers.  This can be overriden at the server level.
+`proxy_port` | Port the proxy server will listen on.
+`container_port` | Port the container server will listen on.
+`account_port` | Port the account server will listen on.
+`object_replicator_port` | Port the object replicator will listen on.
+`auth_uri` | Auth URI for keystone
+`auth_url` | Auth URL for keystone
+`authtoken_username` | Username to use when validating auth with keystone.
+`authtoken_password` | Password to use when validating auth with keystone.
+
+Playbooks
+---------
+
+### storage.yml
+
+This playbook will format and partition the devices in the `hummingbird` group.  If devices already have a mounted filesystem, it will do its best to unmount and reset, but may require manual intervention if there are files open or something else keeping the filesystem busy.
+
+**WARNING:**  Only run this if you want to erase the drives, this will re-format devices even if they already have a filesystem!
+
+### hummingbird.yml
+
+This playbook will install and configure the latest version of hummingbird to all of the nodes in the `hummingbird` group.
+
+### ring.yml
+
+This playbook will copy the account container and object rings from the local `/etc/hummingbird` directory to all nodes in the `hummingbird` group.
 
 Secrets
------------
+-------
 ```
 ansible-vault encrypt_string <string_to_encrypt> --ask-vault-pass
 ```
