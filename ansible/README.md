@@ -5,16 +5,16 @@ TL;DR
 -----
 
 1.  Install the latest version of [Ansible](http://docs.ansible.com/ansible/latest/intro_installation.html)
-1.  Edit the hosts file to have the hosts you want and modify variables as needed.
-1.  Run the storage playbook `ansible-playbook -i hosts storage.yml` to partition and format the devices.
-1.  Run the hummingbird playbook `ansible-playbook -i hosts hummingbird.yml` to install and configure the latest hummingbird.
-1.  Create rings for the cluster.
-1.  Run the ring playbook `ansible-playbook -i hosts ring.yml` to copy the rings to each server.
+2.  Edit the hosts file to have the hosts you want and modify variables as needed.
+3.  Run the storage playbook `ansible-playbook -i hosts storage.yml` to partition and format the devices.
+4.  Run the hummingbird playbook `ansible-playbook -i hosts hummingbird.yml` to install and configure the latest hummingbird.
+5.  Create rings for the cluster.
+6.  Run the ring playbook `ansible-playbook -i hosts ring.yml` to copy the rings to each server.
 
 Inventory
 ---------
 
-Each storage node should be listed in the `hummingbird` group.  The 'service_ip' variable is the ip that the non-public services will listen on.  
+Each storage node should be listed in the `hummingbird` group.  The `service_ip` variable is the ip that the non-public services will listen on.  
 
 ### hummingbird group variables
 
@@ -36,9 +36,7 @@ Playbooks
 
 ### storage.yml
 
-This playbook will format and partition the devices in the `hummingbird` group.  If devices already have a mounted filesystem, it will do its best to unmount and reset, but may require manual intervention if there are files open or something else keeping the filesystem busy.
-
-**WARNING:**  Only run this if you want to erase the drives, this will re-format devices even if they already have a filesystem!
+This playbook will ensure that the devices for each node in the `hummingbird` group are partitioned and formatted.  If a device already have a mounted filesystem, it will make any changes.
 
 ### hummingbird.yml
 
