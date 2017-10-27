@@ -1,0 +1,50 @@
+---
+
+- name: Playbook dir
+  debug:
+    msg: "PLAYBOOK DIR: {{playbook_dir}}"
+- name: Create key dir
+  local_action: file path={{playbook_dir}}/keys state=directory
+- name: Look for CA key
+  local_action: stat path={{playbook_dir}}/keys/ca.pem
+  register: stat_ca_key
+- name: Create CA key
+  local_action:
+    module: openssl_privatekey
+    path: "{{playbook_dir}}/keys/ca.pem"
+  when: stat_ca_key.stat.exists == False
+- name: Create CA CSR
+  local_action:
+    module: openssl_csr
+    common_name: THE BIG BAD CA
+    path: "{{playbook_dir}}/keys/ca.csr"
+    privatekey_path: "{{playbook_dir}}/keys/ca.pem"
+- name: Create CA cert
+  local_action:
+    module: openssl_certificate
+    path: "{{playbook_dir}}/keys/ca.crt"
+    csr_path: "{{playbook_dir}}/keys/ca.csr"
+    privatekey_path: "{{playbook_dir}}/keys/ca.pem"
+    provider: selfsigned
+
+- name: Look for host key
+  local_action: stat path={{playbook_dir}}/keys/host.pem
+  register: stat_host_key
+- name: Create host key
+  local_action:
+    module: openssl_privatekey
+    path: "{{playbook_dir}}/keys/host.pem"
+  when: stat_host_key.stat.exists == False
+- name: Create host CSR
+  local_action:
+    module: openssl_csr
+    common_name: host
+    path: "{{playbook_dir}}/keys/host.csr"
+    privatekey_path: "{{playbook_dir}}/keys/host.pem"
+- name: Create host cert
+  local_action:
+    module: openssl_certificate
+    path: "{{playbook_dir}}/keys/host.crt"
+    csr_path: "{{playbook_dir}}/keys/host.csr"
+    privatekey_path: "{{playbook_dir}}/keys/ca.pem"
+    provider: selfsigned
