@@ -5,46 +5,54 @@
     msg: "PLAYBOOK DIR: {{playbook_dir}}"
 - name: Create key dir
   local_action: file path={{playbook_dir}}/keys state=directory
+- name: Write ca.cnf
+  local_action:
+    module: template
+    src: "{{playbook_dir}}/roles/certs/templates/ca.conf.j2"
+    dest: "{{playbook_dir}}/keys/ca.conf"
+- name: Write serial
+  local_action:
+    module: template
+    src: "{{playbook_dir}}/roles/certs/templates/serial"
+    dest: "{{playbook_dir}}/keys"
+- name: Write certindex
+  local_action:
+    module: file
+    path: "{{playbook_dir}}/keys/certindex"
+    state: touch
 - name: Look for CA key
-  local_action: stat path={{playbook_dir}}/keys/ca.pem
+  local_action: stat path={{playbook_dir}}/keys/ca.key.pem
   register: stat_ca_key
 - name: Create CA key
   local_action:
-    module: openssl_privatekey
-    path: "{{playbook_dir}}/keys/ca.pem"
+    module: shell
+    cmd: openssl genrsa -out "{{playbook_dir}}/keys/ca.key.pem" 2048
   when: stat_ca_key.stat.exists == False
-- name: Create CA CSR
-  local_action:
-    module: openssl_csr
-    common_name: THE BIG BAD CA
-    path: "{{playbook_dir}}/keys/ca.csr"
-    privatekey_path: "{{playbook_dir}}/keys/ca.pem"
 - name: Create CA cert
   local_action:
-    module: openssl_certificate
-    path: "{{playbook_dir}}/keys/ca.crt"
-    csr_path: "{{playbook_dir}}/keys/ca.csr"
-    privatekey_path: "{{playbook_dir}}/keys/ca.pem"
-    provider: selfsigned
+    module: shell
+    cmd: openssl req -config "{{playbook_dir}}/keys/ca.conf" -key keys/ca.key.pem -new -x509 -days 3560 -extensions ca_ext -out "{{playbook_dir}}/keys/ca.cert.pem" -subj "/CN=Hummingbird CA"
 
 - name: Look for host key
-  local_action: stat path={{playbook_dir}}/keys/host.pem
+  local_action: 
+    module: stat
+    path: "{{playbook_dir}}/keys/host.key.pem"
   register: stat_host_key
 - name: Create host key
   local_action:
-    module: openssl_privatekey
-    path: "{{playbook_dir}}/keys/host.pem"
+    module: shell
+    cmd: openssl genrsa -out "{{playbook_dir}}/keys/host.key.pem" 2048
   when: stat_host_key.stat.exists == False
 - name: Create host CSR
   local_action:
-    module: openssl_csr
-    common_name: host
-    path: "{{playbook_dir}}/keys/host.csr"
-    privatekey_path: "{{playbook_dir}}/keys/host.pem"
+    module: shell
+    cmd: openssl req -new -key "{{playbook_dir}}/keys/host.key.pem" -out "{{playbook_dir}}/keys/host.csr.pem" -subj "/CN=Hummingbird Host X"
 - name: Create host cert
   local_action:
-    module: openssl_certificate
-    path: "{{playbook_dir}}/keys/host.crt"
-    csr_path: "{{playbook_dir}}/keys/host.csr"
-    privatekey_path: "{{playbook_dir}}/keys/ca.pem"
-    provider: selfsigned
+    module: shell
+    cmd: openssl ca -batch -config "{{playbook_dir}}/keys/ca.conf" -extensions server_ext -notext -md sha256 -in "{{playbook_dir}}/keys/host.csr.pem" -out "{{playbook_dir}}/keys/host.cert.pem"
+#    module: openssl_certificate
+#    path: "{{playbook_dir}}/keys/host.crt"
+#    csr_path: "{{playbook_dir}}/keys/host.csr"
+#    privatekey_path: "{{playbook_dir}}/keys/ca.pem"
+#    provider: selfsigned
