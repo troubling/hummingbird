@@ -21,6 +21,13 @@ organizationName = optional
 organizationalUnitName = optional
 
 [ ca_ext ]
+basicConstraints = critical, CA:true
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always,issuer
+#keyUsage = digitalSignature,keyEncipherment
+keyUsage = critical, digitalSignature, cRLSign, keyCertSign
+
+[ intermediate_ext ]
 basicConstraints = critical, CA:true, pathlen:0
 subjectKeyIdentifier = hash
 authorityKeyIdentifier = keyid:always,issuer

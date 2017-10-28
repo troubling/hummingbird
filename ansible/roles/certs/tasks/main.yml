@@ -37,6 +37,24 @@
     module: shell
     cmd: openssl req -config "{{playbook_dir}}/keys/ca.conf" -key keys/hummingbird.ca.key.pem -new -x509 -days 3560 -extensions ca_ext -out "{{playbook_dir}}/keys/hummingbird.ca.cert.pem" -subj "/CN=Hummingbird CA"
   when: stat_ca_key.stat.exists == False
+- name: Look for intermediate CA key
+  local_action: stat path={{playbook_dir}}/keys/hummingbird.intermediate.key.pem
+  register: stat_intermediate_key
+- name: Create intermediate key
+  local_action:
+    module: shell
+    cmd: openssl genrsa -out "{{playbook_dir}}/keys/hummingbird.intermediate.key.pem" 4096
+  when: stat_intermediate_key.stat.exists == False
+- name: Create intermediate CSR
+  local_action:
+    module: shell
+    cmd: openssl req -new -key "{{playbook_dir}}/keys/hummingbird.intermediate.key.pem" -out "{{playbook_dir}}/keys/hummingbird.intermediate.csr.pem" -subj "/CN=Hummingbird Intermediate CA"
+  when: stat_intermediate_key.stat.exists == False
+- name: Create intermediate cert
+  local_action:
+    module: shell
+    cmd: openssl ca -batch -config "{{playbook_dir}}/keys/ca.conf" -extensions intermediate_ext -notext -md sha256 -in "{{playbook_dir}}/keys/hummingbird.intermediate.csr.pem" -out "{{playbook_dir}}/keys/hummingbird.intermediate.cert.pem"
+  when: stat_intermediate_key.stat.exists == False
 - name: Look for host key
   local_action: 
     module: stat
@@ -75,7 +93,13 @@
     # Has to be .crt for update-ca-certificates
     dest: /usr/local/share/ca-certificates/hummingbird.ca.crt
     backup: yes
+- name: Distribute the intermediate cert
+  copy:
+    src: "{{playbook_dir}}/keys/hummingbird.intermediate.cert.pem"
+    # Has to be .crt for update-ca-certificates
+    dest: /usr/local/share/ca-certificates/hummingbird.intermediate.crt
+    backup: yes
 - name: Update cert index
-  shell: /usr/sbin/update-ca-certificates
+  shell: /usr/sbin/update-ca-certificates -f
 
 
