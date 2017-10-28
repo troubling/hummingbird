@@ -1,5 +1,3 @@
----
-
 - name: Playbook dir
   debug:
     msg: "PLAYBOOK DIR: {{playbook_dir}}"
@@ -10,49 +8,74 @@
     module: template
     src: "{{playbook_dir}}/roles/certs/templates/ca.conf.j2"
     dest: "{{playbook_dir}}/keys/ca.conf"
+- name: Look for serial
+  local_action: 
+    module: stat
+    path: "{{playbook_dir}}/keys/serial"
+  register: stat_serial
 - name: Write serial
   local_action:
     module: template
     src: "{{playbook_dir}}/roles/certs/templates/serial"
     dest: "{{playbook_dir}}/keys"
-- name: Write certindex
+  when: stat_serial.stat.exists == False
+- name: Touch certindex
   local_action:
     module: file
     path: "{{playbook_dir}}/keys/certindex"
     state: touch
 - name: Look for CA key
-  local_action: stat path={{playbook_dir}}/keys/ca.key.pem
+  local_action: stat path={{playbook_dir}}/keys/hummingbird.ca.key.pem
   register: stat_ca_key
 - name: Create CA key
   local_action:
     module: shell
-    cmd: openssl genrsa -out "{{playbook_dir}}/keys/ca.key.pem" 2048
+    cmd: openssl genrsa -out "{{playbook_dir}}/keys/hummingbird.ca.key.pem" 4096
   when: stat_ca_key.stat.exists == False
 - name: Create CA cert
   local_action:
     module: shell
-    cmd: openssl req -config "{{playbook_dir}}/keys/ca.conf" -key keys/ca.key.pem -new -x509 -days 3560 -extensions ca_ext -out "{{playbook_dir}}/keys/ca.cert.pem" -subj "/CN=Hummingbird CA"
-
+    cmd: openssl req -config "{{playbook_dir}}/keys/ca.conf" -key keys/hummingbird.ca.key.pem -new -x509 -days 3560 -extensions ca_ext -out "{{playbook_dir}}/keys/hummingbird.ca.cert.pem" -subj "/CN=Hummingbird CA"
+  when: stat_ca_key.stat.exists == False
 - name: Look for host key
   local_action: 
     module: stat
-    path: "{{playbook_dir}}/keys/host.key.pem"
+    path: "{{playbook_dir}}/keys/{{inventory_hostname}}.key.pem"
   register: stat_host_key
 - name: Create host key
   local_action:
     module: shell
-    cmd: openssl genrsa -out "{{playbook_dir}}/keys/host.key.pem" 2048
+    cmd: openssl genrsa -out "{{playbook_dir}}/keys/{{inventory_hostname}}.key.pem" 2048
   when: stat_host_key.stat.exists == False
 - name: Create host CSR
   local_action:
     module: shell
-    cmd: openssl req -new -key "{{playbook_dir}}/keys/host.key.pem" -out "{{playbook_dir}}/keys/host.csr.pem" -subj "/CN=Hummingbird Host X"
+    cmd: openssl req -new -key "{{playbook_dir}}/keys/{{inventory_hostname}}.key.pem" -out "{{playbook_dir}}/keys/{{inventory_hostname}}.csr.pem" -subj "/CN={{inventory_hostname}}"
+  when: stat_host_key.stat.exists == False
 - name: Create host cert
   local_action:
     module: shell
-    cmd: openssl ca -batch -config "{{playbook_dir}}/keys/ca.conf" -extensions server_ext -notext -md sha256 -in "{{playbook_dir}}/keys/host.csr.pem" -out "{{playbook_dir}}/keys/host.cert.pem"
-#    module: openssl_certificate
-#    path: "{{playbook_dir}}/keys/host.crt"
-#    csr_path: "{{playbook_dir}}/keys/host.csr"
-#    privatekey_path: "{{playbook_dir}}/keys/ca.pem"
-#    provider: selfsigned
+    cmd: openssl ca -batch -config "{{playbook_dir}}/keys/ca.conf" -extensions server_ext -notext -md sha256 -in "{{playbook_dir}}/keys/{{inventory_hostname}}.csr.pem" -out "{{playbook_dir}}/keys/{{inventory_hostname}}.cert.pem"
+  when: stat_host_key.stat.exists == False
+- name: Distribute host key
+  copy:
+    src: "{{playbook_dir}}/keys/{{inventory_hostname}}.key.pem"
+    dest: /etc/hummingbird/server.key.pem
+    backup: yes
+- name: Distribute host cert
+  copy:
+    src: "{{playbook_dir}}/keys/{{inventory_hostname}}.cert.pem"
+    dest: /etc/hummingbird/server.cert.pem
+    backup: yes
+- name: Ensure local certs directory exists
+  file: state=directory path=/usr/local/share/ca-certificates
+- name: Distribute the CA cert
+  copy:
+    src: "{{playbook_dir}}/keys/hummingbird.ca.cert.pem"
+    # Has to be .crt for update-ca-certificates
+    dest: /usr/local/share/ca-certificates/hummingbird.ca.crt
+    backup: yes
+- name: Update cert index
+  shell: /usr/sbin/update-ca-certificates
+
+
