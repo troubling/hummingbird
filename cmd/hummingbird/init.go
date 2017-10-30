@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	"strings"
 
 	"github.com/troubling/hummingbird/common"
 )
@@ -306,13 +307,18 @@ func initCommand(args []string) error {
 	}
 
 	printService := func(basename string, index int) {
+		servername := basename
+		parts := strings.SplitN(basename, "-", 2)
+		if len(parts) == 2 {
+			servername = parts[0]
+		}
 		var pth string
 		var extraArgs string
 		if index < 1 {
 			pth = fmt.Sprintf(prefix+"/lib/systemd/system/hummingbird-%s.service", basename)
 		} else {
 			pth = fmt.Sprintf(prefix+"/lib/systemd/system/hummingbird-%s%d.service", basename, index)
-			extraArgs = fmt.Sprintf(" -c /etc/hummingbird/%s-server/%d.conf", basename, index)
+			extraArgs = fmt.Sprintf(" -c /etc/hummingbird/%s-server/%d.conf", servername, index)
 		}
 		print(`sudo tee %s >/dev/null << EOF`, pth)
 		print(`# See these pages for lots of options:`)
