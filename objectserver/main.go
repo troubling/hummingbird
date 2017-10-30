@@ -112,6 +112,8 @@ func (server *ObjectServer) ObjGetHandler(writer http.ResponseWriter, request *h
 
 	metadata := obj.Metadata()
 	headers.Set("X-Backend-Timestamp", metadata["X-Timestamp"])
+	headers.Set("X-Backend-Data-Timestamp", metadata["X-Backend-Data-Timestamp"])
+	headers.Set("X-Backend-Meta-Timestamp", metadata["X-Backend-Meta-Timestamp"])
 	if !obj.Exists() {
 		if ifMatches["*"] {
 			srv.StandardResponse(writer, http.StatusPreconditionFailed)
@@ -657,20 +659,8 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 	if err != nil {
 		return "", 0, nil, nil, err
 	}
-	server.objEngines = make(map[int]ObjectEngine)
-	policies, err := cnf.GetPolicies()
-	if err != nil {
+	if server.objEngines, err = buildEngines(serverconf, flags, cnf); err != nil {
 		return "", 0, nil, nil, err
-	}
-	for _, policy := range policies {
-		if newEngine, err := FindEngine(policy.Type); err != nil {
-			return "", 0, nil, nil, fmt.Errorf("Unable to find object engine type %s: %v", policy.Type, err)
-		} else {
-			server.objEngines[policy.Index], err = newEngine(serverconf, policy, flags)
-			if err != nil {
-				return "", 0, nil, nil, fmt.Errorf("Error instantiating object engine type %s: %v", policy.Type, err)
-			}
-		}
 	}
 
 	server.driveRoot = serverconf.GetDefault("app:object-server", "devices", "/srv/node")

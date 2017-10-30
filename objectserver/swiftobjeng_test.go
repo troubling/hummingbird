@@ -16,9 +16,19 @@ func TestSwiftObjectRoundtrip(t *testing.T) {
 	driveRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(driveRoot)
+	testObjectRoundtrip(&SwiftEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}, t)
+}
+
+func TestNurseryObjectRoundtrip(t *testing.T) {
+	driveRoot, err := ioutil.TempDir("", "")
+	require.Nil(t, err)
+	defer os.RemoveAll(driveRoot)
+	testObjectRoundtrip(&nurseryEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}, t)
+}
+
+func testObjectRoundtrip(swcon ObjectEngine, t *testing.T) {
 
 	vars := map[string]string{"device": "sda", "account": "a", "container": "c", "object": "o", "partition": "1"}
-	swcon := &SwiftEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	swo, err := swcon.New(vars, false, &wg)
@@ -34,7 +44,7 @@ func TestSwiftObjectRoundtrip(t *testing.T) {
 	require.Nil(t, err)
 	defer swo.Close()
 	metadata := swo.Metadata()
-	require.Equal(t, map[string]string{"Content-Length": "1", "Content-Type": "text/plain", "X-Timestamp": "1234567890.123456"}, metadata)
+	require.Equal(t, map[string]string{"Content-Length": "1", "Content-Type": "text/plain", "X-Timestamp": "1234567890.123456", "X-Backend-Data-Timestamp": "1234567890.123456"}, metadata)
 	buf := &bytes.Buffer{}
 	_, err = swo.Copy(buf)
 	require.Nil(t, err)
@@ -44,14 +54,30 @@ func TestSwiftObjectRoundtrip(t *testing.T) {
 func TestSwiftObjectFailAuditContentLengthWrong(t *testing.T) {
 	driveRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
+	defer func() {
+		os.RemoveAll(driveRoot)
+	}()
+	swcon := &SwiftEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
+	testObjectFailAuditContentLengthWrong(swcon, t)
+}
+
+func TestNurseryObjectFailAuditContentLengthWrong(t *testing.T) {
+	driveRoot, err := ioutil.TempDir("", "")
+	defer func() {
+		os.RemoveAll(driveRoot)
+	}()
+	require.Nil(t, err)
+	swcon := &nurseryEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
+	testObjectFailAuditContentLengthWrong(swcon, t)
+}
+
+func testObjectFailAuditContentLengthWrong(swcon ObjectEngine, t *testing.T) {
+
 	var wg sync.WaitGroup
 	defer func() {
 		wg.Wait()
-		os.RemoveAll(driveRoot)
 	}()
-
 	vars := map[string]string{"device": "sda", "account": "a", "container": "c", "object": "o", "partition": "1"}
-	swcon := &SwiftEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
 	swo, err := swcon.New(vars, false, &wg)
 	require.Nil(t, err)
 	defer swo.Close()
@@ -66,15 +92,30 @@ func TestSwiftObjectFailAuditContentLengthWrong(t *testing.T) {
 
 func TestSwiftObjectFailAuditBadContentLength(t *testing.T) {
 	driveRoot, err := ioutil.TempDir("", "")
+	defer func() {
+		defer os.RemoveAll(driveRoot)
+	}()
 	require.Nil(t, err)
+	swcon := &SwiftEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
+	testObjectFailAuditBadContentLength(swcon, t)
+}
+
+func TestNurseryObjectFailAuditBadContentLength(t *testing.T) {
+	driveRoot, err := ioutil.TempDir("", "")
+	defer func() {
+		defer os.RemoveAll(driveRoot)
+	}()
+	require.Nil(t, err)
+	swcon := &nurseryEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
+	testObjectFailAuditBadContentLength(swcon, t)
+}
+
+func testObjectFailAuditBadContentLength(swcon ObjectEngine, t *testing.T) {
 	var wg sync.WaitGroup
 	defer func() {
 		wg.Wait()
-		defer os.RemoveAll(driveRoot)
 	}()
-
 	vars := map[string]string{"device": "sda", "account": "a", "container": "c", "object": "o", "partition": "1"}
-	swcon := &SwiftEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
 	swo, err := swcon.New(vars, false, &wg)
 	require.Nil(t, err)
 	defer swo.Close()
@@ -90,14 +131,30 @@ func TestSwiftObjectFailAuditBadContentLength(t *testing.T) {
 func TestSwiftObjectQuarantine(t *testing.T) {
 	driveRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
+	defer func() {
+		defer os.RemoveAll(driveRoot)
+	}()
+	swcon := &SwiftEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
+	testObjectQuarantine(swcon, driveRoot, t)
+}
+
+func TestNurseryObjectQuarantine(t *testing.T) {
+	driveRoot, err := ioutil.TempDir("", "")
+	require.Nil(t, err)
+	defer func() {
+		defer os.RemoveAll(driveRoot)
+	}()
+	swcon := &nurseryEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
+	testObjectQuarantine(swcon, driveRoot, t)
+}
+
+func testObjectQuarantine(swcon ObjectEngine, driveRoot string, t *testing.T) {
 	var wg sync.WaitGroup
 	defer func() {
 		wg.Wait()
-		defer os.RemoveAll(driveRoot)
 	}()
 
 	vars := map[string]string{"device": "sda", "account": "a", "container": "c", "object": "o", "partition": "3"}
-	swcon := &SwiftEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
 	swo, err := swcon.New(vars, false, &wg)
 	require.Nil(t, err)
 	defer swo.Close()
@@ -112,14 +169,30 @@ func TestSwiftObjectQuarantine(t *testing.T) {
 func TestSwiftObjectMultiCopy(t *testing.T) {
 	driveRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
+	defer func() {
+		defer os.RemoveAll(driveRoot)
+	}()
+	swcon := &SwiftEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
+	testObjectMultiCopy(swcon, t)
+}
+
+func TestNurseryObjectMultiCopy(t *testing.T) {
+	driveRoot, err := ioutil.TempDir("", "")
+	require.Nil(t, err)
+	defer func() {
+		defer os.RemoveAll(driveRoot)
+	}()
+	swcon := &nurseryEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
+	testObjectMultiCopy(swcon, t)
+}
+
+func testObjectMultiCopy(swcon ObjectEngine, t *testing.T) {
 	var wg sync.WaitGroup
 	defer func() {
 		wg.Wait()
-		defer os.RemoveAll(driveRoot)
 	}()
 
 	vars := map[string]string{"device": "sda", "account": "a", "container": "c", "object": "o", "partition": "1"}
-	swcon := &SwiftEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
 	swo, err := swcon.New(vars, false, &wg)
 	require.Nil(t, err)
 	defer swo.Close()
@@ -142,14 +215,30 @@ func TestSwiftObjectMultiCopy(t *testing.T) {
 func TestSwiftObjectDelete(t *testing.T) {
 	driveRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
+	defer func() {
+		defer os.RemoveAll(driveRoot)
+	}()
+	swcon := &SwiftEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
+	testObjectDelete(swcon, t)
+}
+
+func TestNurseryObjectDelete(t *testing.T) {
+	driveRoot, err := ioutil.TempDir("", "")
+	require.Nil(t, err)
+	defer func() {
+		defer os.RemoveAll(driveRoot)
+	}()
+	swcon := &nurseryEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
+	testObjectDelete(swcon, t)
+}
+
+func testObjectDelete(swcon ObjectEngine, t *testing.T) {
 	var wg sync.WaitGroup
 	defer func() {
 		wg.Wait()
-		defer os.RemoveAll(driveRoot)
 	}()
 
 	vars := map[string]string{"device": "sda", "account": "a", "container": "c", "object": "o", "partition": "1"}
-	swcon := &SwiftEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
 	swo, err := swcon.New(vars, false, &wg)
 	require.Nil(t, err)
 	defer swo.Close()
@@ -205,4 +294,40 @@ func TestSwiftObjectCommitMeta(t *testing.T) {
 	require.Equal(t, swo.Metadata()["X-Object-Meta-TestSwiftObjectCommitMeta"], "Hello!")
 	require.NotEqual(t, swo.(*SwiftObject).metaFile, "")
 	require.True(t, fs.Exists(swo.(*SwiftObject).metaFile))
+}
+
+func TestNurseryObjectCommitMeta(t *testing.T) {
+	driveRoot, err := ioutil.TempDir("", "")
+	require.Nil(t, err)
+	var wg sync.WaitGroup
+	defer func() {
+		wg.Wait()
+		defer os.RemoveAll(driveRoot)
+	}()
+
+	vars := map[string]string{"device": "sda", "account": "a", "container": "c", "object": "o", "partition": "1"}
+	swcon := &nurseryEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
+	swo, err := swcon.New(vars, false, &wg)
+	require.Nil(t, err)
+	defer swo.Close()
+	w, err := swo.SetData(1)
+	require.Nil(t, err)
+	w.Write([]byte("!"))
+	swo.Commit(map[string]string{"Content-Length": "1", "Content-Type": "text/plain", "X-Timestamp": "1234567890.123456"})
+
+	swo, err = swcon.New(vars, false, &wg)
+	require.Nil(t, err)
+	defer swo.Close()
+	require.True(t, swo.Exists())
+	require.Equal(t, swo.(*nurseryObject).metaFile, "")
+	err = swo.CommitMetadata(map[string]string{"X-Timestamp": "1234567891.123456", "X-Object-Meta-TestSwiftObjectCommitMeta": "Hello!"})
+	require.Nil(t, err)
+
+	swo, err = swcon.New(vars, false, &wg)
+	require.Nil(t, err)
+	defer swo.Close()
+	require.True(t, swo.Exists())
+	require.Equal(t, swo.Metadata()["X-Object-Meta-TestSwiftObjectCommitMeta"], "Hello!")
+	require.NotEqual(t, swo.(*nurseryObject).metaFile, "")
+	require.True(t, fs.Exists(swo.(*nurseryObject).metaFile))
 }

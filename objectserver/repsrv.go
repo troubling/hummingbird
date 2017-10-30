@@ -102,6 +102,38 @@ func (r *Replicator) priorityRepHandler(w http.ResponseWriter, req *http.Request
 	}
 }
 
+// priorityRepHandler handles HTTP requests for priority replications jobs.
+func (r *Replicator) stabilizeHandler(w http.ResponseWriter, req *http.Request) {
+	vars := srv.GetVars(req)
+	policy, err := strconv.Atoi(req.Header.Get("X-Backend-Storage-Policy-Index"))
+	if err != nil {
+		policy = 0
+	}
+	engine, ok := r.objEngines[policy]
+	if !ok {
+		r.logger.Error("invalid policy to stabilizeHandler")
+		w.WriteHeader(500)
+		return
+	}
+	o, err := engine.New(vars, false, &r.asyncWG)
+	if err != nil {
+		r.logger.Error("could not build stabilizeHandler Object", zap.Error(err))
+		w.WriteHeader(500)
+		return
+	}
+	key := deviceKeyId(vars["device"], policy)
+	if nrd, ok := r.nurseryDevices[key]; ok {
+		if os, ok := o.(ObjectStabilizer); ok {
+			if canStab, _ := nrd.CanStabilize(os); canStab {
+				if err = os.Stabilize(); err == nil {
+					nrd.updateStat("objectsPeerStabilized", 1)
+				}
+			}
+		}
+	}
+	w.WriteHeader(200)
+}
+
 func (r *Replicator) objReplicateHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
 
@@ -273,6 +305,7 @@ func (r *Replicator) GetHandler() http.Handler {
 	commonHandlers := alice.New(r.LogRequest, middleware.ValidateRequest)
 	router := srv.NewRouter()
 	router.Post("/priorityrep", commonHandlers.ThenFunc(r.priorityRepHandler))
+	router.Post("/stabilize/:device/:partition/:account/:container/*obj", commonHandlers.ThenFunc(r.stabilizeHandler))
 	router.Get("/progress", commonHandlers.ThenFunc(r.ProgressReportHandler))
 	for _, policy := range r.policies {
 		router.HandlePolicy("REPCONN", "/:device/:partition", policy.Index, commonHandlers.ThenFunc(r.objRepConnHandler))

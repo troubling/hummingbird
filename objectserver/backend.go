@@ -403,10 +403,11 @@ func applyMetaFile(metaFile string, datafileMetadata map[string]string) (map[str
 		return nil, err
 	} else {
 		for k, v := range datafileMetadata {
-			if k == "Content-Length" || k == "Content-Type" || k == "deleted" || k == "ETag" || strings.HasPrefix(k, "X-Object-Sysmeta-") {
+			if k == "Content-Length" || k == "Content-Type" || k == "deleted" || k == "ETag" || k == "X-Backend-Data-Timestamp" || strings.HasPrefix(k, "X-Object-Sysmeta-") {
 				metadata[k] = v
 			}
 		}
+		metadata["X-Backend-Meta-Timestamp"] = metadata["X-Timestamp"]
 		return metadata, nil
 	}
 }
@@ -416,6 +417,7 @@ func OpenObjectMetadata(fd uintptr, metaFile string) (map[string]string, error) 
 	if err != nil {
 		return nil, err
 	}
+	datafileMetadata["X-Backend-Data-Timestamp"] = datafileMetadata["X-Timestamp"]
 	if metaFile != "" {
 		return applyMetaFile(metaFile, datafileMetadata)
 	}
@@ -427,6 +429,7 @@ func ObjectMetadata(dataFile string, metaFile string) (map[string]string, error)
 	if err != nil {
 		return nil, err
 	}
+	datafileMetadata["X-Backend-Data-Timestamp"] = datafileMetadata["X-Timestamp"]
 	if metaFile != "" {
 		return applyMetaFile(metaFile, datafileMetadata)
 	}
