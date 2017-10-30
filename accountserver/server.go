@@ -46,6 +46,7 @@ type AccountServer struct {
 	driveRoot        string
 	hashPathPrefix   string
 	hashPathSuffix   string
+	reconCachePath   string
 	logger           srv.LowLevelLogger
 	logLevel         zap.AtomicLevel
 	diskInUse        *common.KeyedLimit
@@ -406,7 +407,7 @@ func (server *AccountServer) HealthcheckHandler(writer http.ResponseWriter, requ
 
 // ReconHandler delegates incoming /recon calls to the common recon handler.
 func (server *AccountServer) ReconHandler(writer http.ResponseWriter, request *http.Request) {
-	middleware.ReconHandler(server.driveRoot, server.checkMounts, writer, request)
+	middleware.ReconHandler(server.driveRoot, server.reconCachePath, server.checkMounts, writer, request)
 }
 
 // DiskUsageHandler returns information on the current outstanding HTTP requests per-disk.
@@ -547,6 +548,7 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 	}
 	server.autoCreatePrefix = serverconf.GetDefault("app:account-server", "auto_create_account_prefix", ".")
 	server.driveRoot = serverconf.GetDefault("app:account-server", "devices", "/srv/node")
+	server.reconCachePath = serverconf.GetDefault("app:account-server", "recon_cache_path", "/var/cache/swift")
 	server.checkMounts = serverconf.GetBool("app:account-server", "mount_check", true)
 	server.diskInUse = common.NewKeyedLimit(serverconf.GetLimit("app:account-server", "disk_limit", 0, 0))
 	bindIP = serverconf.GetDefault("app:account-server", "bind_ip", "0.0.0.0")
