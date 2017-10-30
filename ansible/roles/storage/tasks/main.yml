@@ -1,5 +1,4 @@
 ---
-# NOTE: Only run this if you want to format the devices!
 - name: Create XFS partitions
   parted:
     device: /dev/{{item}}
@@ -13,11 +12,12 @@
     path: /srv/node/{{item}}1
     state: absent
   with_items: "{{ obj_devs }}"
+  when: reset == "yes"
 - name: Create XFS filesystems
   filesystem:
     fstype: xfs
     dev: /dev/{{item}}1
-    force: yes  # NOTE: This will force the filesystem to be re-formatted each run
+    force: "{{ reset }}"
   with_items: "{{ obj_devs }}"
 - name: Create dirs for mounts
   file:
