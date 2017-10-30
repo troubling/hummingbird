@@ -16,13 +16,17 @@
 package common
 
 import (
+	"crypto/md5"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math/rand"
 	"mime"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -506,4 +510,44 @@ func ParseIfMatch(s string) map[string]bool {
 		}
 	}
 	return r
+}
+
+func FileMD5(files ...string) (map[string]string, error) {
+	response := make(map[string]string)
+	for _, file := range files {
+		fp, err := os.Open(file)
+		if err != nil {
+			return nil, err
+		}
+		defer fp.Close()
+		hash := md5.New()
+		io.Copy(hash, fp)
+		response[file] = fmt.Sprintf("%x", hash.Sum(nil))
+	}
+	return response, nil
+}
+
+func GetAllRingFileMd5s() (map[string]string, error) {
+	// if there is a /etc/hummingbird- use it for all rings
+	ringMap := map[string]string{}
+
+	etcDir := "/etc/hummingbird"
+	if _, err := os.Stat(etcDir); os.IsNotExist(err) {
+		etcDir = "/etc/swift"
+	}
+
+	ringFiles := []string{filepath.Join(etcDir, "account.ring.gz"),
+		filepath.Join(etcDir, "container.ring.gz")}
+	if files, err := ioutil.ReadDir(etcDir); err == nil {
+		for _, file := range files {
+			fname := file.Name()
+			if strings.HasPrefix(fname, "object") && strings.HasSuffix(fname, "ring.gz") {
+				ringFiles = append(ringFiles, filepath.Join(etcDir, fname))
+
+			}
+		}
+		return FileMD5(ringFiles...)
+	} else {
+		return ringMap, err
+	}
 }

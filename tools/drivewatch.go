@@ -84,12 +84,33 @@ type driveWatch struct {
 	sqlDir          string
 }
 
-func (dw *driveWatch) deviceId(ip string, port int, device string) string {
+func deviceId(ip string, port int, device string) string {
 	return fmt.Sprintf("%s:%d/%s", ip, port, device)
 }
 
-func (dw *driveWatch) serverId(ip string, port int) string {
+func serverId(ip string, port int) string {
 	return fmt.Sprintf("%s:%d", ip, port)
+}
+
+func getRingData(oring ring.Ring, onlyWeighted bool) (map[string]*ring.Device, []ipPort) {
+	allRingDevices := make(map[string]*ring.Device)
+	var servers []ipPort
+	weightedServers := make(map[string]bool)
+	for _, dev := range oring.AllDevices() {
+		if dev == nil {
+			continue
+		}
+		allRingDevices[deviceId(dev.Ip, dev.Port, dev.Device)] = dev
+
+		if !onlyWeighted || dev.Weight > 0 {
+			if _, ok := weightedServers[serverId(dev.Ip, dev.Port)]; !ok {
+				servers =
+					append(servers, ipPort{ip: dev.Ip, port: dev.Port})
+				weightedServers[serverId(dev.Ip, dev.Port)] = true
+			}
+		}
+	}
+	return allRingDevices, servers
 }
 
 func (dw *driveWatch) getDbAndLock() (*sql.DB, error) {
@@ -190,7 +211,7 @@ func (dw *driveWatch) gatherReconData(servers []ipPort) (unmountedDevices map[st
 		resp, err := client.Do(req)
 		if err != nil {
 			dw.logger.Error("Could not do recon request", zap.String("url", serverUrl), zap.Error(err))
-			downServers[dw.serverId(s.ip, s.port)] = ipPort{ip: s.ip, port: s.port}
+			downServers[serverId(s.ip, s.port)] = ipPort{ip: s.ip, port: s.port}
 			continue
 		}
 		data, err := ioutil.ReadAll(resp.Body)
@@ -202,7 +223,7 @@ func (dw *driveWatch) gatherReconData(servers []ipPort) (unmountedDevices map[st
 		if err := json.Unmarshal(data, &serverReconData); err == nil {
 			for _, rd := range serverReconData {
 				if !rd.Mounted {
-					unmountedDevices[dw.deviceId(s.ip,
+					unmountedDevices[deviceId(s.ip,
 						s.port, rd.Device)] = ring.Device{
 						Device: rd.Device, Ip: s.ip, Port: s.port}
 				}
@@ -212,28 +233,6 @@ func (dw *driveWatch) gatherReconData(servers []ipPort) (unmountedDevices map[st
 		}
 	}
 	return unmountedDevices, downServers
-}
-
-func (dw *driveWatch) getRingData(rd ringData) (map[string]*ring.Device, []ipPort) {
-	oring := rd.r
-	allRingDevices := make(map[string]*ring.Device)
-	var allWeightedServers []ipPort
-	weightedServers := make(map[string]bool)
-	for _, dev := range oring.AllDevices() {
-		if dev == nil {
-			continue
-		}
-		allRingDevices[dw.deviceId(dev.Ip, dev.Port, dev.Device)] = dev
-
-		if dev.Weight > 0 {
-			if _, ok := weightedServers[dw.serverId(dev.Ip, dev.Port)]; !ok {
-				allWeightedServers =
-					append(allWeightedServers, ipPort{ip: dev.Ip, port: dev.Port})
-				weightedServers[dw.serverId(dev.Ip, dev.Port)] = true
-			}
-		}
-	}
-	return allRingDevices, allWeightedServers
 }
 
 func (dw *driveWatch) needRingUpdate(rd ringData) bool {
@@ -262,7 +261,7 @@ func (dw *driveWatch) needRingUpdate(rd ringData) bool {
 
 func (dw *driveWatch) updateDb(rd ringData) error {
 	policy := rd.p.Index
-	allRingDevices, allWeightedServers := dw.getRingData(rd)
+	allRingDevices, allWeightedServers := getRingData(rd.r, true)
 	unmountedDevices, downServers := dw.gatherReconData(allWeightedServers)
 
 	db, err := dw.getDbAndLock()
@@ -293,10 +292,10 @@ func (dw *driveWatch) updateDb(rd ringData) error {
 			qryErrors = append(qryErrors, err)
 		} else {
 
-			dKey := dw.deviceId(ip, port, device)
+			dKey := deviceId(ip, port, device)
 			rDev, inRing := allRingDevices[dKey]
 			_, inUnmounted := unmountedDevices[dKey]
-			_, notReachable := downServers[dw.serverId(ip, port)]
+			_, notReachable := downServers[serverId(ip, port)]
 			if !inRing {
 				changesMade++
 				if _, err = tx.Exec("UPDATE device SET in_ring=0 WHERE id = ?", dID); err != nil {
@@ -324,9 +323,9 @@ func (dw *driveWatch) updateDb(rd ringData) error {
 		}
 	}
 	for _, rDev := range allRingDevices {
-		dKey := dw.deviceId(rDev.Ip, rDev.Port, rDev.Device)
+		dKey := deviceId(rDev.Ip, rDev.Port, rDev.Device)
 		_, isUnmounted := unmountedDevices[dKey]
-		_, notReachable := downServers[dw.serverId(rDev.Ip, rDev.Port)]
+		_, notReachable := downServers[serverId(rDev.Ip, rDev.Port)]
 		changesMade++
 		if _, err = tx.Exec("INSERT INTO device (policy, ip, port, device, in_ring, weight, mounted, reachable) "+
 			"VALUES (?,?,?,?,?,?,?,?)",
@@ -472,14 +471,14 @@ func (dw *driveWatch) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (dw *driveWatch) getOverdueDevices(rd ringData) (toZeroDevs []ring.Device, overweightToZeroDevs []ring.Device, err error) {
-	allRingDevices, _ := dw.getRingData(rd)
+	allRingDevices, _ := getRingData(rd.r, true)
 	policy := rd.p.Index
 	totalWeight := float64(0)
 	ringZeroDevices := make(map[string]bool)
 	for _, dev := range allRingDevices {
 		totalWeight += dev.Weight
 		if dev.Weight == 0 {
-			ringZeroDevices[dw.deviceId(dev.Ip, dev.Port, dev.Device)] = true
+			ringZeroDevices[deviceId(dev.Ip, dev.Port, dev.Device)] = true
 		}
 	}
 	db, err := dw.getDbAndLock()
@@ -507,7 +506,7 @@ func (dw *driveWatch) getOverdueDevices(rd ringData) (toZeroDevs []ring.Device, 
 		if err := rows.Scan(&ip, &port, &device, &weight, &mounted, &reachable); err != nil {
 			return nil, nil, err
 		} else {
-			if _, alreadyZero := ringZeroDevices[dw.deviceId(ip, port, device)]; !alreadyZero {
+			if _, alreadyZero := ringZeroDevices[deviceId(ip, port, device)]; !alreadyZero {
 				weightToZero += weight
 				if len(toZeroDevs) == 0 || weightToZero < totalWeight*dw.maxWeightChange {
 					// always allow removal of 1 device
@@ -543,7 +542,7 @@ func (dw *driveWatch) updateRing(rd ringData) (outputStr string, err error) {
 	for _, dev := range toZeroDevs {
 		for _, rbd := range b.SearchDevs(-1, -1, dev.Ip, int64(dev.Port), "", -1,
 			dev.Device, -1, "") {
-			deviceLoc := dw.deviceId(rbd.Ip, int(rbd.Port), rbd.Device)
+			deviceLoc := deviceId(rbd.Ip, int(rbd.Port), rbd.Device)
 			if e := b.SetDevWeight(rbd.Id, 0); e != nil {
 				dw.logger.Error("erroring setting 0 weight",
 					zap.String("deviceLoc", deviceLoc), zap.Error(e))

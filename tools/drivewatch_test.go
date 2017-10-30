@@ -111,16 +111,15 @@ func TestGetRingData(t *testing.T) {
 
 	dw, _ := getDw(fr)
 	defer closeDw(dw)
-	p := conf.Policy{Name: "hat"}
 
-	allRingDevices, allWeightedServers := dw.getRingData(ringData{r: fr, p: &p, builderPath: "hey"})
+	allRingDevices, allWeightedServers := getRingData(fr, true)
 
 	require.Equal(t, len(allRingDevices), 4)
 	require.Equal(t, len(allWeightedServers), 2)
 
 	devMap := make(map[string]bool)
 	for _, dev := range allRingDevices {
-		devMap[dw.deviceId(dev.Ip, dev.Port, dev.Device)] = true
+		devMap[deviceId(dev.Ip, dev.Port, dev.Device)] = true
 	}
 	require.Equal(t, len(devMap), 4)
 }
@@ -179,7 +178,7 @@ func TestPopulateDbWithRing(t *testing.T) {
 
 		err := rows.Scan(&ip, &port, &device, &weight, &mounted, &reachable)
 		require.Equal(t, err, nil)
-		devMap[dw.deviceId(ip, int(port), device)] = weight
+		devMap[deviceId(ip, int(port), device)] = weight
 		require.Equal(t, mounted, true)
 		if device == "sdb3" {
 			require.Equal(t, reachable, true)
