@@ -11,8 +11,11 @@
     src: systemd/hummingbird-proxy.service
     dest: /lib/systemd/system/hummingbird-proxy.service
     mode: 0644
+- name: Reload systemd configs
+  systemd:
+    daemon_reload: yes
 - name: Start proxy service
-  service:
+  systemd:
     name: hummingbird-proxy
     enabled: yes
     state: restarted

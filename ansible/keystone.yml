@@ -1,0 +1,5 @@
+---
+- hosts: admin
+  become: yes
+  roles:
+    - dockerized-keystone

@@ -1,0 +1,56 @@
+---
+- name: Install make
+  package:
+    name: make
+    state: present
+- name: Install Docker
+  package:
+    name: docker.io
+    state: present
+- name: Make sure pip is installed
+  package:
+    name: python-pip
+    state: present
+- name: Install docker-py
+  pip:
+    name: docker-py
+    state: present
+- name: Make sure the hummingbird user is in the docker group
+  user:
+    name: hummingbird
+    append: yes
+    groups: docker
+- name: Check out dockerized keystone
+  git:
+    repo: https://github.com/nadeemsyed/dockerized-keystone.git
+    dest: /srv/dockerized-keystnone
+    force: yes
+- name: Update Makefile
+  lineinfile:
+    path: /srv/dockerized-keystone/Makefile
+    regexp: '^\tdocker run -t -d -h 127.0.0.1 --link mysql:mysql -p'
+    line: "\tdocker run -t -d -h {{ service_ip }} --link mysql:mysql -p 0.0.0.0:35357:35357 -p 0.0.0.0:5000:5000 \\"
+    state: present
+- name: Update bootstrap
+  lineinfile:
+    path: /srv/dockerized-keystone/bootstrap-keystone.sh
+    regexp: "{{ item.regex }}"
+    line: "{{ item.line }}"
+  with_items:
+    - { regex: '^openstack endpoint create --region RegionOne swift public',  line: 'openstack endpoint create --region RegionOne swift public "$HTTP://{{ keystone_swift_endpoint }}/v1/AUTH_\$(tennant_id)s"' }
+    - { regex: '^openstack endpoint create --region RegionOne swift private', line: 'openstack endpoint create --region RegionOne swift private "$HTTP://{{ keystone_swift_endpoint }}/v1/AUTH_\$(tennant_id)s"' }
+    - { regex: '^openstack endpoint create --region RegionOne swift admin',   line: 'openstack endpoint create --region RegionOne swift admin "$HTTP://{{ keystone_swift_endpoint }}/v1"' }
+- name: Remove keystone container if it is running
+  docker_container:
+    name: keystone
+    force_kill: yes
+    state: absent
+- name: Remove keystone db container if it is running
+  docker_container:
+    name: mysql
+    force_kill: yes
+    state: absent
+- name: Bootstrap Keystone Docker
+  make:
+    chdir: /srv/dockerized-keystone
+    target: bootstrap
