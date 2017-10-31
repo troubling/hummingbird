@@ -134,8 +134,7 @@ func (server *ObjectServer) ObjGetHandler(writer http.ResponseWriter, request *h
 	lastModified, err := common.ParseDate(metadata["X-Timestamp"])
 	if err != nil {
 		srv.GetLogger(request).Error("Error getting timestamp",
-			zap.String("obj", obj.Repr()),
-			zap.Error(err))
+			zap.String("timestamp", metadata["X-Timestamp"]), zap.String("obj", obj.Repr()), zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}

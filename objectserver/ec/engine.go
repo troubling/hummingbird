@@ -18,18 +18,25 @@ package ec
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"math/bits"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
+	"time"
+
+	"go.uber.org/zap"
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/objectserver"
 )
@@ -41,86 +48,217 @@ type ecEngine struct {
 	hashPathSuffix string
 	reserve        int64
 	policy         int
-	reclaimAge     int64
+	ring           ring.Ring
+	idbs           map[string]*IndexDB
+	idbm           sync.Mutex
+	logger         *zap.Logger
+	dataFrags      int
+	parityFrags    int
+	chunkSize      int
+	client         *http.Client
 }
 
-func nurseryDir(vars map[string]string, driveRoot string, hashPathPrefix string, hashPathSuffix string, policy int) string {
-	h := md5.New()
-	io.WriteString(h, hashPathPrefix+"/"+vars["account"]+"/"+vars["container"]+"/"+vars["obj"]+hashPathSuffix)
-	digest := h.Sum(nil)
-	return filepath.Join(driveRoot, vars["device"], objectserver.PolicyDir(policy), "nursery",
-		strconv.Itoa(int(digest[0]>>1)), strconv.Itoa(int((digest[0]<<6|digest[1]>>2)&127)),
-		strconv.Itoa(int((digest[1]<<5|digest[2]>>3)&127)), hex.EncodeToString(digest))
+func (f *ecEngine) getDB(device string) (*IndexDB, error) {
+	f.idbm.Lock()
+	defer f.idbm.Unlock()
+	if idb, ok := f.idbs[device]; ok && idb != nil {
+		return idb, nil
+	}
+	var err error
+	dbpath := filepath.Join(f.driveRoot, device, objectserver.PolicyDir(f.policy), "hec.db")
+	path := filepath.Join(f.driveRoot, device, objectserver.PolicyDir(f.policy), "hec")
+	temppath := filepath.Join(f.driveRoot, device, "tmp")
+	ringPartPower := bits.Len64(f.ring.PartitionCount())
+	f.idbs[device], err = NewIndexDB(dbpath, path, temppath, ringPartPower, 1, 32, f.logger)
+	if err != nil {
+		return nil, err
+	}
+	return f.idbs[device], nil
 }
 
 // New returns an instance of ecObject with the given parameters. Metadata is read in and if needData is true, the file is opened.  AsyncWG is a waitgroup if the object spawns any async operations
 func (f *ecEngine) New(vars map[string]string, needData bool, asyncWG *sync.WaitGroup) (objectserver.Object, error) {
-	var err error
+	h := md5.New()
+	io.WriteString(h, f.hashPathPrefix+"/"+vars["account"]+"/"+vars["container"]+"/"+vars["obj"]+f.hashPathSuffix)
+	digest := h.Sum(nil)
+	hash := hex.EncodeToString(digest)
+
 	obj := &ecObject{
-		location:   locationNursery,
-		reserve:    f.reserve,
-		asyncWG:    asyncWG,
-		nurseryDir: nurseryDir(vars, f.driveRoot, f.hashPathPrefix, f.hashPathSuffix, f.policy),
-		tmpDir:     objectserver.TempDirPath(f.driveRoot, vars["device"]),
-		reclaimAge: f.reclaimAge,
+		IndexDBItem: IndexDBItem{
+			Hash:    hash,
+			Nursery: true,
+		},
+		dataFrags:   f.dataFrags, /* TODO: consider just putting a reference to the engine in the object */
+		parityFrags: f.parityFrags,
+		chunkSize:   f.chunkSize,
+		reserve:     f.reserve,
+		ring:        f.ring,
+		logger:      f.logger,
+		policy:      f.policy,
+		client:      f.client,
+		metadata:    map[string]string{},
 	}
-	dataFile, metaFile := objectserver.ObjectFiles(obj.nurseryDir)
-	if filepath.Ext(dataFile) == ".data" {
-		obj.exists = true
-		if needData {
-			if obj.file, err = os.Open(dataFile); err != nil {
-				return nil, err
-			}
-			if obj.metadata, err = objectserver.OpenObjectMetadata(obj.file.Fd(), metaFile); err != nil {
-				obj.Quarantine()
-				return nil, fmt.Errorf("Error getting metadata: %v", err)
-			}
-		} else {
-			if obj.metadata, err = objectserver.ObjectMetadata(dataFile, metaFile); err != nil {
-				obj.Quarantine()
-				return nil, fmt.Errorf("Error getting metadata: %v", err)
+	if idb, err := f.getDB(vars["device"]); err == nil {
+		obj.idb = idb
+		if item, err := idb.Lookup(hash, 0, false); err == nil && item != nil {
+			obj.IndexDBItem = *item
+			if err = json.Unmarshal(item.Metabytes, &obj.metadata); err != nil {
+				return nil, fmt.Errorf("Error parsing metadata: %v", err)
 			}
 		}
-		// baby audit
-		var stat os.FileInfo
-		if obj.file != nil {
-			if stat, err = obj.file.Stat(); err != nil {
-				obj.Close()
-				return nil, fmt.Errorf("Error statting file: %v", err)
-			}
-		} else if stat, err = os.Stat(dataFile); err != nil {
-			return nil, fmt.Errorf("Error statting file: %v", err)
-		}
-		if contentLength, err := strconv.ParseInt(obj.metadata["Content-Length"], 10, 64); err != nil {
-			obj.Quarantine()
-			return nil, fmt.Errorf("Unable to parse content-length: %s", obj.metadata["Content-Length"])
-		} else if stat.Size() != contentLength {
-			obj.Quarantine()
-			return nil, fmt.Errorf("File size doesn't match content-length: %d vs %d", stat.Size(), contentLength)
-		}
-	} else {
-		obj.metadata, _ = objectserver.ObjectMetadata(dataFile, metaFile) // ignore errors if deleted
+		return obj, nil
 	}
-	return obj, nil
+	return nil, errors.New("Unable to open database")
 }
 
 func (f *ecEngine) ecFragGetHandler(writer http.ResponseWriter, request *http.Request) {
-	// vars := srv.GetVars(request)
-	srv.StandardResponse(writer, http.StatusNotImplemented)
+	vars := srv.GetVars(request)
+	idb, err := f.getDB(vars["device"])
+	if err != nil {
+		srv.StandardResponse(writer, http.StatusBadRequest)
+		return
+	}
+	fragIndex, err := strconv.Atoi(vars["index"])
+	if err != nil {
+		srv.StandardResponse(writer, http.StatusBadRequest)
+		return
+	}
+	item, err := idb.Lookup(vars["hash"], fragIndex, false)
+	if err != nil || item == nil || item.Deletion {
+		srv.StandardResponse(writer, http.StatusNotFound)
+		return
+	}
+	metadata := map[string]string{}
+	if err = json.Unmarshal(item.Metabytes, &metadata); err != nil {
+		srv.StandardResponse(writer, http.StatusBadRequest)
+		return
+	}
+	writer.Header().Set("Ec-Frag-Index", metadata["Ec-Frag-Index"])
+	fl, err := os.Open(item.Path)
+	if err != nil {
+		srv.StandardResponse(writer, http.StatusInternalServerError)
+		return
+	}
+	io.Copy(writer, fl)
 }
 
 func (f *ecEngine) ecFragPutHandler(writer http.ResponseWriter, request *http.Request) {
-	srv.StandardResponse(writer, http.StatusNotImplemented)
+	vars := srv.GetVars(request)
+	idb, err := f.getDB(vars["device"])
+	if err != nil {
+		srv.StandardResponse(writer, http.StatusBadRequest)
+		return
+	}
+	timestampTime, err := common.ParseDate(request.Header.Get("Meta-X-Timestamp"))
+	if err != nil {
+		srv.StandardResponse(writer, http.StatusBadRequest)
+		return
+	}
+	fragIndex, err := strconv.Atoi(vars["index"])
+	if err != nil {
+		srv.StandardResponse(writer, http.StatusBadRequest)
+		return
+	}
+	timestamp := timestampTime.UnixNano()
+	atm, err := idb.TempFile(vars["hash"], fragIndex, timestamp, request.ContentLength, false)
+	if err != nil {
+		srv.StandardResponse(writer, http.StatusInternalServerError)
+		return
+	}
+	if atm == nil {
+		srv.StandardResponse(writer, http.StatusCreated)
+		return
+	}
+	defer atm.Abandon()
+	metadata := make(map[string]string)
+	for key := range request.Header {
+		if strings.HasPrefix(key, "Meta-") {
+			if key == "Meta-Name" {
+				metadata["name"] = request.Header.Get(key)
+			} else {
+				metadata[http.CanonicalHeaderKey(key[5:])] = request.Header.Get(key)
+			}
+		}
+	}
+	io.Copy(atm, request.Body)
+	metabytes, err := json.Marshal(metadata)
+	if err != nil {
+		srv.StandardResponse(writer, http.StatusInternalServerError)
+		return
+	}
+	if err := idb.Commit(atm, vars["hash"], fragIndex, timestamp, false, MetadataHash(metadata), metabytes, false); err != nil {
+		srv.StandardResponse(writer, http.StatusInternalServerError)
+	} else {
+		srv.StandardResponse(writer, http.StatusCreated)
+	}
 }
 
 func (f *ecEngine) ecFragDeleteHandler(writer http.ResponseWriter, request *http.Request) {
-	srv.StandardResponse(writer, http.StatusNotImplemented)
+	vars := srv.GetVars(request)
+	idb, err := f.getDB(vars["device"])
+	if err != nil {
+		srv.StandardResponse(writer, http.StatusBadRequest)
+		return
+	}
+	fragIndex, err := strconv.Atoi(vars["index"])
+	if err != nil {
+		srv.StandardResponse(writer, http.StatusBadRequest)
+		return
+	}
+	item, err := idb.Lookup(vars["hash"], fragIndex, true)
+	if err != nil || item == nil {
+		srv.StandardResponse(writer, http.StatusNotFound)
+		return
+	}
+
+	if err := idb.Remove(item.Hash, item.Shard, item.Timestamp, item.Nursery); err != nil {
+		srv.StandardResponse(writer, http.StatusInternalServerError)
+	} else {
+		srv.StandardResponse(writer, http.StatusCreated)
+	}
 }
 
 func (f *ecEngine) RegisterHandlers(addRoute func(method, path string, handler http.HandlerFunc)) {
-	addRoute("GET", "/ec-frag/:device/:hash", f.ecFragGetHandler)
-	addRoute("PUT", "/ec-frag/:device/:hash", f.ecFragPutHandler)
-	addRoute("DELETE", "/ec-frag/:device/:hash", f.ecFragDeleteHandler)
+	addRoute("GET", "/ec-frag/:device/:hash/:index", f.ecFragGetHandler)
+	addRoute("PUT", "/ec-frag/:device/:hash/:index", f.ecFragPutHandler)
+	addRoute("DELETE", "/ec-frag/:device/:hash/:index", f.ecFragDeleteHandler)
+}
+
+func (f *ecEngine) GetNurseryObjects(device string, c chan objectserver.ObjectStabilizer, cancel chan struct{}) {
+	defer close(c)
+	idb, err := f.getDB(device)
+	if err != nil {
+		return
+	}
+
+	items, err := idb.ListNursery()
+	if err != nil {
+		return
+	}
+
+	for _, item := range items {
+		obj := &ecObject{
+			IndexDBItem: *item,
+			idb:         idb,
+			dataFrags:   f.dataFrags,
+			parityFrags: f.parityFrags,
+			chunkSize:   f.chunkSize,
+			reserve:     f.reserve,
+			ring:        f.ring,
+			logger:      f.logger,
+			policy:      f.policy,
+			client:      f.client,
+			metadata:    map[string]string{},
+		}
+		if err = json.Unmarshal(item.Metabytes, &obj.metadata); err != nil {
+			continue
+		}
+		select {
+		case c <- obj:
+		case <-cancel:
+			return
+		}
+	}
 }
 
 // ecEngineConstructor creates a ecEngine given the object server configs.
@@ -131,14 +269,32 @@ func ecEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.Fl
 	if err != nil {
 		return nil, errors.New("Unable to load hashpath prefix and suffix")
 	}
-	return &ecEngine{
+	r, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index)
+	if err != nil {
+		return nil, err
+	}
+	logger, _ := zap.NewProduction()
+	engine := &ecEngine{
 		driveRoot:      driveRoot,
 		hashPathPrefix: hashPathPrefix,
 		hashPathSuffix: hashPathSuffix,
 		reserve:        reserve,
 		policy:         policy.Index,
-		reclaimAge:     int64(config.GetInt("app:object-server", "reclaim_age", int64(common.ONE_WEEK))),
-	}, nil
+		logger:         logger,
+		ring:           r,
+		idbs:           map[string]*IndexDB{},
+		client:         &http.Client{Timeout: time.Minute * 5},
+	}
+	if engine.dataFrags, err = strconv.Atoi(policy.Config["data_frags"]); err != nil {
+		return nil, err
+	}
+	if engine.parityFrags, err = strconv.Atoi(policy.Config["parity_frags"]); err != nil {
+		return nil, err
+	}
+	if engine.chunkSize, err = strconv.Atoi(policy.Config["chunk_size"]); err != nil {
+		engine.chunkSize = 1 << 20
+	}
+	return engine, nil
 }
 
 func init() {

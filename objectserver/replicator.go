@@ -590,6 +590,9 @@ func (rd *replicationDevice) listPartitions() ([]string, []string, error) {
 }
 
 func (rd *replicationDevice) Replicate() {
+	if rd.r.policies[rd.policy].Type == "hec" { // TODO yuck
+		return
+	}
 	defer srv.LogPanics(rd.r.logger, fmt.Sprintf("PANIC REPLICATING DEVICE: %s", rd.dev.Device))
 	rd.updateStat("startRun", 1)
 	if mounted, err := fs.IsMount(filepath.Join(rd.r.deviceRoot, rd.dev.Device)); rd.r.checkMounts && (err != nil || mounted != true) {
@@ -1130,7 +1133,7 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 		return nil, nil, err
 	}
 	for _, policy := range replicator.policies {
-		if !(policy.Type == "replication" || policy.Type == "replication-nursery") {
+		if !(policy.Type == "replication" || policy.Type == "replication-nursery" || policy.Type == "hec") {
 			continue
 		}
 		if replicator.objectRings[policy.Index], err = cnf.GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index); err != nil {

@@ -22,6 +22,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -35,6 +36,7 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/fs"
+	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
 )
 
@@ -261,8 +263,83 @@ func (o *nurseryObject) Close() error {
 	return nil
 }
 
-func (o *nurseryObject) Stabilize() error {
+func (o *nurseryObject) canStabilize(ring ring.Ring, dev *ring.Device, policy int) (bool, error) {
+	metadata := o.Metadata()
+	ns := strings.SplitN(metadata["name"], "/", 4)
+	if len(ns) != 4 {
+		return false, fmt.Errorf("invalid metadata name: %s", metadata["name"])
+	}
+	partition := ring.GetPartition(ns[1], ns[2], ns[3])
+	if _, handoff := ring.GetJobNodes(partition, dev.Id); handoff {
+		return false, nil
+	}
+	nodes := ring.GetNodes(partition)
+	goodNodes := uint64(0)
+	for _, device := range nodes {
+		if device.Ip == dev.Ip && device.Port == dev.Port && device.Device == device.Device {
+			continue
+		}
+		url := fmt.Sprintf("http://%s:%d/%s/%d%s", device.Ip, device.Port, device.Device, partition, common.Urlencode(metadata["name"]))
+		req, err := http.NewRequest("HEAD", url, nil)
+		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.FormatInt(int64(policy), 10))
+		req.Header.Set("User-Agent", "nursery-stabilizer")
+		resp, err := http.DefaultClient.Do(req)
+
+		if err == nil && (resp.StatusCode/100 == 2 || resp.StatusCode == 404) &&
+			resp.Header.Get("X-Backend-Data-Timestamp") != "" &&
+			resp.Header.Get("X-Backend-Data-Timestamp") ==
+				metadata["X-Backend-Data-Timestamp"] &&
+			resp.Header.Get("X-Backend-Meta-Timestamp") ==
+				metadata["X-Backend-Meta-Timestamp"] {
+			goodNodes++
+		}
+		if resp != nil {
+			resp.Body.Close()
+		}
+	}
+	return goodNodes+1 == ring.ReplicaCount(), nil
+}
+
+func (o *nurseryObject) notifyPeers(ring ring.Ring, dev *ring.Device, policy int) error {
+	metadata := o.Metadata()
+	ns := strings.SplitN(metadata["name"], "/", 4)
+	if len(ns) != 4 {
+		return fmt.Errorf("invalid metadata name: %s", metadata["name"])
+	}
+	partition := ring.GetPartition(ns[1], ns[2], ns[3])
+	if _, handoff := ring.GetJobNodes(partition, dev.Id); handoff {
+		return nil
+	}
+	nodes := ring.GetNodes(partition)
+	for _, device := range nodes {
+		if device.Ip == dev.Ip && device.Port == dev.Port && device.Device == device.Device {
+			continue
+		}
+		url := fmt.Sprintf("http://%s:%d/stabilize/%s/%d%s", device.Ip, device.ReplicationPort, device.Device, partition, common.Urlencode(metadata["name"]))
+		if req, err := http.NewRequest("POST", url, nil); err == nil {
+			req.Header.Set("X-Backend-Storage-Policy-Index", strconv.FormatInt(int64(policy), 10))
+			req.Header.Set("X-Backend-Nursery-Stabilize", "true")
+			req.Header.Set("X-Timestamp", metadata["X-Backend-Data-Timestamp"])
+			req.Header.Set("User-Agent", "nursery-peer-stabilizer")
+			resp, _ := http.DefaultClient.Do(req)
+
+			if resp != nil {
+				resp.Body.Close()
+			}
+		} else {
+			return err
+		}
+	}
+	return nil
+}
+
+func (o *nurseryObject) Stabilize(ring ring.Ring, dev *ring.Device, policy int) error {
 	if o.stabilized {
+		return nil
+	}
+	if cs, err := o.canStabilize(ring, dev, policy); err != nil {
+		return err
+	} else if !cs {
 		return nil
 	}
 	if !fs.Exists(o.stableHashDir) {
@@ -296,6 +373,9 @@ func (o *nurseryObject) Stabilize() error {
 	HashCleanupListDir(o.stableHashDir, o.reclaimAge)
 	os.Remove(o.nurseryHashDir)
 	os.Remove(filepath.Dir(o.nurseryHashDir)) // try to remove suffix dir
+	if err := o.notifyPeers(ring, dev, policy); err != nil {
+		return err
+	}
 	return nil
 }
 

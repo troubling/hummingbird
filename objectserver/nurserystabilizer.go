@@ -19,13 +19,10 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"time"
 
 	"go.uber.org/zap"
 
-	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
 )
@@ -92,17 +89,10 @@ func (nrd *nurseryDevice) stabilizeDevice() {
 			defer func() {
 				<-nrd.r.nurseryConcurrencySem
 			}()
-			if ok, err := nrd.CanStabilize(o); ok {
-				if err = o.Stabilize(); err == nil {
-					nrd.updateStat("objectsStabilized", 1)
-					nrd.notifyPeers(o)
-				} else {
-					nrd.r.logger.Error("[stabilizeDevice] error Stabilize obj", zap.String("Object", o.Repr()), zap.Error(err))
-				}
+			if err := o.Stabilize(nrd.oring, nrd.dev, nrd.policy); err == nil {
+				nrd.updateStat("objectsStabilized", 1)
 			} else {
-				if err != nil {
-					nrd.r.logger.Error("[stabilizeDevice] error CanStabilize obj", zap.String("Object", o.Repr()), zap.Error(err))
-				}
+				nrd.r.logger.Error("[stabilizeDevice] error Stabilize obj", zap.String("Object", o.Repr()), zap.Error(err))
 			}
 		}()
 		select {
@@ -112,76 +102,6 @@ func (nrd *nurseryDevice) stabilizeDevice() {
 		}
 	}
 	nrd.updateStat("PassComplete", 1)
-}
-
-func (nrd *nurseryDevice) notifyPeers(o ObjectStabilizer) error {
-	metadata := o.Metadata()
-	ns := strings.SplitN(metadata["name"], "/", 4)
-	if len(ns) != 4 {
-		return fmt.Errorf("invalid metadata name: %s", metadata["name"])
-	}
-	partition := nrd.oring.GetPartition(ns[1], ns[2], ns[3])
-	if _, handoff := nrd.oring.GetJobNodes(partition, nrd.dev.Id); handoff {
-		return nil
-	}
-	nodes := nrd.oring.GetNodes(partition)
-	for _, device := range nodes {
-		if device.Ip == nrd.dev.Ip && device.Port == nrd.dev.Port && device.Device == device.Device {
-			continue
-		}
-		url := fmt.Sprintf("http://%s:%d/stabilize/%s/%d%s", device.Ip, device.ReplicationPort, device.Device, partition, common.Urlencode(metadata["name"]))
-		if req, err := http.NewRequest("POST", url, nil); err == nil {
-			req.Header.Set("X-Backend-Storage-Policy-Index", strconv.FormatInt(int64(nrd.policy), 10))
-			req.Header.Set("X-Backend-Nursery-Stabilize", "true")
-			req.Header.Set("X-Timestamp", metadata["X-Backend-Data-Timestamp"])
-			req.Header.Set("User-Agent", "nursery-peer-stabilizer")
-			resp, _ := nrd.client.Do(req)
-
-			if resp != nil {
-				resp.Body.Close()
-			}
-		} else {
-			return err
-		}
-	}
-	return nil
-}
-
-func (nrd *nurseryDevice) CanStabilize(o ObjectStabilizer) (bool, error) {
-	metadata := o.Metadata()
-	ns := strings.SplitN(metadata["name"], "/", 4)
-	if len(ns) != 4 {
-		return false, fmt.Errorf("invalid metadata name: %s", metadata["name"])
-	}
-	partition := nrd.oring.GetPartition(ns[1], ns[2], ns[3])
-	if _, handoff := nrd.oring.GetJobNodes(partition, nrd.dev.Id); handoff {
-		return false, nil
-	}
-	nodes := nrd.oring.GetNodes(partition)
-	goodNodes := uint64(0)
-	for _, device := range nodes {
-		if device.Ip == nrd.dev.Ip && device.Port == nrd.dev.Port && device.Device == device.Device {
-			continue
-		}
-		url := fmt.Sprintf("http://%s:%d/%s/%d%s", device.Ip, device.Port, device.Device, partition, common.Urlencode(metadata["name"]))
-		req, err := http.NewRequest("HEAD", url, nil)
-		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.FormatInt(int64(nrd.policy), 10))
-		req.Header.Set("User-Agent", "nursery-stabilizer")
-		resp, err := nrd.client.Do(req)
-
-		if err == nil && (resp.StatusCode/100 == 2 || resp.StatusCode == 404) &&
-			resp.Header.Get("X-Backend-Data-Timestamp") != "" &&
-			resp.Header.Get("X-Backend-Data-Timestamp") ==
-				metadata["X-Backend-Data-Timestamp"] &&
-			resp.Header.Get("X-Backend-Meta-Timestamp") ==
-				metadata["X-Backend-Meta-Timestamp"] {
-			goodNodes++
-		}
-		if resp != nil {
-			resp.Body.Close()
-		}
-	}
-	return goodNodes+1 == nrd.oring.ReplicaCount(), nil
 }
 
 func (nrd *nurseryDevice) stabilizeLoop() {
