@@ -1,6 +1,3 @@
-- name: Playbook dir
-  debug:
-    msg: "PLAYBOOK DIR: {{playbook_dir}}"
 - name: Create key dir
   local_action: file path={{playbook_dir}}/keys state=directory
 - name: Create newcerts dir
@@ -26,7 +23,6 @@
     module: file
     path: "{{playbook_dir}}/keys/certindex"
     state: touch
-
 - name: Include CA vars
   include_vars:
     file: ca.yml
@@ -43,7 +39,6 @@
     dest: "{{playbook_dir}}/keys/hummingbird.ca.cert.pem"
     content: "{{ ca_cert_content }}"
     mode: 0644
-
 - name: Look for intermediate CA key
   local_action: stat path={{playbook_dir}}/keys/hummingbird.intermediate.key.pem
   register: stat_intermediate_key
