@@ -3,6 +3,8 @@
     msg: "PLAYBOOK DIR: {{playbook_dir}}"
 - name: Create key dir
   local_action: file path={{playbook_dir}}/keys state=directory
+- name: Create newcerts dir
+  local_action: file path={{playbook_dir}}/keys/newcerts state=directory
 - name: Write ca.cnf
   local_action:
     module: template
@@ -24,19 +26,24 @@
     module: file
     path: "{{playbook_dir}}/keys/certindex"
     state: touch
-- name: Look for CA key
-  local_action: stat path={{playbook_dir}}/keys/hummingbird.ca.key.pem
-  register: stat_ca_key
-- name: Create CA key
+
+- name: Include CA vars
+  include_vars:
+    file: ca.yml
+  no_log: true  
+- name: Decrypt CA key
   local_action:
-    module: shell
-    cmd: openssl genrsa -out "{{playbook_dir}}/keys/hummingbird.ca.key.pem" 4096
-  when: stat_ca_key.stat.exists == False
-- name: Create CA cert
+    module: copy
+    dest: "{{playbook_dir}}/keys/hummingbird.ca.key.pem"
+    content: "{{ ca_key_content }}"
+    mode: 0400
+- name: Decrypt CA cert
   local_action:
-    module: shell
-    cmd: openssl req -config "{{playbook_dir}}/keys/ca.conf" -key keys/hummingbird.ca.key.pem -new -x509 -days 3560 -extensions ca_ext -out "{{playbook_dir}}/keys/hummingbird.ca.cert.pem" -subj "/CN=Hummingbird CA"
-  when: stat_ca_key.stat.exists == False
+    module: copy
+    dest: "{{playbook_dir}}/keys/hummingbird.ca.cert.pem"
+    content: "{{ ca_cert_content }}"
+    mode: 0644
+
 - name: Look for intermediate CA key
   local_action: stat path={{playbook_dir}}/keys/hummingbird.intermediate.key.pem
   register: stat_intermediate_key
@@ -102,4 +109,8 @@
 - name: Update cert index
   shell: /usr/sbin/update-ca-certificates -f
 
-
+- name: Delete CA key
+  local_action:
+    module: file
+    path: "{{playbook_dir}}/keys/hummingbird.ca.key.pem"
+    state: absent
