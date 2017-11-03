@@ -2,11 +2,6 @@
   local_action: file path={{playbook_dir}}/keys state=directory
 - name: Create newcerts dir
   local_action: file path={{playbook_dir}}/keys/newcerts state=directory
-- name: Write ca.cnf
-  local_action:
-    module: template
-    src: "{{playbook_dir}}/roles/certs/templates/ca.conf.j2"
-    dest: "{{playbook_dir}}/keys/ca.conf"
 - name: Look for serial
   local_action: 
     module: stat
