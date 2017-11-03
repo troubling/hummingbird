@@ -40,3 +40,23 @@ Then when you execute it, just pass in:
 ```
 sudo ./ansible/bin/ansible-playbook -i hosts.yml hummingbird.yml --vault-id @prompt
 ```
+
+
+Keys and Certs
+--------------
+
+Two vars need to be placed in ansible/roles/certs/vars/ca.yml.
+
+* ca\_key\_content: private key pem
+* ca\_cert\_content: CA cert pem
+
+It's highly encouraged to encrypt this file:
+
+```
+ansible-vault encrypt roles/certs/vars/ca.yml --ask-vault-pass
+```
+
+An example can be found in ansible/examples/ca.yml, which you can edit (password: asdf):
+```
+ansible-vault edit ansible/examples/ca.yml
+```
