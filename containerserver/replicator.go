@@ -375,6 +375,8 @@ func (rd *replicationDevice) replicate() {
 			<-rd.r.concurrencySem
 		}
 	}
+	rd.r.logger.Info("Finished replication for device.",
+		zap.String("device", rd.dev.Device))
 }
 
 func (rd *replicationDevice) replicateLoop() {

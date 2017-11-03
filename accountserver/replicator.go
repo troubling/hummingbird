@@ -156,7 +156,7 @@ func (rd *replicationDevice) rsync(dev *ring.Device, c ReplicableAccount, part u
 	}
 	status, _, err := rd.i.sendReplicationMessage(dev, part, c.RingHash(), op, tmpFilename)
 	if err != nil || status/100 != 2 {
-		return fmt.Errorf("sending %s message to %s/%s: %v", op, dev.ReplicationIp, dev.Device, err)
+		return fmt.Errorf("sending %s message to %s/%s %d: %v", op, dev.ReplicationIp, dev.Device, status, err)
 	}
 	return nil
 }

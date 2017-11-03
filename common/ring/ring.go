@@ -233,6 +233,12 @@ func (r *hashRing) reload() error {
 	zoneCount := make(map[regionZone]bool)
 	ipPortCount := make(map[ipPort]bool)
 	for _, d := range data.Devs {
+		if d.ReplicationIp == "" {
+			d.ReplicationIp = d.Ip
+		}
+		if d.ReplicationPort == 0 {
+			d.ReplicationPort = d.Port
+		}
 		regionCount[d.Region] = true
 		zoneCount[regionZone{d.Region, d.Zone}] = true
 		ipPortCount[ipPort{d.Region, d.Zone, d.Port, d.Ip}] = true
