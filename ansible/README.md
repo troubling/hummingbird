@@ -58,8 +58,9 @@ ansible-vault encrypt roles/certs/vars/ca.yml --ask-vault-pass
 
 An example can be found in ansible/examples/ca.yml, which you can use (password: asdf):
 ```
-ansible-vault edit ansible/examples/ca.yml
-ansible-vault rekey ansible/examples/ca.yml --ask-vault-pass
+cp ansible/examples/ca.yml roles/certs/vars
+ansible-vault edit roles/certs/vars/ca.yml
+ansible-vault rekey roles/certs/vars/ca.yml --ask-vault-pass
 ```
 
 Generating the CA key:
