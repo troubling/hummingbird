@@ -83,5 +83,41 @@ hummingbird:
 Then when you execute it, just pass in:
 
 ```
-sudo ./ansible/bin/ansible-playbook -i hosts.yml hummingbird.yml --vault-id @prompt
+sudo ansible-playbook -i hosts.yml hummingbird.yml --vault-id @prompt
+```
+
+
+Keys and Certs
+--------------
+
+Two vars need to be placed in your inventory.
+
+* ca\_key\_content: CA private key pem
+* ca\_cert\_content: CA cert pem
+
+It's highly encouraged to encrypt this file:
+
+```
+ansible-vault encrypt group_vars/hummingbird/ca.yml --ask-vault-pass
+```
+
+An example can be found in ansible/examples/ca.yml, which you can use (password: asdf):
+```
+mkdir group_vars/hummingbird
+cp examples/ca.yml group_vars/hummingbird/
+ansible-vault edit group_vars/hummingbird/ca.yml
+ansible-vault rekey group_vars/hummingbird/ca.yml --ask-vault-pass
+```
+
+
+Generating the CA key:
+
+```
+openssl genrsa -out /path/to/key.pem 4096
+```
+
+Generate the self signed CA cert (from the hummingbird dir):
+
+```
+openssl req -config ansible/keys/ca.conf -key /path/to/key.pem -new -x509 -days 3560 -extensions ca_ext -out /path/to/ca.cert.pem -subj "/CN=Hummingbird CA"
 ```

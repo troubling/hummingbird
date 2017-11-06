@@ -7,3 +7,4 @@
     - account-server
     - container-server
     - object-server
+    - certs

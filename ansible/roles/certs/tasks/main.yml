@@ -1,0 +1,102 @@
+- name: Create key dir
+  local_action: file path={{playbook_dir}}/keys state=directory
+- name: Create newcerts dir
+  local_action: file path={{playbook_dir}}/keys/newcerts state=directory
+- name: Look for serial
+  local_action: 
+    module: stat
+    path: "{{playbook_dir}}/keys/serial"
+  register: stat_serial
+- name: Write serial
+  local_action:
+    module: template
+    src: "{{playbook_dir}}/roles/certs/templates/serial"
+    dest: "{{playbook_dir}}/keys"
+  when: stat_serial.stat.exists == False
+- name: Touch certindex
+  local_action:
+    module: file
+    path: "{{playbook_dir}}/keys/certindex"
+    state: touch
+- name: Decrypt CA key
+  local_action:
+    module: copy
+    dest: "{{playbook_dir}}/keys/hummingbird.ca.key.pem"
+    content: "{{ ca_key_content }}"
+    mode: 0400
+- name: Decrypt CA cert
+  local_action:
+    module: copy
+    dest: "{{playbook_dir}}/keys/hummingbird.ca.cert.pem"
+    content: "{{ ca_cert_content }}"
+    mode: 0644
+- name: Look for intermediate CA key
+  local_action: stat path={{playbook_dir}}/keys/hummingbird.intermediate.key.pem
+  register: stat_intermediate_key
+- name: Create intermediate key
+  local_action:
+    module: shell
+    cmd: openssl genrsa -out "{{playbook_dir}}/keys/hummingbird.intermediate.key.pem" 4096
+  when: stat_intermediate_key.stat.exists == False
+- name: Create intermediate CSR
+  local_action:
+    module: shell
+    cmd: openssl req -new -key "{{playbook_dir}}/keys/hummingbird.intermediate.key.pem" -out "{{playbook_dir}}/keys/hummingbird.intermediate.csr.pem" -subj "/CN=Hummingbird Intermediate CA"
+  when: stat_intermediate_key.stat.exists == False
+- name: Create intermediate cert
+  local_action:
+    module: shell
+    cmd: openssl ca -batch -config "{{playbook_dir}}/keys/ca.conf" -extensions intermediate_ext -notext -md sha256 -in "{{playbook_dir}}/keys/hummingbird.intermediate.csr.pem" -out "{{playbook_dir}}/keys/hummingbird.intermediate.cert.pem"
+  when: stat_intermediate_key.stat.exists == False
+- name: Look for host key
+  local_action: 
+    module: stat
+    path: "{{playbook_dir}}/keys/{{inventory_hostname}}.key.pem"
+  register: stat_host_key
+- name: Create host key
+  local_action:
+    module: shell
+    cmd: openssl genrsa -out "{{playbook_dir}}/keys/{{inventory_hostname}}.key.pem" 2048
+  when: stat_host_key.stat.exists == False
+- name: Create host CSR
+  local_action:
+    module: shell
+    cmd: openssl req -new -key "{{playbook_dir}}/keys/{{inventory_hostname}}.key.pem" -out "{{playbook_dir}}/keys/{{inventory_hostname}}.csr.pem" -subj "/CN={{inventory_hostname}}"
+  when: stat_host_key.stat.exists == False
+- name: Create host cert
+  local_action:
+    module: shell
+    cmd: openssl ca -batch -config "{{playbook_dir}}/keys/ca.conf" -extensions server_ext -notext -md sha256 -in "{{playbook_dir}}/keys/{{inventory_hostname}}.csr.pem" -out "{{playbook_dir}}/keys/{{inventory_hostname}}.cert.pem"
+  when: stat_host_key.stat.exists == False
+- name: Distribute host key
+  copy:
+    src: "{{playbook_dir}}/keys/{{inventory_hostname}}.key.pem"
+    dest: /etc/hummingbird/server.key.pem
+    backup: yes
+- name: Distribute host cert
+  copy:
+    src: "{{playbook_dir}}/keys/{{inventory_hostname}}.cert.pem"
+    dest: /etc/hummingbird/server.cert.pem
+    backup: yes
+- name: Ensure local certs directory exists
+  file: state=directory path=/usr/local/share/ca-certificates
+- name: Distribute the CA cert
+  copy:
+    src: "{{playbook_dir}}/keys/hummingbird.ca.cert.pem"
+    # Has to be .crt for update-ca-certificates
+    dest: /usr/local/share/ca-certificates/hummingbird.ca.crt
+    backup: yes
+- name: Distribute the intermediate cert
+  copy:
+    src: "{{playbook_dir}}/keys/hummingbird.intermediate.cert.pem"
+    # Has to be .crt for update-ca-certificates
+    dest: /usr/local/share/ca-certificates/hummingbird.intermediate.crt
+    backup: yes
+- name: Update cert index
+  shell: /usr/sbin/update-ca-certificates -f
+
+- name: Delete CA key
+  local_action:
+    module: file
+    path: "{{playbook_dir}}/keys/hummingbird.ca.key.pem"
+    state: absent
