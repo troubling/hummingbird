@@ -30,7 +30,7 @@ import (
 	"github.com/troubling/hummingbird/common/srv"
 )
 
-func queryHostRecon(client http.Client, s ipPort, endpoint string) ([]byte, error) {
+func queryHostRecon(client http.Client, s ipPort, endpoint string) (map[string]string, error) {
 	serverUrl := fmt.Sprintf("http://%s:%d/recon/%s", s.ip, s.port, endpoint)
 	req, err := http.NewRequest("GET", serverUrl, nil)
 	if err != nil {
@@ -44,7 +44,11 @@ func queryHostRecon(client http.Client, s ipPort, endpoint string) ([]byte, erro
 	if err != nil {
 		return nil, err
 	}
-	return data, nil
+	var rData map[string]string
+	if err := json.Unmarshal(data, &rData); err != nil {
+		return nil, err
+	}
+	return rData, nil
 }
 
 func reconReportRingMd5(client http.Client, servers []ipPort) error {
@@ -56,13 +60,8 @@ func reconReportRingMd5(client http.Client, servers []ipPort) error {
 	errors := 0
 	successes := 0
 	for _, server := range servers {
-		rDataStr, err := queryHostRecon(client, server, "ringmd5")
+		rData, err := queryHostRecon(client, server, "ringmd5")
 		if err != nil {
-			errors++
-			continue
-		}
-		var rData map[string]string
-		if err := json.Unmarshal(rDataStr, &rData); err != nil {
 			errors++
 			continue
 		}
@@ -98,13 +97,8 @@ func reconReportMainConfMd5(client http.Client, servers []ipPort) error {
 	errors := 0
 	successes := 0
 	for _, server := range servers {
-		rDataStr, err := queryHostRecon(client, server, "hummingbirdconfmd5")
+		rData, err := queryHostRecon(client, server, "hummingbirdconfmd5")
 		if err != nil {
-			errors++
-			continue
-		}
-		var rData map[string]string
-		if err := json.Unmarshal(rDataStr, &rData); err != nil {
 			errors++
 			continue
 		}

@@ -530,12 +530,10 @@ func FileMD5(files ...string) (map[string]string, error) {
 func GetAllRingFileMd5s() (map[string]string, error) {
 	// if there is a /etc/hummingbird- use it for all rings
 	ringMap := map[string]string{}
-
 	etcDir := "/etc/hummingbird"
 	if _, err := os.Stat(etcDir); os.IsNotExist(err) {
 		etcDir = "/etc/swift"
 	}
-
 	ringFiles := []string{filepath.Join(etcDir, "account.ring.gz"),
 		filepath.Join(etcDir, "container.ring.gz")}
 	if files, err := ioutil.ReadDir(etcDir); err == nil {
@@ -543,7 +541,6 @@ func GetAllRingFileMd5s() (map[string]string, error) {
 			fname := file.Name()
 			if strings.HasPrefix(fname, "object") && strings.HasSuffix(fname, "ring.gz") {
 				ringFiles = append(ringFiles, filepath.Join(etcDir, fname))
-
 			}
 		}
 		return FileMD5(ringFiles...)
