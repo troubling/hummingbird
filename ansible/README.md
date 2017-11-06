@@ -45,7 +45,7 @@ sudo ansible-playbook -i hosts.yml hummingbird.yml --vault-id @prompt
 Keys and Certs
 --------------
 
-Two vars need to be placed in ansible/roles/certs/vars/ca.yml.
+Two vars need to be placed in your inventory.
 
 * ca\_key\_content: CA private key pem
 * ca\_cert\_content: CA cert pem
@@ -53,15 +53,17 @@ Two vars need to be placed in ansible/roles/certs/vars/ca.yml.
 It's highly encouraged to encrypt this file:
 
 ```
-ansible-vault encrypt roles/certs/vars/ca.yml --ask-vault-pass
+ansible-vault encrypt group_vars/hummingbird/ca.yml --ask-vault-pass
 ```
 
 An example can be found in ansible/examples/ca.yml, which you can use (password: asdf):
 ```
-cp ansible/examples/ca.yml roles/certs/vars
-ansible-vault edit roles/certs/vars/ca.yml
-ansible-vault rekey roles/certs/vars/ca.yml --ask-vault-pass
+mkdir group_vars/hummingbird
+cp examples/ca.yml group_vars/hummingbird/
+ansible-vault edit group_vars/hummingbird/ca.yml
+ansible-vault rekey group_vars/hummingbird/ca.yml --ask-vault-pass
 ```
+
 
 Generating the CA key:
 

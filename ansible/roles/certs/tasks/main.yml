@@ -18,10 +18,6 @@
     module: file
     path: "{{playbook_dir}}/keys/certindex"
     state: touch
-- name: Include CA vars
-  include_vars:
-    file: ca.yml
-  no_log: true
 - name: Decrypt CA key
   local_action:
     module: copy
