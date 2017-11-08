@@ -5,7 +5,7 @@ all: bin/hummingbird
 
 bin/hummingbird: */*.go */*/*.go
 	mkdir -p bin
-	go build -o bin/hummingbird -ldflags "-X common.Version=$(HUMMINGBIRD_VERSION)" github.com/troubling/hummingbird/cmd/hummingbird
+	go build -o bin/hummingbird -ldflags "-X github.com/troubling/hummingbird/common.Version=$(HUMMINGBIRD_VERSION)" github.com/troubling/hummingbird/cmd/hummingbird
 
 get:
 	go get -t $(shell go list ./... | grep -v /vendor/)
