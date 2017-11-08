@@ -27,6 +27,8 @@ import (
 	"testing"
 
 	"github.com/troubling/hummingbird/common/ring"
+	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/common/test"
 
 	"github.com/stretchr/testify/require"
 )
@@ -232,4 +234,17 @@ func TestGetRescuePartsJobs(t *testing.T) {
 	require.EqualValues(t, 2, jobs[2].FromDevice.Id)
 	require.EqualValues(t, 1, jobs[2].ToDevices[0].Id)
 	require.EqualValues(t, 1, jobs[2].Partition)
+}
+
+func TestMovePartsPolicy(t *testing.T) {
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	confLoader.GetHashPrefixAndSuffixFunc = func() (string, string, error) {
+		require.FailNow(t, "Shouldn't be called")
+		return "", "", nil
+	}
+	args := []string{"-p", "0", "/etc/hummingbird/object-1.ring.gz"}
+
+	ret := doMoveParts(args, confLoader)
+	require.EqualValues(t, 1, ret)
 }
