@@ -109,7 +109,7 @@ func TestGetRestoreDeviceJobs(t *testing.T) {
 			1: {1, 3},
 		},
 	}
-	jobs := getRestoreDeviceJobs(ring, "127.0.0.1", "drive1", false, false, []uint64{})
+	jobs := getRestoreDeviceJobs(ring, "127.0.0.1", "drive1", -1, false, []uint64{})
 	require.EqualValues(t, 2, len(jobs))
 	require.EqualValues(t, 0, jobs[0].Partition)
 	require.EqualValues(t, 2, jobs[0].FromDevice.Id)
@@ -127,7 +127,7 @@ func TestGetRestoreDeviceJobsSameRegion(t *testing.T) {
 			1: {1, 3},
 		},
 	}
-	jobs := getRestoreDeviceJobs(ring, "127.0.0.1", "drive1", true, false, []uint64{})
+	jobs := getRestoreDeviceJobs(ring, "127.0.0.1", "drive1", 1, false, []uint64{})
 	require.EqualValues(t, 1, len(jobs))
 	require.EqualValues(t, jobs[0].FromDevice.Region, jobs[0].ToDevices[0].Region)
 }
@@ -140,9 +140,9 @@ func TestGetRestoreDeviceJobsAllPeers(t *testing.T) {
 			1: {1, 3, 4},
 		},
 	}
-	jobs := getRestoreDeviceJobs(ring, "127.0.0.1", "drive1", false, false, []uint64{})
+	jobs := getRestoreDeviceJobs(ring, "127.0.0.1", "drive1", -1, false, []uint64{})
 	require.EqualValues(t, 2, len(jobs))
-	jobs = getRestoreDeviceJobs(ring, "127.0.0.1", "drive1", false, true, []uint64{})
+	jobs = getRestoreDeviceJobs(ring, "127.0.0.1", "drive1", -1, true, []uint64{})
 	require.EqualValues(t, 4, len(jobs))
 }
 

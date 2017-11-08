@@ -191,7 +191,7 @@ func MoveParts(args []string) {
 }
 
 // getRestoreDeviceJobs takes an ip address and device name, and creates a list of jobs to restore that device's data from peers.
-func getRestoreDeviceJobs(theRing ring.Ring, ip string, devName string, sameRegionOnly bool, allPeers bool, overrideParts []uint64) []*PriorityRepJob {
+func getRestoreDeviceJobs(theRing ring.Ring, ip string, devName string, srcRegionOnly int, allPeers bool, overrideParts []uint64) []*PriorityRepJob {
 	jobs := make([]*PriorityRepJob, 0)
 	for i := uint64(0); true; i++ {
 		partition := i
@@ -222,7 +222,7 @@ func getRestoreDeviceJobs(theRing ring.Ring, ip string, devName string, sameRegi
 				if src.Device == toDev.Device && (src.Ip == toDev.Ip || src.ReplicationIp == toDev.ReplicationIp) {
 					continue
 				}
-				if sameRegionOnly && src.Region != toDev.Region {
+				if srcRegionOnly >= 0 && src.Region != srcRegionOnly {
 					continue
 				}
 				jobs = append(jobs, &PriorityRepJob{
@@ -247,10 +247,10 @@ func getRestoreDeviceJobs(theRing ring.Ring, ip string, devName string, sameRegi
 func RestoreDevice(args []string) {
 	flags := flag.NewFlagSet("restoredevice", flag.ExitOnError)
 	policy := flags.Int("p", 0, "policy index to use")
-	sameRegion := flags.Bool("s", false, "restore device from same region")
+	region := flags.Int("region", -1, "restore device only from peers in specified region")
 	ringLoc := flags.String("r", "", "Specify which ring file to use")
 	conc := flags.Int("c", 2, "limit of per device concurrency priority repl calls")
-	full := flags.Bool("f", false, "send priority replicate calls to every peer primary (slow)")
+	full := flags.Bool("f", false, "send priority replicate calls to every qualifying peer primary (slow)")
 	flags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "USAGE: hummingbird restoredevice [ip] [device]\n")
 		flags.PrintDefaults()
@@ -281,10 +281,10 @@ func RestoreDevice(args []string) {
 		}
 
 	}
-	client := &http.Client{Timeout: time.Hour}
+	client := &http.Client{Timeout: time.Hour * 4}
 	badParts := []uint64{}
 	for {
-		jobs := getRestoreDeviceJobs(objRing, flags.Arg(0), flags.Arg(1), *sameRegion, *full, badParts)
+		jobs := getRestoreDeviceJobs(objRing, flags.Arg(0), flags.Arg(1), *region, *full, badParts)
 		lastRun := len(jobs)
 		fmt.Println("Job count:", len(jobs))
 		for i := len(jobs) - 1; i > 0; i-- { // shuffle jobs list
