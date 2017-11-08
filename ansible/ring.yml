@@ -1,5 +1,0 @@
----
-- hosts: hummingbird
-  become: yes
-  roles:
-    - ring
