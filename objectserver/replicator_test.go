@@ -162,15 +162,15 @@ func (d *mockReplicationDevice) PriorityReplicate(pri PriorityRepJob, timeout ti
 
 type patchableReplicationDevice struct {
 	*replicationDevice
-	_beginReplication          func(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse)
-	_listObjFiles              func(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool)
-	_syncFile                  func(objFile string, dst []*syncFileArg, handoff bool) (syncs int, insync int, err error)
-	_replicateMismatchedHashes func(partition string, nodes []*ring.Device, moreNodes ring.MoreNodes)
-	_replicateWholePartition   func(partition string, nodes []*ring.Device, isHandoff bool)
-	_cleanTemp                 func()
-	_listPartitions            func() ([]string, []string, error)
-	_replicatePartition        func(partition string)
-	_Replicate                 func()
+	_beginReplication     func(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse, headers map[string]string)
+	_listObjFiles         func(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool)
+	_syncFile             func(objFile string, dst []*syncFileArg, handoff bool) (syncs int, insync int, err error)
+	_replicateUsingHashes func(rjob replJob, moreNodes ring.MoreNodes)
+	_replicateAll         func(rjob replJob, isHandoff bool)
+	_cleanTemp            func()
+	_listPartitions       func() ([]string, []string, error)
+	_replicatePartition   func(partition string)
+	_Replicate            func()
 }
 
 func (d *patchableReplicationDevice) replicatePartition(partition string) {
@@ -186,12 +186,12 @@ func (d *patchableReplicationDevice) listPartitions() ([]string, []string, error
 	}
 	return d.replicationDevice.listPartitions()
 }
-func (d *patchableReplicationDevice) beginReplication(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse) {
+func (d *patchableReplicationDevice) beginReplication(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse, headers map[string]string) {
 	if d._beginReplication != nil {
-		d._beginReplication(dev, partition, hashes, rChan)
+		d._beginReplication(dev, partition, hashes, rChan, headers)
 		return
 	}
-	d.replicationDevice.beginReplication(dev, partition, hashes, rChan)
+	d.replicationDevice.beginReplication(dev, partition, hashes, rChan, headers)
 }
 func (d *patchableReplicationDevice) listObjFiles(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool) {
 	if d._listObjFiles != nil {
@@ -206,19 +206,19 @@ func (d *patchableReplicationDevice) syncFile(objFile string, dst []*syncFileArg
 	}
 	return d.replicationDevice.syncFile(objFile, dst, handoff)
 }
-func (d *patchableReplicationDevice) replicateMismatchedHashes(partition string, nodes []*ring.Device, moreNodes ring.MoreNodes) {
-	if d._replicateMismatchedHashes != nil {
-		d._replicateMismatchedHashes(partition, nodes, moreNodes)
+func (d *patchableReplicationDevice) replicateUsingHashes(rjob replJob, moreNodes ring.MoreNodes) {
+	if d._replicateUsingHashes != nil {
+		d._replicateUsingHashes(rjob, moreNodes)
 		return
 	}
-	d.replicationDevice.replicateMismatchedHashes(partition, nodes, moreNodes)
+	d.replicationDevice.replicateUsingHashes(rjob, moreNodes)
 }
-func (d *patchableReplicationDevice) replicateWholePartition(partition string, nodes []*ring.Device, isHandoff bool) {
-	if d._replicateWholePartition != nil {
-		d._replicateWholePartition(partition, nodes, isHandoff)
+func (d *patchableReplicationDevice) replicateAll(rjob replJob, isHandoff bool) {
+	if d._replicateAll != nil {
+		d._replicateAll(rjob, isHandoff)
 		return
 	}
-	d.replicationDevice.replicateWholePartition(partition, nodes, isHandoff)
+	d.replicationDevice.replicateAll(rjob, isHandoff)
 }
 func (d *patchableReplicationDevice) cleanTemp() {
 	if d._cleanTemp != nil {
@@ -600,7 +600,7 @@ func TestSyncFileNewerExists(t *testing.T) {
 	require.Equal(t, 1, insync)
 }
 
-func TestReplicateMismatchedHashes(t *testing.T) {
+func TestReplicateUsingHashes(t *testing.T) {
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
@@ -614,7 +614,7 @@ func TestReplicateMismatchedHashes(t *testing.T) {
 	filename := filepath.Join(objPath, partition, "aaa", "00000000000000000000000000000000", "1472940619.68559")
 	syncFileCalled := false
 	rd := newPatchableReplicationDevice(replicator)
-	rd._beginReplication = func(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse) {
+	rd._beginReplication = func(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse, headers map[string]string) {
 		fakeHashes := make(map[string]string)
 		fakeHashes["aaa"] = "hey"
 		rChan <- beginReplicationResponse{dev: remoteDev, hashes: fakeHashes, conn: &mockRepConn{}}
@@ -629,11 +629,11 @@ func TestReplicateMismatchedHashes(t *testing.T) {
 		return 0, 0, nil
 	}
 	nodes := []*ring.Device{remoteDev}
-	rd.replicateMismatchedHashes(partition, nodes, &NoMoreNodes{})
+	rd.replicateUsingHashes(replJob{partition, nodes, nil}, &NoMoreNodes{})
 	require.True(t, syncFileCalled)
 }
 
-func TestReplicateWholePartition(t *testing.T) {
+func TestReplicateAll(t *testing.T) {
 	deviceRoot, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(deviceRoot)
@@ -651,7 +651,7 @@ func TestReplicateWholePartition(t *testing.T) {
 	defer file.Close()
 	syncFileCalled := false
 	rd := newPatchableReplicationDevice(replicator)
-	rd._beginReplication = func(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse) {
+	rd._beginReplication = func(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse, headers map[string]string) {
 		rChan <- beginReplicationResponse{dev: remoteDev, hashes: make(map[string]string), conn: &mockRepConn{}}
 	}
 	rd._listObjFiles = func(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool) {
@@ -664,7 +664,7 @@ func TestReplicateWholePartition(t *testing.T) {
 		return 1, 1, nil
 	}
 	nodes := []*ring.Device{remoteDev}
-	rd.replicateWholePartition(partition, nodes, true)
+	rd.replicateAll(replJob{partition, nodes, nil}, true)
 	require.True(t, syncFileCalled)
 	require.False(t, fs.Exists(filename))
 }
@@ -768,25 +768,25 @@ func TestReplicatePartition(t *testing.T) {
 	require.Nil(t, err)
 	require.Nil(t, err)
 	rd := newPatchableReplicationDevice(replicator)
-	replicateMismatchedHashesCalled := false
-	replicateWholePartitionCalled := false
-	rd._replicateMismatchedHashes = func(partition string, nodes []*ring.Device, moreNodes ring.MoreNodes) {
-		require.Equal(t, "1", partition)
-		replicateMismatchedHashesCalled = true
+	replicateUsingHashesCalled := false
+	replicateAllCalled := false
+	rd._replicateUsingHashes = func(rjob replJob, moreNodes ring.MoreNodes) {
+		require.Equal(t, "1", rjob.partition)
+		replicateUsingHashesCalled = true
 	}
-	rd._replicateWholePartition = func(partition string, nodes []*ring.Device, isHandoff bool) {
-		replicateWholePartitionCalled = true
+	rd._replicateAll = func(rjob replJob, isHandoff bool) {
+		replicateAllCalled = true
 	}
 	rd.replicatePartition("1")
-	require.True(t, replicateMismatchedHashesCalled)
-	require.False(t, replicateWholePartitionCalled)
+	require.True(t, replicateUsingHashesCalled)
+	require.False(t, replicateAllCalled)
 
 	testRing.MockGetJobNodesHandoff = true
-	replicateMismatchedHashesCalled = false
-	replicateWholePartitionCalled = false
+	replicateUsingHashesCalled = false
+	replicateAllCalled = false
 	rd.replicatePartition("1")
-	require.False(t, replicateMismatchedHashesCalled)
-	require.True(t, replicateWholePartitionCalled)
+	require.False(t, replicateUsingHashesCalled)
+	require.True(t, replicateAllCalled)
 }
 
 func TestProcessPriorityJobs(t *testing.T) {
@@ -805,18 +805,18 @@ func TestProcessPriorityJobs(t *testing.T) {
 		ToDevices:  []*ring.Device{{}},
 		Policy:     0,
 	}
-	replicateMismatchedHashesCalled := false
-	replicateWholePartitionCalled := false
-	rd._replicateMismatchedHashes = func(partition string, nodes []*ring.Device, moreNodes ring.MoreNodes) {
-		require.Equal(t, "1", partition)
-		replicateMismatchedHashesCalled = true
+	replicateUsingHashesCalled := false
+	replicateAllCalled := false
+	rd._replicateUsingHashes = func(rjob replJob, moreNodes ring.MoreNodes) {
+		require.Equal(t, "1", rjob.partition)
+		replicateUsingHashesCalled = true
 	}
-	rd._replicateWholePartition = func(partition string, nodes []*ring.Device, isHandoff bool) {
-		require.Equal(t, "1", partition)
-		replicateWholePartitionCalled = true
+	rd._replicateAll = func(rjob replJob, isHandoff bool) {
+		require.Equal(t, "1", rjob.partition)
+		replicateAllCalled = true
 	}
 	rd.processPriorityJobs()
-	require.True(t, replicateMismatchedHashesCalled)
+	require.True(t, replicateUsingHashesCalled)
 
 	rd.priRep <- PriorityRepJob{
 		Partition:  1,
@@ -825,10 +825,10 @@ func TestProcessPriorityJobs(t *testing.T) {
 		Policy:     0,
 	}
 	testRing.MockGetJobNodesHandoff = true
-	replicateMismatchedHashesCalled = false
-	replicateWholePartitionCalled = false
+	replicateUsingHashesCalled = false
+	replicateAllCalled = false
 	rd.processPriorityJobs()
-	require.True(t, replicateWholePartitionCalled)
+	require.True(t, replicateAllCalled)
 }
 
 func TestCancelStalledDevices(t *testing.T) {

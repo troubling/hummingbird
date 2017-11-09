@@ -188,12 +188,14 @@ func (r *Replicator) objRepConnHandler(writer http.ResponseWriter, request *http
 		writer.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	if !r.incomingBegin(brr.Device, replicateIncomingTimeout) {
-		srv.GetLogger(request).Error("[ObjRepConnHandler] Timed out waiting for concurrency slot")
-		writer.WriteHeader(503)
-		return
+	if request.Header.Get("X-Force-Acquire") != "true" {
+		if !r.incomingBegin(brr.Device, replicateIncomingTimeout) {
+			srv.GetLogger(request).Error("[ObjRepConnHandler] Timed out waiting for concurrency slot")
+			writer.WriteHeader(503)
+			return
+		}
+		defer r.incomingDone(brr.Device)
 	}
-	defer r.incomingDone(brr.Device)
 	var hashes map[string]string
 	if brr.NeedHashes {
 		hashes, err = GetHashes(r.deviceRoot, brr.Device, brr.Partition, nil, r.reclaimAge, policy, srv.GetLogger(request))
