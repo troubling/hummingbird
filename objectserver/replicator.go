@@ -148,14 +148,20 @@ type ReplicationDevice interface {
 	PriorityReplicate(pri PriorityRepJob, timeout time.Duration) bool
 }
 
+type replJob struct {
+	partition string
+	nodes     []*ring.Device
+	headers   map[string]string
+}
+
 type replicationDevice struct {
 	// If you have a better way to make struct methods that are overridable for tests, please call my house.
 	i interface {
-		beginReplication(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse)
+		beginReplication(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse, headers map[string]string)
 		listObjFiles(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool)
 		syncFile(objFile string, dst []*syncFileArg, handoff bool) (syncs int, insync int, err error)
-		replicateMismatchedHashes(partition string, nodes []*ring.Device, moreNodes ring.MoreNodes)
-		replicateWholePartition(partition string, nodes []*ring.Device, isHandoff bool)
+		replicateUsingHashes(rjob replJob, moreNodes ring.MoreNodes)
+		replicateAll(rjob replJob, isHandoff bool)
 		cleanTemp()
 		listPartitions() ([]string, []string, error)
 		replicatePartition(partition string)
@@ -334,9 +340,14 @@ func (rd *replicationDevice) syncFile(objFile string, dst []*syncFileArg, handof
 	return syncs, insync, nil
 }
 
-func (rd *replicationDevice) beginReplication(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse) {
+func (rd *replicationDevice) beginReplication(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse, headers map[string]string) {
 	var brr BeginReplicationResponse
-	if rc, err := NewRepConn(dev, partition, rd.policy); err != nil {
+	if headers == nil {
+		headers = map[string]string{}
+	}
+	headers["X-Trans-Id"] = fmt.Sprintf("%s-%d", common.UUID(), dev.Id)
+
+	if rc, err := NewRepConn(dev, partition, rd.policy, headers); err != nil {
 		rChan <- beginReplicationResponse{dev: dev, err: err}
 	} else if err := rc.SendMessage(BeginReplicationRequest{Device: dev.Device, Partition: partition, NeedHashes: hashes}); err != nil {
 		rChan <- beginReplicationResponse{dev: dev, err: err}
@@ -347,17 +358,17 @@ func (rd *replicationDevice) beginReplication(dev *ring.Device, partition string
 	}
 }
 
-func (rd *replicationDevice) replicateMismatchedHashes(partition string, nodes []*ring.Device, moreNodes ring.MoreNodes) {
-	path := filepath.Join(rd.r.deviceRoot, rd.dev.Device, PolicyDir(rd.policy), partition)
+func (rd *replicationDevice) replicateUsingHashes(rjob replJob, moreNodes ring.MoreNodes) {
+	path := filepath.Join(rd.r.deviceRoot, rd.dev.Device, PolicyDir(rd.policy), rjob.partition)
 	syncCount := 0
 	startGetHashesRemote := time.Now()
 	remoteHashes := make(map[int]map[string]string)
 	remoteConnections := make(map[int]RepConn)
 	rChan := make(chan beginReplicationResponse)
-	for _, dev := range nodes {
-		go rd.i.beginReplication(dev, partition, true, rChan)
+	for _, dev := range rjob.nodes {
+		go rd.i.beginReplication(dev, rjob.partition, true, rChan, rjob.headers)
 	}
-	for i := 0; i < len(nodes); i++ {
+	for i := 0; i < len(rjob.nodes); i++ {
 		rData := <-rChan
 		if rData.err == nil {
 			defer rData.conn.Close()
@@ -365,8 +376,8 @@ func (rd *replicationDevice) replicateMismatchedHashes(partition string, nodes [
 			remoteConnections[rData.dev.Id] = rData.conn
 		} else if rData.err == RepUnmountedError {
 			if nextNode := moreNodes.Next(); nextNode != nil {
-				go rd.i.beginReplication(nextNode, partition, true, rChan)
-				nodes = append(nodes, nextNode)
+				go rd.i.beginReplication(nextNode, rjob.partition, true, rChan, rjob.headers)
+				rjob.nodes = append(rjob.nodes, nextNode)
 			} else {
 				break
 			}
@@ -380,9 +391,9 @@ func (rd *replicationDevice) replicateMismatchedHashes(partition string, nodes [
 	startGetHashesLocal := time.Now()
 
 	recalc := []string{}
-	hashes, err := GetHashes(rd.r.deviceRoot, rd.dev.Device, partition, recalc, rd.r.reclaimAge, rd.policy, rd.r.logger)
+	hashes, err := GetHashes(rd.r.deviceRoot, rd.dev.Device, rjob.partition, recalc, rd.r.reclaimAge, rd.policy, rd.r.logger)
 	if err != nil {
-		rd.r.logger.Error("[replicateMismatchedHashes] error getting local hashes", zap.Error(err))
+		rd.r.logger.Error("[replicateUsingHashes] error getting local hashes", zap.Error(err))
 		return
 	}
 	for suffix, localHash := range hashes {
@@ -393,9 +404,9 @@ func (rd *replicationDevice) replicateMismatchedHashes(partition string, nodes [
 			}
 		}
 	}
-	hashes, err = GetHashes(rd.r.deviceRoot, rd.dev.Device, partition, recalc, rd.r.reclaimAge, rd.policy, rd.r.logger)
+	hashes, err = GetHashes(rd.r.deviceRoot, rd.dev.Device, rjob.partition, recalc, rd.r.reclaimAge, rd.policy, rd.r.logger)
 	if err != nil {
-		rd.r.logger.Error("[replicateMismatchedHashes] error recalculating local hashes", zap.Error(err))
+		rd.r.logger.Error("[replicateUsingHashes] error recalculating local hashes", zap.Error(err))
 		return
 	}
 	timeGetHashesLocal := float64(time.Now().Sub(startGetHashesLocal)) / float64(time.Second)
@@ -415,7 +426,7 @@ func (rd *replicationDevice) replicateMismatchedHashes(partition string, nodes [
 	for objFile := range objChan {
 		toSync := make([]*syncFileArg, 0)
 		suffix := filepath.Base(filepath.Dir(filepath.Dir(objFile)))
-		for _, dev := range nodes {
+		for _, dev := range rjob.nodes {
 			if rhashes, ok := remoteHashes[dev.Id]; ok && hashes[suffix] != rhashes[suffix] {
 				if !remoteConnections[dev.Id].Disconnected() {
 					toSync = append(toSync, &syncFileArg{conn: remoteConnections[dev.Id], dev: dev})
@@ -439,7 +450,7 @@ func (rd *replicationDevice) replicateMismatchedHashes(partition string, nodes [
 	}
 	timeSyncing := float64(time.Now().Sub(startSyncing)) / float64(time.Second)
 	if syncCount > 0 {
-		rd.r.logger.Info("[replicateMismatchedHashes]",
+		rd.r.logger.Info("[replicateUsingHashes]",
 			zap.String("Partition", path),
 			zap.Any("Files Synced", syncCount),
 			zap.Float64("timeGetHashesRemote", timeGetHashesRemote),
@@ -448,15 +459,15 @@ func (rd *replicationDevice) replicateMismatchedHashes(partition string, nodes [
 	}
 }
 
-func (rd *replicationDevice) replicateWholePartition(partition string, nodes []*ring.Device, isHandoff bool) {
-	path := filepath.Join(rd.r.deviceRoot, rd.dev.Device, PolicyDir(rd.policy), partition)
+func (rd *replicationDevice) replicateAll(rjob replJob, isHandoff bool) {
+	path := filepath.Join(rd.r.deviceRoot, rd.dev.Device, PolicyDir(rd.policy), rjob.partition)
 	syncCount := 0
 	remoteConnections := make(map[int]RepConn)
 	rChan := make(chan beginReplicationResponse)
-	for _, dev := range nodes {
-		go rd.i.beginReplication(dev, partition, false, rChan)
+	for _, dev := range rjob.nodes {
+		go rd.i.beginReplication(dev, rjob.partition, false, rChan, rjob.headers)
 	}
-	for i := 0; i < len(nodes); i++ {
+	for i := 0; i < len(rjob.nodes); i++ {
 		rData := <-rChan
 		if rData.err == nil {
 			defer rData.conn.Close()
@@ -473,7 +484,7 @@ func (rd *replicationDevice) replicateWholePartition(partition string, nodes []*
 	go rd.i.listObjFiles(objChan, cancel, path, func(string) bool { return true })
 	for objFile := range objChan {
 		toSync := make([]*syncFileArg, 0)
-		for _, dev := range nodes {
+		for _, dev := range rjob.nodes {
 			if remoteConnections[dev.Id] != nil && !remoteConnections[dev.Id].Disconnected() {
 				toSync = append(toSync, &syncFileArg{conn: remoteConnections[dev.Id], dev: dev})
 			}
@@ -484,9 +495,9 @@ func (rd *replicationDevice) replicateWholePartition(partition string, nodes []*
 		if syncs, insync, err := rd.i.syncFile(objFile, toSync, true); err == nil {
 			syncCount += syncs
 
-			success := insync == len(nodes)
+			success := insync == len(rjob.nodes)
 			if rd.r.quorumDelete {
-				success = insync >= len(nodes)/2+1
+				success = insync >= len(rjob.nodes)/2+1
 			}
 			if success && isHandoff {
 				os.Remove(objFile)
@@ -503,7 +514,7 @@ func (rd *replicationDevice) replicateWholePartition(partition string, nodes []*
 		}
 	}
 	if syncCount > 0 {
-		rd.r.logger.Info("[replicateWholePartition]", zap.String("Partition", path), zap.Any("Files Synced", syncCount))
+		rd.r.logger.Info("[replicateAll]", zap.String("Partition", path), zap.Any("Files Synced", syncCount))
 	}
 }
 
@@ -536,11 +547,12 @@ func (rd *replicationDevice) replicatePartition(partition string) {
 	if policy == nil {
 		return
 	}
+	rjob := replJob{partition: partition, nodes: nodes}
 	if handoff || (policy.Type == "replication-nursery" &&
 		!common.LooksTrue(policy.Config["cache_hash_dirs"])) {
-		rd.i.replicateWholePartition(partition, nodes, handoff)
+		rd.i.replicateAll(rjob, handoff)
 	} else {
-		rd.i.replicateMismatchedHashes(partition, nodes, rd.r.objectRings[rd.policy].GetMoreNodes(partitioni))
+		rd.i.replicateUsingHashes(rjob, rd.r.objectRings[rd.policy].GetMoreNodes(partitioni))
 	}
 	rd.updateStat("PartitionsDone", 1)
 }
@@ -710,11 +722,14 @@ func (rd *replicationDevice) processPriorityJobs() {
 					zap.String("jobType", jobType),
 					zap.String("From Device", pri.FromDevice.Device),
 					zap.String("To Device", strings.Join(toDevicesArr, ",")))
+				rjob := replJob{
+					partition: partition, nodes: pri.ToDevices,
+					headers: map[string]string{"X-Force-Acquire": "true"}}
 				if handoff || (policy.Type == "replication-nursery" &&
 					!common.LooksTrue(policy.Config["cache_hash_dirs"])) {
-					rd.i.replicateWholePartition(partition, pri.ToDevices, handoff)
+					rd.i.replicateAll(rjob, handoff)
 				} else {
-					rd.i.replicateMismatchedHashes(partition, pri.ToDevices, &NoMoreNodes{})
+					rd.i.replicateUsingHashes(rjob, &NoMoreNodes{})
 				}
 			}()
 			rd.updateStat("PriorityRepsDone", 1)

@@ -27,7 +27,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/ring"
 )
 
@@ -158,14 +157,17 @@ func (r *repConn) Close() {
 	r.c.Close()
 }
 
-func NewRepConn(dev *ring.Device, partition string, policy int) (RepConn, error) {
+func NewRepConn(dev *ring.Device, partition string, policy int, headers map[string]string) (RepConn, error) {
 	url := fmt.Sprintf("http://%s:%d/%s/%s", dev.ReplicationIp, dev.ReplicationPort, dev.Device, partition)
 	req, err := http.NewRequest("REPCONN", url, nil)
-	req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(policy))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Add("X-Trans-Id", fmt.Sprintf("%s-%d", common.UUID(), dev.Id))
+	// left policy as an arg instead of a header to make it harder to forget to set it.
+	req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(policy))
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
 	conn, err := repDialer("tcp", req.URL.Host)
 	if err != nil {
 		return nil, err
