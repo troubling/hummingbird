@@ -30,12 +30,15 @@ import (
 )
 
 // writeARing writes a basic ring with the given attributes
-func writeARing(w io.Writer, deviceCount int, replicaCount int, partShift uint) error {
+func writeARing(w io.Writer, deviceCount int, replicaCount int, partShift uint, withANil int) error {
 	gzw := gzip.NewWriter(w)
-	devs := []Device{}
+	devs := []*Device{}
 	for i := 0; i < deviceCount; i++ {
 		ip := fmt.Sprintf("127.0.0.%d", i)
-		devs = append(devs, Device{Id: i, Device: "sda", Ip: ip, Meta: "", Port: 1234, Region: 0, ReplicationIp: ip, ReplicationPort: 1234, Weight: 1, Zone: 0})
+		devs = append(devs, &Device{Id: i, Device: "sda", Ip: ip, Meta: "", Port: 1234, Region: 0, ReplicationIp: ip, ReplicationPort: 1234, Weight: 1, Zone: 0})
+	}
+	if withANil >= 0 {
+		devs[withANil] = nil
 	}
 	ringData := map[string]interface{}{
 		"devs":          devs,
@@ -56,7 +59,14 @@ func writeARing(w io.Writer, deviceCount int, replicaCount int, partShift uint) 
 	for i := 0; i < replicaCount; i++ {
 		part2dev := make([]uint16, partitionCount)
 		for j := 0; j < partitionCount; j++ {
-			part2dev[j] = uint16((j + i) % len(devs))
+			devID := (j + i) % len(devs)
+			if devs[devID] == nil {
+				devID = 0
+			}
+			for devs[devID] == nil && devID+1 < len(devs) {
+				devID++
+			}
+			part2dev[j] = uint16(devID)
 		}
 		binary.Write(gzw, binary.LittleEndian, part2dev)
 	}
@@ -70,7 +80,7 @@ func TestLoadRing(t *testing.T) {
 	require.Nil(t, err)
 	defer fp.Close()
 	defer os.RemoveAll(fp.Name())
-	require.Nil(t, writeARing(fp, 4, 2, 29))
+	require.Nil(t, writeARing(fp, 4, 2, 29, 1))
 	r, err := LoadRing(fp.Name(), "prefix", "suffix")
 	require.Nil(t, err)
 	ring, ok := r.(*hashRing)
@@ -81,12 +91,28 @@ func TestLoadRing(t *testing.T) {
 	require.Equal(t, uint64(29), ring.getData().PartShift)
 }
 
+func TestLocalDevices(t *testing.T) {
+	fp, err := ioutil.TempFile("", "")
+	require.Nil(t, err)
+	defer fp.Close()
+	defer os.RemoveAll(fp.Name())
+	require.Nil(t, writeARing(fp, 4, 2, 29, 2))
+	r, err := LoadRing(fp.Name(), "prefix", "suffix")
+	require.Nil(t, err)
+	ring, ok := r.(*hashRing)
+	require.True(t, ok)
+	require.NotNil(t, ring)
+	nodes, err := ring.LocalDevices(1234)
+	require.Nil(t, err)
+	require.Equal(t, 1, len(nodes))
+}
+
 func TestGetNodes(t *testing.T) {
 	fp, err := ioutil.TempFile("", "")
 	require.Nil(t, err)
 	defer fp.Close()
 	defer os.RemoveAll(fp.Name())
-	require.Nil(t, writeARing(fp, 4, 2, 29))
+	require.Nil(t, writeARing(fp, 4, 2, 29, 2))
 	r, err := LoadRing(fp.Name(), "prefix", "suffix")
 	require.Nil(t, err)
 	ring, ok := r.(*hashRing)
@@ -104,7 +130,7 @@ func TestGetJobNodes(t *testing.T) {
 	require.Nil(t, err)
 	defer fp.Close()
 	defer os.RemoveAll(fp.Name())
-	require.Nil(t, writeARing(fp, 4, 2, 29))
+	require.Nil(t, writeARing(fp, 4, 2, 29, -1))
 	r, err := LoadRing(fp.Name(), "prefix", "suffix")
 	require.Nil(t, err)
 	ring, ok := r.(*hashRing)
@@ -124,7 +150,7 @@ func TestRingReload(t *testing.T) {
 	require.Nil(t, err)
 	defer fp.Close()
 	defer os.RemoveAll(fp.Name())
-	require.Nil(t, writeARing(fp, 4, 2, 29))
+	require.Nil(t, writeARing(fp, 4, 2, 29, 2))
 	r, err := LoadRing(fp.Name(), "prefix", "suffix")
 	require.Nil(t, err)
 	ring, ok := r.(*hashRing)
@@ -132,7 +158,7 @@ func TestRingReload(t *testing.T) {
 	require.NotNil(t, ring)
 	fp.Seek(0, os.SEEK_SET)
 	fp.Truncate(0)
-	require.Nil(t, writeARing(fp, 5, 3, 30))
+	require.Nil(t, writeARing(fp, 5, 3, 30, -1))
 	// make sure the mtime has changed
 	os.Chtimes(fp.Name(), time.Now(), time.Now().Add(time.Second))
 	ring.reload()
@@ -146,7 +172,7 @@ func TestCounts(t *testing.T) {
 	require.Nil(t, err)
 	defer fp.Close()
 	defer os.RemoveAll(fp.Name())
-	require.Nil(t, writeARing(fp, 4, 2, 29))
+	require.Nil(t, writeARing(fp, 4, 2, 29, 2))
 	r, err := LoadRing(fp.Name(), "prefix", "suffix")
 	require.Equal(t, uint64(2), r.ReplicaCount())
 	require.Equal(t, uint64(8), r.PartitionCount())
