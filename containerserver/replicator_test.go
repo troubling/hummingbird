@@ -85,11 +85,11 @@ func (d *patchableReplicationDevice) chooseReplicationStrategy(localInfo, remote
 	}
 	return d.rd.chooseReplicationStrategy(localInfo, remoteInfo, usyncThreshold)
 }
-func (d *patchableReplicationDevice) replicateDatabaseToDevice(dev *ring.Device, c ReplicableContainer, part uint64) error {
+func (d *patchableReplicationDevice) replicateDatabaseToDevice(dev *ring.Device, c ReplicableContainer, part uint64, ringIndex int) error {
 	if d._replicateDatabaseToDevice != nil {
 		return d._replicateDatabaseToDevice(dev, c, part)
 	}
-	return d.rd.replicateDatabaseToDevice(dev, c, part)
+	return d.rd.replicateDatabaseToDevice(dev, c, part, ringIndex)
 }
 func (d *patchableReplicationDevice) replicateDatabase(dbFile string) error {
 	if d._replicateDatabase != nil {
@@ -314,17 +314,17 @@ func TestReplicatorReplicateDatabaseToDevice(t *testing.T) {
 		usyncCalled = true
 		return nil
 	}
-	require.Nil(t, rd.replicateDatabaseToDevice(&ring.Device{}, c, 1))
+	require.Nil(t, rd.replicateDatabaseToDevice(&ring.Device{}, c, 1, 0))
 	require.True(t, rsyncCalled)
 	require.False(t, usyncCalled)
 	rsyncCalled = false
 	currentMethod = "diff"
-	require.Nil(t, rd.replicateDatabaseToDevice(&ring.Device{}, c, 1))
+	require.Nil(t, rd.replicateDatabaseToDevice(&ring.Device{}, c, 1, 0))
 	require.True(t, usyncCalled)
 	require.False(t, rsyncCalled)
 	usyncCalled = false
 	currentMethod = "no_change"
-	require.Nil(t, rd.replicateDatabaseToDevice(&ring.Device{}, c, 1))
+	require.Nil(t, rd.replicateDatabaseToDevice(&ring.Device{}, c, 1, 0))
 	require.False(t, usyncCalled)
 	require.False(t, rsyncCalled)
 }

@@ -17,6 +17,8 @@ package containerserver
 
 import (
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"strconv"
 	"strings"
@@ -47,34 +49,12 @@ func (server *ContainerServer) accountUpdate(writer http.ResponseWriter, request
 			return
 		}
 		for index, host := range hosts {
-			url := fmt.Sprintf("http://%s/%s/%s/%s/%s", host, devices[index], accpartition,
-				common.Urlencode(vars["account"]), common.Urlencode(vars["container"]))
-			req, err := http.NewRequest("PUT", url, nil)
-			if err != nil {
-				logger.Error("Account update failed: error creating request object")
-				continue
-			}
-			req.Header.Add("X-Put-Timestamp", info.PutTimestamp)
-			req.Header.Add("X-Delete-Timestamp", info.DeleteTimestamp)
-			req.Header.Add("X-Object-Count", strconv.FormatInt(info.ObjectCount, 10))
-			req.Header.Add("X-Bytes-Used", strconv.FormatInt(info.BytesUsed, 10))
-			req.Header.Add("X-Trans-Id", request.Header.Get("X-Trans-Id"))
-			req.Header.Add("X-Backend-Storage-Policy-Index", strconv.Itoa(info.StoragePolicyIndex))
-			if request.Header.Get("X-Account-Override-Deleted") == "yes" {
-				req.Header.Add("X-Account-Override-Deleted", "yes")
-			}
-			resp, err := server.updateClient.Do(req)
-			if err != nil {
-				logger.Error("Account update failed: bad response",
+			if err := accountUpdateHelper(info, host, devices[index], accpartition, vars["account"], vars["container"], request.Header.Get("X-Trans-Id"), request.Header.Get("X-Account-Override-Deleted") == "yes", server.updateClient); err != nil {
+				logger.Error(
+					"Account update failed:", zap.Error(err),
 					zap.String("hosts[index]", hosts[index]),
-					zap.String("devices[index]", devices[index]))
-				continue
-			}
-			defer resp.Body.Close()
-			if (resp.StatusCode / 100) != 2 {
-				logger.Error("Account update failed: bad response",
-					zap.String("hosts[index]", hosts[index]),
-					zap.String("devices[index]", devices[index]))
+					zap.String("devices[index]", devices[index]),
+				)
 			}
 		}
 	}()
@@ -82,4 +62,32 @@ func (server *ContainerServer) accountUpdate(writer http.ResponseWriter, request
 	case <-time.After(waitForAccountUpdate):
 	case <-firstDone:
 	}
+}
+
+func accountUpdateHelper(info *ContainerInfo, host, device, accpartition, account, container, transID string, accountOverrideDeleted bool, updateClient *http.Client) error {
+	url := fmt.Sprintf("http://%s/%s/%s/%s/%s", host, device, accpartition,
+		common.Urlencode(account), common.Urlencode(container))
+	req, err := http.NewRequest("PUT", url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Add("X-Put-Timestamp", info.PutTimestamp)
+	req.Header.Add("X-Delete-Timestamp", info.DeleteTimestamp)
+	req.Header.Add("X-Object-Count", strconv.FormatInt(info.ObjectCount, 10))
+	req.Header.Add("X-Bytes-Used", strconv.FormatInt(info.BytesUsed, 10))
+	req.Header.Add("X-Trans-Id", transID)
+	req.Header.Add("X-Backend-Storage-Policy-Index", strconv.Itoa(info.StoragePolicyIndex))
+	if accountOverrideDeleted {
+		req.Header.Add("X-Account-Override-Deleted", "yes")
+	}
+	resp, err := updateClient.Do(req)
+	if err != nil {
+		return err
+	}
+	io.Copy(ioutil.Discard, resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("%d response status code", resp.StatusCode)
+	}
+	return nil
 }
