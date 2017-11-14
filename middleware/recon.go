@@ -17,11 +17,9 @@ package middleware
 
 import (
 	"bufio"
-	"crypto/md5"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -35,6 +33,7 @@ import (
 	"github.com/shirou/gopsutil/load"
 	"github.com/shirou/gopsutil/mem"
 	"github.com/shirou/gopsutil/process"
+	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/srv"
 )
@@ -245,21 +244,6 @@ func getUnmounted(driveRoot string) (interface{}, error) {
 	return unmounted, nil
 }
 
-func fileMD5(files ...string) (map[string]string, error) {
-	response := make(map[string]string)
-	for _, file := range files {
-		fp, err := os.Open(file)
-		if err != nil {
-			return nil, err
-		}
-		defer fp.Close()
-		hash := md5.New()
-		io.Copy(hash, fp)
-		response[file] = fmt.Sprintf("%x", hash.Sum(nil))
-	}
-	return response, nil
-}
-
 func ListDevices(driveRoot string) (map[string][]string, error) {
 	fileInfo, err := ioutil.ReadDir(driveRoot)
 	if err != nil {
@@ -322,6 +306,7 @@ func ReconHandler(driveRoot string, mountCheck bool, writer http.ResponseWriter,
 	var content interface{} = nil
 
 	vars := srv.GetVars(request)
+	var err error
 
 	switch vars["method"] {
 	case "mem":
@@ -329,14 +314,12 @@ func ReconHandler(driveRoot string, mountCheck bool, writer http.ResponseWriter,
 	case "load":
 		content = getLoad()
 	case "async":
-		var err error
 		content, err = fromReconCache("object", "async_pending")
 		if err != nil {
 			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
 	case "replication":
-		var err error
 		if vars["recon_type"] == "account" {
 			content, err = fromReconCache("account", "replication_time", "replication_stats", "replication_last")
 		} else if vars["recon_type"] == "container" {
@@ -352,14 +335,12 @@ func ReconHandler(driveRoot string, mountCheck bool, writer http.ResponseWriter,
 			return
 		}
 	case "devices":
-		var err error
 		content, err = ListDevices(driveRoot)
 		if err != nil {
 			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
 	case "updater":
-		var err error
 		if vars["recon_type"] == "container" {
 			content, err = fromReconCache("container", "container_updater_sweep")
 		} else if vars["recon_type"] == "object" {
@@ -370,7 +351,6 @@ func ReconHandler(driveRoot string, mountCheck bool, writer http.ResponseWriter,
 			return
 		}
 	case "auditor":
-		var err error
 		if vars["recon_type"] == "account" {
 			content, err = fromReconCache("account", "account_audits_passed", "account_auditor_pass_completed", "account_audits_since", "account_audits_failed")
 		} else if vars["recon_type"] == "container" {
@@ -383,7 +363,6 @@ func ReconHandler(driveRoot string, mountCheck bool, writer http.ResponseWriter,
 			return
 		}
 	case "expirer":
-		var err error
 		content, err = fromReconCache("object", "object_expiration_pass", "expired_last_pass")
 		if err != nil {
 			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -392,7 +371,6 @@ func ReconHandler(driveRoot string, mountCheck bool, writer http.ResponseWriter,
 	case "mounted":
 		content = getMounts()
 	case "unmounted":
-		var err error
 		if !mountCheck {
 			content = make([]map[string]interface{}, 0)
 		} else {
@@ -403,27 +381,29 @@ func ReconHandler(driveRoot string, mountCheck bool, writer http.ResponseWriter,
 			}
 		}
 	case "ringmd5":
-		var err error
-		content, err = fileMD5("/etc/hummingbird/object.ring.gz", "/etc/hummingbird/container.ring.gz", "/etc/hummingbird/account.ring.gz")
+		if content, err = common.GetAllRingFileMd5s(); err != nil {
+			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+	case "swiftconfmd5":
+		content, err = common.FileMD5("/etc/hummingbird/hummingbird.conf")
 		if err != nil {
-			content, err = fileMD5("/etc/swift/object.ring.gz", "/etc/swift/container.ring.gz", "/etc/swift/account.ring.gz")
+			content, err = common.FileMD5("/etc/swift/swift.conf")
 			if err != nil {
 				http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}
 		}
-	case "swiftconfmd5":
-		var err error
-		content, err = fileMD5("/etc/hummingbird/hummingbird.conf")
+	case "hummingbirdconfmd5":
+		content, err = common.FileMD5("/etc/hummingbird/hummingbird.conf")
 		if err != nil {
-			content, err = fileMD5("/etc/swift/swift.conf")
+			content, err = common.FileMD5("/etc/swift/swift.conf")
 			if err != nil {
 				http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				return
 			}
 		}
 	case "quarantined":
-		var err error
 		content, err = quarantineCounts(driveRoot)
 		if err != nil {
 			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -434,7 +414,6 @@ func ReconHandler(driveRoot string, mountCheck bool, writer http.ResponseWriter,
 	case "version":
 		content = map[string]string{"version": "idunno"}
 	case "diskusage":
-		var err error
 		content, err = diskUsage(driveRoot)
 		if err != nil {
 			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -444,7 +423,6 @@ func ReconHandler(driveRoot string, mountCheck bool, writer http.ResponseWriter,
 		//Similar to python time.time()
 		content = float64(time.Now().UnixNano()) / float64(time.Second)
 	case "driveaudit":
-		var err error
 		content, err = fromReconCache("drive", "drive_audit_errors")
 		if err != nil {
 			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
