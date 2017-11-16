@@ -17,26 +17,15 @@ package middleware
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/srv"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
-
-type countingReadCloser struct {
-	io.ReadCloser
-	byteCount int
-}
-
-func (crc *countingReadCloser) Read(b []byte) (n int, err error) {
-	n, err = crc.ReadCloser.Read(b)
-	crc.byteCount += n
-	return n, err
-}
 
 type countingResponseWriter struct {
 	http.ResponseWriter
@@ -57,7 +46,7 @@ func NewRequestLogger(config conf.Section, metricsScope tally.Scope) (func(http.
 				start := time.Now()
 				crw := &countingResponseWriter{ResponseWriter: writer}
 				writer = crw
-				crc := &countingReadCloser{ReadCloser: request.Body}
+				crc := &srv.CountingReadCloser{ReadCloser: request.Body}
 				request.Body = crc
 				next.ServeHTTP(writer, request)
 				ctx := GetProxyContext(request)
@@ -68,7 +57,7 @@ func NewRequestLogger(config conf.Section, metricsScope tally.Scope) (func(http.
 					zap.String("method", request.Method),
 					zap.String("urlPath", common.Urlencode(request.URL.Path)),
 					zap.Int("status", status),
-					zap.Int("contentBytesIn", crc.byteCount),
+					zap.Int("contentBytesIn", crc.ByteCount),
 					zap.Int("contentBytesOut", crw.byteCount),
 					zap.String("contentLengthIn", common.GetDefault(request.Header, "Content-Length", "-")),
 					zap.String("contentLengthOut", common.GetDefault(writer.Header(), "Content-Length", "-")),
