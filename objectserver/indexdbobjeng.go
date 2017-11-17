@@ -1,8 +1,6 @@
 package objectserver
 
 import (
-	"bytes"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -13,9 +11,7 @@ import (
 	"os"
 	"path"
 	"strconv"
-	"strings"
 	"sync"
-	"time"
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
@@ -125,45 +121,6 @@ func (idbe *indexDBEngine) New(vars map[string]string, needData bool, asyncWG *s
 	if indexDB == nil {
 		panic(vars["device"])
 	}
-	if strings.HasPrefix(vars["obj"], "fakelist") {
-		tm := time.Now()
-		b := new(bytes.Buffer)
-		hsh := strings.ToLower(ObjHash(vars, idbe.hashPathPrefix, idbe.hashPathSuffix))
-		if len(hsh) != 32 {
-			return nil, fmt.Errorf("invalid hash %q; length was %d not 32", hsh, len(hsh))
-		}
-		hashBytes, err := hex.DecodeString(hsh)
-		if err != nil {
-			return nil, fmt.Errorf("invalid hash %q; decoding error: %s", hsh, err)
-		}
-		upper := uint64(hashBytes[0])<<24 | uint64(hashBytes[1])<<16 | uint64(hashBytes[2])<<8 | uint64(hashBytes[3])
-		ringPart := int(upper >> (32 - indexDB.RingPartPower))
-		lst, err := indexDB.List(ringPart)
-		if err != nil {
-			return nil, err
-		}
-		fmt.Fprintf(b, "%d\n", ringPart)
-		for _, itm := range lst {
-			fmt.Fprintf(b, "%v\n", itm)
-		}
-		fakebytes := b.Bytes()
-		return &indexDBObject{
-			fallocateReserve: idbe.fallocateReserve,
-			reclaimAge:       idbe.reclaimAge,
-			asyncWG:          asyncWG,
-			indexDB:          indexDB,
-			hash:             hsh,
-			loaded:           true,
-			timestamp:        tm.UnixNano(),
-			deletion:         false,
-			metadata: map[string]string{
-				"X-Timestamp":    common.CanonicalTimestampFromTime(tm),
-				"Content-Length": strconv.Itoa(len(fakebytes)),
-			},
-			path:      "fakelist",
-			fakebytes: fakebytes,
-		}, nil
-	}
 	return &indexDBObject{
 		fallocateReserve: idbe.fallocateReserve,
 		reclaimAge:       idbe.reclaimAge,
@@ -187,7 +144,6 @@ type indexDBObject struct {
 	metadata         map[string]string
 	path             string
 	atomicFileWriter fs.AtomicFileWriter
-	fakebytes        []byte
 }
 
 func (idbo *indexDBObject) load() error {
@@ -250,21 +206,15 @@ func (idbo *indexDBObject) Copy(dsts ...io.Writer) (written int64, err error) {
 	if err := idbo.load(); err != nil {
 		return 0, err
 	}
-	var r io.Reader
 	var f *os.File
-	if idbo.path == "fakelist" {
-		r = bytes.NewBuffer(idbo.fakebytes)
-	} else {
-		f, err = os.Open(idbo.path)
-		if err != nil {
-			return 0, err
-		}
-		r = f
+	f, err = os.Open(idbo.path)
+	if err != nil {
+		return 0, err
 	}
 	if len(dsts) == 1 {
-		written, err = io.Copy(dsts[0], r)
+		written, err = io.Copy(dsts[0], f)
 	} else {
-		written, err = common.Copy(r, dsts...)
+		written, err = common.Copy(f, dsts...)
 	}
 	if f != nil {
 		if err == nil {
