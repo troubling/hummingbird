@@ -543,18 +543,19 @@ type AutoAdmin struct {
 	di             *Dispersion
 	dw             *driveWatch
 	runningForever bool
+	concurrency    int
 }
 
 func (a *AutoAdmin) populateDispersion() {
 	if !putDispersionAccount(a.hClient, a.logger) {
 		return
 	}
-	if !putDispersionContainers(a.hClient, a.logger) {
+	if !putDispersionContainers(a.hClient, a.concurrency, a.logger) {
 		return
 	}
 	for _, pol := range a.policies {
 		if !pol.Deprecated {
-			if !putDispersionObjects(a.hClient, pol, a.logger) {
+			if !putDispersionObjects(a.hClient, pol, a.concurrency, a.logger) {
 				return
 			}
 		}
@@ -607,7 +608,11 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 	if err != nil {
 		return nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
-	pdc, pdcerr := client.NewProxyDirectClient(nil, srv.DefaultConfigLoader{}, logger)
+	policies, err := cnf.GetPolicies()
+	if err != nil {
+		return nil, nil, err
+	}
+	pdc, pdcerr := client.NewProxyDirectClient(policies, srv.DefaultConfigLoader{}, logger)
 	if pdcerr != nil {
 		return nil, nil, fmt.Errorf("Could not make client: %v", pdcerr)
 	}
@@ -623,7 +628,8 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 		policies:       pl,
 		runningForever: false,
 		//containerDispersionGauge: []tally.Gauge{}, TODO- add container disp
-		logger: logger,
+		logger:      logger,
+		concurrency: int(serverconf.GetInt("andrewd", "concurrency", 10)),
 	}
 
 	a.metricsScope, a.metricsCloser = tally.NewRootScope(tally.ScopeOptions{

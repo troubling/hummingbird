@@ -19,9 +19,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -81,7 +85,7 @@ func putDispersionAccount(hClient client.ProxyClient, logger srv.LowLevelLogger)
 	return false
 }
 
-func putDispersionContainers(hClient client.ProxyClient, logger srv.LowLevelLogger) bool {
+func putDispersionContainers(hClient client.ProxyClient, concurrency int, logger srv.LowLevelLogger) bool {
 	// will check for a .dispersion/container-init container
 	// if not there, will populate all the dispersion containers
 	// and then put the .dispersion/container-init to mark it
@@ -91,47 +95,70 @@ func putDispersionContainers(hClient client.ProxyClient, logger srv.LowLevelLogg
 	}
 
 	contRing := hClient.ContainerRing()
-	contNames := make(chan string)
+	contNames := make(chan string, concurrency)
 	go getDispersionNames("", "disp-conts-", contRing, contNames)
 
 	start := time.Now()
 	num := uint64(0)
 	successes := uint64(0)
 
-	for container := range contNames {
-		num += 1
-		if num%1000 == 0 {
-			timeSpent := time.Since(start).Seconds()
-			partsSec := float64(num) / timeSpent
-			hoursRem := float64(contRing.PartitionCount()-num) / partsSec / 60 / 60
-			logger.Info("[dispersion-container-init]",
-				zap.Uint64("containersPut", num),
-				zap.Float64("partitionsPerSecond", partsSec),
-				zap.Float64("hoursRemaining", hoursRem))
-		}
-
-		if resp = hClient.PutContainer(AdminAccount, container, common.Map2Headers(map[string]string{
-			"Content-Length": "0",
-			"Content-Type":   "text",
-			"X-Timestamp": fmt.Sprintf("%d",
-				time.Now().Unix())})); resp.StatusCode/100 == 2 {
-			successes += 1
-			resp.Body.Close()
-		} else {
-			logger.Error("[dispersion-container-init-error]",
-				zap.String("containerPath", fmt.Sprintf("/%s/%s", AdminAccount, container)),
-				zap.Int("respCode", resp.StatusCode))
-		}
+	wg := &sync.WaitGroup{}
+	wg.Add(concurrency)
+	for i := 0; i < concurrency; i++ {
+		go func() {
+			defer wg.Done()
+			for container := range contNames {
+				n := atomic.AddUint64(&num, 1)
+				if n%1000 == 0 {
+					timeSpent := time.Since(start).Seconds()
+					partsSec := float64(n) / timeSpent
+					hoursRem := float64(contRing.PartitionCount()-n) / partsSec / 60 / 60
+					logger.Info(
+						"[dispersion-container-init]",
+						zap.Uint64("containersPut", n),
+						zap.Float64("partitionsPerSecond", partsSec),
+						zap.Float64("hoursRemaining", hoursRem),
+					)
+				}
+				resp := hClient.PutContainer(
+					AdminAccount,
+					container,
+					common.Map2Headers(map[string]string{
+						"Content-Length": "0",
+						"Content-Type":   "text",
+						"X-Timestamp":    fmt.Sprintf("%d", time.Now().Unix()),
+					}),
+				)
+				io.Copy(ioutil.Discard, resp.Body)
+				resp.Body.Close()
+				if resp.StatusCode/100 == 2 {
+					successes += 1
+				} else {
+					logger.Error(
+						"[dispersion-container-init-error]",
+						zap.String("containerPath", fmt.Sprintf("/%s/%s", AdminAccount, container)),
+						zap.Int("respCode", resp.StatusCode),
+					)
+				}
+			}
+		}()
 	}
+	wg.Wait()
 	if successes == num {
-		if resp = hClient.PutContainer(AdminAccount, "container-init", common.Map2Headers(map[string]string{
-			"Content-Length": "0",
-			"Content-Type":   "text",
-			"X-Timestamp": fmt.Sprintf("%d",
-				time.Now().Unix())})); resp.StatusCode/100 == 2 {
+		resp = hClient.PutContainer(
+			AdminAccount,
+			"container-init",
+			common.Map2Headers(map[string]string{
+				"Content-Length": "0",
+				"Content-Type":   "text",
+				"X-Timestamp":    fmt.Sprintf("%d", time.Now().Unix()),
+			}),
+		)
+		io.Copy(ioutil.Discard, resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode/100 == 2 {
 			logger.Info("[dispersion-container-done]",
 				zap.Bool("Success", true), zap.Uint64("numContainers", num))
-			resp.Body.Close()
 			return true
 		}
 	}
@@ -140,7 +167,7 @@ func putDispersionContainers(hClient client.ProxyClient, logger srv.LowLevelLogg
 	return false
 }
 
-func putDispersionObjects(hClient client.ProxyClient, policy *conf.Policy, logger srv.LowLevelLogger) bool {
+func putDispersionObjects(hClient client.ProxyClient, policy *conf.Policy, concurrency int, logger srv.LowLevelLogger) bool {
 	// will check for a .dispersion/disp-objs-policyId/object-init object
 	// if not there, will populate all the dispersion objects for the policy
 	// and then put the .dispersion/disp-objs-policyId/object-init to mark it
@@ -165,7 +192,7 @@ func putDispersionObjects(hClient client.ProxyClient, policy *conf.Policy, logge
 	}
 	numObjs := uint64(0)
 	successes := uint64(0)
-	objNames := make(chan string)
+	objNames := make(chan string, concurrency)
 	var objRing ring.Ring
 	objRing, resp = hClient.ObjectRingFor(AdminAccount, container)
 	if objRing == nil || resp != nil {
@@ -177,42 +204,71 @@ func putDispersionObjects(hClient client.ProxyClient, policy *conf.Policy, logge
 
 	start := time.Now()
 
-	for obj := range objNames {
-		numObjs += 1
-		if numObjs%1000 == 0 {
-			timeSpent := time.Since(start).Seconds()
-			partsSec := float64(numObjs) / timeSpent
-			hoursRem := float64(objRing.PartitionCount()-numObjs) / partsSec / 60 / 60
-			logger.Info("[dispersion-object-init]",
-				zap.Uint64("objsPut", numObjs),
-				zap.Float64("partitionsPerSecond", partsSec),
-				zap.Float64("hoursRemaining", hoursRem))
-		}
-		if resp = hClient.PutObject(
-			AdminAccount, container, obj, common.Map2Headers(map[string]string{
-				"Content-Length": "0",
-				"Content-Type":   "text",
-				"X-Timestamp":    fmt.Sprintf("%d", time.Now().Unix())}),
-			bytes.NewReader([]byte(""))); resp.StatusCode/100 == 2 {
-			successes += 1
-		} else {
-			logger.Error("[dispersion-object-init-error]",
-				zap.String("objectPath", fmt.Sprintf(
-					"/%s/%s/%s", AdminAccount, container, obj)),
-				zap.Int("respCode", resp.StatusCode))
-		}
+	wg := &sync.WaitGroup{}
+	wg.Add(concurrency)
+	for i := 0; i < concurrency; i++ {
+		go func() {
+			defer wg.Done()
+			for obj := range objNames {
+				n := atomic.AddUint64(&numObjs, 1)
+				if n%1000 == 0 {
+					timeSpent := time.Since(start).Seconds()
+					partsSec := float64(n) / timeSpent
+					hoursRem := float64(objRing.PartitionCount()-n) / partsSec / 60 / 60
+					logger.Info(
+						"[dispersion-object-init]",
+						zap.Uint64("objsPut", n),
+						zap.Float64("partitionsPerSecond", partsSec),
+						zap.Float64("hoursRemaining", hoursRem),
+					)
+				}
+				resp := hClient.PutObject(
+					AdminAccount,
+					container,
+					obj,
+					common.Map2Headers(map[string]string{
+						"Content-Length": "0",
+						"Content-Type":   "text",
+						"X-Timestamp":    fmt.Sprintf("%d", time.Now().Unix()),
+					}),
+					bytes.NewReader([]byte("")),
+				)
+				io.Copy(ioutil.Discard, resp.Body)
+				resp.Body.Close()
+				if resp.StatusCode/100 == 2 {
+					successes += 1
+				} else {
+					logger.Error(
+						"[dispersion-object-init-error]",
+						zap.String("objectPath", fmt.Sprintf("/%s/%s/%s", AdminAccount, container, obj)),
+						zap.Int("respCode", resp.StatusCode),
+					)
+				}
+			}
+		}()
 	}
+	wg.Wait()
 	if successes == numObjs {
-		if resp = hClient.PutObject(
-			AdminAccount, container, "object-init", common.Map2Headers(map[string]string{
+		resp = hClient.PutObject(
+			AdminAccount,
+			container,
+			"object-init",
+			common.Map2Headers(map[string]string{
 				"Content-Length": "0",
 				"Content-Type":   "text",
-				"X-Timestamp":    fmt.Sprintf("%d", time.Now().Unix())}),
-			bytes.NewReader([]byte(""))); resp.StatusCode/100 == 2 {
-			logger.Info("[dispersion-object-done]",
+				"X-Timestamp":    fmt.Sprintf("%d", time.Now().Unix()),
+			}),
+			bytes.NewReader([]byte("")),
+		)
+		io.Copy(ioutil.Discard, resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode/100 == 2 {
+			logger.Info(
+				"[dispersion-object-done]",
 				zap.Int("policy-index", policy.Index),
-				zap.Bool("Success", true), zap.Uint64("numObjs", numObjs))
-			resp.Body.Close()
+				zap.Bool("Success", true),
+				zap.Uint64("numObjs", numObjs),
+			)
 			return true
 		}
 	}

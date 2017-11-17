@@ -134,7 +134,7 @@ func TestGetDispersionObjects(t *testing.T) {
 func TestPutDispersionObjects(t *testing.T) {
 	p := conf.Policy{Name: "hat"}
 	c := &testDispersionClient{objRing: &FakeRing{Devs: []*ring.Device{{Device: "sda"}, {Device: "sdb"}, {Device: "sdc"}}, nodeCalls: 3}}
-	require.True(t, putDispersionObjects(c, &p, &FakeLowLevelLogger{}))
+	require.True(t, putDispersionObjects(c, &p, 1, &FakeLowLevelLogger{}))
 	require.Equal(t, 4, c.objPuts)
 }
 
