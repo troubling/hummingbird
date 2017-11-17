@@ -495,11 +495,11 @@ func main() {
 	case "thrash":
 		bench.RunThrash(flag.Args()[1:])
 	case "moveparts":
-		objectserver.MoveParts(flag.Args()[1:])
+		objectserver.MoveParts(flag.Args()[1:], srv.DefaultConfigLoader{})
 	case "restoredevice":
-		objectserver.RestoreDevice(flag.Args()[1:])
+		objectserver.RestoreDevice(flag.Args()[1:], srv.DefaultConfigLoader{})
 	case "rescueparts":
-		objectserver.RescueParts(flag.Args()[1:])
+		objectserver.RescueParts(flag.Args()[1:], srv.DefaultConfigLoader{})
 	case "ring":
 		ringBuilderFlags.Parse(flag.Args()[1:])
 		tools.RingBuildCmd(ringBuilderFlags)

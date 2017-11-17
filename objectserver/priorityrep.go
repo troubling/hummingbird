@@ -18,18 +18,20 @@ package objectserver
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"math/rand"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
+	"github.com/troubling/hummingbird/common/srv"
 )
 
 type devLimiter struct {
@@ -154,8 +156,24 @@ func getPartMoveJobs(oldRing, newRing ring.Ring) []*PriorityRepJob {
 	return jobs
 }
 
-// MoveParts takes two object .ring.gz files as []string{oldRing, newRing} and dispatches priority replication jobs to rebalance data in line with any ring changes.
-func MoveParts(args []string) {
+func objectRingPolicyIndex(s string) (int, error) {
+	if !strings.Contains(s, "object") {
+		return 0, errors.New(fmt.Sprintf("object not in string: %v", s))
+	}
+	re := regexp.MustCompile(`object-(\d*)`)
+	match := re.FindStringSubmatch(s)
+	if match == nil {
+		return 0, nil
+	} else {
+		policyIdx, err := strconv.Atoi(match[1])
+		if err != nil {
+			return 0, errors.New(fmt.Sprintf("invalid policy index: %v\n", match[1]))
+		}
+		return policyIdx, nil
+	}
+}
+
+func doMoveParts(args []string, cnf srv.ConfigLoader) int {
 	flags := flag.NewFlagSet("moveparts", flag.ExitOnError)
 	policy := flags.Int("p", 0, "policy index to use")
 	flags.Usage = func() {
@@ -165,29 +183,47 @@ func MoveParts(args []string) {
 	flags.Parse(args)
 	if len(flags.Args()) != 1 {
 		flags.Usage()
-		return
+		return 1
 	}
 
-	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
+	oldPolicy, policyErr := objectRingPolicyIndex(flags.Arg(0))
+	if policyErr != nil {
+		fmt.Println("Invalid ring:", policyErr)
+		return 1
+	}
+
+	if oldPolicy != *policy {
+		fmt.Printf("Old policy: %v doesn't match specified policy: %v\n", oldPolicy, *policy)
+		return 1
+	}
+
+	hashPathPrefix, hashPathSuffix, err := cnf.GetHashPrefixAndSuffix()
 	if err != nil {
 		fmt.Println("Unable to load hash path prefix and suffix:", err)
-		return
+		return 1
 	}
 	oldRing, err := ring.LoadRing(flags.Arg(0), hashPathPrefix, hashPathSuffix)
 	if err != nil {
 		fmt.Println("Unable to load old ring:", err)
-		return
+		return 1
 	}
 	curRing, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, *policy)
 	if err != nil {
 		fmt.Println("Unable to load current ring:", err)
-		return
+		return 1
 	}
 	client := &http.Client{Timeout: time.Hour}
 	jobs := getPartMoveJobs(oldRing, curRing)
 	fmt.Println("Job count:", len(jobs))
 	doPriRepJobs(jobs, 2, client)
 	fmt.Println("Done sending jobs.")
+	return 0
+}
+
+// MoveParts takes two object .ring.gz files as []string{oldRing, newRing} and dispatches priority replication jobs to rebalance data in line with any ring changes.
+func MoveParts(args []string, cnf srv.ConfigLoader) {
+	ret := doMoveParts(args, cnf)
+	os.Exit(ret)
 }
 
 // getRestoreDeviceJobs takes an ip address and device name, and creates a list of jobs to restore that device's data from peers.
@@ -244,7 +280,7 @@ func getRestoreDeviceJobs(theRing ring.Ring, ip string, devName string, srcRegio
 }
 
 // RestoreDevice takes an IP address and device name such as []string{"172.24.0.1", "sda1"} and attempts to restores its data from peers.
-func RestoreDevice(args []string) {
+func RestoreDevice(args []string, cnf srv.ConfigLoader) {
 	flags := flag.NewFlagSet("restoredevice", flag.ExitOnError)
 	policy := flags.Int("p", 0, "policy index to use")
 	region := flags.Int("region", -1, "restore device only from peers in specified region")
@@ -261,7 +297,7 @@ func RestoreDevice(args []string) {
 		return
 	}
 
-	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
+	hashPathPrefix, hashPathSuffix, err := cnf.GetHashPrefixAndSuffix()
 	if err != nil {
 		fmt.Println("Unable to load hash path prefix and suffix:", err)
 		return
@@ -325,7 +361,7 @@ func getRescuePartsJobs(objRing ring.Ring, partitions []uint64) []*PriorityRepJo
 	return jobs
 }
 
-func RescueParts(args []string) {
+func RescueParts(args []string, cnf srv.ConfigLoader) {
 	flags := flag.NewFlagSet("rescueparts", flag.ExitOnError)
 	policy := flags.Int("p", 0, "policy index to use")
 	flags.Usage = func() {
@@ -338,7 +374,7 @@ func RescueParts(args []string) {
 		return
 	}
 
-	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
+	hashPathPrefix, hashPathSuffix, err := cnf.GetHashPrefixAndSuffix()
 	if err != nil {
 		fmt.Println("Unable to load hash path prefix and suffix:", err)
 		return
