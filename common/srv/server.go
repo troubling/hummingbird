@@ -21,6 +21,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -102,6 +103,7 @@ type WebWriter struct {
 	http.ResponseWriter
 	Status          int
 	ResponseStarted time.Time
+	ByteCount       int
 }
 
 func (w *WebWriter) WriteHeader(status int) {
@@ -116,6 +118,23 @@ func (w WebWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 
 func (w *WebWriter) Response() (time.Time, int) {
 	return w.ResponseStarted, w.Status
+}
+
+func (w *WebWriter) Write(b []byte) (n int, err error) {
+	n, err = w.ResponseWriter.Write(b)
+	w.ByteCount += n
+	return n, err
+}
+
+type CountingReadCloser struct {
+	io.ReadCloser
+	ByteCount int
+}
+
+func (crc *CountingReadCloser) Read(b []byte) (n int, err error) {
+	n, err = crc.ReadCloser.Read(b)
+	crc.ByteCount += n
+	return n, err
 }
 
 func CopyResponseHeaders(w http.ResponseWriter, src *http.Response) {

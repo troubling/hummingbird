@@ -286,6 +286,8 @@ func (r *Replicator) LogRequest(next http.Handler) http.Handler {
 		start := time.Now()
 		logr := r.logger.With(zap.String("txn", request.Header.Get("X-Trans-Id")))
 		request = srv.SetLogger(request, logr)
+		crc := &srv.CountingReadCloser{ReadCloser: request.Body}
+		request.Body = crc
 		next.ServeHTTP(newWriter, request)
 		logr.Info("Request log",
 			zap.String("remoteAddr", request.RemoteAddr),
@@ -293,7 +295,10 @@ func (r *Replicator) LogRequest(next http.Handler) http.Handler {
 			zap.String("method", request.Method),
 			zap.String("urlPath", common.Urlencode(request.URL.Path)),
 			zap.Int("status", newWriter.Status),
-			zap.String("contentLength", common.GetDefault(newWriter.Header(), "Content-Length", "-")),
+			zap.Int("contentBytesIn", crc.ByteCount),
+			zap.Int("contentBytesOut", newWriter.ByteCount),
+			zap.String("contentLengthIn", common.GetDefault(request.Header, "Content-Length", "-")),
+			zap.String("contentLengthOut", common.GetDefault(newWriter.Header(), "Content-Length", "-")),
 			zap.String("referer", common.GetDefault(request.Header, "Referer", "-")),
 			zap.String("userAgent", common.GetDefault(request.Header, "User-Agent", "-")),
 			zap.Float64("requestTimeSeconds", time.Since(start).Seconds()),
