@@ -54,6 +54,7 @@ type Replicator struct {
 	logger         srv.LowLevelLogger
 	serverPort     int
 	Ring           ring.Ring
+	accountRing    ring.Ring
 	perUsync       int64
 	maxUsyncs      int
 	concurrencySem chan struct{}
@@ -78,7 +79,7 @@ type replicationDevice struct {
 		rsync(dev *ring.Device, c ReplicableContainer, part uint64, op string) error
 		usync(dev *ring.Device, c ReplicableContainer, part uint64, localID string, point int64) error
 		chooseReplicationStrategy(localInfo, remoteInfo *ContainerInfo, usyncThreshold int64) string
-		replicateDatabaseToDevice(dev *ring.Device, c ReplicableContainer, part uint64) error
+		replicateDatabaseToDevice(dev *ring.Device, c ReplicableContainer, part uint64, ringIndex int) error
 		replicateDatabase(dbFile string) error
 		findContainerDbs(devicePath string, results chan string)
 		incrementStat(stat string)
@@ -214,11 +215,27 @@ func (rd *replicationDevice) chooseReplicationStrategy(localInfo, remoteInfo *Co
 	}
 }
 
-func (rd *replicationDevice) replicateDatabaseToDevice(dev *ring.Device, c ReplicableContainer, part uint64) error {
+func (rd *replicationDevice) replicateDatabaseToDevice(dev *ring.Device, c ReplicableContainer, part uint64, ringIndex int) error {
 	rd.i.incrementStat("attempted")
 	info, err := c.GetInfo()
 	if err != nil {
 		return fmt.Errorf("getting local info from %s: %v", c.RingHash(), err)
+	}
+	if rd.r.accountRing != nil {
+		accountPartition := rd.r.accountRing.GetPartition(info.Account, "", "")
+		accountNodes := rd.r.accountRing.GetNodes(accountPartition)
+		accountNode := accountNodes[ringIndex%len(accountNodes)]
+		accountUpdateHelper(
+			info,
+			fmt.Sprintf("%s:%d", accountNode.Ip, accountNode.Port),
+			accountNode.Device,
+			fmt.Sprintf("%d", accountPartition),
+			info.Account,
+			info.Container,
+			common.GetTransactionId(),
+			false,
+			rd.r.client,
+		)
 	}
 	remoteInfo, err := rd.i.sync(dev, part, c.RingHash(), info)
 	if err != nil {
@@ -271,7 +288,7 @@ func (rd *replicationDevice) replicateDatabase(dbFile string) error {
 	}
 	successes := 0
 	for i := 0; i < len(devices); i++ {
-		if err := rd.i.replicateDatabaseToDevice(devices[i], c, part); err == nil {
+		if err := rd.i.replicateDatabaseToDevice(devices[i], c, part, i); err == nil {
 			rd.i.incrementStat("success")
 			rd.r.logger.Debug("Succeeded replicating database.",
 				zap.String("dbFile", dbFile),
@@ -583,6 +600,10 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 	if err != nil {
 		return nil, nil, fmt.Errorf("Error loading container ring")
 	}
+	accountRing, err := cnf.GetRing("account", hashPathPrefix, hashPathSuffix, 0)
+	if err != nil {
+		return nil, nil, fmt.Errorf("Error loading account ring")
+	}
 	concurrency := int(serverconf.GetInt("container-replicator", "concurrency", 4))
 
 	logLevelString := serverconf.GetDefault("container-replicator", "log_level", "INFO")
@@ -608,6 +629,7 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 		logger:         logger,
 		concurrencySem: make(chan struct{}, concurrency),
 		Ring:           ring,
+		accountRing:    accountRing,
 		client: &http.Client{
 			Timeout:   time.Minute * 15,
 			Transport: &http.Transport{Dial: (&net.Dialer{Timeout: time.Second}).Dial},

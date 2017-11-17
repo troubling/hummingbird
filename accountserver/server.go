@@ -158,7 +158,7 @@ func (server *AccountServer) AccountGetHandler(writer http.ResponseWriter, reque
 				prefix = fmt.Sprintf("X-Account-Storage-Policy-%d-", policyStat.StoragePolicyIndex)
 			}
 			headers.Set(prefix+"Container-Count", fmt.Sprintf("%d", policyStat.ContainerCount))
-			headers.Set(prefix+"Object-Count", fmt.Sprintf("%d", policyStat.ContainerCount))
+			headers.Set(prefix+"Object-Count", fmt.Sprintf("%d", policyStat.ObjectCount))
 			headers.Set(prefix+"Bytes-Used", fmt.Sprintf("%d", policyStat.BytesUsed))
 		}
 	}
