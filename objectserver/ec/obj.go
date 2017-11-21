@@ -16,47 +16,39 @@
 package ec
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"math"
+	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
+
+	"go.uber.org/zap"
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/fs"
+	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/objectserver"
 )
 
-const (
-	locationNotFound = iota
-	locationNursery
-	locationStable
-
-	updateData = iota
-	updateTombstone
-	updateMetadata
-)
-
-var fileExtensions = map[int]string{
-	updateData:      "data",
-	updateTombstone: "ts",
-	updateMetadata:  "meta",
-}
-
 type ecObject struct {
-	file       *os.File
-	afw        fs.AtomicFileWriter
-	location   int
-	updateType int
-	tmpDir     string
-	nurseryDir string
-	reserve    int64
-	exists     bool
-	metadata   map[string]string
-	reclaimAge int64
-	asyncWG    *sync.WaitGroup // Used to keep track of async goroutines
+	IndexDBItem
+	afw         fs.AtomicFileWriter
+	idb         *IndexDB
+	policy      int
+	metadata    map[string]string
+	ring        ring.Ring
+	logger      *zap.Logger
+	reserve     int64
+	dataFrags   int
+	parityFrags int
+	chunkSize   int
+	client      *http.Client
 }
 
 func (o *ecObject) Metadata() map[string]string {
@@ -76,19 +68,58 @@ func (o *ecObject) Quarantine() error {
 }
 
 func (o *ecObject) Exists() bool {
-	return o.exists
+	if o.Deletion == true {
+		return false
+	}
+	return o.Path != ""
 }
 
 func (o *ecObject) Copy(dsts ...io.Writer) (written int64, err error) {
-	if o.location == locationNursery {
-		if len(dsts) == 1 {
-			return io.Copy(dsts[0], o.file)
-		} else {
-			return common.Copy(o.file, dsts...)
-		}
-	} else {
-		return 0, errors.New("Object doesn't exist")
+	if !o.Exists() {
+		return 0, errors.New("Doesn't exist")
 	}
+
+	if o.Nursery {
+		file, err := os.Open(o.Path)
+		if err != nil {
+			return 0, err
+		}
+		defer file.Close()
+		return common.Copy(file, dsts...)
+	}
+
+	var dataFrags, parityFrags, chunkSize int
+	if n, err := fmt.Sscanf(o.metadata["Ec-Scheme"], "%d/%d/%d", &dataFrags, &parityFrags, &chunkSize); err != nil || n != 3 {
+		return 0, errors.New("Invalid scheme")
+	}
+	contentLength := o.ContentLength()
+	ns := strings.SplitN(o.metadata["name"], "/", 4)
+	if len(ns) != 4 {
+		return 0, fmt.Errorf("invalid metadata name: %s", o.metadata["name"])
+	}
+	nodes := o.ring.GetNodes(o.ring.GetPartition(ns[1], ns[2], ns[3]))
+	if len(nodes) < dataFrags+parityFrags {
+		return 0, errors.New("Not enough nodes for scheme")
+	}
+	bodies := make([]io.Reader, len(nodes))
+	for i, node := range nodes {
+		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s:%d/ec-frag/%s/%s/%d", node.Ip, node.Port, node.Device, o.Hash, i), nil)
+		if err != nil {
+			continue
+		}
+		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
+		resp, err := o.client.Do(req)
+		if err != nil {
+			continue
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			continue
+		}
+		bodies[i] = resp.Body
+	}
+	ecGlue(dataFrags, parityFrags, bodies, chunkSize, contentLength, dsts...)
+	return contentLength, nil
 }
 
 func (o *ecObject) CopyRange(w io.Writer, start int64, end int64) (int64, error) {
@@ -96,61 +127,53 @@ func (o *ecObject) CopyRange(w io.Writer, start int64, end int64) (int64, error)
 }
 
 func (o *ecObject) Repr() string {
-	return fmt.Sprintf("ecObject(%s)", o.nurseryDir)
+	return fmt.Sprintf("ecObject(%s)", o.Hash)
 }
 
-func (o *ecObject) newFile(updateType int, size int64) (io.Writer, error) {
+func (o *ecObject) SetData(size int64) (io.Writer, error) {
 	var err error
 	o.Close()
-	if o.afw, err = fs.NewAtomicFileWriter(o.tmpDir, o.nurseryDir); err != nil {
+	if o.afw, err = o.idb.TempFile(o.Hash, 0, math.MaxInt64, size, true); err != nil {
 		return nil, fmt.Errorf("Error creating temp file: %v", err)
 	}
 	if err := o.afw.Preallocate(size, o.reserve); err != nil {
 		o.afw.Abandon()
 		return nil, objectserver.DriveFullError
 	}
-	o.updateType = updateType
 	return o.afw, nil
 }
 
-func (o *ecObject) SetData(size int64) (io.Writer, error) {
-	return o.newFile(updateData, size)
+func (o *ecObject) commit(metadata map[string]string, deletion bool) error {
+	var timestamp int64
+	defer o.Close()
+	if o.afw != nil || deletion {
+		timestampStr, ok := metadata["X-Timestamp"]
+		if !ok {
+			return errors.New("no timestamp in metadata")
+		}
+		timestampTime, err := common.ParseDate(timestampStr)
+		if err != nil {
+			return err
+		}
+		timestamp = timestampTime.UnixNano()
+	}
+	metabytes, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+	return o.idb.Commit(o.afw, o.Hash, 0, timestamp, deletion, MetadataHash(metadata), metabytes, true)
 }
 
 func (o *ecObject) Commit(metadata map[string]string) error {
-	defer o.afw.Abandon()
-	timestamp, ok := metadata["X-Timestamp"]
-	if !ok {
-		return errors.New("No timestamp in metadata")
-	}
-	if err := objectserver.WriteMetadata(o.afw.Fd(), metadata); err != nil {
-		return fmt.Errorf("Error writing metadata: %v", err)
-	}
-	fileName := filepath.Join(o.nurseryDir, fmt.Sprintf("%s.%s", timestamp, fileExtensions[o.updateType]))
-	o.afw.Save(fileName)
-	o.asyncWG.Add(1)
-	go func() {
-		defer o.asyncWG.Done()
-		objectserver.HashCleanupListDir(o.nurseryDir, o.reclaimAge)
-		if dir, err := os.OpenFile(o.nurseryDir, os.O_RDONLY, 0666); err == nil {
-			dir.Sync()
-			dir.Close()
-		}
-	}()
-	return nil
+	return o.commit(metadata, false)
+}
+
+func (o *ecObject) Delete(metadata map[string]string) error {
+	return o.commit(metadata, true)
 }
 
 func (o *ecObject) CommitMetadata(metadata map[string]string) error {
 	return errors.New("Unimplemented")
-}
-
-func (o *ecObject) Delete(metadata map[string]string) error {
-	if _, err := o.newFile(updateTombstone, 0); err != nil {
-		return err
-	} else {
-		defer o.Close()
-		return o.Commit(metadata)
-	}
 }
 
 func (o *ecObject) Close() error {
@@ -158,12 +181,105 @@ func (o *ecObject) Close() error {
 		defer o.afw.Abandon()
 		o.afw = nil
 	}
-	if o.file != nil {
-		defer o.file.Close()
-		o.file = nil
-	}
 	return nil
+}
+
+func (o *ecObject) Stabilize(ring ring.Ring, dev *ring.Device, policy int) error {
+	wg := sync.WaitGroup{}
+	success := true
+	ns := strings.SplitN(o.metadata["name"], "/", 4)
+	if len(ns) != 4 {
+		return fmt.Errorf("invalid metadata name: %s", o.metadata["name"])
+	}
+
+	partition := ring.GetPartition(ns[1], ns[2], ns[3])
+	nodes := ring.GetNodes(partition)
+	if len(nodes) != o.dataFrags+o.parityFrags {
+		return fmt.Errorf("Ring doesn't match EC scheme (%d != %d).", len(nodes), o.dataFrags+o.parityFrags)
+	}
+	if o.Deletion {
+		for i, node := range nodes {
+			req, err := http.NewRequest("DELETE", fmt.Sprintf("http://%s:%d/ec-frag/%s/%s/%d", node.Ip, node.Port, node.Device, o.Hash, i), nil)
+			if err != nil {
+				return err
+			}
+			req.Header.Set("X-Timestamp", o.metadata["X-Timestamp"])
+			req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(policy))
+			wg.Add(1)
+			go func(req *http.Request) {
+				defer wg.Done()
+				if resp, err := o.client.Do(req); err != nil {
+					success = false
+					return
+				} else {
+					io.Copy(ioutil.Discard, resp.Body)
+					resp.Body.Close()
+					if resp.StatusCode/100 != 2 && resp.StatusCode != 404 {
+						success = false
+						return
+					}
+				}
+			}(req)
+		}
+	} else {
+		fp, err := os.Open(o.Path)
+		if err != nil {
+			return err
+		}
+
+		contentLength := int64(0)
+		if fi, err := fp.Stat(); err != nil {
+			return err
+		} else {
+			contentLength = fi.Size()
+		}
+
+		defer fp.Close()
+
+		writers := make([]io.WriteCloser, len(nodes))
+		for i, node := range nodes {
+			rp, wp := io.Pipe()
+			defer rp.Close()
+			defer wp.Close()
+			writers[i] = wp
+			req, err := http.NewRequest("PUT", fmt.Sprintf("http://%s:%d/ec-frag/%s/%s/%d", node.Ip, node.Port, node.Device, o.Hash, i), rp)
+			if err != nil {
+				return err
+			}
+			req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(policy))
+			req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("%d/%d/%d", o.dataFrags, o.parityFrags, o.chunkSize))
+			for k, v := range o.metadata {
+				req.Header.Set("Meta-"+k, v)
+			}
+			wg.Add(1)
+			go func(req *http.Request) {
+				defer wg.Done()
+				if resp, err := o.client.Do(req); err != nil {
+					success = false
+					return
+				} else {
+					io.Copy(ioutil.Discard, resp.Body)
+					resp.Body.Close()
+					if resp.StatusCode/100 != 2 {
+						success = false
+						return
+					}
+				}
+			}(req)
+		}
+		// TODO: junk to get expect 100-continue to work asynchronously before ecSplit is called
+		ecSplit(o.dataFrags, o.parityFrags, fp, o.chunkSize, contentLength, writers)
+		for _, w := range writers {
+			w.Close()
+		}
+	}
+	wg.Wait()
+	if !success {
+		return fmt.Errorf("Failed to stabilize object")
+	}
+	return o.idb.Remove(o.Hash, o.Shard, o.Timestamp, true)
 }
 
 // make sure these things satisfy interfaces at compile time
 var _ objectserver.Object = &ecObject{}
+var _ objectserver.ObjectStabilizer = &ecObject{}

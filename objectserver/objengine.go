@@ -24,6 +24,7 @@ import (
 	"sync"
 
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
 )
 
@@ -60,7 +61,7 @@ type Object interface {
 type ObjectStabilizer interface {
 	Object
 	// Stabilize object- move to stable location / erasure code / do nothing / etc
-	Stabilize() error
+	Stabilize(ring.Ring, *ring.Device, int) error
 }
 
 // ObjectEngine is the type you have to give hummingbird to create a new object engine.
