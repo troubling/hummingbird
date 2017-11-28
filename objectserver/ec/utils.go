@@ -19,6 +19,7 @@ func ecSplit(dataChunks, parityChunks int, fp io.Reader, chunkSize int, contentL
 		data[i] = databuf[i*chunkSize : (i+1)*chunkSize]
 	}
 	totalRead := int64(0)
+	failed := make([]bool, len(writers))
 	for totalRead < contentLength {
 		expectedRead := dataChunks * chunkSize
 		if contentLength-totalRead < int64(expectedRead) {
@@ -44,10 +45,10 @@ func ecSplit(dataChunks, parityChunks int, fp io.Reader, chunkSize int, contentL
 			return err
 		}
 		for i := range data {
-			if writers[i] != nil {
+			if writers[i] != nil && !failed[i] {
 				_, err := writers[i].Write(data[i])
 				if err != nil {
-					writers[i] = nil
+					failed[i] = true
 				}
 			}
 		}
@@ -63,6 +64,7 @@ func ecGlue(dataChunks, parityChunks int, bodies []io.Reader, chunkSize int, con
 	data := make([][]byte, dataChunks+parityChunks)
 	databuf := make([]byte, (dataChunks+parityChunks)*chunkSize)
 	totalWritten := int64(0)
+	failed := make([]bool, len(bodies))
 	for totalWritten < contentLength {
 		expectedChunkSize := chunkSize
 		if contentLength-totalWritten < int64(chunkSize*dataChunks) {
@@ -72,15 +74,15 @@ func ecGlue(dataChunks, parityChunks int, bodies []io.Reader, chunkSize int, con
 			}
 		}
 		for i := range data {
-			if bodies[i] != nil {
+			if bodies[i] != nil && !failed[i] {
 				data[i] = databuf[i*expectedChunkSize : (i+1)*expectedChunkSize]
 			}
 		}
 		for i := range bodies {
-			if bodies[i] != nil {
+			if bodies[i] != nil && !failed[i] {
 				if _, err := io.ReadFull(bodies[i], data[i]); err != nil {
 					data[i] = nil
-					bodies[i] = nil
+					failed[i] = true
 				}
 			}
 		}
