@@ -112,7 +112,10 @@ func (o *ecObject) Copy(dsts ...io.Writer) (written int64, err error) {
 		if err != nil {
 			continue
 		}
-		defer resp.Body.Close()
+		defer func() {
+			io.Copy(ioutil.Discard, resp.Body)
+			resp.Body.Close()
+		}()
 		if resp.StatusCode != http.StatusOK {
 			continue
 		}

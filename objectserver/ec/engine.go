@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"math/bits"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -283,7 +284,20 @@ func ecEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.Fl
 		logger:         logger,
 		ring:           r,
 		idbs:           map[string]*IndexDB{},
-		client:         &http.Client{Timeout: time.Minute * 5},
+		client: &http.Client{
+			Timeout: 120 * time.Minute,
+			Transport: &http.Transport{
+				MaxIdleConnsPerHost: 256,
+				MaxIdleConns:        0,
+				IdleConnTimeout:     5 * time.Second,
+				DisableCompression:  true,
+				Dial: (&net.Dialer{
+					Timeout:   10 * time.Second,
+					KeepAlive: 5 * time.Second,
+				}).Dial,
+				ExpectContinueTimeout: 10 * time.Minute,
+			},
+		},
 	}
 	if engine.dataFrags, err = strconv.Atoi(policy.Config["data_frags"]); err != nil {
 		return nil, err
