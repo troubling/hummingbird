@@ -54,6 +54,9 @@ import (
 
 // once tombstones get put into stable they can set there indefinitely- i
 // guess auditor can clean them up?
+
+//TODO: dfg the prob where a stable obejct gets quarantined and replication doesnt
+// know to fix it
 const nurseryObjectSleep = 10 * time.Millisecond
 
 type nurseryDevice struct {
