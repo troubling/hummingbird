@@ -96,7 +96,7 @@ func auditHash(hashPath string, skipMd5 bool) (bytesProcessed int64, err error) 
 
 		finfo, err := os.Stat(filePath)
 		if err != nil || !finfo.Mode().IsRegular() {
-			return bytesProcessed, fmt.Errorf("Object file isn't a normal file")
+			return bytesProcessed, fmt.Errorf("Object file isn't a normal file: %s", err)
 		}
 
 		metadata, err := ReadMetadata(filePath)
@@ -112,7 +112,7 @@ func auditHash(hashPath string, skipMd5 bool) (bytesProcessed int64, err error) 
 			}
 			contentLength, err := strconv.ParseInt(metadata["Content-Length"], 10, 64)
 			if err != nil {
-				return bytesProcessed, fmt.Errorf("Error parsing content-length from metadata: %v", err)
+				return bytesProcessed, fmt.Errorf("Error parsing content-length from metadata: %q %v", metadata["Content-Length"], err)
 			}
 			if contentLength != finfo.Size() {
 				return bytesProcessed, fmt.Errorf("File size (%d) doesn't match metadata (%d)", finfo.Size(), contentLength)
@@ -120,12 +120,12 @@ func auditHash(hashPath string, skipMd5 bool) (bytesProcessed int64, err error) 
 			if !skipMd5 {
 				file, err := os.Open(filePath)
 				if err != nil {
-					return bytesProcessed, fmt.Errorf("Error opening file")
+					return bytesProcessed, fmt.Errorf("Error opening file: %s", err)
 				}
 				h := md5.New()
 				bytes, err := common.Copy(file, h)
 				if err != nil {
-					return bytesProcessed, fmt.Errorf("Error reading file")
+					return bytesProcessed, fmt.Errorf("Error reading file: %s", err)
 				}
 				bytesProcessed += bytes
 				if hex.EncodeToString(h.Sum(nil)) != metadata["ETag"] {
@@ -149,14 +149,14 @@ func (a *Auditor) auditSuffix(suffixDir string) {
 	if err != nil {
 		a.errors++
 		a.totalErrors++
-		a.logger.Error("Error reading suffix dir", zap.String("suffixDir", suffixDir))
+		a.logger.Error("Error reading suffix dir", zap.String("suffixDir", suffixDir), zap.Error(err))
 		return
 	}
 	for _, hash := range hashes {
 		_, hexErr := hex.DecodeString(hash)
 		hashDir := filepath.Join(suffixDir, hash)
 		if finfo, err := os.Stat(hashDir); err != nil || len(hash) != 32 || hexErr != nil || !finfo.Mode().IsDir() {
-			a.logger.Error("Skipping invalid file in suffix", zap.String("hashDir", hashDir))
+			a.logger.Error("Skipping invalid file in suffix", zap.String("hashDir", hashDir), zap.Error(err))
 			continue
 		}
 		a.passes++
@@ -184,7 +184,7 @@ func (a *Auditor) auditPartition(partitionDir string) {
 	if err != nil {
 		a.errors++
 		a.totalErrors++
-		a.logger.Error("Error reading partition dir ", zap.String("partitionDir", partitionDir))
+		a.logger.Error("Error reading partition dir ", zap.String("partitionDir", partitionDir), zap.Error(err))
 		return
 	}
 	for _, suffix := range suffixes {
@@ -194,7 +194,7 @@ func (a *Auditor) auditPartition(partitionDir string) {
 		}
 		_, hexErr := strconv.ParseInt(suffix, 16, 64)
 		if finfo, err := os.Stat(suffixDir); err != nil || len(suffix) != 3 || hexErr != nil || !finfo.Mode().IsDir() {
-			a.logger.Error("Skipping invalid file in partition.", zap.String("suffixDir", suffixDir))
+			a.logger.Error("Skipping invalid file in partition.", zap.String("suffixDir", suffixDir), zap.Error(err))
 			continue
 		}
 		a.auditSuffix(suffixDir)
@@ -209,7 +209,7 @@ func (a *Auditor) auditDevice(devPath string) {
 	defer srv.LogPanics(a.logger, "PANIC WHILE AUDITING DEVICE")
 
 	if mounted, err := fs.IsMount(devPath); a.checkMounts && (err != nil || mounted != true) {
-		a.logger.Error("Skipping unmounted device", zap.String("devPath", devPath))
+		a.logger.Error("Skipping unmounted device", zap.String("devPath", devPath), zap.Error(err))
 		return
 	}
 
@@ -223,7 +223,7 @@ func (a *Auditor) auditDevice(devPath string) {
 			if !os.IsNotExist(err) {
 				a.errors++
 				a.totalErrors++
-				a.logger.Error("Error reading objects dir", zap.String("objPath", objPath))
+				a.logger.Error("Error reading objects dir", zap.String("objPath", objPath), zap.Error(err))
 			}
 			continue
 		}
@@ -231,7 +231,7 @@ func (a *Auditor) auditDevice(devPath string) {
 			_, intErr := strconv.ParseInt(partition, 10, 64)
 			partitionDir := filepath.Join(objPath, partition)
 			if finfo, err := os.Stat(partitionDir); err != nil || intErr != nil || !finfo.Mode().IsDir() {
-				a.logger.Error("Skipping invalid file in objects directory", zap.String("partitionDir", partitionDir))
+				a.logger.Error("Skipping invalid file in objects directory", zap.String("partitionDir", partitionDir), zap.Error(err))
 				continue
 			}
 			a.auditPartition(partitionDir)
@@ -314,7 +314,7 @@ func (a *Auditor) run(c <-chan time.Time) {
 			zap.String("driveRoot", a.driveRoot))
 		devices, err := fs.ReadDirNames(a.driveRoot)
 		if err != nil {
-			a.logger.Error("Unable to list devices", zap.String("driveRoot", a.driveRoot))
+			a.logger.Error("Unable to list devices", zap.String("driveRoot", a.driveRoot), zap.Error(err))
 			continue
 		}
 		for _, dev := range devices {

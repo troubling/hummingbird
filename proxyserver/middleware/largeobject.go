@@ -81,7 +81,7 @@ type sloPutManifest struct {
 func splitSegPath(thePath string) (string, string, error) {
 	segPathParts := strings.SplitN(strings.TrimLeft(thePath, "/"), "/", 2)
 	if len(segPathParts) != 2 || segPathParts[0] == "" || segPathParts[1] == "" {
-		return "", "", errors.New(fmt.Sprintf("invalid segment path: %s", thePath))
+		return "", "", fmt.Errorf("invalid segment path: %s", thePath)
 	}
 	return segPathParts[0], segPathParts[1], nil
 }
@@ -253,7 +253,7 @@ func (xlo *xloMiddleware) feedOutSegments(sw *xloIdentifyWriter, request *http.R
 		ctx.serveHTTPSubrequest(sw2, newReq)
 		if sw2.status/100 != 2 {
 			ctx.Logger.Debug("segment not found", zap.String("path", newPath),
-				zap.String("Segment404", "404"))
+				zap.String("Segment404", "404"), zap.Int("sw2.status", sw2.status))
 			break
 		}
 		reqRange.Start -= segLen
@@ -633,18 +633,18 @@ func (xlo *xloMiddleware) handleSloPut(writer http.ResponseWriter, request *http
 func (xlo *xloMiddleware) deleteAllSegments(w http.ResponseWriter, request *http.Request, manifest []segItem) error {
 	pathMap, err := common.ParseProxyPath(request.URL.Path)
 	if err != nil || pathMap["account"] == "" {
-		return errors.New(fmt.Sprintf("invalid path to slo delete: %s", request.URL.Path))
+		return fmt.Errorf("invalid path to slo delete: %s: %s", request.URL.Path, err)
 	}
 	ctx := GetProxyContext(request)
 	for _, si := range manifest {
 		container, object, err := splitSegPath(si.Name)
 		if err != nil {
-			return errors.New(fmt.Sprintf("invalid slo item: %s", si.Name))
+			return fmt.Errorf("invalid slo item: %s: %s", si.Name, err)
 		}
 		newPath := fmt.Sprintf("/v1/%s/%s/%s?multipart-manifest=delete", pathMap["account"], container, object)
 		newReq, err := ctx.newSubrequest("DELETE", newPath, http.NoBody, request, "slo")
 		if err != nil {
-			return errors.New(fmt.Sprintf("error building subrequest: %s", err))
+			return fmt.Errorf("error building subrequest: %s", err)
 		}
 		sw := &xloCaptureWriter{header: make(http.Header)}
 		ctx.serveHTTPSubrequest(sw, newReq)

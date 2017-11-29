@@ -18,7 +18,6 @@ package objectserver
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -158,7 +157,7 @@ func getPartMoveJobs(oldRing, newRing ring.Ring) []*PriorityRepJob {
 
 func objectRingPolicyIndex(s string) (int, error) {
 	if !strings.Contains(s, "object") {
-		return 0, errors.New(fmt.Sprintf("object not in string: %v", s))
+		return 0, fmt.Errorf("object not in string: %v", s)
 	}
 	re := regexp.MustCompile(`object-(\d*)`)
 	match := re.FindStringSubmatch(s)
@@ -167,7 +166,7 @@ func objectRingPolicyIndex(s string) (int, error) {
 	} else {
 		policyIdx, err := strconv.Atoi(match[1])
 		if err != nil {
-			return 0, errors.New(fmt.Sprintf("invalid policy index: %v\n", match[1]))
+			return 0, fmt.Errorf("invalid policy index: %v\n", match[1])
 		}
 		return policyIdx, nil
 	}

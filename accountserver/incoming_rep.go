@@ -188,9 +188,19 @@ func (server *AccountServer) replicateRsyncThenMerge(request *http.Request, vars
 			return http.StatusInternalServerError
 		}
 	}
-	if tmpDb.NewID() != nil || os.MkdirAll(filepath.Dir(accountFile), 0777) != nil || os.Rename(tmpAccountFile, accountFile) != nil {
+	if err := tmpDb.NewID(); err != nil {
 		srv.GetLogger(request).Error("Error blessing new account db.",
-			zap.String("accountFile", accountFile))
+			zap.String("accountFile", accountFile), zap.Error(err))
+		return http.StatusInternalServerError
+	}
+	if err := os.MkdirAll(filepath.Dir(accountFile), 0777); err != nil {
+		srv.GetLogger(request).Error("Error blessing new account db.",
+			zap.String("accountFile", accountFile), zap.Error(err))
+		return http.StatusInternalServerError
+	}
+	if err := os.Rename(tmpAccountFile, accountFile); err != nil {
+		srv.GetLogger(request).Error("Error blessing new account db.",
+			zap.String("accountFile", accountFile), zap.Error(err))
 		return http.StatusInternalServerError
 	}
 	server.accountEngine.Invalidate(localDb)
@@ -208,9 +218,19 @@ func (server *AccountServer) replicateCompleteRsync(request *http.Request, vars 
 		return http.StatusNotFound
 	}
 	defer tmpDb.Close()
-	if tmpDb.NewID() != nil || os.MkdirAll(filepath.Dir(accountFile), 0777) != nil || os.Rename(tmpAccountFile, accountFile) != nil {
+	if err := tmpDb.NewID(); err != nil {
 		srv.GetLogger(request).Error("Error blessing new account db.",
-			zap.String("accountFile", accountFile))
+			zap.String("accountFile", accountFile), zap.Error(err))
+		return http.StatusInternalServerError
+	}
+	if err := os.MkdirAll(filepath.Dir(accountFile), 0777); err != nil {
+		srv.GetLogger(request).Error("Error blessing new account db.",
+			zap.String("accountFile", accountFile), zap.Error(err))
+		return http.StatusInternalServerError
+	}
+	if err := os.Rename(tmpAccountFile, accountFile); err != nil {
+		srv.GetLogger(request).Error("Error blessing new account db.",
+			zap.String("accountFile", accountFile), zap.Error(err))
 		return http.StatusInternalServerError
 	}
 	return http.StatusNoContent

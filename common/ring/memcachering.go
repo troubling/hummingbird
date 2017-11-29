@@ -69,7 +69,7 @@ type memcacheRing struct {
 func NewMemcacheRing(confPath string) (*memcacheRing, error) {
 	config, err := conf.LoadConfig(confPath)
 	if err != nil {
-		return nil, fmt.Errorf("Unable to load conf file: %s", confPath)
+		return nil, fmt.Errorf("Unable to load conf file: %s: %s", confPath, err)
 	}
 	return NewMemcacheRingFromConfig(config)
 }

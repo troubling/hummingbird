@@ -266,20 +266,20 @@ func (v *versionedWrites) copyCurrent(writer http.ResponseWriter, request *http.
 		return true, 200
 	}
 	if srcStatus/100 != 2 {
-		ctx.Logger.Info(fmt.Sprintf("Bad status in copyCurrent GET: %v", srcStatus))
+		ctx.Logger.Info("Bad status in copyCurrent GET", zap.Int("srcStatus", srcStatus))
 		return false, srcStatus
 	}
 
 	ts, err := common.StandardizeTimestamp(srcHeader.Get("X-Timestamp"))
 	if err != nil {
-		ctx.Logger.Info(fmt.Sprintf("Bad X-Timestamp"))
+		ctx.Logger.Info("Bad X-Timestamp", zap.String("X-Timestamp", srcHeader.Get("X-Timestamp")))
 		return false, 500
 	}
 	if ts == "" {
 		if lm, err := common.ParseDate(srcHeader.Get("Last-Modified")); err == nil {
 			ts = common.CanonicalTimestampFromTime(lm)
 		} else {
-			ctx.Logger.Info(fmt.Sprintf("Bad Last-Modified"))
+			ctx.Logger.Info("Bad Last-Modified", zap.String("Last-Modified", srcHeader.Get("Last-Modified")))
 			return false, 500
 		}
 	}
@@ -287,7 +287,7 @@ func (v *versionedWrites) copyCurrent(writer http.ResponseWriter, request *http.
 	path := fmt.Sprintf("/v1/%s/%s/%s", account, versionContainer, versObjName)
 	_, destStatus := v.putVersionedObj(writer, request, path, srcBody, srcHeader)
 	if destStatus/100 != 2 {
-		ctx.Logger.Info(fmt.Sprintf("Bad status in copyCurrent PUT: %v", destStatus))
+		ctx.Logger.Info("Bad status in copyCurrent PUT", zap.Int("destStatus", destStatus))
 		return false, destStatus
 	}
 	return true, destStatus
@@ -450,7 +450,7 @@ func (v *versionedWrites) handleObject(writer http.ResponseWriter, request *http
 	if unescapedVersionsContainer, err := url.QueryUnescape(versionsContainer); err == nil {
 		versionsContainer = strings.Split(unescapedVersionsContainer, "/")[0]
 	} else {
-		ctx.Logger.Info(fmt.Sprintf("Bad versions container: %s", versionsContainer))
+		ctx.Logger.Info("Bad versions container", zap.String("versionsContainer", versionsContainer))
 		v.next.ServeHTTP(writer, request)
 		return
 	}

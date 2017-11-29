@@ -1,7 +1,7 @@
 package pickle
 
 import (
-	"errors"
+	"fmt"
 	"reflect"
 )
 
@@ -29,7 +29,7 @@ func unpack(src reflect.Value, dst reflect.Value) error {
 		return nil
 	case reflect.Slice:
 		if k := src.Kind(); k != reflect.Slice && k != reflect.Array {
-			return errors.New("Unable to assign slice from non-slice")
+			return fmt.Errorf("Unable to assign slice from non-slice: %s", src.Kind())
 		}
 		dst.Set(reflect.MakeSlice(dst.Type(), src.Len(), src.Len()))
 		for i := 0; i < src.Len(); i++ {
@@ -39,7 +39,7 @@ func unpack(src reflect.Value, dst reflect.Value) error {
 		}
 	case reflect.Map:
 		if src.Kind() != reflect.Map {
-			return errors.New("Unable to assign map from non-map")
+			return fmt.Errorf("Unable to assign map from non-map: %s", src.Kind())
 		}
 		dst.Set(reflect.MakeMap(dst.Type()))
 		nk := reflect.New(dst.Type().Key())
@@ -73,7 +73,7 @@ func unpack(src reflect.Value, dst reflect.Value) error {
 			}
 		}
 	default:
-		return errors.New("Assign to unknown type")
+		return fmt.Errorf("Assign to unknown type: %s", dst.Kind())
 	}
 	return nil
 }

@@ -15,7 +15,7 @@
 
 package fs
 
-import "errors"
+import "fmt"
 
 // Setxattr sets xattrs for a file, given a file descriptor, attribute name, and value buffer.
 func Setxattr(fileNameOrFd interface{}, attr string, value []byte) (int, error) {
@@ -27,7 +27,7 @@ func Setxattr(fileNameOrFd interface{}, attr string, value []byte) (int, error) 
 	case int:
 		return fsetxattr(uintptr(v), attr, value)
 	default:
-		return 0, errors.New("Invalid fileNameOrFd")
+		return 0, fmt.Errorf("Invalid fileNameOrFd: %T", fileNameOrFd)
 	}
 }
 
@@ -41,6 +41,6 @@ func Getxattr(fileNameOrFd interface{}, attr string, value []byte) (int, error) 
 	case int:
 		return fgetxattr(uintptr(v), attr, value)
 	default:
-		return 0, errors.New("Invalid fileNameOrFd")
+		return 0, fmt.Errorf("Invalid fileNameOrFd: %T", fileNameOrFd)
 	}
 }

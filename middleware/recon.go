@@ -19,7 +19,6 @@ import (
 	"bufio"
 	"crypto/md5"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -222,7 +221,7 @@ func fromReconCache(source string, keys ...string) (interface{}, error) {
 			results[key] = data[key]
 		}
 	default:
-		return nil, errors.New(fmt.Sprintf("Unexpected data type %T in recon file.", data))
+		return nil, fmt.Errorf("Unexpected data type %T in recon file.", data)
 	}
 	return results, nil
 }

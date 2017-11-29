@@ -316,7 +316,7 @@ func (b *RingBuilder) WeightOfOnePart() float64 {
 func (b *RingBuilder) SetDevWeight(devId int64, weight float64) error {
 	for _, dev := range b.removedDevs {
 		if devId == dev.Id {
-			return errors.New(fmt.Sprintf("Can not set weight of devId %d because it is marked for removal", devId))
+			return fmt.Errorf("Can not set weight of devId %d because it is marked for removal", devId)
 		}
 	}
 	b.Devs[devId].Weight = weight
@@ -416,7 +416,7 @@ func (b *RingBuilder) buildWeightedReplicasByTier() (map[string]float64, error) 
 	}
 	for t, r := range replicasAtTier {
 		if math.Abs(b.Replicas-r) > 1e-10 {
-			return nil, errors.New(fmt.Sprintf("%f != %f at tier %d", r, b.Replicas, t))
+			return nil, fmt.Errorf("%f != %f at tier %d", r, b.Replicas, t)
 		}
 	}
 
@@ -504,7 +504,7 @@ func (b *RingBuilder) buildWantedReplicasByTier() (map[string]float64, error) {
 	var placeReplicas func(string, float64) error
 	placeReplicas = func(tier string, replicanths float64) error {
 		if replicanths > float64(numDevices[tier]) {
-			return errors.New(fmt.Sprintf("More replicanths (%f) than devices (%d) in tier (%s)\n", replicanths, numDevices[tier], tier))
+			return fmt.Errorf("More replicanths (%f) than devices (%d) in tier (%s)\n", replicanths, numDevices[tier], tier)
 		}
 		wantedReplicas[tier] = replicanths
 		if len(tier2Children[tier]) == 0 {
@@ -594,7 +594,7 @@ func (b *RingBuilder) buildWantedReplicasByTier() (map[string]float64, error) {
 	}
 	for t, r := range replicasAtTier {
 		if math.Abs(b.Replicas-r) > 1e-10 {
-			return nil, errors.New(fmt.Sprintf("%f != %f at tier %d", r, b.Replicas, t))
+			return nil, fmt.Errorf("%f != %f at tier %d", r, b.Replicas, t)
 		}
 	}
 
@@ -613,7 +613,7 @@ func (b *RingBuilder) GetRequiredOverload(weighted map[string]float64, wanted ma
 			if w, ok := wanted[tier]; !ok || w <= 0.0 {
 				continue
 			} else {
-				return 0.0, errors.New(fmt.Sprintf("Device %s has zero weight and should not want any replicas\n", tier))
+				return 0.0, fmt.Errorf("Device %s has zero weight and should not want any replicas\n", tier)
 			}
 		}
 		required := (wanted[tier] - weighted[tier]) / weighted[tier]
@@ -665,7 +665,7 @@ func (b *RingBuilder) buildTargetReplicasByTier() (map[string]float64, error) {
 	}
 	for t, r := range replicasAtTier {
 		if math.Abs(b.Replicas-r) > 1e-10 {
-			return nil, errors.New(fmt.Sprintf("%f != %f at tier %d", r, b.Replicas, t))
+			return nil, fmt.Errorf("%f != %f at tier %d", r, b.Replicas, t)
 		}
 	}
 
@@ -789,7 +789,7 @@ func (b *RingBuilder) setPartsWanted(repPlan map[string]replicaPlan) error {
 	}
 	for t, p := range partsAtTier {
 		if p != totalParts {
-			return errors.New(fmt.Sprintf("%d != %d at tier %d", p, totalParts, t))
+			return fmt.Errorf("%d != %d at tier %d", p, totalParts, t)
 		}
 	}
 
@@ -1211,7 +1211,7 @@ func (b *RingBuilder) reassignParts(reassignParts []partReplicas, repPlan map[st
 					for _, t := range tier2Children[tier] {
 						data[t] = fmt.Sprintf("%v - MAX: %v", replicasAtTier[t], repPlan[t].max)
 					}
-					return errors.New(fmt.Sprintf("no home for %d/%d %+v", part, replica, data))
+					return fmt.Errorf("no home for %d/%d %+v", part, replica, data)
 				}
 
 				// Shuffle the candidates
@@ -1284,25 +1284,25 @@ func (b *RingBuilder) Validate() error {
 	}
 
 	if partsOnDevs != partsInMap {
-		return errors.New(fmt.Sprintf("All partitions are not double accounted for: %d != %d", partsOnDevs, partsInMap))
+		return fmt.Errorf("All partitions are not double accounted for: %d != %d", partsOnDevs, partsInMap)
 	}
 
 	for part := 0; part < b.Parts; part++ {
 		devsForPart := make([]uint, 0)
 		for replica := range b.replica2Part2Dev {
 			if len(b.replica2Part2Dev[replica]) <= part {
-				return errors.New(fmt.Sprintf("The partition assignments of replica %d were shorter than expected (%d < %d)", replica, len(b.replica2Part2Dev[replica]), b.Parts))
+				return fmt.Errorf("The partition assignments of replica %d were shorter than expected (%d < %d)", replica, len(b.replica2Part2Dev[replica]), b.Parts)
 			}
 			devId := b.replica2Part2Dev[replica][part]
 			if devId >= uint(len(b.Devs)) || b.Devs[devId] == nil {
-				return errors.New(fmt.Sprintf("Partition %d, replica %d was not allocated to a device.", part, replica))
+				return fmt.Errorf("Partition %d, replica %d was not allocated to a device.", part, replica)
 			}
 			devsForPart = append(devsForPart, devId)
 		}
 		devsForPartSet := make(map[uint]bool)
 		for _, devId := range devsForPart {
 			if _, ok := devsForPartSet[devId]; ok {
-				return errors.New(fmt.Sprintf("The partitions %d has been assigned to duplicate devices %v", part, devsForPart))
+				return fmt.Errorf("The partitions %d has been assigned to duplicate devices %v", part, devsForPart)
 			}
 			devsForPartSet[devId] = true
 		}
@@ -1338,7 +1338,7 @@ func (b *RingBuilder) Rebalance() (int, float64, int, error) {
 		}
 	}
 	if float64(numDevices) < b.Replicas {
-		return 0, 0.0, 0, errors.New(fmt.Sprintf("Replica count of %f requires more than %d devices.", b.Replicas, numDevices))
+		return 0, 0.0, 0, fmt.Errorf("Replica count of %f requires more than %d devices.", b.Replicas, numDevices)
 	}
 
 	oldReplica2Part2Dev := make([][]uint, len(b.replica2Part2Dev))
@@ -1465,7 +1465,7 @@ func (b *RingBuilder) UpdateDevInfo(devId int64, newIp string, newPort int64, ne
 	}
 	for next, dev := devIterator(b.Devs); dev != nil; dev = next() {
 		if dev.Id != devId && dev.Ip == newIp && dev.Port == newPort && dev.Device == newDevice {
-			return errors.New(fmt.Sprintf("Device id %d already uses %s:%d:/%s.", dev.Id, newIp, newPort, newDevice))
+			return fmt.Errorf("Device id %d already uses %s:%d:/%s.", dev.Id, newIp, newPort, newDevice)
 		}
 	}
 	b.Devs[devId].Ip = newIp
@@ -1548,7 +1548,7 @@ func (b *RingBuilder) AddDev(dev *RingBuilderDevice) (int64, error) {
 	for i := 0; i < len(b.Devs); i++ {
 		if b.Devs[i] != nil {
 			if b.Devs[i].Ip == dev.Ip && b.Devs[i].Port == dev.Port && b.Devs[i].Device == dev.Device {
-				return 0, errors.New(fmt.Sprintf("Device %d already uses %s:%d/%s.", i, dev.Ip, dev.Port, dev.Device))
+				return 0, fmt.Errorf("Device %d already uses %s:%d/%s.", i, dev.Ip, dev.Port, dev.Device)
 			}
 		}
 	}
@@ -1564,7 +1564,7 @@ func (b *RingBuilder) AddDev(dev *RingBuilderDevice) (int64, error) {
 		dev.Id = id
 	}
 	if dev.Id < int64(len(b.Devs)) && b.Devs[dev.Id] != nil {
-		return -1, errors.New(fmt.Sprintf("Duplicate device id: %d", dev.Id))
+		return -1, fmt.Errorf("Duplicate device id: %d", dev.Id)
 	}
 	for dev.Id >= int64(len(b.Devs)) {
 		// We need to fill in the gaps

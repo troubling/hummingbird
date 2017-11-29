@@ -498,13 +498,13 @@ func (c *ProxyDirectClient) GetContainerInfo(account string, container string, m
 		}
 		var err error
 		if ci.ObjectCount, err = strconv.ParseInt(resp.Header.Get("X-Container-Object-Count"), 10, 64); err != nil {
-			return nil, fmt.Errorf("Error retrieving info for container %s/%s : %s", account, container, err)
+			return nil, fmt.Errorf("Error retrieving X-Container-Object-Count for container %s/%s : %s", account, container, resp.Header.Get("X-Container-Object-Count"))
 		}
 		if ci.ObjectBytes, err = strconv.ParseInt(resp.Header.Get("X-Container-Bytes-Used"), 10, 64); err != nil {
-			return nil, fmt.Errorf("Error retrieving info for container %s/%s : %s", account, container, err)
+			return nil, fmt.Errorf("Error retrieving X-Container-Bytes-Used for container %s/%s : %s", account, container, resp.Header.Get("X-Container-Bytes-Used"))
 		}
 		if ci.StoragePolicyIndex, err = strconv.Atoi(resp.Header.Get("X-Backend-Storage-Policy-Index")); err != nil {
-			return nil, fmt.Errorf("Error retrieving info for container %s/%s : %s", account, container, err)
+			return nil, fmt.Errorf("Error retrieving X-Backend-Storage-Policy-Index for container %s/%s : %s", account, container, resp.Header.Get("X-Backend-Storage-Policy-Index"))
 		}
 		for k := range resp.Header {
 			if strings.HasPrefix(k, "X-Container-Meta-") {

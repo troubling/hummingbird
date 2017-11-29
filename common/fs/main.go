@@ -47,7 +47,7 @@ func LockPath(directory string, timeout time.Duration) (*os.File, error) {
 			file, err = os.Open(directory)
 		}
 		if err != nil {
-			return nil, errors.New(fmt.Sprintf("Unable to lock %s: %s", directory, err))
+			return nil, fmt.Errorf("Unable to lock %s: %s", directory, err)
 		}
 	}
 	success := make(chan error)
@@ -79,10 +79,10 @@ func IsMount(dir string) (bool, error) {
 		if parentinfo, err := os.Stat(filepath.Dir(dir)); err == nil {
 			return fileinfo.Sys().(*syscall.Stat_t).Dev != parentinfo.Sys().(*syscall.Stat_t).Dev, nil
 		} else {
-			return false, errors.New("Unable to stat parent")
+			return false, fmt.Errorf("Unable to stat parent: %s", err)
 		}
 	} else {
-		return false, errors.New("Unable to stat directory")
+		return false, fmt.Errorf("Unable to stat directory: %s", err)
 	}
 }
 

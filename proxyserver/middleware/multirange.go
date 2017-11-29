@@ -87,13 +87,13 @@ func multirange(next http.Handler) http.Handler {
 			rspRange := uw.header.Get("Content-Range")
 			rrp := strings.Split(rspRange, "/")
 			if contentLength, err = strconv.ParseInt(rrp[len(rrp)-1], 10, 64); err != nil {
-				uw.err = fmt.Errorf("Error parsing content-length from response")
+				uw.err = fmt.Errorf("Error parsing content-length from response: %q", uw.header.Get("Content-Range"))
 				writer.Header().Set("Content-Range", uw.header.Get("Content-Range"))
 				srv.StandardResponse(writer, http.StatusInternalServerError)
 				return http.StatusInternalServerError
 			}
 			if ranges, err = common.ParseRange(rangeHeader, contentLength); err != nil {
-				uw.err = fmt.Errorf("Error parsing multiple ranges from request")
+				uw.err = fmt.Errorf("Error parsing multiple ranges from request: %q", rangeHeader)
 				writer.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", contentLength))
 				srv.StandardResponse(writer, http.StatusRequestedRangeNotSatisfiable)
 				return http.StatusRequestedRangeNotSatisfiable

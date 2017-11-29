@@ -527,7 +527,7 @@ func (f *nurseryEngine) GetNurseryObjects(device string, c chan ObjectStabilizer
 	partitions, err := fs.ReadDirNames(objDirPath)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			f.logger.Error("Error reading objects dir", zap.String("objDirPath", objDirPath))
+			f.logger.Error("Error reading objects dir", zap.String("objDirPath", objDirPath), zap.Error(err))
 		}
 		return
 	}
@@ -535,7 +535,7 @@ func (f *nurseryEngine) GetNurseryObjects(device string, c chan ObjectStabilizer
 		partitionDir := filepath.Join(objDirPath, partition)
 		suffixes, err := fs.ReadDirNames(partitionDir)
 		if err != nil {
-			f.logger.Error("Error reading partition dir ", zap.String("worker", "nursery"), zap.String("partitionDir", partitionDir))
+			f.logger.Error("Error reading partition dir ", zap.String("worker", "nursery"), zap.String("partitionDir", partitionDir), zap.Error(err))
 			continue
 		}
 		for _, suffix := range suffixes {
@@ -549,7 +549,7 @@ func (f *nurseryEngine) GetNurseryObjects(device string, c chan ObjectStabilizer
 			}
 			hashes, err := fs.ReadDirNames(suffixDir)
 			if err != nil {
-				f.logger.Error("Error reading suffix dir", zap.String("worker", "nursery"), zap.String("suffixDir", suffixDir))
+				f.logger.Error("Error reading suffix dir", zap.String("worker", "nursery"), zap.String("suffixDir", suffixDir), zap.Error(err))
 				continue
 			}
 			for _, hash := range hashes {

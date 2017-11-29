@@ -78,7 +78,7 @@ func Urlencode(str string) string {
 
 func ParseDate(date string) (time.Time, error) {
 	if date == "" {
-		return time.Now(), errors.New("invalid time")
+		return time.Now(), fmt.Errorf("invalid time: %q", date)
 	}
 	if timestamp, err := strconv.ParseFloat(date, 64); err == nil {
 		nans := int64((timestamp - float64(int64(timestamp))) * 1.0e9)
@@ -103,7 +103,7 @@ func ParseDate(date string) (time.Time, error) {
 		allDateParts := strings.Split(date, "_")
 		return ParseDate(allDateParts[0])
 	}
-	return time.Now(), errors.New("invalid time")
+	return time.Now(), fmt.Errorf("invalid time: %q", date)
 }
 
 func CanonicalTimestamp(t float64) string {
@@ -151,6 +151,7 @@ func HeaderGetDefault(h http.Header, key string, dfl string) string {
 }
 
 func ParseRange(rangeHeader string, fileSize int64) (reqRanges []HttpRange, err error) {
+	origRangeHeader := rangeHeader
 	rangeHeader = strings.Replace(strings.ToLower(rangeHeader), " ", "", -1)
 	if !strings.HasPrefix(rangeHeader, "bytes=") {
 		return nil, nil
@@ -158,7 +159,7 @@ func ParseRange(rangeHeader string, fileSize int64) (reqRanges []HttpRange, err 
 	rangeHeader = rangeHeader[6:]
 	rangeStrings := strings.Split(rangeHeader, ",")
 	if len(rangeStrings) > 100 {
-		return nil, errors.New("Too many ranges")
+		return nil, fmt.Errorf("Too many ranges: %q", origRangeHeader)
 	}
 	if len(rangeStrings) == 0 {
 		return nil, nil
@@ -202,7 +203,7 @@ func ParseRange(rangeHeader string, fileSize int64) (reqRanges []HttpRange, err 
 		}
 	}
 	if len(reqRanges) == 0 {
-		return nil, errors.New("Unsatisfiable range")
+		return nil, fmt.Errorf("Unsatisfiable range: %q", origRangeHeader)
 	}
 	return reqRanges, nil
 }
@@ -211,7 +212,7 @@ func GetEpochFromTimestamp(timestamp string) (string, error) {
 	split_timestamp := strings.Split(timestamp, "_")
 	floatTimestamp, err := strconv.ParseFloat(split_timestamp[0], 64)
 	if err != nil {
-		return "", errors.New(fmt.Sprintf("Could not parse float from '%s'.", split_timestamp[0]))
+		return "", fmt.Errorf("Could not parse float from %q", split_timestamp[0])
 	}
 	return CanonicalTimestamp(floatTimestamp), nil
 }
@@ -222,11 +223,11 @@ func StandardizeTimestamp(timestamp string) (string, error) {
 		split_timestamp := strings.Split(timestamp, "_")
 		floatTimestamp, err := strconv.ParseFloat(split_timestamp[0], 64)
 		if err != nil {
-			return "", errors.New(fmt.Sprintf("Could not parse float from '%s'.", split_timestamp[0]))
+			return "", fmt.Errorf("Could not parse float from %q", split_timestamp[0])
 		}
 		intOffset, err := strconv.ParseInt(split_timestamp[1], 16, 64)
 		if err != nil {
-			return "", errors.New(fmt.Sprintf("Could not parse int from '%s'.", split_timestamp[1]))
+			return "", fmt.Errorf("Could not parse int from %q", split_timestamp[1])
 		}
 
 		split_timestamp[0] = CanonicalTimestamp(floatTimestamp)
@@ -235,7 +236,7 @@ func StandardizeTimestamp(timestamp string) (string, error) {
 	} else {
 		floatTimestamp, err := strconv.ParseFloat(timestamp, 64)
 		if err != nil {
-			return "", errors.New(fmt.Sprintf("Could not parse float from '%s'.", timestamp))
+			return "", fmt.Errorf("Could not parse float from %q", timestamp)
 		}
 		timestamp = CanonicalTimestamp(floatTimestamp)
 	}
@@ -248,7 +249,7 @@ func ParseProxyPath(path string) (pathMap map[string]string, err error) {
 	pathParts := []string{"", "vrs", "account", "container", "object"}
 	pathSplit := strings.SplitN(path, "/", 5)
 	if pathSplit[0] != "" {
-		return nil, errors.New(fmt.Sprintf("Invalid path: %s", path))
+		return nil, fmt.Errorf("Invalid path: %s", path)
 	}
 	pathMap = map[string]string{}
 	for i := 1; i < len(pathParts); i++ {
@@ -256,7 +257,7 @@ func ParseProxyPath(path string) (pathMap map[string]string, err error) {
 			pathMap[pathParts[i]] = ""
 		} else {
 			if pathSplit[i] == "" && len(pathSplit)-1 != i {
-				return nil, errors.New(fmt.Sprintf("Invalid path: %s", path))
+				return nil, fmt.Errorf("Invalid path: %s", path)
 			}
 			pathMap[pathParts[i]] = pathSplit[i]
 		}
@@ -427,10 +428,10 @@ func Headers2Map(headers http.Header) map[string]string {
 
 func CheckNameFormat(req *http.Request, name string, target string) (string, error) {
 	if name == "" {
-		return "", errors.New(fmt.Sprintf("%s name cannot be empty", target))
+		return "", fmt.Errorf("%s name cannot be empty", target)
 	}
 	if strings.Contains(name, "/") {
-		return "", errors.New(fmt.Sprintf("%s name cannot contain slashes", target))
+		return "", fmt.Errorf("%s name cannot contain slashes", target)
 	}
 	return name, nil
 }

@@ -16,7 +16,6 @@
 package middleware
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -75,7 +74,7 @@ func (cw *CopyWriter) getDestAccountName(request *http.Request) string {
 func getHeaderContainerObjectName(request *http.Request, header string) (string, string, error) {
 	path, err := url.QueryUnescape(request.Header.Get(header))
 	if err != nil {
-		return "", "", errors.New(fmt.Sprintf("Invalid %s", header))
+		return "", "", fmt.Errorf("Invalid %s: %s", header, err)
 	}
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
@@ -83,11 +82,11 @@ func getHeaderContainerObjectName(request *http.Request, header string) (string,
 
 	parts := strings.SplitN(path, "/", 3)
 	if len(parts) != 3 {
-		return "", "", errors.New(fmt.Sprintf("Invalid %s", header))
+		return "", "", fmt.Errorf("Invalid %s", header)
 	}
 	name, name_err := common.CheckNameFormat(request, parts[1], "Account")
 	if name_err != nil {
-		return "", "", errors.New(fmt.Sprintf("Invalid %s", header))
+		return "", "", fmt.Errorf("Invalid %s: %s", header, name_err)
 	}
 	return name, parts[2], nil
 }
