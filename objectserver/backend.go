@@ -64,7 +64,7 @@ func UnPolicyDir(dir string) (int, error) {
 	if n, err := fmt.Sscanf(dir, "objects-%d", &policy); n == 1 && err == nil {
 		return policy, nil
 	}
-	return 0, fmt.Errorf("Unable to parse policy from dir")
+	return 0, fmt.Errorf("Unable to parse policy from dir: %s", dir)
 }
 
 func RawReadMetadata(fileNameOrFd interface{}) ([]byte, error) {
@@ -110,15 +110,15 @@ func ReadMetadata(fileNameOrFd interface{}) (map[string]string, error) {
 		for mk, mv := range v {
 			var mks, mvs string
 			if mks, ok = mk.(string); !ok {
-				return nil, fmt.Errorf("Metadata key not string: %v", mk)
+				return nil, fmt.Errorf("Metadata key not string: %T %v", mk, mk)
 			} else if mvs, ok = mv.(string); !ok {
-				return nil, fmt.Errorf("Metadata value not string: %v", mv)
+				return nil, fmt.Errorf("Metadata value not string: %T %v", mv, mv)
 			}
 			metadata[mks] = mvs
 		}
 		return metadata, nil
 	}
-	return nil, fmt.Errorf("Unpickled metadata not correct type")
+	return nil, fmt.Errorf("Unpickled metadata not correct type: %T", v)
 }
 
 func RawWriteMetadata(fd uintptr, buf []byte) error {

@@ -18,7 +18,6 @@ package srv
 import (
 	"bufio"
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -242,7 +241,7 @@ func SetupLogger(prefix string, atomicLevel *zap.AtomicLevel, flags *flag.FlagSe
 		}
 		err := syscall.Dup2(int(lowPrioFile.(*os.File).Fd()), int(os.Stdout.Fd()))
 		if err != nil {
-			return nil, errors.New("Unable to redirect STDOUT")
+			return nil, fmt.Errorf("Unable to redirect STDOUT: %s", err)
 		}
 	}
 	name = "stderr"
@@ -265,7 +264,7 @@ func SetupLogger(prefix string, atomicLevel *zap.AtomicLevel, flags *flag.FlagSe
 		}
 		err := syscall.Dup2(int(highPrioFile.(*os.File).Fd()), int(os.Stderr.Fd()))
 		if err != nil {
-			return nil, errors.New("Unable to redirect STDERR")
+			return nil, fmt.Errorf("Unable to redirect STDERR: %s", err)
 		}
 	}
 
@@ -397,7 +396,7 @@ func RetryListen(ip string, port int) (net.Listener, error) {
 		if sock, err := net.Listen("tcp", address); err == nil {
 			return sock, nil
 		} else if time.Now().Sub(started) > 10*time.Second {
-			return nil, errors.New(fmt.Sprintf("Failed to bind for 10 seconds (%v)", err))
+			return nil, fmt.Errorf("Failed to bind for 10 seconds (%v)", err)
 		}
 		time.Sleep(time.Second / 5)
 	}

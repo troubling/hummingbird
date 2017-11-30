@@ -78,7 +78,7 @@ func (nrd *nurseryDevice) updateStat(stat string, amount int64) {
 func (nrd *nurseryDevice) stabilizeDevice() {
 	nrd.updateStat("startRun", 1)
 	if mounted, err := fs.IsMount(filepath.Join(nrd.r.deviceRoot, nrd.dev.Device)); nrd.r.checkMounts && (err != nil || mounted != true) {
-		nrd.r.logger.Error("[stabilizeDevice] Drive not mounted", zap.String("Device", nrd.dev.Device))
+		nrd.r.logger.Error("[stabilizeDevice] Drive not mounted", zap.String("Device", nrd.dev.Device), zap.Error(err))
 		return
 	}
 	c := make(chan ObjectStabilizer, 100)

@@ -188,9 +188,19 @@ func (server *ContainerServer) replicateRsyncThenMerge(request *http.Request, va
 			return http.StatusInternalServerError
 		}
 	}
-	if tmpDb.NewID() != nil || os.MkdirAll(filepath.Dir(containerFile), 0777) != nil || os.Rename(tmpContainerFile, containerFile) != nil {
+	if err := tmpDb.NewID(); err != nil {
 		srv.GetLogger(request).Error("Error blessing new container db",
-			zap.String("containerFile", containerFile))
+			zap.String("containerFile", containerFile), zap.Error(err))
+		return http.StatusInternalServerError
+	}
+	if err := os.MkdirAll(filepath.Dir(containerFile), 0777); err != nil {
+		srv.GetLogger(request).Error("Error blessing new container db",
+			zap.String("containerFile", containerFile), zap.Error(err))
+		return http.StatusInternalServerError
+	}
+	if err := os.Rename(tmpContainerFile, containerFile); err != nil {
+		srv.GetLogger(request).Error("Error blessing new container db",
+			zap.String("containerFile", containerFile), zap.Error(err))
 		return http.StatusInternalServerError
 	}
 	server.containerEngine.Invalidate(localDb)
@@ -208,9 +218,19 @@ func (server *ContainerServer) replicateCompleteRsync(request *http.Request, var
 		return http.StatusNotFound
 	}
 	defer tmpDb.Close()
-	if tmpDb.NewID() != nil || os.MkdirAll(filepath.Dir(containerFile), 0777) != nil || os.Rename(tmpContainerFile, containerFile) != nil {
+	if err := tmpDb.NewID(); err != nil {
 		srv.GetLogger(request).Error("Error blessing new container db",
-			zap.String("containerFile", containerFile))
+			zap.String("containerFile", containerFile), zap.Error(err))
+		return http.StatusInternalServerError
+	}
+	if err := os.MkdirAll(filepath.Dir(containerFile), 0777); err != nil {
+		srv.GetLogger(request).Error("Error blessing new container db",
+			zap.String("containerFile", containerFile), zap.Error(err))
+		return http.StatusInternalServerError
+	}
+	if err := os.Rename(tmpContainerFile, containerFile); err != nil {
+		srv.GetLogger(request).Error("Error blessing new container db",
+			zap.String("containerFile", containerFile), zap.Error(err))
 		return http.StatusInternalServerError
 	}
 	return http.StatusNoContent

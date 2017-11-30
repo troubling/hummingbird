@@ -195,7 +195,7 @@ func pickleobj(o interface{}, buf *bytes.Buffer, scratch []byte) error {
 			buf.WriteByte('d') // DICT
 		}
 	default:
-		return fmt.Errorf("Unknown object type in pickle: %v", v)
+		return fmt.Errorf("Unknown object type in pickle: %s", v.Kind())
 	}
 	return nil
 }

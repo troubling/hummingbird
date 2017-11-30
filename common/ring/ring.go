@@ -382,13 +382,14 @@ func (r *hashRing) Save(filename string) error {
 func GetRing(ringType, prefix, suffix string, policy int) (Ring, error) {
 	var ring Ring
 	var err error
+	var err2 error
 	ringFile := fmt.Sprintf("%s.ring.gz", ringType)
 	if policy != 0 {
 		ringFile = fmt.Sprintf("%s-%d.ring.gz", ringType, policy)
 	}
 	if ring, err = LoadRing(fmt.Sprintf("/etc/hummingbird/%s", ringFile), prefix, suffix); err != nil {
-		if ring, err = LoadRing(fmt.Sprintf("/etc/swift/%s", ringFile), prefix, suffix); err != nil {
-			return nil, fmt.Errorf("Error loading %s:%d ring", ringType, policy)
+		if ring, err2 = LoadRing(fmt.Sprintf("/etc/swift/%s", ringFile), prefix, suffix); err2 != nil {
+			return nil, fmt.Errorf("Error loading %s:%d ring: %s: %s", ringType, policy, err, err2)
 		}
 	}
 	return ring, nil

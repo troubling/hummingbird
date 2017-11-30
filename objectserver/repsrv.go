@@ -147,7 +147,7 @@ func (r *Replicator) objReplicateHandler(writer http.ResponseWriter, request *ht
 	if err != nil {
 		srv.GetLogger(request).Error("Unable to get hashes",
 			zap.String("Device", vars["device"]),
-			zap.String("Partition", vars["partition"]))
+			zap.String("Partition", vars["partition"]), zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -174,7 +174,7 @@ func (r *Replicator) objRepConnHandler(writer http.ResponseWriter, request *http
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	} else if conn, rw, err = hijacker.Hijack(); err != nil {
-		srv.GetLogger(request).Error("[ObjRepConnHandler] Hijack failed")
+		srv.GetLogger(request).Error("[ObjRepConnHandler] Hijack failed", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}

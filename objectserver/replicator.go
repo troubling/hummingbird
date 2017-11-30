@@ -596,7 +596,7 @@ func (rd *replicationDevice) Replicate() {
 	defer srv.LogPanics(rd.r.logger, fmt.Sprintf("PANIC REPLICATING DEVICE: %s", rd.dev.Device))
 	rd.updateStat("startRun", 1)
 	if mounted, err := fs.IsMount(filepath.Join(rd.r.deviceRoot, rd.dev.Device)); rd.r.checkMounts && (err != nil || mounted != true) {
-		rd.r.logger.Error("[replicateDevice] Drive not mounted", zap.String("Device", rd.dev.Device))
+		rd.r.logger.Error("[replicateDevice] Drive not mounted", zap.String("Device", rd.dev.Device), zap.Error(err))
 		return
 	}
 	if fs.Exists(filepath.Join(rd.r.deviceRoot, rd.dev.Device, "lock_device")) {
@@ -1127,7 +1127,7 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 
 	hashPathPrefix, hashPathSuffix, err := cnf.GetHashPrefixAndSuffix()
 	if err != nil {
-		return nil, nil, fmt.Errorf("Unable to get hash prefix and suffix")
+		return nil, nil, fmt.Errorf("Unable to get hash prefix and suffix: %s", err)
 	}
 	if replicator.policies, err = cnf.GetPolicies(); err != nil {
 		return nil, nil, err
@@ -1137,7 +1137,7 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 			continue
 		}
 		if replicator.objectRings[policy.Index], err = cnf.GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index); err != nil {
-			return nil, nil, fmt.Errorf("Unable to load ring for Policy %d.", policy.Index)
+			return nil, nil, fmt.Errorf("Unable to load ring for Policy %d: %s", policy.Index, err)
 		}
 	}
 	if replicator.containerRing, err = cnf.GetRing("container", hashPathPrefix, hashPathSuffix, 0); err != nil {

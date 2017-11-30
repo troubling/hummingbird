@@ -181,7 +181,7 @@ func loadBinaryArray(typ string, data string) ([]interface{}, error) {
 	switch typ {
 	case "H":
 		if len(dat)%2 != 0 {
-			return nil, errors.New("Pickle data not a multiple of type size")
+			return nil, fmt.Errorf("Pickle data not a multiple of type size: %d%%2 != 0", len(dat))
 		}
 		newdata := make([]interface{}, len(dat)/2)
 		for i := 0; i < len(dat); i += 2 {
@@ -195,15 +195,16 @@ func loadBinaryArray(typ string, data string) ([]interface{}, error) {
 		}
 		return newdata, nil
 	default:
-		return nil, errors.New("Loading pickle of unknown type")
+		return nil, fmt.Errorf("Loading pickle of unknown type: %s", typ)
 	}
 }
 
 // attempt to convert python string representations to golang string
 // basically this should return the same thing as eval(src) in python.
 func pythonString(src string) (string, error) {
+	origSrc := src
 	if len(src) < 2 || src[0] != src[len(src)-1] || (src[0] != '\'' && src[0] != '"') {
-		return "", errors.New("invalid syntax")
+		return "", fmt.Errorf("invalid syntax: %q", src)
 	}
 	quote := src[0]
 	src = src[1 : len(src)-1]
@@ -222,7 +223,7 @@ func pythonString(src string) (string, error) {
 			if backslashes%2 == 1 {
 				backslashes--
 			} else if quote == '\'' {
-				return "", errors.New("invalid syntax")
+				return "", fmt.Errorf("invalid syntax: %q", origSrc)
 			}
 		}
 		for ; backslashes > 0; backslashes-- {
@@ -249,12 +250,12 @@ func mapKey(i interface{}) (interface{}, error) {
 			case string, uint8, uint16, uint32, uint64, int8, int16, int32, int64, float32, float64:
 				*at[j] = v
 			default:
-				return nil, errors.New("Unhashable tuple entry")
+				return nil, fmt.Errorf("Unhashable tuple entry: %T", v)
 			}
 		}
 		return pt, nil
 	default:
-		return nil, errors.New("Invalid map key type")
+		return nil, fmt.Errorf("Invalid map key type: %T", i)
 	}
 }
 
@@ -620,7 +621,7 @@ func PickleLoads(data []byte) (interface{}, error) {
 				return nil, errors.New("Invalid pickle (REDUCE): unknown callable on stack")
 			}
 		default:
-			return nil, errors.New(fmt.Sprintf("Unknown pickle opcode: %c (%x)\n", op, op))
+			return nil, fmt.Errorf("Unknown pickle opcode: %c (%x)\n", op, op)
 		}
 	}
 	return nil, errors.New("Incomplete pickle: fell out of loop")

@@ -158,7 +158,7 @@ func (rd *replicationDevice) rsync(dev *ring.Device, c ReplicableContainer, part
 	}
 	status, _, err := rd.i.sendReplicationMessage(dev, part, c.RingHash(), op, tmpFilename)
 	if err != nil || status/100 != 2 {
-		return fmt.Errorf("sending %s message to %s/%s: %v", op, dev.ReplicationIp, dev.Device, err)
+		return fmt.Errorf("sending %s message to %s/%s: status %d: %v", op, dev.ReplicationIp, dev.Device, status, err)
 	}
 	return nil
 }
@@ -176,7 +176,7 @@ func (rd *replicationDevice) usync(dev *ring.Device, c ReplicableContainer, part
 	for len(objects) != 0 && usyncs < rd.r.maxUsyncs {
 		status, _, err := rd.i.sendReplicationMessage(dev, part, c.RingHash(), "merge_items", objects, localID)
 		if err != nil || status/100 != 2 {
-			return fmt.Errorf("Bad response to merge_items with %s/%s: %v, %v", dev.ReplicationIp, dev.Device, status, err)
+			return fmt.Errorf("Bad response to merge_items with %s/%s: status %d: %v", dev.ReplicationIp, dev.Device, status, err)
 		}
 		point = objects[len(objects)-1].Rowid
 		usyncs++
@@ -368,12 +368,12 @@ func (rd *replicationDevice) replicate() {
 	stat, err := os.Stat(devicePath)
 	if err != nil || !stat.IsDir() {
 		rd.r.logger.Error("Device doesn't exist.",
-			zap.String("devicePath", devicePath))
+			zap.String("devicePath", devicePath), zap.Error(err))
 		return
 	}
 	if mount, err := fs.IsMount(devicePath); rd.r.checkMounts && (err != nil || !mount) {
 		rd.r.logger.Error("Device not mounted.",
-			zap.String("devicePath", devicePath))
+			zap.String("devicePath", devicePath), zap.Error(err))
 		return
 	}
 	results := make(chan string, 100)
@@ -594,15 +594,15 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 	}
 	hashPathPrefix, hashPathSuffix, err := cnf.GetHashPrefixAndSuffix()
 	if err != nil {
-		return nil, nil, fmt.Errorf("Unable to get hash prefix and suffix")
+		return nil, nil, fmt.Errorf("Unable to get hash prefix and suffix: %s", err)
 	}
 	ring, err := cnf.GetRing("container", hashPathPrefix, hashPathSuffix, 0)
 	if err != nil {
-		return nil, nil, fmt.Errorf("Error loading container ring")
+		return nil, nil, fmt.Errorf("Error loading container ring: %s", err)
 	}
 	accountRing, err := cnf.GetRing("account", hashPathPrefix, hashPathSuffix, 0)
 	if err != nil {
-		return nil, nil, fmt.Errorf("Error loading account ring")
+		return nil, nil, fmt.Errorf("Error loading account ring: %s", err)
 	}
 	concurrency := int(serverconf.GetInt("container-replicator", "concurrency", 4))
 
