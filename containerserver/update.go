@@ -71,6 +71,7 @@ func accountUpdateHelper(info *ContainerInfo, host, device, accpartition, accoun
 	if err != nil {
 		return err
 	}
+	req.Header.Add("X-Backend-Suppress-2xx-Logging", "t")
 	req.Header.Add("X-Put-Timestamp", info.PutTimestamp)
 	req.Header.Add("X-Delete-Timestamp", info.DeleteTimestamp)
 	req.Header.Add("X-Object-Count", strconv.FormatInt(info.ObjectCount, 10))

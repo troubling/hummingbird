@@ -163,6 +163,7 @@ func NewRepConn(dev *ring.Device, partition string, policy int, headers map[stri
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("X-Backend-Suppress-2xx-Logging", "t")
 	// left policy as an arg instead of a header to make it harder to forget to set it.
 	req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(policy))
 	for k, v := range headers {

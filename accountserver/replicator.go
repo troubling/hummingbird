@@ -102,6 +102,7 @@ func (rd *replicationDevice) sendReplicationMessage(dev *ring.Device, part uint6
 	if err != nil {
 		return 0, nil, err
 	}
+	req.Header.Set("X-Backend-Suppress-2xx-Logging", "t")
 	req.Cancel = rd.cancel
 	resp, err := rd.r.client.Do(req)
 	if err != nil {
