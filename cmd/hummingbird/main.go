@@ -380,6 +380,17 @@ func main() {
 		objectInfoFlags.PrintDefaults()
 	}
 
+	reconFlags := flag.NewFlagSet("", flag.ExitOnError)
+	reconFlags.Bool("md5", false, "Get md5sum of servers ring and compare to local copy")
+	reconFlags.Bool("time", false, "Check time synchronization")
+	reconFlags.Bool("q", false, "Get cluster quarantine stats")
+	reconFlags.Bool("a", false, "Get cluster async pending stats")
+	reconFlags.Bool("json", false, "Output in json. {\"ok\": true|false, \"msg\": \"text-output\"}")
+	reconFlags.Usage = func() {
+		fmt.Fprintf(os.Stderr, "hummingbird recon [ARGS] \n")
+		reconFlags.PrintDefaults()
+	}
+
 	/* main flag parser, which doesn't do much */
 
 	flag.Usage = func() {
@@ -438,6 +449,8 @@ func main() {
 		andrewdFlags.Usage()
 		fmt.Fprintln(os.Stderr)
 		objectInfoFlags.Usage()
+		fmt.Fprintln(os.Stderr)
+		reconFlags.Usage()
 	}
 
 	flag.Parse()
@@ -512,6 +525,11 @@ func main() {
 	case "oinfo":
 		objectInfoFlags.Parse(flag.Args()[1:])
 		tools.ObjectInfo(objectInfoFlags, srv.DefaultConfigLoader{})
+	case "recon":
+		reconFlags.Parse(flag.Args()[1:])
+		if pass := tools.ReconClient(reconFlags, srv.DefaultConfigLoader{}); !pass {
+			os.Exit(1)
+		}
 	case "init":
 		if err := initCommand(flag.Args()[1:]); err != nil {
 			fmt.Fprintln(os.Stderr, "init error:", err)

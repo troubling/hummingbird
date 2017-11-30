@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -30,6 +31,7 @@ import (
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/pickle"
 	"github.com/troubling/hummingbird/common/ring"
+	"github.com/troubling/hummingbird/middleware"
 )
 
 const asyncPendingSleep = 10 * time.Millisecond
@@ -43,10 +45,13 @@ type asyncPending struct {
 }
 
 type updateDevice struct {
-	r       *Replicator
-	dev     *ring.Device
-	canchan chan struct{}
-	policy  int
+	r             *Replicator
+	dev           *ring.Device
+	canchan       chan struct{}
+	policy        int
+	lastReconDump time.Time
+	reconLock     sync.Mutex
+	reconRunning  bool
 }
 
 func (ud *updateDevice) updateStat(stat string, amount int64) {
@@ -127,8 +132,39 @@ func (ud *updateDevice) processAsync(async string) {
 	}
 }
 
+func (ud *updateDevice) reconReportAsync() {
+	ud.reconLock.Lock()
+	if ud.reconRunning {
+		return
+	}
+	ud.reconRunning = true
+	ud.reconLock.Unlock()
+	defer func() {
+		ud.reconLock.Lock()
+		ud.reconRunning = false
+		ud.reconLock.Unlock()
+	}()
+	c := make(chan string, 100)
+	cancel := make(chan struct{})
+	defer close(cancel)
+	go ud.listAsyncs(c, cancel)
+	cnt := int64(0)
+	for range c {
+		cnt++
+	}
+	if err := middleware.DumpReconCache(ud.r.reconCachePath, "object",
+		map[string]interface{}{
+			fmt.Sprintf("async_pending_%s", ud.dev.Device): cnt}); err != nil {
+		ud.r.logger.Error("object-updater saving recon data", zap.Error(err))
+	}
+}
+
 func (ud *updateDevice) update() {
 	ud.updateStat("startRun", 1)
+	if ud.lastReconDump.IsZero() || time.Since(ud.lastReconDump) > time.Hour {
+		ud.lastReconDump = time.Now()
+		go ud.reconReportAsync()
+	}
 	c := make(chan string, 100)
 	cancel := make(chan struct{})
 	defer close(cancel)
@@ -146,6 +182,10 @@ func (ud *updateDevice) update() {
 		case <-time.After(asyncPendingSleep):
 		case <-ud.canchan:
 			return
+		}
+		if time.Since(ud.lastReconDump) > time.Hour {
+			ud.lastReconDump = time.Now()
+			go ud.reconReportAsync()
 		}
 	}
 	ud.updateStat("PassComplete", 1)

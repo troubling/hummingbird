@@ -46,6 +46,7 @@ type ContainerServer struct {
 	driveRoot        string
 	hashPathPrefix   string
 	hashPathSuffix   string
+	reconCachePath   string
 	logger           srv.LowLevelLogger
 	logLevel         zap.AtomicLevel
 	diskInUse        *common.KeyedLimit
@@ -475,7 +476,7 @@ func (server *ContainerServer) HealthcheckHandler(writer http.ResponseWriter, re
 
 // ReconHandler delegates incoming /recon calls to the common recon handler.
 func (server *ContainerServer) ReconHandler(writer http.ResponseWriter, request *http.Request) {
-	middleware.ReconHandler(server.driveRoot, server.checkMounts, writer, request)
+	middleware.ReconHandler(server.driveRoot, server.reconCachePath, server.checkMounts, writer, request)
 }
 
 //OptionsHandler delegates incoming OPTIONS calls to the common options handler.
@@ -627,6 +628,7 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 	if err != nil {
 		return "", 0, nil, nil, err
 	}
+	server.reconCachePath = serverconf.GetDefault("app:container-server", "recon_cache_path", "/var/cache/swift")
 	policies, err := cnf.GetPolicies()
 	if err != nil {
 		return "", 0, nil, nil, err

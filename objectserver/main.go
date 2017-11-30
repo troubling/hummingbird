@@ -47,6 +47,7 @@ type ObjectServer struct {
 	driveRoot        string
 	hashPathPrefix   string
 	hashPathSuffix   string
+	reconCachePath   string
 	checkEtags       bool
 	checkMounts      bool
 	allowedHeaders   map[string]bool
@@ -500,7 +501,7 @@ func (server *ObjectServer) HealthcheckHandler(writer http.ResponseWriter, reque
 }
 
 func (server *ObjectServer) ReconHandler(writer http.ResponseWriter, request *http.Request) {
-	middleware.ReconHandler(server.driveRoot, server.checkMounts, writer, request)
+	middleware.ReconHandler(server.driveRoot, server.reconCachePath, server.checkMounts, writer, request)
 	return
 }
 
@@ -668,6 +669,7 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 	}
 
 	server.driveRoot = serverconf.GetDefault("app:object-server", "devices", "/srv/node")
+	server.reconCachePath = serverconf.GetDefault("app:object-server", "recon_cache_path", "/var/cache/swift")
 	server.checkMounts = serverconf.GetBool("app:object-server", "mount_check", true)
 	server.checkEtags = serverconf.GetBool("app:object-server", "check_etags", false)
 	server.diskInUse = common.NewKeyedLimit(serverconf.GetLimit("app:object-server", "disk_limit", 25, 0))
