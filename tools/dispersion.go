@@ -22,6 +22,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,27 +48,36 @@ const SLEEP_TIME = 100 * time.Millisecond
 func getDispersionNames(container, prefix string, r ring.Ring, names chan string) {
 	// if looking for container names, send container=""
 	defer close(names)
-	for partition := uint64(0); true; partition++ {
-		devs := r.GetNodes(partition)
-		if devs == nil {
-			break
-		}
-		for i := uint64(0); true; i++ {
-			c := container
-			o := ""
-			n := fmt.Sprintf("%s%d-%d", prefix, partition, i)
-			if c == "" {
-				c = n
-			} else {
-				o = n
+	var wg sync.WaitGroup
+	numCPU := uint64(runtime.NumCPU())
+	for cpu := uint64(0); cpu < numCPU; cpu++ {
+		wg.Add(1)
+		go func(funcCPU uint64) {
+			defer wg.Done()
+			for partition := funcCPU; true; partition += numCPU {
+				devs := r.GetNodes(partition)
+				if devs == nil {
+					break
+				}
+				for i := uint64(0); true; i++ {
+					c := container
+					o := ""
+					n := fmt.Sprintf("%s%d-%d", prefix, partition, i)
+					if c == "" {
+						c = n
+					} else {
+						o = n
+					}
+					genPart := r.GetPartition(AdminAccount, c, o)
+					if genPart == partition {
+						names <- n
+						break
+					}
+				}
 			}
-			genPart := r.GetPartition(AdminAccount, c, o)
-			if genPart == partition {
-				names <- n
-				break
-			}
-		}
+		}(cpu)
 	}
+	wg.Wait()
 }
 
 func putDispersionAccount(hClient client.ProxyClient, logger srv.LowLevelLogger) bool {
