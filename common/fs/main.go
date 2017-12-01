@@ -16,7 +16,6 @@
 package fs
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -67,7 +66,7 @@ func LockPath(directory string, timeout time.Duration) (*os.File, error) {
 			return file, nil
 		}
 	case <-timer.C:
-		err = errors.New("Flock timed out")
+		err = fmt.Errorf("Flock timed out: %q: %s", directory, timeout)
 	}
 	file.Close()
 	return nil, err
