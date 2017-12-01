@@ -391,7 +391,7 @@ func (server *AccountServer) ContainerPutHandler(writer http.ResponseWriter, req
 	}
 	defer server.accountEngine.Return(db)
 	if err := db.PutContainer(vars["container"], putTimestamp, deleteTimestamp, objectCount, bytesUsed, int(storagePolicyIndex)); err != nil {
-		srv.GetLogger(request).Error("Error adding object to container.", zap.Error(err))
+		srv.GetLogger(request).Error("Error adding container to account.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
