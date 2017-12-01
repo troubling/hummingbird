@@ -124,17 +124,19 @@ func TestGetDispersionObjects(t *testing.T) {
 	oring := &FakeRing{Devs: fakeDevs, nodeCalls: 3}
 	dObjs := make(chan string)
 	container := "objs"
-	go getDispersionNames(container, "", oring, dObjs)
+	cancel := make(chan struct{})
+	go getDispersionNames(container, "", oring, dObjs, cancel)
 	for val := range dObjs {
 		part := oring.GetPartition(AdminAccount, container, val)
 		require.Equal(t, strings.Index(val, fmt.Sprintf("%d-", part)), 0)
 	}
+	close(cancel)
 }
 
 func TestPutDispersionObjects(t *testing.T) {
 	p := conf.Policy{Name: "hat"}
 	c := &testDispersionClient{objRing: &FakeRing{Devs: []*ring.Device{{Device: "sda"}, {Device: "sdb"}, {Device: "sdc"}}, nodeCalls: 3}}
-	require.True(t, putDispersionObjects(c, &p, 1, &FakeLowLevelLogger{}))
+	require.True(t, putDispersionObjects(c, &p, &FakeLowLevelLogger{}))
 	require.Equal(t, 4, c.objPuts)
 }
 
