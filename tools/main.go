@@ -543,19 +543,18 @@ type AutoAdmin struct {
 	di             *Dispersion
 	dw             *driveWatch
 	runningForever bool
-	concurrency    int
 }
 
 func (a *AutoAdmin) populateDispersion() {
 	if !putDispersionAccount(a.hClient, a.logger) {
 		return
 	}
-	if !putDispersionContainers(a.hClient, a.concurrency, a.logger) {
+	if !putDispersionContainers(a.hClient, a.logger) {
 		return
 	}
 	for _, pol := range a.policies {
 		if !pol.Deprecated {
-			if !putDispersionObjects(a.hClient, pol, a.concurrency, a.logger) {
+			if !putDispersionObjects(a.hClient, pol, a.logger) {
 				return
 			}
 		}
@@ -628,8 +627,7 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 		policies:       pl,
 		runningForever: false,
 		//containerDispersionGauge: []tally.Gauge{}, TODO- add container disp
-		logger:      logger,
-		concurrency: int(serverconf.GetInt("andrewd", "concurrency", 10)),
+		logger: logger,
 	}
 
 	a.metricsScope, a.metricsCloser = tally.NewRootScope(tally.ScopeOptions{
