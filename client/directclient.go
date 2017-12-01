@@ -170,11 +170,14 @@ func (c *ProxyDirectClient) quorumResponse(r ring.Ring, partition uint64, devToR
 	return nectarutil.ResponseStub(http.StatusServiceUnavailable, "Unknown State")
 }
 
-func (c *ProxyDirectClient) firstResponse(r ring.Ring, partition uint64, devToRequest func(*ring.Device) (*http.Request, error)) (resp *http.Response) {
+func (c *ProxyDirectClient) firstResponse(r ring.Ring, partition uint64, deviceLimit int, devToRequest func(*ring.Device) (*http.Request, error)) (resp *http.Response) {
 	success := make(chan *http.Response)
 	returned := make(chan struct{})
 	defer close(returned)
 	devs := r.GetNodes(partition)
+	if deviceLimit > 0 && len(devs) > deviceLimit {
+		devs = devs[0:deviceLimit]
+	}
 	for i := range devs {
 		j := rand.Intn(i + 1)
 		devs[i], devs[j] = devs[j], devs[i]
@@ -356,7 +359,7 @@ func (c *ProxyDirectClient) PostAccount(account string, headers http.Header) *ht
 func (c *ProxyDirectClient) GetAccount(account string, options map[string]string, headers http.Header) *http.Response {
 	partition := c.AccountRing.GetPartition(account, "", "")
 	query := nectarutil.Mkquery(options)
-	return c.firstResponse(c.AccountRing, partition, func(dev *ring.Device) (*http.Request, error) {
+	return c.firstResponse(c.AccountRing, partition, 0, func(dev *ring.Device) (*http.Request, error) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s%s", dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), query)
 		req, err := http.NewRequest("GET", url, nil)
@@ -372,7 +375,7 @@ func (c *ProxyDirectClient) GetAccount(account string, options map[string]string
 
 func (c *ProxyDirectClient) HeadAccount(account string, headers http.Header) *http.Response {
 	partition := c.AccountRing.GetPartition(account, "", "")
-	return c.firstResponse(c.AccountRing, partition, func(dev *ring.Device) (*http.Request, error) {
+	return c.firstResponse(c.AccountRing, partition, 0, func(dev *ring.Device) (*http.Request, error) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account))
 		req, err := http.NewRequest("HEAD", url, nil)
@@ -456,7 +459,7 @@ func (c *ProxyDirectClient) PostContainer(account string, container string, head
 func (c *ProxyDirectClient) GetContainer(account string, container string, options map[string]string, headers http.Header) *http.Response {
 	partition := c.ContainerRing.GetPartition(account, container, "")
 	query := nectarutil.Mkquery(options)
-	return c.firstResponse(c.ContainerRing, partition, func(dev *ring.Device) (*http.Request, error) {
+	return c.firstResponse(c.ContainerRing, partition, 0, func(dev *ring.Device) (*http.Request, error) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s%s", dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), common.Urlencode(container), query)
 		req, err := http.NewRequest("GET", url, nil)
@@ -536,7 +539,7 @@ func (c *ProxyDirectClient) GetContainerInfo(account string, container string, m
 
 func (c *ProxyDirectClient) HeadContainer(account string, container string, headers http.Header) *http.Response {
 	partition := c.ContainerRing.GetPartition(account, container, "")
-	return c.firstResponse(c.ContainerRing, partition, func(dev *ring.Device) (*http.Request, error) {
+	return c.firstResponse(c.ContainerRing, partition, 0, func(dev *ring.Device) (*http.Request, error) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), common.Urlencode(container))
 		req, err := http.NewRequest("HEAD", url, nil)
@@ -814,7 +817,7 @@ func (oc *standardObjectClient) postObject(account, container, obj string, heade
 
 func (oc *standardObjectClient) getObject(account, container, obj string, headers http.Header) *http.Response {
 	partition := oc.objectRing.GetPartition(account, container, obj)
-	return oc.proxyDirectClient.firstResponse(oc.objectRing, partition, func(dev *ring.Device) (*http.Request, error) {
+	return oc.proxyDirectClient.firstResponse(oc.objectRing, partition, oc.deviceLimit, func(dev *ring.Device) (*http.Request, error) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj))
 		req, err := http.NewRequest("GET", url, nil)
@@ -831,7 +834,7 @@ func (oc *standardObjectClient) getObject(account, container, obj string, header
 
 func (oc *standardObjectClient) grepObject(account, container, obj string, search string) *http.Response {
 	partition := oc.objectRing.GetPartition(account, container, obj)
-	return oc.proxyDirectClient.firstResponse(oc.objectRing, partition, func(dev *ring.Device) (*http.Request, error) {
+	return oc.proxyDirectClient.firstResponse(oc.objectRing, partition, oc.deviceLimit, func(dev *ring.Device) (*http.Request, error) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s?e=%s", dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj), common.Urlencode(search))
 		req, err := http.NewRequest("GREP", url, nil)
@@ -845,7 +848,7 @@ func (oc *standardObjectClient) grepObject(account, container, obj string, searc
 
 func (oc *standardObjectClient) headObject(account, container, obj string, headers http.Header) *http.Response {
 	partition := oc.objectRing.GetPartition(account, container, obj)
-	return oc.proxyDirectClient.firstResponse(oc.objectRing, partition, func(dev *ring.Device) (*http.Request, error) {
+	return oc.proxyDirectClient.firstResponse(oc.objectRing, partition, oc.deviceLimit, func(dev *ring.Device) (*http.Request, error) {
 		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj))
 		req, err := http.NewRequest("HEAD", url, nil)
