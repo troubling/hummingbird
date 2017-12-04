@@ -351,14 +351,14 @@ func (d *AuditorDaemon) RunForever() {
 }
 
 // NewAuditor returns a new AuditorDaemon with the given conf.
-func NewAuditor(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (srv.Daemon, srv.LowLevelLogger, error) {
+func NewAuditorDaemon(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (*AuditorDaemon, error) {
 	var err error
 	if !serverconf.HasSection("object-auditor") {
-		return nil, nil, fmt.Errorf("Unable to find object-auditor config section")
+		return nil, fmt.Errorf("Unable to find object-auditor config section")
 	}
 	d := &AuditorDaemon{}
 	if d.policies, err = cnf.GetPolicies(); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	d.driveRoot = serverconf.GetDefault("object-auditor", "devices", "/srv/node")
 	d.checkMounts = serverconf.GetBool("object-auditor", "mount_check", true)
@@ -367,12 +367,12 @@ func NewAuditor(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoade
 	logLevel := zap.NewAtomicLevel()
 	logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
 	if d.logger, err = srv.SetupLogger("object-auditor", &logLevel, flags); err != nil {
-		return nil, nil, fmt.Errorf("Error setting up logger: %v", err)
+		return nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 	d.bytesPerSecond = serverconf.GetInt("object-auditor", "bytes_per_second", 10000000)
 	d.regFilesPerSecond = serverconf.GetInt("object-auditor", "files_per_second", 20)
 	d.zbFilesPerSecond = serverconf.GetInt("object-auditor", "zero_byte_files_per_second", 50)
 	d.reconCachePath = serverconf.GetDefault("object-auditor", "recon_cache_path", "/var/cache/swift")
 	d.logTime = serverconf.GetInt("object-auditor", "log_time", 3600)
-	return d, d.logger, nil
+	return d, nil
 }

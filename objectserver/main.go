@@ -67,6 +67,10 @@ func (server *ObjectServer) Type() string {
 	return "object"
 }
 
+func (server *ObjectServer) Background(flags *flag.FlagSet) chan struct{} {
+	return nil
+}
+
 func (server *ObjectServer) Finalize() {
 	server.asyncWG.Wait()
 	if server.metricsCloser != nil {

@@ -19,6 +19,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math/rand"
 	"net/http"
@@ -776,6 +777,8 @@ type Replicator struct {
 	incomingLimitPerDev int64
 	policies            conf.PolicyList
 	logLevel            zap.AtomicLevel
+	metricsCloser       io.Closer
+	auditor             *AuditorDaemon
 
 	stats                   map[string]map[string]*DeviceStats
 	runningDevices          map[string]ReplicationDevice
@@ -796,6 +799,42 @@ type Replicator struct {
 	incomingSemLock         sync.Mutex
 	incomingSem             map[string]chan struct{}
 	asyncWG                 sync.WaitGroup // Used to wait on async goroutines
+}
+
+func (server *Replicator) Type() string {
+	return "object-replicator"
+}
+
+func (server *Replicator) Background(flags *flag.FlagSet) chan struct{} {
+	once := false
+	if f := flags.Lookup("once"); f != nil {
+		once = f.Value.(flag.Getter).Get() == true
+	}
+	if once {
+		ch := make(chan struct{})
+		go func() {
+			defer close(ch)
+			server.Run()
+		}()
+		return ch
+	}
+	go server.RunForever()
+	if server.auditor != nil {
+		go server.auditor.RunForever()
+	}
+	return nil
+}
+
+func (server *Replicator) Finalize() {
+	if server.metricsCloser != nil {
+		server.metricsCloser.Close()
+	}
+}
+
+func (server *Replicator) HealthcheckHandler(writer http.ResponseWriter, request *http.Request) {
+	writer.Header().Set("Content-Length", "2")
+	writer.WriteHeader(http.StatusOK)
+	writer.Write([]byte("OK"))
 }
 
 func (r *Replicator) cancelStalledDevices() {
@@ -1038,7 +1077,6 @@ func (r *Replicator) runLoopCheck(reportTimer <-chan time.Time) {
 
 // Run replication passes in a loop until forever.
 func (r *Replicator) RunForever() {
-	go r.startWebServer()
 	reportTimer := time.NewTimer(replicateStatsReportInterval)
 	r.verifyRunningDevices()
 	for {
@@ -1092,9 +1130,9 @@ func (r *Replicator) Run() {
 	r.reportStats()
 }
 
-func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (srv.Daemon, srv.LowLevelLogger, error) {
+func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (ip string, port int, server srv.Server, logger srv.LowLevelLogger, err error) {
 	if !serverconf.HasSection("object-replicator") {
-		return nil, nil, fmt.Errorf("Unable to find object-replicator config section")
+		return "", 0, nil, nil, fmt.Errorf("Unable to find object-replicator config section")
 	}
 	concurrency := int(serverconf.GetInt("object-replicator", "concurrency", 1))
 	updaterConcurrency := int(serverconf.GetInt("object-updater", "concurrency", 2))
@@ -1138,27 +1176,27 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 
 	hashPathPrefix, hashPathSuffix, err := cnf.GetHashPrefixAndSuffix()
 	if err != nil {
-		return nil, nil, fmt.Errorf("Unable to get hash prefix and suffix: %s", err)
+		return "", 0, nil, nil, fmt.Errorf("Unable to get hash prefix and suffix: %s", err)
 	}
 	if replicator.policies, err = cnf.GetPolicies(); err != nil {
-		return nil, nil, err
+		return "", 0, nil, nil, err
 	}
 	for _, policy := range replicator.policies {
 		if !(policy.Type == "replication" || policy.Type == "replication-nursery" || policy.Type == "hec") {
 			continue
 		}
 		if replicator.objectRings[policy.Index], err = cnf.GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index); err != nil {
-			return nil, nil, fmt.Errorf("Unable to load ring for Policy %d: %s", policy.Index, err)
+			return "", 0, nil, nil, fmt.Errorf("Unable to load ring for Policy %d: %s", policy.Index, err)
 		}
 	}
 	if replicator.containerRing, err = cnf.GetRing("container", hashPathPrefix, hashPathSuffix, 0); err != nil {
-		return nil, nil, fmt.Errorf("Error loading container ring: %v", err)
+		return "", 0, nil, nil, fmt.Errorf("Error loading container ring: %v", err)
 	}
 	if replicator.objEngines, err = buildEngines(serverconf, flags, cnf); err != nil {
-		return nil, nil, err
+		return "", 0, nil, nil, err
 	}
 	if replicator.logger, err = srv.SetupLogger("object-replicator", &logLevel, flags); err != nil {
-		return nil, nil, fmt.Errorf("Error setting up logger: %v", err)
+		return "", 0, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 	devices_flag := flags.Lookup("devices")
 	if devices_flag != nil {
@@ -1182,5 +1220,8 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 			replicator.quorumDelete = true
 		}
 	}
-	return replicator, replicator.logger, nil
+	if serverconf.HasSection("object-auditor") {
+		replicator.auditor, err = NewAuditorDaemon(serverconf, flags, cnf)
+	}
+	return replicator.bindIp, replicator.port, replicator, replicator.logger, err
 }

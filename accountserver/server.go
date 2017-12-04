@@ -77,6 +77,10 @@ func (server *AccountServer) Type() string {
 	return "account"
 }
 
+func (server *AccountServer) Background(flags *flag.FlagSet) chan struct{} {
+	return nil
+}
+
 func (server *AccountServer) Finalize() {
 	if server.metricsCloser != nil {
 		server.metricsCloser.Close()

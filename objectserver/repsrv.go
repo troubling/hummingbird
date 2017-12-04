@@ -28,11 +28,15 @@ import (
 	"time"
 
 	"github.com/justinas/alice"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/pickle"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/middleware"
+	"github.com/uber-go/tally"
+	promreporter "github.com/uber-go/tally/prometheus"
 	"go.uber.org/zap"
 )
 
@@ -308,9 +312,27 @@ func (r *Replicator) LogRequest(next http.Handler) http.Handler {
 	return http.HandlerFunc(fn)
 }
 
-func (r *Replicator) GetHandler() http.Handler {
-	commonHandlers := alice.New(r.LogRequest, middleware.ValidateRequest)
+func (r *Replicator) GetHandler(config conf.Config, metricsPrefix string) http.Handler {
+	var metricsScope tally.Scope
+	metricsScope, r.metricsCloser = tally.NewRootScope(tally.ScopeOptions{
+		Prefix:         metricsPrefix,
+		Tags:           map[string]string{},
+		CachedReporter: promreporter.NewReporter(promreporter.Options{}),
+		Separator:      promreporter.DefaultSeparator,
+	}, time.Second)
+	commonHandlers := alice.New(
+		middleware.NewDebugResponses(config.GetBool("debug", "debug_x_source_code", false)),
+		r.LogRequest,
+		middleware.RecoverHandler,
+		middleware.ValidateRequest,
+	)
 	router := srv.NewRouter()
+	router.Get("/metrics", prometheus.Handler())
+	router.Get("/loglevel", r.logLevel)
+	router.Put("/loglevel", r.logLevel)
+	router.Get("/healthcheck", commonHandlers.ThenFunc(r.HealthcheckHandler))
+	router.Get("/debug/pprof/:parm", http.DefaultServeMux)
+	router.Post("/debug/pprof/:parm", http.DefaultServeMux)
 	router.Post("/priorityrep", commonHandlers.ThenFunc(r.priorityRepHandler))
 	router.Post("/stabilize/:device/:partition/:account/:container/*obj", commonHandlers.ThenFunc(r.stabilizeHandler))
 	router.Get("/progress", commonHandlers.ThenFunc(r.ProgressReportHandler))
@@ -320,15 +342,5 @@ func (r *Replicator) GetHandler() http.Handler {
 		router.HandlePolicy("REPLICATE", "/:device/:partition", policy.Index, commonHandlers.ThenFunc(r.objReplicateHandler))
 	}
 	router.Get("/debug/*_", http.DefaultServeMux)
-	return router
-}
-
-func (r *Replicator) startWebServer() {
-	for {
-		if sock, err := srv.RetryListen(r.bindIp, r.port); err != nil {
-			r.logger.Error("Listen failed", zap.Error(err))
-		} else {
-			http.Serve(sock, r.GetHandler())
-		}
-	}
+	return alice.New(middleware.Metrics(metricsScope)).Then(router)
 }

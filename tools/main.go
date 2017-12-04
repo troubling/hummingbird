@@ -533,6 +533,7 @@ func ObjectInfo(flags *flag.FlagSet, cnf srv.ConfigLoader) {
 
 type AutoAdmin struct {
 	logger         srv.LowLevelLogger
+	logLevel       zap.AtomicLevel
 	port           int
 	bindIp         string
 	workDir        string
@@ -543,6 +544,100 @@ type AutoAdmin struct {
 	di             *Dispersion
 	dw             *driveWatch
 	runningForever bool
+}
+
+func (server *AutoAdmin) Type() string {
+	return "andrewd"
+}
+
+func (server *AutoAdmin) Background(flags *flag.FlagSet) chan struct{} {
+	once := false
+	if f := flags.Lookup("once"); f != nil {
+		once = f.Value.(flag.Getter).Get() == true
+	}
+	if once {
+		ch := make(chan struct{})
+		go func() {
+			defer close(ch)
+			server.Run()
+		}()
+		return ch
+	}
+	go server.RunForever()
+	return nil
+}
+
+func (server *AutoAdmin) GetHandler(config conf.Config, metricsPrefix string) http.Handler {
+	var metricsScope tally.Scope
+	metricsScope, server.metricsCloser = tally.NewRootScope(tally.ScopeOptions{
+		Prefix:         metricsPrefix,
+		Tags:           map[string]string{},
+		CachedReporter: promreporter.NewReporter(promreporter.Options{}),
+		Separator:      promreporter.DefaultSeparator,
+	}, time.Second)
+	commonHandlers := alice.New(
+		middleware.NewDebugResponses(config.GetBool("debug", "debug_x_source_code", false)),
+		server.LogRequest,
+		middleware.RecoverHandler,
+		middleware.ValidateRequest,
+	)
+	router := srv.NewRouter()
+	router.Get("/metrics", prometheus.Handler())
+	router.Get("/loglevel", server.logLevel)
+	router.Put("/loglevel", server.logLevel)
+	router.Get("/healthcheck", commonHandlers.ThenFunc(server.HealthcheckHandler))
+	router.Get("/debug/pprof/:parm", http.DefaultServeMux)
+	router.Post("/debug/pprof/:parm", http.DefaultServeMux)
+	router.Get("/drivewatch", server.dw)
+	return alice.New(middleware.Metrics(metricsScope)).Then(router)
+}
+
+func (server *AutoAdmin) Finalize() {
+	if server.metricsCloser != nil {
+		server.metricsCloser.Close()
+	}
+}
+
+func (server *AutoAdmin) HealthcheckHandler(writer http.ResponseWriter, request *http.Request) {
+	writer.Header().Set("Content-Length", "2")
+	writer.WriteHeader(http.StatusOK)
+	writer.Write([]byte("OK"))
+}
+
+func (server *AutoAdmin) LogRequest(next http.Handler) http.Handler {
+	fn := func(writer http.ResponseWriter, request *http.Request) {
+		newWriter := &srv.WebWriter{ResponseWriter: writer, Status: 500}
+		start := time.Now()
+		logr := server.logger.With(zap.String("txn", request.Header.Get("X-Trans-Id")))
+		request = srv.SetLogger(request, logr)
+		crc := &srv.CountingReadCloser{ReadCloser: request.Body}
+		request.Body = crc
+		next.ServeHTTP(newWriter, request)
+		forceAcquire := request.Header.Get("X-Force-Acquire") == "true"
+		lvl, _ := server.logLevel.MarshalText()
+		if newWriter.Status/100 != 2 || request.Header.Get("X-Backend-Suppress-2xx-Logging") != "t" || strings.ToUpper(string(lvl)) == "DEBUG" {
+			extraInfo := "-"
+			if forceAcquire {
+				extraInfo = "FA"
+			}
+			logr.Info("Request log",
+				zap.String("remoteAddr", request.RemoteAddr),
+				zap.String("eventTime", time.Now().Format("02/Jan/2006:15:04:05 -0700")),
+				zap.String("method", request.Method),
+				zap.String("urlPath", common.Urlencode(request.URL.Path)),
+				zap.Int("status", newWriter.Status),
+				zap.Int("contentBytesIn", crc.ByteCount),
+				zap.Int("contentBytesOut", newWriter.ByteCount),
+				zap.String("contentLengthIn", common.GetDefault(request.Header, "Content-Length", "-")),
+				zap.String("contentLengthOut", common.GetDefault(newWriter.Header(), "Content-Length", "-")),
+				zap.String("referer", common.GetDefault(request.Header, "Referer", "-")),
+				zap.String("userAgent", common.GetDefault(request.Header, "User-Agent", "-")),
+				zap.Float64("requestTimeSeconds", time.Since(start).Seconds()),
+				zap.Float64("requestTimeToHeaderSeconds", newWriter.ResponseStarted.Sub(start).Seconds()),
+				zap.String("extraInfo", extraInfo))
+		}
+	}
+	return http.HandlerFunc(fn)
 }
 
 func (a *AutoAdmin) populateDispersion() {
@@ -570,7 +665,6 @@ func (a *AutoAdmin) Run() {
 }
 
 func (a *AutoAdmin) RunForever() {
-	go a.startWebServer()
 	go a.di.runDispersionForever()
 	a.runningForever = true
 	for {
@@ -578,56 +672,41 @@ func (a *AutoAdmin) RunForever() {
 	}
 }
 
-func (a *AutoAdmin) GetHandler() http.Handler {
-	router := srv.NewRouter()
-	router.Get("/metrics", prometheus.Handler())
-	router.Get("/drivewatch", a.dw)
-
-	return alice.New(middleware.Metrics(a.metricsScope)).Then(router)
-}
-
-func (a *AutoAdmin) startWebServer() {
-	for {
-		if sock, err := srv.RetryListen(a.bindIp, a.port); err != nil {
-			a.logger.Error("Listen failed", zap.Error(err))
-		} else {
-			http.Serve(sock, a.GetHandler())
-		}
-	}
-}
-
-func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (srv.Daemon, srv.LowLevelLogger, error) {
+func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (ip string, port int, server srv.Server, logger srv.LowLevelLogger, err error) {
 	if !serverconf.HasSection("andrewd") {
-		return nil, nil, fmt.Errorf("Unable to find andrewd config section")
+		return "", 0, nil, nil, fmt.Errorf("Unable to find andrewd config section")
 	}
 	logLevelString := serverconf.GetDefault("andrewd", "log_level", "INFO")
 	logLevel := zap.NewAtomicLevel()
 	logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
-	logger, err := srv.SetupLogger("andrewd", &logLevel, flags)
+	logger, err = srv.SetupLogger("andrewd", &logLevel, flags)
 	if err != nil {
-		return nil, nil, fmt.Errorf("Error setting up logger: %v", err)
+		return "", 0, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 	policies, err := cnf.GetPolicies()
 	if err != nil {
-		return nil, nil, err
+		return "", 0, nil, nil, err
 	}
 	pdc, pdcerr := client.NewProxyDirectClient(policies, srv.DefaultConfigLoader{}, logger)
 	if pdcerr != nil {
-		return nil, nil, fmt.Errorf("Could not make client: %v", pdcerr)
+		return "", 0, nil, nil, fmt.Errorf("Could not make client: %v", pdcerr)
 	}
 	pl, err := cnf.GetPolicies()
 	if err != nil {
-		return nil, nil, err
+		return "", 0, nil, nil, err
 	}
+	ip = serverconf.GetDefault("andrewd", "bind_ip", "0.0.0.0")
+	port = int(serverconf.GetInt("andrewd", "bind_port", 7000))
 	a := &AutoAdmin{
 		hClient:        client.NewProxyClient(pdc, nil, nil, logger),
-		port:           int(serverconf.GetInt("andrewd", "bind_port", 7000)),
-		bindIp:         serverconf.GetDefault("andrewd", "bind_ip", "127.0.0.1"),
+		port:           port,
+		bindIp:         ip,
 		workDir:        serverconf.GetDefault("andrewd", "work_dir", "/var/cache/swift"),
 		policies:       pl,
 		runningForever: false,
 		//containerDispersionGauge: []tally.Gauge{}, TODO- add container disp
-		logger: logger,
+		logger:   logger,
+		logLevel: logLevel,
 	}
 
 	a.metricsScope, a.metricsCloser = tally.NewRootScope(tally.ScopeOptions{
@@ -641,5 +720,5 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 		a.logger, client.NewProxyClient(pdc, nil, nil, logger), a.metricsScope)
 
 	a.dw = NewDriveWatch(a.logger, a.metricsScope, serverconf, cnf)
-	return a, a.logger, nil
+	return ip, port, a, a.logger, nil
 }

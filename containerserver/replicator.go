@@ -13,6 +13,9 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
+// NOTE: Replication requests use the standard ip and port as the
+// container-replicator web service is just for metrics at this time.
+
 package containerserver
 
 import (
@@ -21,6 +24,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -31,11 +35,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/justinas/alice"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/middleware"
+	"github.com/uber-go/tally"
+	promreporter "github.com/uber-go/tally/prometheus"
 	"go.uber.org/zap"
 )
 
@@ -64,6 +73,8 @@ type Replicator struct {
 	client         *http.Client
 	runningDevices map[string]*replicationDevice
 	reclaimAge     int64
+	logLevel       zap.AtomicLevel
+	metricsCloser  io.Closer
 }
 
 type statUpdate struct {
@@ -100,7 +111,7 @@ func (rd *replicationDevice) sendReplicationMessage(dev *ring.Device, part uint6
 		return 0, nil, err
 	}
 	req, err := http.NewRequest("REPLICATE", fmt.Sprintf("http://%s:%d/%s/%d/%s",
-		dev.ReplicationIp, dev.ReplicationPort, dev.Device, part, ringHash), bytes.NewBuffer(body))
+		dev.Ip, dev.Port, dev.Device, part, ringHash), bytes.NewBuffer(body))
 	if err != nil {
 		return 0, nil, err
 	}
@@ -123,7 +134,7 @@ func (rd *replicationDevice) sync(dev *ring.Device, part uint64, ringHash string
 	status, body, err := rd.i.sendReplicationMessage(dev, part, ringHash, "sync", info.MaxRow, info.Hash,
 		info.ID, info.CreatedAt, info.PutTimestamp, info.DeleteTimestamp, info.RawMetadata)
 	if err != nil {
-		return nil, fmt.Errorf("sending sync request to %s/%s: %v", dev.ReplicationIp, dev.Device, err)
+		return nil, fmt.Errorf("sending sync request to %s/%s: %v", dev.Ip, dev.Device, err)
 	} else if status == http.StatusNotFound {
 		return nil, nil
 	} else if status == http.StatusInsufficientStorage {
@@ -144,22 +155,22 @@ func (rd *replicationDevice) rsync(dev *ring.Device, c ReplicableContainer, part
 		return fmt.Errorf("Error opening databae: %v", err)
 	}
 	defer release()
-	req, err := http.NewRequest("PUT", fmt.Sprintf("http://%s:%d/%s/tmp/%s", dev.ReplicationIp, dev.ReplicationPort, dev.Device, tmpFilename), fp)
+	req, err := http.NewRequest("PUT", fmt.Sprintf("http://%s:%d/%s/tmp/%s", dev.Ip, dev.Port, dev.Device, tmpFilename), fp)
 	if err != nil {
 		return fmt.Errorf("creating request: %v", err)
 	}
 	req.Cancel = rd.cancel
 	resp, err := rd.r.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("putting database to %s/%s: %v", dev.ReplicationIp, dev.Device, err)
+		return fmt.Errorf("putting database to %s/%s: %v", dev.Ip, dev.Device, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("bad status code %d rsyncing file with %s/%s", resp.StatusCode, dev.ReplicationIp, dev.Device)
+		return fmt.Errorf("bad status code %d rsyncing file with %s/%s", resp.StatusCode, dev.Ip, dev.Device)
 	}
 	status, _, err := rd.i.sendReplicationMessage(dev, part, c.RingHash(), op, tmpFilename)
 	if err != nil || status/100 != 2 {
-		return fmt.Errorf("sending %s message to %s/%s: status %d: %v", op, dev.ReplicationIp, dev.Device, status, err)
+		return fmt.Errorf("sending %s message to %s/%s: status %d: %v", op, dev.Ip, dev.Device, status, err)
 	}
 	return nil
 }
@@ -177,7 +188,7 @@ func (rd *replicationDevice) usync(dev *ring.Device, c ReplicableContainer, part
 	for len(objects) != 0 && usyncs < rd.r.maxUsyncs {
 		status, _, err := rd.i.sendReplicationMessage(dev, part, c.RingHash(), "merge_items", objects, localID)
 		if err != nil || status/100 != 2 {
-			return fmt.Errorf("Bad response to merge_items with %s/%s: status %d: %v", dev.ReplicationIp, dev.Device, status, err)
+			return fmt.Errorf("Bad response to merge_items with %s/%s: status %d: %v", dev.Ip, dev.Device, status, err)
 		}
 		point = objects[len(objects)-1].Rowid
 		usyncs++
@@ -252,14 +263,14 @@ func (rd *replicationDevice) replicateDatabaseToDevice(dev *ring.Device, c Repli
 	case "complete_rsync", "rsync_then_merge":
 		rd.r.logger.Debug("Replicating ringhash",
 			zap.String("RingHash", c.RingHash()),
-			zap.String("ReplicationIp", dev.ReplicationIp),
+			zap.String("Ip", dev.Ip),
 			zap.String("Device", dev.Device),
 			zap.String("strategy", strategy))
 		return rd.i.rsync(dev, c, part, strategy)
 	case "diff":
 		rd.r.logger.Debug("Replicating ringhash",
 			zap.String("RingHash", c.RingHash()),
-			zap.String("ReplicationIp", dev.ReplicationIp),
+			zap.String("Ip", dev.Ip),
 			zap.String("Device", dev.Device),
 			zap.String("strategy", strategy))
 		return rd.i.usync(dev, c, part, info.ID, remoteInfo.Point)
@@ -293,14 +304,14 @@ func (rd *replicationDevice) replicateDatabase(dbFile string) error {
 			rd.i.incrementStat("success")
 			rd.r.logger.Debug("Succeeded replicating database.",
 				zap.String("dbFile", dbFile),
-				zap.String("ReplicationIp", devices[i].ReplicationIp),
+				zap.String("Ip", devices[i].Ip),
 				zap.String("Device", devices[i].Device))
 			successes++
 		} else {
 			rd.i.incrementStat("failure")
 			rd.r.logger.Error("Error replicating database.",
 				zap.String("dbFile", dbFile),
-				zap.String("ReplicationIp", devices[i].ReplicationIp),
+				zap.String("Ip", devices[i].Ip),
 				zap.String("Device", devices[i].Device),
 				zap.Error(err))
 			if err == errDeviceNotMounted && !handoff {
@@ -452,6 +463,99 @@ func newReplicationDevice(dev *ring.Device, r *Replicator) *replicationDevice {
 	return rd
 }
 
+func (server *Replicator) Type() string {
+	return "container-replicator"
+}
+
+func (server *Replicator) Background(flags *flag.FlagSet) chan struct{} {
+	once := false
+	if f := flags.Lookup("once"); f != nil {
+		once = f.Value.(flag.Getter).Get() == true
+	}
+	if once {
+		ch := make(chan struct{})
+		go func() {
+			defer close(ch)
+			server.Run()
+		}()
+		return ch
+	}
+	go server.RunForever()
+	return nil
+}
+
+func (server *Replicator) GetHandler(config conf.Config, metricsPrefix string) http.Handler {
+	var metricsScope tally.Scope
+	metricsScope, server.metricsCloser = tally.NewRootScope(tally.ScopeOptions{
+		Prefix:         metricsPrefix,
+		Tags:           map[string]string{},
+		CachedReporter: promreporter.NewReporter(promreporter.Options{}),
+		Separator:      promreporter.DefaultSeparator,
+	}, time.Second)
+	commonHandlers := alice.New(
+		middleware.NewDebugResponses(config.GetBool("debug", "debug_x_source_code", false)),
+		server.LogRequest,
+		middleware.RecoverHandler,
+		middleware.ValidateRequest,
+	)
+	router := srv.NewRouter()
+	router.Get("/metrics", prometheus.Handler())
+	router.Get("/loglevel", server.logLevel)
+	router.Put("/loglevel", server.logLevel)
+	router.Get("/healthcheck", commonHandlers.ThenFunc(server.HealthcheckHandler))
+	router.Get("/debug/pprof/:parm", http.DefaultServeMux)
+	router.Post("/debug/pprof/:parm", http.DefaultServeMux)
+	return alice.New(middleware.Metrics(metricsScope)).Then(router)
+}
+
+func (server *Replicator) Finalize() {
+	if server.metricsCloser != nil {
+		server.metricsCloser.Close()
+	}
+}
+
+func (server *Replicator) HealthcheckHandler(writer http.ResponseWriter, request *http.Request) {
+	writer.Header().Set("Content-Length", "2")
+	writer.WriteHeader(http.StatusOK)
+	writer.Write([]byte("OK"))
+}
+
+func (server *Replicator) LogRequest(next http.Handler) http.Handler {
+	fn := func(writer http.ResponseWriter, request *http.Request) {
+		newWriter := &srv.WebWriter{ResponseWriter: writer, Status: 500}
+		start := time.Now()
+		logr := server.logger.With(zap.String("txn", request.Header.Get("X-Trans-Id")))
+		request = srv.SetLogger(request, logr)
+		crc := &srv.CountingReadCloser{ReadCloser: request.Body}
+		request.Body = crc
+		next.ServeHTTP(newWriter, request)
+		forceAcquire := request.Header.Get("X-Force-Acquire") == "true"
+		lvl, _ := server.logLevel.MarshalText()
+		if newWriter.Status/100 != 2 || request.Header.Get("X-Backend-Suppress-2xx-Logging") != "t" || strings.ToUpper(string(lvl)) == "DEBUG" {
+			extraInfo := "-"
+			if forceAcquire {
+				extraInfo = "FA"
+			}
+			logr.Info("Request log",
+				zap.String("remoteAddr", request.RemoteAddr),
+				zap.String("eventTime", time.Now().Format("02/Jan/2006:15:04:05 -0700")),
+				zap.String("method", request.Method),
+				zap.String("urlPath", common.Urlencode(request.URL.Path)),
+				zap.Int("status", newWriter.Status),
+				zap.Int("contentBytesIn", crc.ByteCount),
+				zap.Int("contentBytesOut", newWriter.ByteCount),
+				zap.String("contentLengthIn", common.GetDefault(request.Header, "Content-Length", "-")),
+				zap.String("contentLengthOut", common.GetDefault(newWriter.Header(), "Content-Length", "-")),
+				zap.String("referer", common.GetDefault(request.Header, "Referer", "-")),
+				zap.String("userAgent", common.GetDefault(request.Header, "User-Agent", "-")),
+				zap.Float64("requestTimeSeconds", time.Since(start).Seconds()),
+				zap.Float64("requestTimeToHeaderSeconds", newWriter.ResponseStarted.Sub(start).Seconds()),
+				zap.String("extraInfo", extraInfo))
+		}
+	}
+	return http.HandlerFunc(fn)
+}
+
 func (r *Replicator) verifyDevices() {
 	// kill devices that haven't checked in for a while
 	for key, rd := range r.runningDevices {
@@ -548,7 +652,6 @@ func (r *Replicator) runLoopCheck(reportTimer <-chan time.Time) {
 
 // RunForever runs the replicator in a forever-loop.
 func (r *Replicator) RunForever() {
-	go http.ListenAndServe("127.0.0.1:0", nil)
 	reportTimer := time.NewTimer(time.Minute * 15)
 	r.verifyDevices()
 	for {
@@ -589,21 +692,21 @@ func (r *Replicator) Run() {
 }
 
 // NewReplicator uses the config settings and command-line flags to configure and return a replicator daemon struct.
-func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (srv.Daemon, srv.LowLevelLogger, error) {
+func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (ip string, port int, server srv.Server, logger srv.LowLevelLogger, err error) {
 	if !serverconf.HasSection("container-replicator") {
-		return nil, nil, fmt.Errorf("Unable to find container-replicator config section")
+		return "", 0, nil, nil, fmt.Errorf("Unable to find container-replicator config section")
 	}
 	hashPathPrefix, hashPathSuffix, err := cnf.GetHashPrefixAndSuffix()
 	if err != nil {
-		return nil, nil, fmt.Errorf("Unable to get hash prefix and suffix: %s", err)
+		return "", 0, nil, nil, fmt.Errorf("Unable to get hash prefix and suffix: %s", err)
 	}
 	ring, err := cnf.GetRing("container", hashPathPrefix, hashPathSuffix, 0)
 	if err != nil {
-		return nil, nil, fmt.Errorf("Error loading container ring: %s", err)
+		return "", 0, nil, nil, fmt.Errorf("Error loading container ring: %s", err)
 	}
 	accountRing, err := cnf.GetRing("account", hashPathPrefix, hashPathSuffix, 0)
 	if err != nil {
-		return nil, nil, fmt.Errorf("Error loading account ring: %s", err)
+		return "", 0, nil, nil, fmt.Errorf("Error loading account ring: %s", err)
 	}
 	concurrency := int(serverconf.GetInt("container-replicator", "concurrency", 4))
 
@@ -611,11 +714,12 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 	logLevel := zap.NewAtomicLevel()
 	logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
 
-	var logger srv.LowLevelLogger
 	if logger, err = srv.SetupLogger("container-replicator", &logLevel, flags); err != nil {
-		return nil, nil, fmt.Errorf("Error setting up logger: %v", err)
+		return "", 0, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
-	return &Replicator{
+	ip = serverconf.GetDefault("container-replicator", "bind_ip", "0.0.0.0")
+	port = int(serverconf.GetInt("container-replicator", "bind_port", 6501))
+	server = &Replicator{
 		runningDevices: make(map[string]*replicationDevice),
 		perUsync:       3000,
 		maxUsyncs:      25,
@@ -625,7 +729,7 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 		reconCachePath: serverconf.GetDefault("container-replicator", "recon_cache_path", "/var/cache/swift"),
 		checkMounts:    serverconf.GetBool("container-replicator", "mount_check", true),
 		deviceRoot:     serverconf.GetDefault("container-replicator", "devices", "/srv/node"),
-		serverPort:     int(serverconf.GetInt("container-replicator", "bind_port", 6000)),
+		serverPort:     port,
 		reclaimAge:     serverconf.GetInt("container-replicator", "reclaim_age", 604800),
 		logger:         logger,
 		concurrencySem: make(chan struct{}, concurrency),
@@ -635,5 +739,7 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 			Timeout:   time.Minute * 15,
 			Transport: &http.Transport{Dial: (&net.Dialer{Timeout: time.Second}).Dial},
 		},
-	}, logger, nil
+		logLevel: logLevel,
+	}
+	return ip, port, server, logger, nil
 }
