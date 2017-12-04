@@ -385,6 +385,9 @@ func main() {
 	reconFlags.Bool("time", false, "Check time synchronization")
 	reconFlags.Bool("q", false, "Get cluster quarantine stats")
 	reconFlags.Bool("a", false, "Get cluster async pending stats")
+	reconFlags.Bool("rd", false, "Get cluster replication pass duration stats")
+	reconFlags.Bool("rp", false, "Get cluster replication partition/sec stats")
+	reconFlags.Bool("rc", false, "List all drives with replicator cancellations")
 	reconFlags.Bool("json", false, "Output in json. {\"ok\": true|false, \"msg\": \"text-output\"}")
 	reconFlags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "hummingbird recon [ARGS] \n")

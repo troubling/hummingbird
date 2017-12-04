@@ -917,7 +917,7 @@ func TestReportStats(t *testing.T) {
 		"object-replicator": {
 			"sda": &DeviceStats{
 				LastPassDuration: time.Hour,
-				RunStarted:       time.Now().Add(-time.Hour),
+				PassStarted:      time.Now().Add(-time.Hour),
 				Stats: map[string]int64{
 					"PartitionsTotal": 1000,
 					"PartitionsDone":  500,
@@ -926,7 +926,7 @@ func TestReportStats(t *testing.T) {
 
 			"sdb": &DeviceStats{
 				LastPassDuration: time.Hour,
-				RunStarted:       time.Now().Add(-time.Hour),
+				PassStarted:      time.Now().Add(-time.Hour),
 				Stats: map[string]int64{
 					"PartitionsTotal": 100,
 					"PartitionsDone":  40,
@@ -1027,28 +1027,24 @@ func TestGetDeviceProgress(t *testing.T) {
 		"object-replicator": {
 			"sda": &DeviceStats{
 				LastPassDuration: time.Hour,
-				RunStarted:       time.Now().Add(-time.Hour),
-				Stats: map[string]int64{
-					"PartitionsTotal": 1000,
-					"PartitionsDone":  500,
-				},
+				PassStarted:      time.Now().Add(-time.Hour),
+				PartitionsTotal:  1000,
+				PartitionsDone:   500,
 			},
 
 			"sdb": &DeviceStats{
 				LastPassDuration: time.Hour,
-				RunStarted:       time.Now().Add(-time.Hour),
-				Stats: map[string]int64{
-					"PartitionsTotal": 100,
-					"PartitionsDone":  50,
-				},
+				PassStarted:      time.Now().Add(-time.Hour),
+				PartitionsTotal:  100,
+				PartitionsDone:   50,
 			},
 		},
 	}
 	progress := replicator.getDeviceProgress()
 	sdb, ok := progress["sdb"]
 	require.True(t, ok)
-	require.Equal(t, int64(100), sdb["PartitionsTotal"])
-	require.Equal(t, int64(50), sdb["PartitionsDone"])
+	require.Equal(t, int64(100), sdb.PartitionsTotal)
+	require.Equal(t, int64(50), sdb.PartitionsDone)
 }
 
 func TestRunLoopOnceDone(t *testing.T) {
@@ -1072,11 +1068,9 @@ func TestRunLoopStatUpdate(t *testing.T) {
 		"object-replicator": {
 			"sda": &DeviceStats{
 				LastPassDuration: time.Hour,
-				RunStarted:       time.Now().Add(-time.Hour),
-				Stats: map[string]int64{
-					"PartitionsTotal": 1000,
-					"PartitionsDone":  500,
-				},
+				PassStarted:      time.Now().Add(-time.Hour),
+				PartitionsTotal:  1000,
+				PartitionsDone:   500,
 			},
 		},
 	}
@@ -1084,21 +1078,21 @@ func TestRunLoopStatUpdate(t *testing.T) {
 	rd := &mockReplicationDevice{}
 	replicator.runningDevices = map[string]ReplicationDevice{"sda": rd}
 	replicator.updateStat = make(chan statUpdate, 1)
-	replicator.updateStat <- statUpdate{"object-replicator", "sda", "PartitionsTotal", 1}
+	replicator.updateStat <- statUpdate{"object-replicator", "sda", "PartitionsTotal", 1001}
 	replicator.runLoopCheck(make(chan time.Time))
-	require.Equal(t, int64(1001), st.Stats["PartitionsTotal"])
-	require.Equal(t, int64(500), st.Stats["PartitionsDone"])
+	require.Equal(t, int64(1001), st.PartitionsTotal)
+	require.Equal(t, int64(500), st.PartitionsDone)
 	replicator.updateStat <- statUpdate{"object-replicator", "sda", "PartitionsDone", 1}
 	replicator.runLoopCheck(make(chan time.Time))
-	require.Equal(t, int64(1001), st.Stats["PartitionsTotal"])
-	require.Equal(t, int64(501), st.Stats["PartitionsDone"])
+	require.Equal(t, int64(1001), st.PartitionsTotal)
+	require.Equal(t, int64(501), st.PartitionsDone)
 	replicator.updateStat <- statUpdate{"object-replicator", "sda", "checkin", 1}
 	replicator.runLoopCheck(make(chan time.Time))
 	require.True(t, time.Since(st.LastCheckin) < time.Second)
 	replicator.updateStat <- statUpdate{"object-replicator", "sda", "startRun", 1}
 	replicator.runLoopCheck(make(chan time.Time))
-	require.True(t, time.Since(st.RunStarted) < time.Second)
-	require.Equal(t, int64(0), st.Stats["PartitionsTotal"])
+	require.True(t, time.Since(st.PassStarted) < time.Second)
+	require.Equal(t, int64(0), st.PartitionsDone)
 }
 
 func TestReplicationLocal(t *testing.T) {

@@ -38,8 +38,9 @@ import (
 var DB_NAME = "andrewd.db"
 
 type ipPort struct {
-	ip   string
-	port int
+	ip              string
+	port            int
+	replicationPort int
 }
 
 type reconData struct {
@@ -105,7 +106,7 @@ func getRingData(oring ring.Ring, onlyWeighted bool) (map[string]*ring.Device, [
 		if !onlyWeighted || dev.Weight > 0 {
 			if _, ok := weightedServers[serverId(dev.Ip, dev.Port)]; !ok {
 				servers =
-					append(servers, ipPort{ip: dev.Ip, port: dev.Port})
+					append(servers, ipPort{ip: dev.Ip, port: dev.Port, replicationPort: dev.ReplicationPort})
 				weightedServers[serverId(dev.Ip, dev.Port)] = true
 			}
 		}

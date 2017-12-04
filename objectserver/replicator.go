@@ -131,13 +131,19 @@ func getFile(filePath string) (fp *os.File, xattrs []byte, size int64, err error
 }
 
 type DeviceStats struct {
-	Stats            map[string]int64
-	LastCheckin      time.Time
-	RunStarted       time.Time
-	DeviceStarted    time.Time
-	LastPassDate     time.Time
-	LastPassDuration time.Duration
-	TotalPasses      int64
+	Stats              map[string]int64
+	LastCheckin        time.Time
+	PassStarted        time.Time
+	DeviceStarted      time.Time
+	LastPassFinishDate time.Time
+	LastPassDuration   time.Duration
+	CancelCount        int64
+	FilesSent          int64
+	BytesSent          int64
+	PartitionsDone     int64
+	PartitionsTotal    int64
+	TotalPasses        int64
+	PriorityRepsDone   int64
 }
 
 type ReplicationDevice interface {
@@ -663,6 +669,7 @@ func (rd *replicationDevice) Replicate() {
 }
 
 func (rd *replicationDevice) Cancel() {
+	rd.updateStat("cancel", 1)
 	close(rd.cancel)
 }
 
@@ -779,7 +786,6 @@ type Replicator struct {
 	objectRings             map[int]ring.Ring
 	objEngines              map[int]ObjectEngine
 	containerRing           ring.Ring
-	cancelCounts            map[string]int64
 	replicateConcurrencySem chan struct{}
 	updateConcurrencySem    chan struct{}
 	nurseryConcurrencySem   chan struct{}
@@ -799,7 +805,6 @@ func (r *Replicator) cancelStalledDevices() {
 		stats, ok := r.stats["object-replicator"][key]
 		if ok && time.Since(stats.LastCheckin) > replicateDeviceTimeout {
 			rd.Cancel()
-			r.cancelCounts[key] += 1
 			delete(r.runningDevices, key)
 			delete(r.stats["object-replicator"], key)
 		}
@@ -849,8 +854,7 @@ func (r *Replicator) verifyRunningDevices() {
 				r.runningDevices[key] = newReplicationDevice(dev, policy, r)
 				r.stats["object-replicator"][key] = &DeviceStats{
 					LastCheckin: time.Now(), DeviceStarted: time.Now(),
-					Stats: map[string]int64{"PartitionsDone": 0, "PartitionsTotal": 0,
-						"FilesSent": 0, "BytesSent": 0, "PriorityRepsDone": 0},
+					Stats: map[string]int64{},
 				}
 				go r.runningDevices[key].ReplicateLoop()
 			}
@@ -908,10 +912,10 @@ func (r *Replicator) reportStats() {
 		if stats.TotalPasses <= 1 {
 			allHaveCompleted = false
 		}
-		if stats.LastPassDate.Before(minLastPass) {
-			minLastPass = stats.LastPassDate
+		if stats.LastPassFinishDate.Before(minLastPass) {
+			minLastPass = stats.LastPassFinishDate
 		}
-		processingTimeSec := time.Since(stats.RunStarted).Seconds()
+		processingTimeSec := time.Since(stats.PassStarted).Seconds()
 		doneParts := stats.Stats["PartitionsDone"]
 		totalParts := stats.Stats["PartitionsTotal"]
 		partsPerSecond := float64(doneParts) / processingTimeSec
@@ -959,23 +963,12 @@ func (r *Replicator) priorityReplicate(pri PriorityRepJob, timeout time.Duration
 	return false
 }
 
-func (r *Replicator) getDeviceProgress() map[string]map[string]interface{} {
+func (r *Replicator) getDeviceProgress() map[string]*DeviceStats {
 	r.runningDevicesLock.Lock()
 	defer r.runningDevicesLock.Unlock()
-	deviceProgress := make(map[string]map[string]interface{})
+	deviceProgress := make(map[string]*DeviceStats)
 	for key, stats := range r.stats["object-replicator"] {
-		deviceProgress[key] = map[string]interface{}{
-			"StartDate":          stats.DeviceStarted,
-			"LastUpdate":         stats.LastCheckin,
-			"LastPassDuration":   stats.LastPassDuration,
-			"LastPassFinishDate": stats.LastPassDate,
-			"LastPassUpdate":     stats.RunStarted,
-			"TotalPasses":        stats.TotalPasses,
-			"CancelCount":        r.cancelCounts[key],
-		}
-		for k, v := range stats.Stats {
-			deviceProgress[key][k] = v
-		}
+		deviceProgress[key] = stats
 	}
 	return deviceProgress
 }
@@ -995,13 +988,18 @@ func (r *Replicator) runLoopCheck(reportTimer <-chan time.Time) {
 		switch update.stat {
 		case "checkin":
 		case "startRun":
-			stats.RunStarted = time.Now()
+			stats.PassStarted = time.Now()
+			stats.PartitionsDone = 0
+			stats.FilesSent = 0
+			stats.BytesSent = 0
+			stats.PriorityRepsDone = 0
+			stats.LastPassFinishDate = time.Time{}
 			for k := range stats.Stats {
 				stats.Stats[k] = 0
 			}
-		case "FullReplicateCount", "PassComplete":
-			stats.LastPassDuration = time.Since(stats.RunStarted)
-			stats.LastPassDate = time.Now()
+		case "FullReplicateCount":
+			stats.LastPassDuration = time.Since(stats.PassStarted)
+			stats.LastPassFinishDate = time.Now()
 			stats.TotalPasses++
 			stats.Stats[update.stat] += update.value
 
@@ -1014,6 +1012,18 @@ func (r *Replicator) runLoopCheck(reportTimer <-chan time.Time) {
 				lf = append(lf, zap.Int64(k, v))
 			}
 			r.logger.Info("Service pass complete", lf...)
+		case "cancel":
+			stats.CancelCount += update.value
+		case "FilesSent":
+			stats.FilesSent += update.value
+		case "BytesSent":
+			stats.BytesSent += update.value
+		case "PartitionsDone":
+			stats.PartitionsDone += update.value
+		case "PartitionsTotal":
+			stats.PartitionsTotal = update.value
+		case "PriorityRepsDone":
+			stats.PriorityRepsDone += update.value
 		default:
 			stats.Stats[update.stat] += update.value
 		}
@@ -1108,7 +1118,6 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 		runningDevices:          make(map[string]ReplicationDevice),
 		updatingDevices:         make(map[string]*updateDevice),
 		nurseryDevices:          make(map[string]*nurseryDevice),
-		cancelCounts:            make(map[string]int64),
 		objectRings:             make(map[int]ring.Ring),
 		replicateConcurrencySem: make(chan struct{}, concurrency),
 		updateConcurrencySem:    make(chan struct{}, updaterConcurrency),
