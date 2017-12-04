@@ -391,7 +391,7 @@ func (server *AccountServer) ContainerPutHandler(writer http.ResponseWriter, req
 	}
 	defer server.accountEngine.Return(db)
 	if err := db.PutContainer(vars["container"], putTimestamp, deleteTimestamp, objectCount, bytesUsed, int(storagePolicyIndex)); err != nil {
-		srv.GetLogger(request).Error("Error adding object to container.", zap.Error(err))
+		srv.GetLogger(request).Error("Error adding container to account.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
@@ -433,7 +433,7 @@ func (server *AccountServer) LogRequest(next http.Handler) http.Handler {
 		next.ServeHTTP(newWriter, request)
 		forceAcquire := request.Header.Get("X-Force-Acquire") == "true"
 		lvl, _ := server.logLevel.MarshalText()
-		if (request.Method != "REPLICATE" && request.Method != "REPCONN") || strings.ToUpper(string(lvl)) == "DEBUG" {
+		if newWriter.Status/100 != 2 || request.Header.Get("X-Backend-Suppress-2xx-Logging") != "t" || strings.ToUpper(string(lvl)) == "DEBUG" {
 			extraInfo := "-"
 			if forceAcquire {
 				extraInfo = "FA"

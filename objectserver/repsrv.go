@@ -287,21 +287,24 @@ func (r *Replicator) LogRequest(next http.Handler) http.Handler {
 		crc := &srv.CountingReadCloser{ReadCloser: request.Body}
 		request.Body = crc
 		next.ServeHTTP(newWriter, request)
-		logr.Info("Request log",
-			zap.String("remoteAddr", request.RemoteAddr),
-			zap.String("eventTime", time.Now().Format("02/Jan/2006:15:04:05 -0700")),
-			zap.String("method", request.Method),
-			zap.String("urlPath", common.Urlencode(request.URL.Path)),
-			zap.Int("status", newWriter.Status),
-			zap.Int("contentBytesIn", crc.ByteCount),
-			zap.Int("contentBytesOut", newWriter.ByteCount),
-			zap.String("contentLengthIn", common.GetDefault(request.Header, "Content-Length", "-")),
-			zap.String("contentLengthOut", common.GetDefault(newWriter.Header(), "Content-Length", "-")),
-			zap.String("referer", common.GetDefault(request.Header, "Referer", "-")),
-			zap.String("userAgent", common.GetDefault(request.Header, "User-Agent", "-")),
-			zap.Float64("requestTimeSeconds", time.Since(start).Seconds()),
-			zap.Float64("requestTimeToHeaderSeconds", newWriter.ResponseStarted.Sub(start).Seconds()),
-		)
+		lvl, _ := r.logLevel.MarshalText()
+		if newWriter.Status/100 != 2 || request.Header.Get("X-Backend-Suppress-2xx-Logging") != "t" || strings.ToUpper(string(lvl)) == "DEBUG" {
+			logr.Info("Request log",
+				zap.String("remoteAddr", request.RemoteAddr),
+				zap.String("eventTime", time.Now().Format("02/Jan/2006:15:04:05 -0700")),
+				zap.String("method", request.Method),
+				zap.String("urlPath", common.Urlencode(request.URL.Path)),
+				zap.Int("status", newWriter.Status),
+				zap.Int("contentBytesIn", crc.ByteCount),
+				zap.Int("contentBytesOut", newWriter.ByteCount),
+				zap.String("contentLengthIn", common.GetDefault(request.Header, "Content-Length", "-")),
+				zap.String("contentLengthOut", common.GetDefault(newWriter.Header(), "Content-Length", "-")),
+				zap.String("referer", common.GetDefault(request.Header, "Referer", "-")),
+				zap.String("userAgent", common.GetDefault(request.Header, "User-Agent", "-")),
+				zap.Float64("requestTimeSeconds", time.Since(start).Seconds()),
+				zap.Float64("requestTimeToHeaderSeconds", newWriter.ResponseStarted.Sub(start).Seconds()),
+			)
+		}
 	}
 	return http.HandlerFunc(fn)
 }

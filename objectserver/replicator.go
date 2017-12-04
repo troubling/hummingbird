@@ -768,6 +768,7 @@ type Replicator struct {
 	reserve             int64
 	incomingLimitPerDev int64
 	policies            conf.PolicyList
+	logLevel            zap.AtomicLevel
 
 	stats                   map[string]map[string]*DeviceStats
 	runningDevices          map[string]ReplicationDevice
@@ -1124,6 +1125,7 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 			"object-nursery":    {},
 		},
 	}
+	replicator.logLevel = logLevel
 
 	hashPathPrefix, hashPathSuffix, err := cnf.GetHashPrefixAndSuffix()
 	if err != nil {
