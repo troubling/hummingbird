@@ -432,8 +432,7 @@ func (server *AccountServer) LogRequest(next http.Handler) http.Handler {
 		request.Body = crc
 		next.ServeHTTP(newWriter, request)
 		forceAcquire := request.Header.Get("X-Force-Acquire") == "true"
-		lvl, _ := server.logLevel.MarshalText()
-		if newWriter.Status/100 != 2 || request.Header.Get("X-Backend-Suppress-2xx-Logging") != "t" || strings.ToUpper(string(lvl)) == "DEBUG" {
+		if newWriter.Status/100 != 2 || request.Header.Get("X-Backend-Suppress-2xx-Logging") != "t" || logr.Core().Enabled(zap.DebugLevel) {
 			extraInfo := "-"
 			if forceAcquire {
 				extraInfo = "FA"
