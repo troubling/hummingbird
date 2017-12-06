@@ -287,8 +287,7 @@ func (r *Replicator) LogRequest(next http.Handler) http.Handler {
 		crc := &srv.CountingReadCloser{ReadCloser: request.Body}
 		request.Body = crc
 		next.ServeHTTP(newWriter, request)
-		lvl, _ := r.logLevel.MarshalText()
-		if newWriter.Status/100 != 2 || request.Header.Get("X-Backend-Suppress-2xx-Logging") != "t" || strings.ToUpper(string(lvl)) == "DEBUG" {
+		if newWriter.Status/100 != 2 || request.Header.Get("X-Backend-Suppress-2xx-Logging") != "t" || logr.Core().Enabled(zap.DebugLevel) {
 			logr.Info("Request log",
 				zap.String("remoteAddr", request.RemoteAddr),
 				zap.String("eventTime", time.Now().Format("02/Jan/2006:15:04:05 -0700")),
