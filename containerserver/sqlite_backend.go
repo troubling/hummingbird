@@ -957,18 +957,26 @@ func sqliteCreateContainer(containerFile string, account string, container strin
 	var serializedMetadata []byte
 	var err error
 
+	hashDir := filepath.Dir(containerFile)
+	if err := os.MkdirAll(hashDir, 0755); err != nil {
+		return err
+	}
+	lock, err := fs.LockPath(filepath.Dir(hashDir), 10*time.Second)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+
 	if fs.Exists(containerFile) {
 		return errors.New("Container exists!")
 	}
+
 	if metadata == nil {
 		serializedMetadata = []byte("{}")
 	} else if serializedMetadata, err = json.Marshal(metadata); err != nil {
 		return err
 	}
-	hashDir := filepath.Dir(containerFile)
-	if err := os.MkdirAll(hashDir, 0755); err != nil {
-		return err
-	}
+
 	tfp, err := ioutil.TempFile(hashDir, ".newdb")
 	if err != nil {
 		return err

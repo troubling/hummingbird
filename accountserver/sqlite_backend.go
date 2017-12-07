@@ -927,18 +927,26 @@ func sqliteCreateAccount(accountFile string, account string, putTimestamp string
 	var serializedMetadata []byte
 	var err error
 
+	hashDir := filepath.Dir(accountFile)
+	if err := os.MkdirAll(hashDir, 0755); err != nil {
+		return err
+	}
+	lock, err := fs.LockPath(filepath.Dir(hashDir), 10*time.Second)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+
 	if fs.Exists(accountFile) {
 		return errors.New("Account exists!")
 	}
+
 	if metadata == nil {
 		serializedMetadata = []byte("{}")
 	} else if serializedMetadata, err = json.Marshal(metadata); err != nil {
 		return err
 	}
-	hashDir := filepath.Dir(accountFile)
-	if err := os.MkdirAll(hashDir, 0755); err != nil {
-		return err
-	}
+
 	tfp, err := ioutil.TempFile(hashDir, ".newdb")
 	if err != nil {
 		return err
