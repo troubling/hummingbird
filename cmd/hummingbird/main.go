@@ -522,6 +522,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, "init error:", err)
 			os.Exit(1)
 		}
+	case "systemd":
+		if err := systemdCommand(flag.Args()[1:]); err != nil {
+			fmt.Fprintln(os.Stderr, "systemd error:", err)
+			os.Exit(1)
+		}
 	default:
 		flag.Usage()
 	}
