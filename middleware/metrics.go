@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"bufio"
 	"fmt"
+	"net"
 	"net/http"
 
 	"github.com/uber-go/tally"
@@ -15,6 +17,10 @@ type recordStatusWriter struct {
 func (mw *recordStatusWriter) WriteHeader(status int) {
 	mw.status = status
 	mw.ResponseWriter.WriteHeader(status)
+}
+
+func (mw *recordStatusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return mw.ResponseWriter.(http.Hijacker).Hijack()
 }
 
 func Metrics(metricsScope tally.Scope) func(http.Handler) http.Handler {

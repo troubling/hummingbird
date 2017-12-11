@@ -243,7 +243,7 @@ func (r *hashRing) reload() error {
 			d.ReplicationIp = d.Ip
 		}
 		if d.ReplicationPort == 0 {
-			d.ReplicationPort = d.Port
+			d.ReplicationPort = d.Port + 500
 		}
 		regionCount[d.Region] = true
 		zoneCount[regionZone{d.Region, d.Zone}] = true

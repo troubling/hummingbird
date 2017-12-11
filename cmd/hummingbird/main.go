@@ -199,7 +199,7 @@ func processControlCommand(serverCommand func(name string, args ...string) error
 	}
 
 	switch flag.Arg(1) {
-	case "proxy", "object", "object-replicator", "object-auditor", "container", "container-replicator", "account", "account-replicator", "andrewd":
+	case "proxy", "object", "object-replicator", "container", "container-replicator", "account", "account-replicator", "andrewd":
 		if err := serverCommand(flag.Arg(1), flag.Args()[2:]...); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -216,7 +216,7 @@ func processControlCommand(serverCommand func(name string, args ...string) error
 	case "all":
 		exc := 0
 		for _, server := range []string{"proxy", "object", "object-replicator",
-			"object-auditor", "container", "container-replicator", "account",
+			"container", "container-replicator", "account",
 			"account-replicator"} {
 			if err := serverCommand(server); err != nil {
 				fmt.Fprintln(os.Stderr, server, ":", err)
@@ -266,17 +266,6 @@ func main() {
 		fmt.Fprintln(os.Stderr, "hummingbird object-replicator [ARGS]")
 		fmt.Fprintln(os.Stderr, "  Run object replicator")
 		objectReplicatorFlags.PrintDefaults()
-	}
-
-	objectAuditorFlags := flag.NewFlagSet("object auditor", flag.ExitOnError)
-	objectAuditorFlags.String("c", findConfig("object"), "Config file/directory to use")
-	objectAuditorFlags.String("l", "stdout", "Log location")
-	objectAuditorFlags.String("e", "stderr", "Error log location")
-	objectAuditorFlags.Bool("once", false, "Run one pass of the auditor")
-	objectAuditorFlags.Usage = func() {
-		fmt.Fprintln(os.Stderr, "hummingbird object-auditor [ARGS]")
-		fmt.Fprintln(os.Stderr, "  Run object auditor")
-		objectAuditorFlags.PrintDefaults()
 	}
 
 	containerFlags := flag.NewFlagSet("container server", flag.ExitOnError)
@@ -406,13 +395,11 @@ func main() {
 		fmt.Fprintln(os.Stderr, "     hummingbird shutdown [daemon name] -- gracefully stop a server")
 		fmt.Fprintln(os.Stderr, "     hummingbird reload [daemon name]   -- alias for graceful-restart")
 		fmt.Fprintln(os.Stderr, "     hummingbird restart [daemon name]  -- stop then restart a server")
-		fmt.Fprintln(os.Stderr, "  The daemons are: object, proxy, object-replicator, object-auditor, andrewd, all, main")
+		fmt.Fprintln(os.Stderr, "  The daemons are: object, proxy, object-replicator, andrewd, all, main")
 		fmt.Fprintln(os.Stderr)
 		objectFlags.Usage()
 		fmt.Fprintln(os.Stderr)
 		objectReplicatorFlags.Usage()
-		fmt.Fprintln(os.Stderr)
-		objectAuditorFlags.Usage()
 		fmt.Fprintln(os.Stderr)
 		ringBuilderFlags.Usage()
 		fmt.Fprintln(os.Stderr)
@@ -484,22 +471,19 @@ func main() {
 		srv.RunServers(containerserver.NewServer, containerFlags)
 	case "container-replicator":
 		containerReplicatorFlags.Parse(flag.Args()[1:])
-		srv.RunDaemon(containerserver.NewReplicator, containerReplicatorFlags)
+		srv.RunServers(containerserver.NewReplicator, containerReplicatorFlags)
 	case "account":
 		accountFlags.Parse(flag.Args()[1:])
 		srv.RunServers(accountserver.NewServer, accountFlags)
 	case "account-replicator":
 		accountReplicatorFlags.Parse(flag.Args()[1:])
-		srv.RunDaemon(accountserver.NewReplicator, accountReplicatorFlags)
+		srv.RunServers(accountserver.NewReplicator, accountReplicatorFlags)
 	case "object":
 		objectFlags.Parse(flag.Args()[1:])
 		srv.RunServers(objectserver.NewServer, objectFlags)
 	case "object-replicator":
 		objectReplicatorFlags.Parse(flag.Args()[1:])
-		srv.RunDaemon(objectserver.NewReplicator, objectReplicatorFlags)
-	case "object-auditor":
-		objectAuditorFlags.Parse(flag.Args()[1:])
-		srv.RunDaemon(objectserver.NewAuditor, objectAuditorFlags)
+		srv.RunServers(objectserver.NewReplicator, objectReplicatorFlags)
 	case "bench":
 		bench.RunBench(flag.Args()[1:])
 	case "dbench":
@@ -524,7 +508,7 @@ func main() {
 		tools.Nodes(nodesFlags, srv.DefaultConfigLoader{})
 	case "andrewd":
 		andrewdFlags.Parse(flag.Args()[1:])
-		srv.RunDaemon(tools.NewAdmin, andrewdFlags)
+		srv.RunServers(tools.NewAdmin, andrewdFlags)
 	case "oinfo":
 		objectInfoFlags.Parse(flag.Args()[1:])
 		tools.ObjectInfo(objectInfoFlags, srv.DefaultConfigLoader{})

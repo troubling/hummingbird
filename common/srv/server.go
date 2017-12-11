@@ -418,6 +418,7 @@ func DumpGoroutinesStackTrace(pid int) {
 
 type Server interface {
 	Type() string
+	Background(flags *flag.FlagSet) chan struct{}
 	GetHandler(config conf.Config, metricsPrefix string) http.Handler
 	Finalize() // This is called before stoping gracefully so that a server can clean up before closing
 }
@@ -435,6 +436,7 @@ func RunServers(getServer func(conf.Config, *flag.FlagSet, ConfigLoader) (string
 		fmt.Fprintf(os.Stderr, "Error finding configs: %v\n", err)
 		return
 	}
+	var wg *sync.WaitGroup
 
 	for _, config := range configs {
 		ip, port, server, logger, err := getServer(config, flags, DefaultConfigLoader{})
@@ -446,8 +448,10 @@ func RunServers(getServer func(conf.Config, *flag.FlagSet, ConfigLoader) (string
 		if len(configs) == 1 {
 			metricsPrefix = fmt.Sprintf("hb_%s", server.Type())
 		} else {
-			metricsPrefix = fmt.Sprintf("hb_%s_%s_%d", server.Type(), strings.Replace(ip, ".", "_", -1), port)
+			metricsPrefix = fmt.Sprintf("hb_%s_%s_%d", server.Type(), ip, port)
 		}
+		metricsPrefix = strings.Replace(metricsPrefix, "-", "_", -1)
+		metricsPrefix = strings.Replace(metricsPrefix, ".", "_", -1)
 		sock, err := RetryListen(ip, port)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error listening: %v\n", err)
@@ -465,8 +469,24 @@ func RunServers(getServer func(conf.Config, *flag.FlagSet, ConfigLoader) (string
 			finalize: server.Finalize,
 		}
 		go srv.Serve(sock)
+		ch := server.Background(flags)
+		if ch != nil {
+			if wg == nil {
+				wg = &sync.WaitGroup{}
+			}
+			wg.Add(1)
+			go func(ch2 chan struct{}) {
+				defer wg.Done()
+				<-ch2
+			}(ch)
+		}
 		servers = append(servers, &srv)
 		logger.Info("Server started", zap.Int("port", port))
+	}
+
+	if wg != nil {
+		wg.Wait()
+		return
 	}
 
 	if len(servers) > 0 {
@@ -516,56 +536,6 @@ func RunServers(getServer func(conf.Config, *flag.FlagSet, ConfigLoader) (string
 					srv.logger.Error("Error shutdown", zap.Error(err))
 				}
 			}
-		}
-	}
-}
-
-type Daemon interface {
-	Run()
-	RunForever()
-}
-
-func RunDaemon(getDaemon func(conf.Config, *flag.FlagSet, ConfigLoader) (Daemon, LowLevelLogger, error), flags *flag.FlagSet) {
-	var daemons []Daemon
-
-	if flags.NArg() != 0 {
-		flags.Usage()
-		return
-	}
-
-	configFile := flags.Lookup("c").Value.(flag.Getter).Get().(string)
-	configs, err := conf.LoadConfigs(configFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error finding configs: %v\n", err)
-		return
-	}
-
-	once := flags.Lookup("once").Value.(flag.Getter).Get() == true
-
-	for _, config := range configs {
-		if daemon, logger, err := getDaemon(config, flags, DefaultConfigLoader{}); err == nil {
-			if once {
-				daemon.Run()
-				fmt.Fprintf(os.Stderr, "Daemon pass completed.\n")
-				logger.Info("Daemon pass completed.")
-			} else {
-				daemons = append(daemons, daemon)
-				go daemon.RunForever()
-				fmt.Fprintf(os.Stderr, "Daemon started.\n")
-				logger.Info("Daemon started.")
-			}
-		} else {
-			fmt.Fprintf(os.Stderr, "Failed to create daemon: %v", err)
-		}
-	}
-
-	if len(daemons) > 0 {
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGABRT)
-		switch <-c {
-		case syscall.SIGABRT, syscall.SIGQUIT: // drop a traceback
-			pid := os.Getpid()
-			DumpGoroutinesStackTrace(pid)
 		}
 	}
 }

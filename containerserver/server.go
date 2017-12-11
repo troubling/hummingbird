@@ -88,6 +88,10 @@ func (server *ContainerServer) Type() string {
 	return "container"
 }
 
+func (server *ContainerServer) Background(flags *flag.FlagSet) chan struct{} {
+	return nil
+}
+
 func (server *ContainerServer) Finalize() {
 	if server.metricsCloser != nil {
 		server.metricsCloser.Close()

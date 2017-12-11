@@ -51,6 +51,10 @@ func (server *ProxyServer) Type() string {
 	return "proxy"
 }
 
+func (server *ProxyServer) Background(flags *flag.FlagSet) chan struct{} {
+	return nil
+}
+
 func (server *ProxyServer) Finalize() {
 	if server.metricsCloser != nil {
 		server.metricsCloser.Close()

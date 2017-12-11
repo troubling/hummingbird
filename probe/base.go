@@ -168,14 +168,14 @@ func NewEnvironment(settings ...string) *Environment {
 		}
 		ts.Config.Handler = server.GetHandler(conf, fmt.Sprintf("probe_%d_%d", atomic.AddUint64(&environments, 1), i))
 
-		replicator, _, err := objectserver.NewReplicator(conf, &flag.FlagSet{}, confLoader)
+		_, _, replicator, _, err := objectserver.NewReplicator(conf, &flag.FlagSet{}, confLoader)
 		if err != nil {
 			log.Fatal(err)
 		}
-		trs.Config.Handler = replicator.(*objectserver.Replicator).GetHandler()
+		trs.Config.Handler = replicator.(*objectserver.Replicator).GetHandler(conf, fmt.Sprintf("probe_%d_%d", atomic.AddUint64(&environments, 1), i))
 
 		replicatorServer := &TestReplicatorWebServer{Server: trs, host: host, port: port, root: driveRoot, replicator: replicator.(*objectserver.Replicator)}
-		auditor, _, err := objectserver.NewAuditor(conf, &flag.FlagSet{}, confLoader)
+		auditor, err := objectserver.NewAuditorDaemon(conf, &flag.FlagSet{}, confLoader)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -189,7 +189,7 @@ func NewEnvironment(settings ...string) *Environment {
 		env.ports = append(env.ports, port)
 		env.hosts = append(env.hosts, host)
 		env.replicatorServers = append(env.replicatorServers, replicatorServer)
-		env.auditors = append(env.auditors, auditor.(*objectserver.AuditorDaemon))
+		env.auditors = append(env.auditors, auditor)
 	}
 	env.ring.(*test.FakeRing).MockMoreNodes = env.ring.(*test.FakeRing).MockDevices[3]
 	return env
