@@ -178,6 +178,10 @@ func (f fakeDatabase) DeleteObject(name string, timestamp string, storagePolicyI
 	return errors.New("")
 }
 
+func (f fakeDatabase) Reported(putTimestamp, deleteTimestamp string, objectCount, bytesUsed int64) error {
+	return errors.New("")
+}
+
 type fakeContainerEngine struct{}
 
 func (fakeContainerEngine) OpenCount() int {

@@ -1029,3 +1029,19 @@ func sqliteOpenContainer(containerFile string) (ReplicableContainer, error) {
 	}
 	return db, nil
 }
+
+func (db *sqliteContainer) Reported(putTimestamp, deleteTimestamp string, objectCount, bytesUsed int64) error {
+	if err := db.connect(); err != nil {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec("UPDATE container_info SET reported_put_timestamp = ?, reported_delete_timestamp = ?, reported_object_count = ?, reported_bytes_used = ?", putTimestamp, deleteTimestamp, objectCount, bytesUsed); err != nil {
+		return err
+	}
+	defer db.invalidateCache()
+	return tx.Commit()
+}
