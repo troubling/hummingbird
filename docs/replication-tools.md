@@ -37,6 +37,14 @@ temporarily unavailible.  Normal replication requires all primaries to respond
 with success before it removes out-of-place partitions. This can be very
 helpful in clusters under heavy load and adding capacity to handle the strain.
 
+If 1.1.1.6/sdb3 was set to zero weight, the priority replication call would
+still be made to that node. This will allow for draining nodes when slowly
+decommissioning gear.
+
+If 1.1.1.6/sdb3 was completely removed from the new ring then priority replication
+calls would be made to the "next" primary. In the above case from
+1.1.1.4/sdb1/78 -> 1.1.1.8/sdb4/78.
+
 It also does this in a coordinated fashion to avoid stampeding *1.1.1.8/sdb3*
 with a ton of replication calls.
 
