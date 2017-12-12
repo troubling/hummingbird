@@ -38,6 +38,7 @@ import (
 	_ "github.com/troubling/hummingbird/objectserver/ec"
 	"github.com/troubling/hummingbird/proxyserver"
 	"github.com/troubling/hummingbird/tools"
+	"github.com/troubling/nectar"
 )
 
 const (
@@ -434,6 +435,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, "  The haio option will create a script to do similar actions, but for a")
 		fmt.Fprintln(os.Stderr, "  Hummingbird All In One developer installation.")
 		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "hummingbird nectar ...")
+		fmt.Fprintln(os.Stderr, "  Runs an embedded version of the nectar client tool.")
+		fmt.Fprintln(os.Stderr, "  Run with no parameters for help.")
+		fmt.Fprintln(os.Stderr)
 		nodesFlags.Usage()
 		fmt.Fprintln(os.Stderr)
 		andrewdFlags.Usage()
@@ -527,6 +532,8 @@ func main() {
 			fmt.Fprintln(os.Stderr, "systemd error:", err)
 			os.Exit(1)
 		}
+	case "nectar":
+		nectar.CLI(flag.Args(), nil, nil, nil)
 	default:
 		flag.Usage()
 	}
