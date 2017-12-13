@@ -104,6 +104,7 @@ func doPriRepJobs(jobs []*PriorityRepJob, deviceMax int, client *http.Client) []
 	limiter := &devLimiter{inUse: make(map[int]int), max: deviceMax, somethingFinished: make(chan struct{}, 1)}
 	wg := sync.WaitGroup{}
 	badParts := []uint64{}
+	var badPartsLock sync.Mutex
 	for len(jobs) > 0 {
 		foundDoable := false
 		for i := range jobs {
@@ -118,7 +119,9 @@ func doPriRepJobs(jobs []*PriorityRepJob, deviceMax int, client *http.Client) []
 				res, ok := SendPriRepJob(job, client)
 				fmt.Println(res)
 				if !ok {
+					badPartsLock.Lock()
 					badParts = append(badParts, job.Partition)
+					badPartsLock.Unlock()
 				}
 			}(jobs[i])
 			jobs = append(jobs[:i], jobs[i+1:]...)
