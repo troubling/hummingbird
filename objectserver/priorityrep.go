@@ -133,9 +133,24 @@ func doPriRepJobs(jobs []*PriorityRepJob, deviceMax int, client *http.Client) []
 }
 
 // getPartMoveJobs takes two rings and creates a list of jobs for any partition moves between them.
-func getPartMoveJobs(oldRing, newRing ring.Ring) []*PriorityRepJob {
+func getPartMoveJobs(oldRing, newRing ring.Ring, overrideParts []uint64) []*PriorityRepJob {
+	allNewDevices := map[string]bool{}
+	for _, dev := range newRing.AllDevices() {
+		if dev == nil {
+			continue
+		}
+		allNewDevices[fmt.Sprintf("%s:%d/%s", dev.Ip, dev.Port, dev.Device)] = true
+	}
 	jobs := make([]*PriorityRepJob, 0)
-	for partition := uint64(0); true; partition++ {
+	for i := uint64(0); true; i++ {
+		partition := i
+		if len(overrideParts) > 0 {
+			if int(partition) < len(overrideParts) {
+				partition = overrideParts[partition]
+			} else {
+				break
+			}
+		}
 		olddevs := oldRing.GetNodes(partition)
 		newdevs := newRing.GetNodes(partition)
 		if olddevs == nil || newdevs == nil {
@@ -144,9 +159,13 @@ func getPartMoveJobs(oldRing, newRing ring.Ring) []*PriorityRepJob {
 		for i := range olddevs {
 			if olddevs[i].Id != newdevs[i].Id {
 				// TODO: handle if a node just changes positions, which doesn't happen, but isn't against the contract.
+				fromDev := olddevs[i]
+				if _, ok := allNewDevices[fmt.Sprintf("%s:%d/%s", fromDev.Ip, fromDev.Port, fromDev.Device)]; !ok {
+					fromDev = olddevs[(i+1)%len(olddevs)]
+				}
 				jobs = append(jobs, &PriorityRepJob{
 					Partition:  partition,
-					FromDevice: olddevs[i],
+					FromDevice: fromDev,
 					ToDevices:  []*ring.Device{newdevs[i]},
 				})
 			}
@@ -212,9 +231,28 @@ func doMoveParts(args []string, cnf srv.ConfigLoader) int {
 		return 1
 	}
 	client := &http.Client{Timeout: time.Hour}
-	jobs := getPartMoveJobs(oldRing, curRing)
-	fmt.Println("Job count:", len(jobs))
-	doPriRepJobs(jobs, 2, client)
+	badParts := []uint64{}
+	for {
+		jobs := getPartMoveJobs(oldRing, curRing, badParts)
+		lastRun := len(jobs)
+		for i := len(jobs) - 1; i > 0; i-- { // shuffle jobs list
+			j := rand.Intn(i + 1)
+			jobs[j], jobs[i] = jobs[i], jobs[j]
+		}
+		fmt.Println("Job count:", len(jobs))
+		badParts = doPriRepJobs(jobs, 2, client)
+		if len(badParts) == 0 {
+			break
+		} else {
+			fmt.Printf("Finished run of partitions. retrying %d.\n", len(badParts))
+			fmt.Println("NOTE: This will loop on any partitions not found on any primary")
+			if lastRun == len(badParts) {
+				time.Sleep(time.Minute * 5)
+			} else {
+				time.Sleep(time.Second * 5)
+			}
+		}
+	}
 	fmt.Println("Done sending jobs.")
 	return 0
 }

@@ -34,7 +34,8 @@ import (
 )
 
 type priFakeRing struct {
-	mapping map[uint64][]int
+	mapping  map[uint64][]int
+	fakeDevs []*ring.Device
 }
 
 func (p *priFakeRing) GetJobNodes(partition uint64, localDevice int) (response []*ring.Device, handoff bool) {
@@ -56,6 +57,9 @@ func (p *priFakeRing) LocalDevices(localPort int) (devs []*ring.Device, err erro
 }
 
 func (p *priFakeRing) AllDevices() (devs []*ring.Device) {
+	if len(p.fakeDevs) > 0 {
+		return p.fakeDevs
+	}
 	devs = append(devs, &ring.Device{Id: 0, Device: "drive0", Ip: "127.0.0.0", Port: 1})
 	devs = append(devs, &ring.Device{Id: 1, Device: "drive1", Ip: "127.0.0.1", Port: 1})
 	devs = append(devs, &ring.Device{Id: 2, Device: "drive2", Ip: "127.0.0.1", Port: 1})
@@ -93,7 +97,14 @@ func TestGetPartMoveJobs(t *testing.T) {
 			1: {6, 7, 8, 9, 11},
 		},
 	}
-	jobs := getPartMoveJobs(oldRing, newRing)
+	devs := []*ring.Device{}
+	devs = append(devs, &ring.Device{Id: 0, Device: "drive0", Ip: "127.0.0.0", Port: 1})
+	devs = append(devs, &ring.Device{Id: 1, Device: "drive1", Ip: "127.0.0.1", Port: 1})
+	devs = append(devs, &ring.Device{Id: 2, Device: "drive2", Ip: "127.0.0.1", Port: 1})
+	devs = append(devs, &ring.Device{Id: 10, Device: "drive10", Ip: "127.0.0.1", Port: 10})
+	newRing.fakeDevs = devs
+
+	jobs := getPartMoveJobs(oldRing, newRing, []uint64{})
 	require.EqualValues(t, 2, len(jobs))
 	require.EqualValues(t, 0, jobs[0].Partition)
 	require.EqualValues(t, 1, jobs[0].FromDevice.Id)
