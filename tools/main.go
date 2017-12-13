@@ -696,7 +696,7 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 		return "", 0, nil, nil, err
 	}
 	ip = serverconf.GetDefault("andrewd", "bind_ip", "0.0.0.0")
-	port = int(serverconf.GetInt("andrewd", "bind_port", 7000))
+	port = int(serverconf.GetInt("andrewd", "bind_port", common.DefaultAndrewdPort))
 	a := &AutoAdmin{
 		hClient:        client.NewProxyClient(pdc, nil, nil, logger),
 		port:           port,

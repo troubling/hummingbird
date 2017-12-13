@@ -560,7 +560,7 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 	server.checkMounts = serverconf.GetBool("app:account-server", "mount_check", true)
 	server.diskInUse = common.NewKeyedLimit(serverconf.GetLimit("app:account-server", "disk_limit", 0, 0))
 	bindIP = serverconf.GetDefault("app:account-server", "bind_ip", "0.0.0.0")
-	bindPort = int(serverconf.GetInt("app:account-server", "bind_port", 6000))
+	bindPort = int(serverconf.GetInt("app:account-server", "bind_port", common.DefaultAccountServerPort))
 
 	logLevelString := serverconf.GetDefault("app:account-server", "log_level", "INFO")
 	server.logLevel = zap.NewAtomicLevel()
