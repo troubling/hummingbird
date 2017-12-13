@@ -369,6 +369,31 @@ func TestCreateAndGetInfo(t *testing.T) {
 	require.Equal(t, 2, info.StoragePolicyIndex)
 }
 
+func TestReported(t *testing.T) {
+	dir, err := ioutil.TempDir("", "")
+	require.Nil(t, err)
+	defer os.RemoveAll(dir)
+	dbFile := filepath.Join(dir, "db.db")
+	err = sqliteCreateContainer(dbFile, "a", "c", "100000000.00000", nil, 2)
+	require.Nil(t, err)
+	db, err := sqliteOpenContainer(dbFile)
+	require.Nil(t, err)
+	defer db.Close()
+	info, err := db.GetInfo()
+	require.Nil(t, err)
+	require.Equal(t, "0", info.ReportedPutTimestamp)
+	require.Equal(t, "0", info.ReportedDeleteTimestamp)
+	require.Equal(t, int64(0), info.ReportedObjectCount)
+	require.Equal(t, int64(0), info.ReportedBytesUsed)
+	db.Reported("456000000.00000", "123000000.00000", 789, 101112)
+	info, err = db.GetInfo()
+	require.Nil(t, err)
+	require.Equal(t, "456000000.00000", info.ReportedPutTimestamp)
+	require.Equal(t, "123000000.00000", info.ReportedDeleteTimestamp)
+	require.Equal(t, int64(789), info.ReportedObjectCount)
+	require.Equal(t, int64(101112), info.ReportedBytesUsed)
+}
+
 func TestDeleteIsDeleted(t *testing.T) {
 	db, _, cleanup, err := createTestDatabase("200000000.00000")
 	require.Nil(t, err)

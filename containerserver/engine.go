@@ -148,6 +148,8 @@ type ReplicableContainer interface {
 	CheckSyncLink() error
 	// RingHash returns the container's ring hash.
 	RingHash() string
+	// Reported records the information as having been reported to an account database.
+	Reported(putTimestamp, deleteTimestamp string, objectCount, bytesUsed int64) error
 }
 
 // ContainerEngine is the interface of an object that creates and returns containers.

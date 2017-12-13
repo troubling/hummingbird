@@ -234,20 +234,30 @@ func (rd *replicationDevice) replicateDatabaseToDevice(dev *ring.Device, c Repli
 		return fmt.Errorf("getting local info from %s: %v", c.RingHash(), err)
 	}
 	if rd.r.accountRing != nil {
-		accountPartition := rd.r.accountRing.GetPartition(info.Account, "", "")
-		accountNodes := rd.r.accountRing.GetNodes(accountPartition)
-		accountNode := accountNodes[ringIndex%len(accountNodes)]
-		accountUpdateHelper(
-			info,
-			fmt.Sprintf("%s:%d", accountNode.Ip, accountNode.Port),
-			accountNode.Device,
-			fmt.Sprintf("%d", accountPartition),
-			info.Account,
-			info.Container,
-			common.GetTransactionId(),
-			false,
-			rd.r.client,
-		)
+		if info.PutTimestamp > info.ReportedPutTimestamp ||
+			info.DeleteTimestamp > info.ReportedDeleteTimestamp ||
+			info.ObjectCount != info.ReportedObjectCount ||
+			info.BytesUsed != info.ReportedBytesUsed {
+
+			accountPartition := rd.r.accountRing.GetPartition(info.Account, "", "")
+			accountNodes := rd.r.accountRing.GetNodes(accountPartition)
+			accountNode := accountNodes[ringIndex%len(accountNodes)]
+			if accountUpdateHelper(
+				info,
+				fmt.Sprintf("%s:%d", accountNode.Ip, accountNode.Port),
+				accountNode.Device,
+				fmt.Sprintf("%d", accountPartition),
+				info.Account,
+				info.Container,
+				common.GetTransactionId(),
+				false,
+				rd.r.client,
+			) == nil {
+				if err = c.Reported(info.PutTimestamp, info.DeleteTimestamp, info.ObjectCount, info.BytesUsed); err != nil {
+					rd.r.logger.Error("Could not update reported info", zap.Error(err), zap.String("RingHash", c.RingHash()))
+				}
+			}
+		}
 	}
 	remoteInfo, err := rd.i.sync(dev, part, c.RingHash(), info)
 	if err != nil {
