@@ -691,7 +691,7 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 		return "", 0, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 	ip = serverconf.GetDefault("account-replicator", "bind_ip", "0.0.0.0")
-	port = int(serverconf.GetInt("account-replicator", "bind_port", 6502))
+	port = int(serverconf.GetInt("account-replicator", "bind_port", common.DefaultAccountReplicatorPort))
 	server = &Replicator{
 		runningDevices: make(map[string]*replicationDevice),
 		perUsync:       3000,

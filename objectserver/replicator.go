@@ -1147,7 +1147,7 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 		reconCachePath:      serverconf.GetDefault("object-replicator", "recon_cache_path", "/var/cache/swift"),
 		checkMounts:         serverconf.GetBool("object-replicator", "mount_check", true),
 		deviceRoot:          serverconf.GetDefault("object-replicator", "devices", "/srv/node"),
-		port:                int(serverconf.GetInt("object-replicator", "bind_port", 6500)),
+		port:                int(serverconf.GetInt("object-replicator", "bind_port", common.DefaultObjectReplicatorPort)),
 		bindIp:              serverconf.GetDefault("object-replicator", "bind_ip", "0.0.0.0"),
 		quorumDelete:        serverconf.GetBool("object-replicator", "quorum_delete", false),
 		reclaimAge:          int64(serverconf.GetInt("object-replicator", "reclaim_age", int64(common.ONE_WEEK))),

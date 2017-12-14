@@ -180,7 +180,7 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 	}
 
 	bindIP = serverconf.GetDefault("DEFAULT", "bind_ip", "0.0.0.0")
-	bindPort = int(serverconf.GetInt("DEFAULT", "bind_port", 8080))
+	bindPort = int(serverconf.GetInt("DEFAULT", "bind_port", common.DefaultProxyServerPort))
 
 	logLevelString := serverconf.GetDefault("app:proxy-server", "log_level", "INFO")
 	server.logLevel = zap.NewAtomicLevel()

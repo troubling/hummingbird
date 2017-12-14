@@ -684,7 +684,7 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 	server.accountDiskInUse = common.NewKeyedLimit(serverconf.GetLimit("app:object-server", "account_rate_limit", 0, 0))
 	server.expiringDivisor = serverconf.GetInt("app:object-server", "expiring_objects_container_divisor", 86400)
 	bindIP = serverconf.GetDefault("app:object-server", "bind_ip", "0.0.0.0")
-	bindPort = int(serverconf.GetInt("app:object-server", "bind_port", 6000))
+	bindPort = int(serverconf.GetInt("app:object-server", "bind_port", common.DefaultObjectServerPort))
 	if allowedHeaders, ok := serverconf.Get("app:object-server", "allowed_headers"); ok {
 		headers := strings.Split(allowedHeaders, ",")
 		for i := range headers {

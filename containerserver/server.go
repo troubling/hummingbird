@@ -652,7 +652,7 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 
 	server.diskInUse = common.NewKeyedLimit(serverconf.GetLimit("app:container-server", "disk_limit", 0, 0))
 	bindIP = serverconf.GetDefault("app:container-server", "bind_ip", "0.0.0.0")
-	bindPort = int(serverconf.GetInt("app:container-server", "bind_port", 6000))
+	bindPort = int(serverconf.GetInt("app:container-server", "bind_port", common.DefaultContainerServerPort))
 
 	server.containerEngine = newLRUEngine(server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, 32)
 	connTimeout := time.Duration(serverconf.GetFloat("app:container-server", "conn_timeout", 1.0) * float64(time.Second))

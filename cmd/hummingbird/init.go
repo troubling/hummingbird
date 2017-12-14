@@ -136,7 +136,6 @@ func initCommand(args []string) error {
 	print(`sudo tee %s/etc/hummingbird/proxy-server.conf >/dev/null << EOF`, prefix)
 	print(`[DEFAULT]`)
 	print(`bind_ip = 127.0.0.1`)
-	print(`bind_port = 8080`)
 	print(``)
 	print(`[app:proxy-server]`)
 	print(`allow_account_management = true`)
@@ -176,10 +175,10 @@ func initCommand(args []string) error {
 		var pth string
 		var devices string
 		var port int
+		var repport int
 		if index < 1 {
 			pth = prefix + "/etc/hummingbird/account-server.conf"
 			devices = "/srv/hummingbird"
-			port = 6012
 		} else {
 			print(`sudo mkdir -p %s/etc/hummingbird/account-server`, prefix)
 			print(`sudo chmod 0755 %s/etc`, prefix)
@@ -191,20 +190,25 @@ func initCommand(args []string) error {
 			print(`sudo chmod 0755 %s/etc/hummingbird/account-server`, prefix)
 			pth = fmt.Sprintf("%s/etc/hummingbird/account-server/%d.conf", prefix, index)
 			devices = fmt.Sprintf("/srv/hb/%d", index)
-			port = 6002 + index*10
+			port = common.DefaultAccountServerPort + index*10
+			repport = common.DefaultAccountReplicatorPort + index*10
 		}
 		print(`sudo tee %s >/dev/null << EOF`, pth)
 		print(`[DEFAULT]`)
 		print(`devices = %s`, devices)
 		print(`mount_check = false`)
 		print(`bind_ip = 127.0.0.1`)
-		print(`bind_port = %d`, port)
+		if port != 0 {
+			print(`bind_port = %d`, port)
+		}
 		print(``)
 		print(`[app:account-server]`)
 		print(`disk_limit = 0/0`)
 		print(``)
 		print(`[account-replicator]`)
-		print(`bind_port = %d`, port+500)
+		if repport != 0 {
+			print(`bind_port = %d`, repport)
+		}
 		print(`EOF`)
 		if subcmd != "deb" {
 			print(`sudo chown %s: %s`, username, pth)
@@ -216,10 +220,10 @@ func initCommand(args []string) error {
 		var pth string
 		var devices string
 		var port int
+		var repport int
 		if index < 1 {
 			pth = prefix + "/etc/hummingbird/container-server.conf"
 			devices = "/srv/hummingbird"
-			port = 6011
 		} else {
 			print(`sudo mkdir -p %s/etc/hummingbird/container-server`, prefix)
 			print(`sudo chmod 0755 %s/etc`, prefix)
@@ -231,20 +235,25 @@ func initCommand(args []string) error {
 			print(`sudo chmod 0755 %s/etc/hummingbird/container-server`, prefix)
 			pth = fmt.Sprintf("%s/etc/hummingbird/container-server/%d.conf", prefix, index)
 			devices = fmt.Sprintf("/srv/hb/%d", index)
-			port = 6001 + index*10
+			port = common.DefaultContainerServerPort + index*10
+			repport = common.DefaultContainerReplicatorPort + index*10
 		}
 		print(`sudo tee %s >/dev/null << EOF`, pth)
 		print(`[DEFAULT]`)
 		print(`devices = %s`, devices)
 		print(`mount_check = false`)
 		print(`bind_ip = 127.0.0.1`)
-		print(`bind_port = %d`, port)
+		if port != 0 {
+			print(`bind_port = %d`, port)
+		}
 		print(``)
 		print(`[app:container-server]`)
 		print(`disk_limit = 0/0`)
 		print(``)
 		print(`[container-replicator]`)
-		print(`bind_port = %d`, port+500)
+		if repport != 0 {
+			print(`bind_port = %d`, repport)
+		}
 		print(`EOF`)
 		if subcmd != "deb" {
 			print(`sudo chown %s: %s`, username, pth)
@@ -256,10 +265,10 @@ func initCommand(args []string) error {
 		var pth string
 		var devices string
 		var port int
+		var repport int
 		if index < 1 {
 			pth = prefix + "/etc/hummingbird/object-server.conf"
 			devices = "/srv/hummingbird"
-			port = 6010
 		} else {
 			print(`sudo mkdir -p %s/etc/hummingbird/object-server`, prefix)
 			print(`sudo chmod 0755 %s/etc`, prefix)
@@ -271,7 +280,8 @@ func initCommand(args []string) error {
 			print(`sudo chmod 0755 %s/etc/hummingbird/object-server`, prefix)
 			pth = fmt.Sprintf("%s/etc/hummingbird/object-server/%d.conf", prefix, index)
 			devices = fmt.Sprintf("/srv/hb/%d", index)
-			port = 6000 + index*10
+			port = common.DefaultObjectServerPort + index*10
+			repport = common.DefaultObjectReplicatorPort + index*10
 		}
 		print(`sudo tee %s >/dev/null << EOF`, pth)
 		print(`[DEFAULT]`)
@@ -280,12 +290,16 @@ func initCommand(args []string) error {
 		print(``)
 		print(`[app:object-server]`)
 		print(`bind_ip = 127.0.0.1`)
-		print(`bind_port = %d`, port)
+		if port != 0 {
+			print(`bind_port = %d`, port)
+		}
 		print(`disk_limit = 0/0`)
 		print(`account_rate_limit = 0/0`)
 		print(``)
 		print(`[object-replicator]`)
-		print(`bind_port = %d`, port+500)
+		if repport != 0 {
+			print(`bind_port = %d`, repport)
+		}
 		print(``)
 		print(`[object-auditor]`)
 		print(`EOF`)
