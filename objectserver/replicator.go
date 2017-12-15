@@ -1133,7 +1133,7 @@ func (r *Replicator) Run() {
 	r.reportStats()
 }
 
-func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (ipPort srv.IpPort, server srv.Server, logger srv.LowLevelLogger, err error) {
+func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (ipPort *srv.IpPort, server srv.Server, logger srv.LowLevelLogger, err error) {
 	if !serverconf.HasSection("object-replicator") {
 		return ipPort, nil, nil, fmt.Errorf("Unable to find object-replicator config section")
 	}
@@ -1247,6 +1247,6 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 	if serverconf.HasSection("object-auditor") {
 		replicator.auditor, err = NewAuditorDaemon(serverconf, flags, cnf)
 	}
-	ipPort = srv.IpPort{Ip: replicator.bindIp, Port: replicator.port, CertFile: certFile, KeyFile: keyFile}
+	ipPort = &srv.IpPort{Ip: replicator.bindIp, Port: replicator.port, CertFile: certFile, KeyFile: keyFile}
 	return ipPort, replicator, replicator.logger, err
 }

@@ -23,14 +23,14 @@ var defaultClientOnce sync.Once
 func getDefaultClient(t *testing.T) nectar.Client {
 	defaultClientOnce.Do(func() {
 		internal, _ := strconv.ParseBool(os.Getenv("STORAGE_INTERNAL"))
-		defaultClient = getClient(t, os.Getenv("AUTH_TENANT"), os.Getenv("AUTH_USER"), os.Getenv("AUTH_PASSWORD"), os.Getenv("AUTH_KEY"), os.Getenv("STORAGE_REGION"), os.Getenv("AUTH_URL"), internal, os.Getenv("CERT_FILE"), os.Getenv("KEY_FILE"))
+		defaultClient = getClient(t, os.Getenv("AUTH_TENANT"), os.Getenv("AUTH_USER"), os.Getenv("AUTH_PASSWORD"), os.Getenv("AUTH_KEY"), os.Getenv("STORAGE_REGION"), os.Getenv("AUTH_URL"), internal)
 	})
 	return defaultClient
 }
 
-func getClient(t *testing.T, tenant, user, password, key, region, authURL string, internal bool, certFile, keyFile string) nectar.Client {
+func getClient(t *testing.T, tenant, user, password, key, region, authURL string, internal bool) nectar.Client {
 	t.Log("CREATING CLIENT!")
-	c, resp := nectar.NewClient(tenant, user, password, key, region, authURL, internal, certFile, keyFile)
+	c, resp := nectar.NewClient(tenant, user, password, key, region, authURL, internal)
 	if resp != nil {
 		bodyBytes, _ := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()

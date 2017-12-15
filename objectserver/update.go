@@ -114,6 +114,9 @@ func (server *ObjectServer) updateContainer(metadata map[string]string, request 
 	if partition == "" || len(hosts) == 0 || len(devices) == 0 {
 		return
 	}
+	for len(schemes) < len(hosts) {
+		schemes = append(schemes, "http")
+	}
 	requestHeaders := http.Header{
 		"X-Backend-Storage-Policy-Index": {common.GetDefault(request.Header, "X-Backend-Storage-Policy-Index", "0")},
 		"Referer":                        {common.GetDefault(request.Header, "Referer", "-")},
@@ -150,6 +153,9 @@ func (server *ObjectServer) updateDeleteAt(method string, header http.Header, de
 	hosts := splitHeader(header.Get("X-Delete-At-Host"))
 	devices := splitHeader(header.Get("X-Delete-At-Device"))
 	schemes := splitHeader(header.Get("X-Delete-At-Scheme"))
+	for len(schemes) < len(hosts) {
+		schemes = append(schemes, "http")
+	}
 	requestHeaders := http.Header{
 		"X-Backend-Storage-Policy-Index": {common.GetDefault(header, "X-Backend-Storage-Policy-Index", "0")},
 		"Referer":                        {common.GetDefault(header, "Referer", "-")},

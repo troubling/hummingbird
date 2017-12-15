@@ -622,9 +622,9 @@ func (server *ContainerServer) GetHandler(config conf.Config, metricsPrefix stri
 }
 
 // NewServer parses configs and command-line flags, returning a configured server object and the ip and port it should bind on.
-func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (srv.IpPort, srv.Server, srv.LowLevelLogger, error) {
+func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (*srv.IpPort, srv.Server, srv.LowLevelLogger, error) {
 	var err error
-	var ipPort srv.IpPort
+	var ipPort *srv.IpPort
 	server := &ContainerServer{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: ""}
 	server.syncRealms, err = cnf.GetSyncRealms()
 	if err != nil {
@@ -682,6 +682,6 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 		Timeout:   nodeTimeout,
 		Transport: transport,
 	}
-	ipPort = srv.IpPort{Ip: bindIP, Port: bindPort, CertFile: certFile, KeyFile: keyFile}
+	ipPort = &srv.IpPort{Ip: bindIP, Port: bindPort, CertFile: certFile, KeyFile: keyFile}
 	return ipPort, server, server.logger, nil
 }

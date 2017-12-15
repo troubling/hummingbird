@@ -659,8 +659,8 @@ func (server *ObjectServer) GetHandler(config conf.Config, metricsPrefix string)
 	return alice.New(middleware.Metrics(metricsScope)).Append(middleware.GrepObject).Then(router)
 }
 
-func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (srv.IpPort, srv.Server, srv.LowLevelLogger, error) {
-	var ipPort srv.IpPort
+func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (*srv.IpPort, srv.Server, srv.LowLevelLogger, error) {
+	var ipPort *srv.IpPort
 	var err error
 	server := &ObjectServer{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: "",
 		allowedHeaders: map[string]bool{
@@ -732,6 +732,6 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 	if deviceLockUpdateSeconds > 0 {
 		go server.updateDeviceLocks(deviceLockUpdateSeconds)
 	}
-	ipPort = srv.IpPort{Ip: bindIP, Port: bindPort, CertFile: certFile, KeyFile: keyFile}
+	ipPort = &srv.IpPort{Ip: bindIP, Port: bindPort, CertFile: certFile, KeyFile: keyFile}
 	return ipPort, server, server.logger, nil
 }

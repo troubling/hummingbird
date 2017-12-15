@@ -670,8 +670,8 @@ func (r *Replicator) Run() {
 }
 
 // NewReplicator uses the config settings and command-line flags to configure and return a replicator daemon struct.
-func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (srv.IpPort, srv.Server, srv.LowLevelLogger, error) {
-	var ipPort srv.IpPort
+func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (*srv.IpPort, srv.Server, srv.LowLevelLogger, error) {
+	var ipPort *srv.IpPort
 	var err error
 	var logger srv.LowLevelLogger
 	if !serverconf.HasSection("account-replicator") {
@@ -735,6 +735,6 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 		},
 		logLevel: logLevel,
 	}
-	ipPort = srv.IpPort{Ip: ip, Port: port, CertFile: certFile, KeyFile: keyFile}
+	ipPort = &srv.IpPort{Ip: ip, Port: port, CertFile: certFile, KeyFile: keyFile}
 	return ipPort, server, logger, nil
 }

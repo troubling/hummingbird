@@ -172,9 +172,9 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 	return pipeline.Then(router)
 }
 
-func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (srv.IpPort, srv.Server, srv.LowLevelLogger, error) {
+func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (*srv.IpPort, srv.Server, srv.LowLevelLogger, error) {
 	var err error
-	var ipPort srv.IpPort
+	var ipPort *srv.IpPort
 	server := &ProxyServer{}
 	server.mc, err = ring.NewMemcacheRingFromConfig(serverconf)
 	if err != nil {
@@ -212,6 +212,6 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 		info[k] = v
 	}
 	middleware.RegisterInfo("swift", info)
-	ipPort = srv.IpPort{Ip: bindIP, Port: int(bindPort), CertFile: certFile, KeyFile: keyFile}
+	ipPort = &srv.IpPort{Ip: bindIP, Port: int(bindPort), CertFile: certFile, KeyFile: keyFile}
 	return ipPort, server, server.logger, nil
 }

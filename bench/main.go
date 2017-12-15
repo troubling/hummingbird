@@ -165,8 +165,6 @@ or
     delete = yes
     allow_insecure_auth_cert = no
     single_container = false
-    cert_file = <cert_file_path>
-    key_file = <key_file_path>
 `)
 		os.Exit(1)
 	}
@@ -192,8 +190,6 @@ or
 	singleContainer := benchconf.GetBool("bench", "single_container", false)
 	verbose := benchconf.GetBool("bench", "verbose", false)
 	allowInsecureAuthCert := benchconf.GetBool("bench", "allow_insecure_auth_cert", false)
-	certFile := benchconf.GetDefault("bench", "cert_file", "")
-	keyFile := benchconf.GetDefault("bench", "key_file", "")
 	salt := fmt.Sprintf("%d", rand.Int63())
 
 	fmt.Printf("Hbird Bench. Concurrency: %d. Object size in bytes: %d\n", concurrency, objectSize)
@@ -202,7 +198,7 @@ or
 	if allowInsecureAuthCert {
 		cli, resp = nectar.NewInsecureClient(authTenant, authUser, authPassword, authKey, authRegion, authURL, authPrivateEndpoint)
 	} else {
-		cli, resp = nectar.NewClient(authTenant, authUser, authPassword, authKey, authRegion, authURL, authPrivateEndpoint, certFile, keyFile)
+		cli, resp = nectar.NewClient(authTenant, authUser, authPassword, authKey, authRegion, authURL, authPrivateEndpoint)
 	}
 	if resp != nil {
 		msg, _ := ioutil.ReadAll(resp.Body)
@@ -278,8 +274,6 @@ func RunThrash(args []string) {
 		fmt.Println("    num_objects = 5000")
 		fmt.Println("    gets_per_object = 5")
 		fmt.Println("    allow_insecure_auth_cert = no")
-		fmt.Println("    cert_file = <cert_file_path>")
-		fmt.Println("    key_file = <key_file_path>")
 
 		os.Exit(1)
 	}
@@ -298,8 +292,6 @@ func RunThrash(args []string) {
 	numObjects := thrashconf.GetInt("thrash", "num_objects", 5000)
 	numGets := int(thrashconf.GetInt("thrash", "gets_per_object", 5))
 	allowInsecureAuthCert := thrashconf.GetBool("thrash", "allow_insecure_auth_cert", false)
-	certFile := thrashconf.GetDefault("thrash", "cert_file", "")
-	keyFile := thrashconf.GetDefault("thrash", "key_file", "")
 	salt := fmt.Sprintf("%d", rand.Int63())
 
 	var cli nectar.Client
@@ -307,7 +299,7 @@ func RunThrash(args []string) {
 	if allowInsecureAuthCert {
 		cli, resp = nectar.NewInsecureClient("", authUser, "", authKey, "", authURL, false)
 	} else {
-		cli, resp = nectar.NewClient("", authUser, "", authKey, "", authURL, false, certFile, keyFile)
+		cli, resp = nectar.NewClient("", authUser, "", authKey, "", authURL, false)
 	}
 	if err != nil {
 		msg, _ := ioutil.ReadAll(resp.Body)

@@ -430,7 +430,7 @@ type Server interface {
 	Finalize() // This is called before stoping gracefully so that a server can clean up before closing
 }
 
-func RunServers(getServer func(conf.Config, *flag.FlagSet, ConfigLoader) (IpPort, Server, LowLevelLogger, error), flags *flag.FlagSet) {
+func RunServers(getServer func(conf.Config, *flag.FlagSet, ConfigLoader) (*IpPort, Server, LowLevelLogger, error), flags *flag.FlagSet) {
 	var servers []*HummingbirdServer
 
 	if flags.NArg() != 0 {
@@ -468,9 +468,11 @@ func RunServers(getServer func(conf.Config, *flag.FlagSet, ConfigLoader) (IpPort
 		var srv HummingbirdServer
 		if ipPort.CertFile != "" && ipPort.KeyFile != "" {
 			tlsConf := &tls.Config{
-				ClientAuth:               tls.RequireAndVerifyClientCert,
 				PreferServerCipherSuites: true,
 				MinVersion:               tls.VersionTLS12,
+			}
+			if server.Type() != "proxy" {
+				tlsConf.ClientAuth = tls.RequireAndVerifyClientCert
 			}
 			httpServer := http.Server{
 				Handler:      server.GetHandler(config, metricsPrefix),

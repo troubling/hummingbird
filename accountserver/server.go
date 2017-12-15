@@ -545,8 +545,8 @@ func (server *AccountServer) GetHandler(config conf.Config, metricsPrefix string
 }
 
 // NewServer parses configs and command-line flags, returning a configured server object and the ip and port it should bind on.
-func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (srv.IpPort, srv.Server, srv.LowLevelLogger, error) {
-	var ipPort srv.IpPort
+func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (*srv.IpPort, srv.Server, srv.LowLevelLogger, error) {
+	var ipPort *srv.IpPort
 	var err error
 	server := &AccountServer{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: ""}
 	server.hashPathPrefix, server.hashPathSuffix, err = cnf.GetHashPrefixAndSuffix()
@@ -597,6 +597,6 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 		Timeout:   nodeTimeout,
 		Transport: transport,
 	}
-	ipPort = srv.IpPort{Ip: bindIP, Port: bindPort, CertFile: certFile, KeyFile: keyFile}
+	ipPort = &srv.IpPort{Ip: bindIP, Port: bindPort, CertFile: certFile, KeyFile: keyFile}
 	return ipPort, server, server.logger, nil
 }

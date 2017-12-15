@@ -49,6 +49,9 @@ func (server *ContainerServer) accountUpdate(writer http.ResponseWriter, request
 			logger.Error("Account update failed: different numbers of hosts and devices in request")
 			return
 		}
+		for len(schemes) < len(hosts) {
+			schemes = append(schemes, "http")
+		}
 		for index, host := range hosts {
 			if err := accountUpdateHelper(info, schemes[index], host, devices[index], accpartition, vars["account"], vars["container"], request.Header.Get("X-Trans-Id"), request.Header.Get("X-Account-Override-Deleted") == "yes", server.updateClient); err != nil {
 				logger.Error(

@@ -31,7 +31,8 @@ import (
 )
 
 type ContainerObject struct {
-	Url string
+	Url    string
+	client *http.Client
 }
 
 func (obj *ContainerObject) Put() bool {
@@ -43,7 +44,7 @@ func (obj *ContainerObject) Put() bool {
 	req.Header.Set("X-Content-Type", "application/octet-stream")
 	req.Header.Set("X-Size", "0")
 	req.Header.Set("X-Etag", "d41d8cd98f00b204e9800998ecf8427e")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := obj.client.Do(req)
 	if resp != nil {
 		resp.Body.Close()
 	}
@@ -53,7 +54,7 @@ func (obj *ContainerObject) Put() bool {
 func (obj *ContainerObject) Delete() bool {
 	req, _ := http.NewRequest("DELETE", obj.Url, nil)
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := obj.client.Do(req)
 	if resp != nil {
 		resp.Body.Close()
 	}
@@ -148,7 +149,8 @@ func RunCBench(args []string) {
 	for i := range objects {
 		container := containers[i%len(containers)]
 		objects[i] = &ContainerObject{
-			Url: fmt.Sprintf("%s/%d", container, rand.Int63()),
+			Url:    fmt.Sprintf("%s/%d", container, rand.Int63()),
+			client: client,
 		}
 	}
 
@@ -274,7 +276,8 @@ func RunCGBench(args []string) {
 		objects := make([]*ContainerObject, int(reportInterval))
 		for i := range objects {
 			objects[i] = &ContainerObject{
-				Url: fmt.Sprintf("%s/%d", container, rand.Int63()),
+				Url:    fmt.Sprintf("%s/%d", container, rand.Int63()),
+				client: client,
 			}
 		}
 

@@ -672,7 +672,7 @@ func (a *AutoAdmin) RunForever() {
 	}
 }
 
-func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (ipPort srv.IpPort, server srv.Server, logger srv.LowLevelLogger, err error) {
+func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (ipPort *srv.IpPort, server srv.Server, logger srv.LowLevelLogger, err error) {
 	if !serverconf.HasSection("andrewd") {
 		return ipPort, nil, nil, fmt.Errorf("Unable to find andrewd config section")
 	}
@@ -726,6 +726,6 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 	}
 
 	a.dw = NewDriveWatch(a.logger, a.metricsScope, serverconf, cnf, certFile, keyFile)
-	ipPort = srv.IpPort{Ip: ip, Port: port, CertFile: certFile, KeyFile: keyFile}
+	ipPort = &srv.IpPort{Ip: ip, Port: port, CertFile: certFile, KeyFile: keyFile}
 	return ipPort, a, a.logger, nil
 }
