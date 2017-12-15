@@ -355,7 +355,7 @@ func (rd *replicationDevice) beginReplication(dev *ring.Device, partition string
 	}
 	headers["X-Trans-Id"] = fmt.Sprintf("%s-%d", common.UUID(), dev.Id)
 
-	if rc, err := NewRepConn(dev, partition, rd.policy, headers); err != nil {
+	if rc, err := NewRepConn(dev, partition, rd.policy, headers, rd.r.CertFile, rd.r.KeyFile); err != nil {
 		rChan <- beginReplicationResponse{dev: dev, err: err}
 	} else if err := rc.SendMessage(BeginReplicationRequest{Device: dev.Device, Partition: partition, NeedHashes: hashes}); err != nil {
 		rChan <- beginReplicationResponse{dev: dev, err: err}

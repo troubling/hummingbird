@@ -17,6 +17,7 @@ package objectserver
 
 import (
 	"bufio"
+	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -27,6 +28,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/ring"
 )
 
@@ -157,7 +159,7 @@ func (r *repConn) Close() {
 	r.c.Close()
 }
 
-func NewRepConn(dev *ring.Device, partition string, policy int, headers map[string]string) (RepConn, error) {
+func NewRepConn(dev *ring.Device, partition string, policy int, headers map[string]string, certFile, keyFile string) (RepConn, error) {
 	url := fmt.Sprintf("%s://%s:%d/%s/%s", dev.Scheme, dev.ReplicationIp, dev.ReplicationPort, dev.Device, partition)
 	req, err := http.NewRequest("REPCONN", url, nil)
 	if err != nil {
@@ -172,6 +174,14 @@ func NewRepConn(dev *ring.Device, partition string, policy int, headers map[stri
 	conn, err := repDialer("tcp", req.URL.Host)
 	if err != nil {
 		return nil, err
+	}
+	if certFile != "" && keyFile != "" {
+		tlsConf, err := common.NewClientTLSConfig(certFile, keyFile)
+		if err != nil {
+			return nil, err
+		}
+		tlsConf.ServerName = dev.ReplicationIp
+		conn = tls.Client(conn, tlsConf)
 	}
 	hc := httputil.NewClientConn(conn, nil)
 	resp, err := hc.Do(req)
