@@ -56,7 +56,7 @@ func TestGetStabilizer(t *testing.T) {
 
 func TestCanStabilize(t *testing.T) {
 	testRing := &test.FakeRing{}
-	dev := ring.Device{Id: 1, Device: "sda", Ip: "127.0.0.1", Port: 5000}
+	dev := ring.Device{Id: 1, Device: "sda", Ip: "127.0.0.1", Port: 5000, Scheme: "http"}
 	numCalls := 0
 	called404 := false
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -80,7 +80,7 @@ func TestCanStabilize(t *testing.T) {
 		{Ip: "127.0.0.1", Port: 5000, Device: "sda", Scheme: "http"},
 		{Ip: host, Port: port, Device: "sdb", Scheme: "http"},
 		{Ip: host, Port: port, Device: "sdc", Scheme: "http"}}
-	obj := nurseryObject{metadata: map[string]string{"name": "/a/c/o", "X-Backend-Data-Timestamp": "100"}}
+	obj := nurseryObject{metadata: map[string]string{"name": "/a/c/o", "X-Backend-Data-Timestamp": "100"}, client: &http.Client{}}
 	assert.Nil(t, err)
 	canStab, err := obj.canStabilize(testRing, &dev, 0)
 	assert.Nil(t, err)
@@ -116,7 +116,7 @@ func TestCanNotStabilize(t *testing.T) {
 		{Ip: "127.0.0.1", Port: 5000, Device: "sda", Scheme: "http"},
 		{Ip: host, Port: port, Device: "sdb", Scheme: "http"},
 		{Ip: host, Port: port, Device: "sdc", Scheme: "http"}}
-	obj := nurseryObject{metadata: map[string]string{"name": "/a/c/o", "X-Backend-Data-Timestamp": "100"}}
+	obj := nurseryObject{metadata: map[string]string{"name": "/a/c/o", "X-Backend-Data-Timestamp": "100"}, client: &http.Client{}}
 	assert.Nil(t, err)
 	canStab, err := obj.canStabilize(testRing, &dev, 0)
 	assert.Nil(t, err)
@@ -152,7 +152,7 @@ func TestNotifyPeers(t *testing.T) {
 		{Ip: "127.0.0.1", Port: 5000, Device: "sda", Scheme: "http"},
 		{Ip: host, Port: port, ReplicationPort: port, Device: "sdb", Scheme: "http"},
 		{Ip: host, Port: port, ReplicationPort: port, Device: "sdc", Scheme: "http"}}
-	obj := nurseryObject{metadata: map[string]string{"name": "/a/c/o", "X-Backend-Data-Timestamp": "100"}}
+	obj := nurseryObject{metadata: map[string]string{"name": "/a/c/o", "X-Backend-Data-Timestamp": "100"}, client: &http.Client{}}
 	assert.Nil(t, err)
 	err = obj.notifyPeers(testRing, &dev, 0)
 	assert.Nil(t, err)

@@ -735,7 +735,7 @@ func (oc *standardObjectClient) putObject(account, container, obj string, header
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(oc.policy))
 		req.Header.Set("X-Container-Partition", strconv.FormatUint(containerPartition, 10))
 		addUpdateHeaders("X-Container", req.Header, containerDevices, index, objectReplicaCount)
-		req.Header.Set("Expect", "100-Continue")
+		req.Header.Set("Expect", "100-continue")
 		return req, nil
 	}
 

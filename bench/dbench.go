@@ -22,6 +22,7 @@ import (
 	"io"
 	"io/ioutil"
 	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -89,10 +90,10 @@ func (obj *DirectObject) Delete() bool {
 	return err == nil && resp.StatusCode/100 == 2
 }
 
-func GetDevices(address string, checkMounted bool) []string {
+func GetDevices(client *http.Client, address string, checkMounted bool) []string {
 	deviceUrl := fmt.Sprintf("%srecon/diskusage", address)
 	req, err := http.NewRequest("GET", deviceUrl, nil)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Println(fmt.Sprintf("ERROR GETTING DEVICES: %s", err))
 		os.Exit(1)
@@ -116,7 +117,7 @@ func RunDBench(args []string) {
 		fmt.Println("Usage: [configuration file]")
 		fmt.Println("The configuration file should look something like:")
 		fmt.Println("    [dbench]")
-		fmt.Println("    address = http://localhost:6010/")
+		fmt.Println("    address = http://127.0.0.1:6010/")
 		fmt.Println("    concurrency = 15")
 		fmt.Println("    object_size = 131072")
 		fmt.Println("    num_objects = 5000")
@@ -137,7 +138,7 @@ func RunDBench(args []string) {
 		os.Exit(1)
 	}
 
-	address := benchconf.GetDefault("dbench", "address", "http://localhost:6010/")
+	address := benchconf.GetDefault("dbench", "address", "http://127.0.0.1:6010/")
 	if !strings.HasSuffix(address, "/") {
 		address = address + "/"
 	}
@@ -154,15 +155,16 @@ func RunDBench(args []string) {
 	certFile := benchconf.GetDefault("dbench", "cert_file", "")
 	keyFile := benchconf.GetDefault("dbench", "key_file", "")
 
-	deviceList := GetDevices(address, checkMounted)
-	if driveList != "" {
-		deviceList = strings.Split(driveList, ",")
-	}
-
 	transport := &http.Transport{
 		MaxIdleConnsPerHost: 100,
 		MaxIdleConns:        0,
 		IdleConnTimeout:     5 * time.Second,
+		DisableCompression:  true,
+		Dial: (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 5 * time.Second,
+		}).Dial,
+		ExpectContinueTimeout: 10 * time.Minute,
 	}
 	if certFile != "" && keyFile != "" {
 		tlsConf, err := common.NewClientTLSConfig(certFile, keyFile)
@@ -178,6 +180,11 @@ func RunDBench(args []string) {
 	}
 	client := &http.Client{
 		Transport: transport,
+		Timeout:   10 * time.Second,
+	}
+	deviceList := GetDevices(client, address, checkMounted)
+	if driveList != "" {
+		deviceList = strings.Split(driveList, ",")
 	}
 
 	data := make([]byte, objectSize)
