@@ -84,3 +84,4 @@ deploy:
   local_dir: /tmp/output
   on:
     branch: master
+
