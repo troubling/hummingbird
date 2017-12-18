@@ -69,7 +69,12 @@ script:
         --exclude-test=test.functional.test_slo.TestSlo.test_slo_typo_etag `# these slo fields are optional and we can't easily detect typos.` \
         --exclude-test=test.functional.test_slo.TestSlo.test_slo_typo_size \
         --exclude-test=test.functional.test_slo.TestSloUTF8.test_slo_typo_etag \
-        --exclude-test=test.functional.test_slo.TestSloUTF8.test_slo_typo_size
+        --exclude-test=test.functional.test_slo.TestSloUTF8.test_slo_typo_size \
+        --exclude-test=test.functional.test_symlink \
+        --exclude-test=test.functional.test_versioned_writes.TestCrossPolicyObjectVersioning.test_overwriting_symlink \
+        --exclude-test=test.functional.test_versioned_writes.TestObjectVersioning.test_overwriting_symlink \
+        --exclude-test=test.functional.test_versioned_writes.TestObjectVersioningUTF8.test_overwriting_symlink \
+        --exclude-test=test.functional.test_versioned_writes.TestObjectVersioningHistoryMode.test_overwriting_symlink
     fi
 
 deploy:
