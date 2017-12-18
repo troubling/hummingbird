@@ -472,6 +472,17 @@ func ReconHandler(driveRoot string, reconCachePath string, mountCheck bool, writ
 				return
 			}
 		}
+	case "hummingbirdmd5":
+		if exe, err := os.Executable(); err == nil {
+			content, err = common.FileMD5(exe)
+			if err != nil {
+				http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
 	case "quarantined":
 		content, err = quarantineCounts(driveRoot)
 		if err != nil {
