@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -659,9 +660,17 @@ func NewDriveWatch(logger srv.LowLevelLogger,
 		}
 		pMap[p.Index] = ringData{objectRing, p, bPath}
 	}
-	sqlDir, ok := serverconf.Get("drive_watch", "sql_dir")
-	if !ok {
-		panic("Invalid Config, no drive_watch sql_dir")
+	sqlDir := serverconf.GetDefault("drive_watch", "sql_dir", "/var/local/hummingbird")
+	sqlDirOk := false
+	if _, err := os.Open(sqlDir); err == nil {
+		sqlDirOk = true
+	} else {
+		if os.IsNotExist(err) && os.MkdirAll(sqlDir, 0755) == nil {
+			sqlDirOk = true
+		}
+	}
+	if !sqlDirOk {
+		panic(fmt.Sprintf("Invalid drive_watch Config, could not open sql_dir: %s. Please create that directory.", sqlDir))
 	}
 	return &driveWatch{
 		policyToRing: pMap,

@@ -359,6 +359,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, "  An automated-admin daemon. Should be run from a")
 		fmt.Fprintln(os.Stderr, "  single admin location with network access to")
 		fmt.Fprintln(os.Stderr, "  backend servers and the a/c/o rings.")
+		fmt.Fprintln(os.Stderr, "  A sample config is:")
+		fmt.Fprintln(os.Stderr, "  [andrewd]")
+		fmt.Fprintln(os.Stderr, "  user = hummingbird")
+		fmt.Fprintln(os.Stderr, "")
 		andrewdFlags.PrintDefaults()
 	}
 
