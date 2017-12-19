@@ -185,6 +185,26 @@ func (dw *driveWatch) getDbAndLock() (*sql.DB, error) {
 				INSERT INTO device_log (deviceId, mounted, reachable)
 				VALUES (OLD.id, OLD.mounted, OLD.reachable);
 			END;
+
+        CREATE TABLE IF NOT EXISTS dispersion_report (
+            id INTEGER PRIMARY KEY,
+            create_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            policy INTEGER NOT NULL,
+            objects INTEGER NOT NULL,
+            objects_found INTEGER NOT NULL,
+            report_text TEXT
+            );
+
+        CREATE TABLE IF NOT EXISTS dispersion_report_detail (
+            id INTEGER PRIMARY KEY,
+            dispersion_report_id INTEGER NOT NULL,
+            policy INTEGER NOT NULL,
+            partition INTEGER NOT NULL,
+            partition_object_path VARCHAR(100) NOT NULL,
+            objects_found INTEGER NOT NULL,
+            objects_need INTEGER NOT NULL,
+            create_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
 		`
 	_, err = tx.Exec(sqlCreate)
 	if err != nil {
