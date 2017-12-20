@@ -152,6 +152,52 @@ func reconReportMainConfMd5(client http.Client, servers []ipPort, w io.Writer) b
 	return successes == len(servers)
 }
 
+func reconReportHummingbirdMd5(client http.Client, servers []ipPort, w io.Writer) bool {
+	fmt.Fprintf(w, "[%s] Checking hummingbird md5sums\n", time.Now().Format("2006-01-02 15:04:05"))
+	var md5Map map[string]string
+	if exePath, err := os.Executable(); err != nil {
+		fmt.Fprintf(w, "Unrecoverable error on confmd5 report: %v\n", err)
+		return false
+	} else {
+		md5Map, err = common.FileMD5(exePath)
+		if err != nil {
+			fmt.Fprintf(w, "Unrecoverable error on hummingbird md5 report: %v\n", err)
+			return false
+		}
+	}
+	errors := 0
+	successes := 0
+	for _, server := range servers {
+		rBytes, err := queryHostRecon(client, server, "hummingbirdmd5")
+		if err != nil {
+			errors++
+			continue
+		}
+		var rData map[string]string
+		if err := json.Unmarshal(rBytes, &rData); err != nil {
+			errors++
+			continue
+		}
+		allMatch := true
+		for fName, md5sum := range md5Map {
+			if rData[fName] != md5sum {
+				fmt.Fprintf(w,
+					"!! http://%s:%d/recon/hummingbirdmd5 (%s => %s) doesn't "+
+						"match on disk md5sum\n",
+					server.ip, server.port, filepath.Base(fName), md5sum)
+				allMatch = false
+			}
+		}
+		if allMatch {
+			successes++
+		}
+	}
+	fmt.Fprintf(w, "%d/%d hosts matched, %d error[s] while checking hosts.\n",
+		successes, len(servers), errors)
+	fmt.Fprintln(w, strings.Repeat("=", 79))
+	return successes == len(servers)
+}
+
 func reconReportTime(client http.Client, servers []ipPort, w io.Writer) bool {
 	fmt.Fprintf(w, "[%s] Checking time-sync\n", time.Now().Format("2006-01-02 15:04:05"))
 	errors := 0
@@ -503,7 +549,9 @@ func ReconClient(flags *flag.FlagSet, cnf srv.ConfigLoader) bool {
 			fmt.Fprintf(w, "Unrecoverable error on ringmd5 report: %v\n", err)
 		} else {
 			if pass = reconReportRingMd5(client, allWeightedServers, ringMap, w); pass {
-				pass = reconReportMainConfMd5(client, allWeightedServers, w)
+				if pass = reconReportMainConfMd5(client, allWeightedServers, w); pass {
+					pass = reconReportHummingbirdMd5(client, allWeightedServers, w)
+				}
 			}
 		}
 	}
