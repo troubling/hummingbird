@@ -28,7 +28,7 @@ func Recover(w http.ResponseWriter, r *http.Request, msg string) {
 		transactionId := r.Header.Get("X-Trans-Id")
 		srv.GetLogger(r).Error(msg, zap.Any("err", err), zap.String("txn", transactionId))
 		// if we haven't set a status code yet, we can send a 500 response.
-		if started, _ := w.(srv.WebWriterInterface).Response(); !started {
+		if started, _ := w.(srv.WebWriterInterface).Response(); started.IsZero() {
 			srv.StandardResponse(w, http.StatusInternalServerError)
 		}
 	}

@@ -32,6 +32,13 @@ import (
 
 var waitForAccountUpdate = time.Second * 5
 
+func splitHeader(header string) []string {
+	if header == "" {
+		return []string{}
+	}
+	return strings.Split(header, ",")
+}
+
 func (server *ContainerServer) accountUpdate(writer http.ResponseWriter, request *http.Request, vars map[string]string, info *ContainerInfo, logger srv.LowLevelLogger) {
 	firstDone := make(chan struct{}, 1)
 	go func() {
@@ -42,13 +49,14 @@ func (server *ContainerServer) accountUpdate(writer http.ResponseWriter, request
 			logger.Error("Account update failed: bad partition")
 			return
 		}
-		hosts := strings.Split(request.Header.Get("X-Account-Host"), ",")
-		devices := strings.Split(request.Header.Get("X-Account-Device"), ",")
-		schemes := strings.Split(request.Header.Get("X-Account-Scheme"), ",")
+		hosts := splitHeader(request.Header.Get("X-Account-Host"))
+		devices := splitHeader(request.Header.Get("X-Account-Device"))
+
 		if len(hosts) != len(devices) {
 			logger.Error("Account update failed: different numbers of hosts and devices in request")
 			return
 		}
+		schemes := splitHeader(request.Header.Get("X-Account-Scheme"))
 		for len(schemes) < len(hosts) {
 			schemes = append(schemes, "http")
 		}

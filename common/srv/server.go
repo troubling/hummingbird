@@ -187,7 +187,7 @@ func CopyRequestHeaders(r *http.Request, dst *http.Request) {
 
 type WebWriterInterface interface {
 	http.ResponseWriter
-	Response() (bool, int)
+	Response() (time.Time, int)
 }
 
 func ValidateRequest(w http.ResponseWriter, r *http.Request) bool {
