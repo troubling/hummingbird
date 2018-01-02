@@ -52,7 +52,7 @@ func NewRequestLogger(config conf.Section, metricsScope tally.Scope) (func(http.
 				ctx := GetProxyContext(request)
 				_, status := ctx.Response()
 				ctx.Logger.Info("Request log",
-					zap.String("remoteAddr", request.RemoteAddr),
+					zap.String("remoteAddr", common.GetDefault(request.Header, "X-Forwarded-For", request.RemoteAddr)),
 					zap.String("eventTime", time.Now().Format("02/Jan/2006:15:04:05 -0700")),
 					zap.String("method", request.Method),
 					zap.String("urlPath", common.Urlencode(request.URL.Path)),
