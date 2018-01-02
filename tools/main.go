@@ -716,9 +716,9 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 		Separator:      promreporter.DefaultSeparator,
 	}, time.Second)
 
-	a.di = NewDispersion(
-		a.logger, client.NewProxyClient(pdc, nil, nil, logger), a.metricsScope)
-
 	a.dw = NewDriveWatch(a.logger, a.metricsScope, serverconf, cnf)
+	a.di = NewDispersion(
+		a.logger, client.NewProxyClient(pdc, nil, nil, logger), a.metricsScope, a.dw)
+
 	return ip, port, a, a.logger, nil
 }

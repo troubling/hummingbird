@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/objectserver"
@@ -553,6 +554,18 @@ func ReconClient(flags *flag.FlagSet, cnf srv.ConfigLoader) bool {
 	}
 	if flags.Lookup("rc").Value.(flag.Getter).Get().(bool) {
 		pass = reconReportReplicationCancelled(client, allWeightedServers, w)
+	}
+	if flags.Lookup("d").Value.(flag.Getter).Get().(bool) {
+		configFile := flags.Lookup("c").Value.(flag.Getter).Get().(string)
+		if configs, err := conf.LoadConfigs(configFile); err != nil {
+			fmt.Fprintf(w, "Error finding configs: %v\n", err)
+			pass = false
+		} else if len(configs) != 1 {
+			fmt.Fprintf(w, "please supply single andrewd config")
+			pass = false
+		} else {
+			return PrintLastDispersionReport(configs[0]) == nil
+		}
 	}
 	w.Flush()
 	if jsonOut {
