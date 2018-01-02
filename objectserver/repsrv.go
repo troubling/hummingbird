@@ -293,7 +293,7 @@ func (r *Replicator) LogRequest(next http.Handler) http.Handler {
 		next.ServeHTTP(newWriter, request)
 		if newWriter.Status/100 != 2 || request.Header.Get("X-Backend-Suppress-2xx-Logging") != "t" || logr.Core().Enabled(zap.DebugLevel) {
 			logr.Info("Request log",
-				zap.String("remoteAddr", request.RemoteAddr),
+				zap.String("remoteAddr", common.GetDefault(request.Header, "X-Forwarded-For", request.RemoteAddr)),
 				zap.String("eventTime", time.Now().Format("02/Jan/2006:15:04:05 -0700")),
 				zap.String("method", request.Method),
 				zap.String("urlPath", common.Urlencode(request.URL.Path)),
