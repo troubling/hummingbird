@@ -27,6 +27,7 @@ import (
 	"io/ioutil"
 	"math"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -108,6 +109,9 @@ func (db *sqliteContainer) connect() error {
 	}
 	dbConn, err := sql.Open("sqlite3_hummingbird", "file:"+db.containerFile+"?psow=1&_txlock=immediate&mode=rw")
 	if err != nil {
+		if common.IsCorruptDBError(err) {
+			return fmt.Errorf("Failed to open: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
 		return fmt.Errorf("Failed to open: %v", err)
 	}
 	dbConn.SetMaxOpenConns(maxOpenConns)
@@ -115,6 +119,9 @@ func (db *sqliteContainer) connect() error {
 	hasDeletedNameIndex, err := schemaMigrate(dbConn)
 	if err != nil {
 		db.closeAlreadyLocked()
+		if common.IsCorruptDBError(err) {
+			return fmt.Errorf("Error migrating database: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
 		return fmt.Errorf("Error migrating database: %v", err)
 	}
 	db.hasDeletedNameIndex = hasDeletedNameIndex
@@ -335,19 +342,19 @@ func updateRecord(rec *ObjectListingRecord) error {
 
 // ListObjects implements object listings.  Path is a string pointer because behavior is different for empty and missing path query parameters.
 func (db *sqliteContainer) ListObjects(limit int, marker string, endMarker string, prefix string, delimiter string,
-	path *string, reverse bool, storagePolicyIndex int) ([]interface{}, error) {
+	pth *string, reverse bool, storagePolicyIndex int) ([]interface{}, error) {
 	if err := db.connect(); err != nil {
 		return nil, err
 	}
 	var point, pointDirection, queryTail, queryStart string
 
-	if path != nil {
-		if *path != "" {
-			p := strings.TrimRight(*path, "/") + "/"
-			path = &p
+	if pth != nil {
+		if *pth != "" {
+			p := strings.TrimRight(*pth, "/") + "/"
+			pth = &p
 		}
 		delimiter = "/"
-		prefix = *path
+		prefix = *pth
 	}
 	if db.hasDeletedNameIndex {
 		queryStart = "SELECT name, created_at, size, content_type, etag FROM object WHERE deleted = 0 AND"
@@ -401,18 +408,18 @@ func (db *sqliteContainer) ListObjects(limit int, marker string, endMarker strin
 			}
 			point = record.Name
 			if delimiter != "" {
-				if path != nil && record.Name == *path {
+				if pth != nil && record.Name == *pth {
 					continue
 				}
 				end := indexAfter(record.Name, delimiter, len(prefix))
-				if end >= 0 && (path == nil || len(record.Name) > end+1) {
+				if end >= 0 && (pth == nil || len(record.Name) > end+1) {
 					dirName := record.Name[:end] + delimiter
 					if reverse {
 						point = record.Name[:end+len(delimiter)]
 					} else {
 						point = dirName + "\xFF"
 					}
-					if path == nil && dirName != marker {
+					if pth == nil && dirName != marker {
 						results = append(results, &SubdirListingRecord{Name2: dirName, Name: dirName})
 					}
 					break
@@ -427,7 +434,7 @@ func (db *sqliteContainer) ListObjects(limit int, marker string, endMarker strin
 			return nil, err
 		}
 		rows.Close()
-		if delimiter == "" && path == nil {
+		if delimiter == "" && pth == nil {
 			break
 		}
 	}

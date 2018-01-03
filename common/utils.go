@@ -27,6 +27,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -250,11 +251,11 @@ func StandardizeTimestamp(timestamp string) (string, error) {
 
 // will split out url path the proxy would receive and return map
 // with keys: "vrs", "account", "container", "object"
-func ParseProxyPath(path string) (pathMap map[string]string, err error) {
+func ParseProxyPath(pth string) (pathMap map[string]string, err error) {
 	pathParts := []string{"", "vrs", "account", "container", "object"}
-	pathSplit := strings.SplitN(path, "/", 5)
+	pathSplit := strings.SplitN(pth, "/", 5)
 	if pathSplit[0] != "" {
-		return nil, fmt.Errorf("Invalid path: %s", path)
+		return nil, fmt.Errorf("Invalid path: %s", pth)
 	}
 	pathMap = map[string]string{}
 	for i := 1; i < len(pathParts); i++ {
@@ -262,7 +263,7 @@ func ParseProxyPath(path string) (pathMap map[string]string, err error) {
 			pathMap[pathParts[i]] = ""
 		} else {
 			if pathSplit[i] == "" && len(pathSplit)-1 != i {
-				return nil, fmt.Errorf("Invalid path: %s", path)
+				return nil, fmt.Errorf("Invalid path: %s", pth)
 			}
 			pathMap[pathParts[i]] = pathSplit[i]
 		}
@@ -561,4 +562,44 @@ func NewClientTLSConfig(certFile, keyFile string) (*tls.Config, error) {
 		MinVersion:   tls.VersionTLS12,
 	}
 	return tlsConf, nil
+}
+
+func IsCorruptDBError(err error) bool {
+	a := err.Error()
+	for _, b := range []string{
+		"database disk image is malformed",
+		"file is encrypted or is not a database",
+		"file is not a database",
+	} {
+		if strings.Contains(a, b) {
+			return true
+		}
+	}
+	return false
+}
+
+func QuarantineDir(dirPath string, dirDepth int, dirType string) error {
+	dstDirPath := dirPath
+	for dirDepth > 0 {
+		dstDirPath = path.Dir(dstDirPath)
+		dirDepth--
+	}
+	dstDirPath = path.Join(dstDirPath, "quarantined", dirType)
+	err := os.MkdirAll(dstDirPath, 0755)
+	if err != nil {
+		return fmt.Errorf("could not quarantine; error: %s", err)
+	}
+	dstDirPath, err = ioutil.TempDir(dstDirPath, path.Base(dirPath)+"-")
+	if err != nil {
+		return fmt.Errorf("could not quarantine; error: %s", err)
+	}
+	err = os.Remove(dstDirPath)
+	if err != nil {
+		return fmt.Errorf("could not quarantine; error: %s", err)
+	}
+	err = os.Rename(dirPath, dstDirPath)
+	if err != nil {
+		return fmt.Errorf("could not quarantine; error: %s", err)
+	}
+	return fmt.Errorf("quarantined %s to %s", dirPath, dstDirPath)
 }

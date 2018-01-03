@@ -27,6 +27,7 @@ import (
 	"io/ioutil"
 	"math"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -109,12 +110,18 @@ func (db *sqliteAccount) connect() error {
 	}
 	dbConn, err := sql.Open("sqlite3_account", "file:"+db.accountFile+"?psow=1&_txlock=immediate&mode=rw")
 	if err != nil {
+		if common.IsCorruptDBError(err) {
+			return fmt.Errorf("Failed to open: %v; %v", err, common.QuarantineDir(path.Dir(db.accountFile), 4, "accounts"))
+		}
 		return fmt.Errorf("Failed to open: %v", err)
 	}
 	dbConn.SetMaxOpenConns(maxOpenConns)
 	dbConn.SetMaxIdleConns(maxIdleConns)
 	if db.hasDeletedNameIndex, err = schemaMigrate(dbConn); err != nil {
 		db.closeAlreadyLocked()
+		if common.IsCorruptDBError(err) {
+			return fmt.Errorf("Error migrating database: %v; %v", err, common.QuarantineDir(path.Dir(db.accountFile), 4, "accounts"))
+		}
 		return fmt.Errorf("Error migrating database: %v", err)
 	}
 	db.DB = dbConn
