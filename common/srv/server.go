@@ -35,6 +35,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
 	"go.uber.org/zap"
@@ -281,6 +282,47 @@ func SetupLogger(prefix string, atomicLevel *zap.AtomicLevel, flags *flag.FlagSe
 	baseLogger := zap.New(core)
 	logger := baseLogger.With(zap.String("name", prefix))
 	return logger, nil
+}
+
+// LogRequest is a middleware that logs requests and also sets up a logger in
+// the request context.
+func LogRequest(logger LowLevelLogger, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		start := time.Now()
+		newWriter := &WebWriter{ResponseWriter: writer, Status: 500}
+		newReader := &CountingReadCloser{ReadCloser: request.Body}
+		request.Body = newReader
+		logr := logger.With(zap.String("txn", request.Header.Get("X-Trans-Id")))
+		request = SetLogger(request, logr)
+		next.ServeHTTP(newWriter, request)
+		LogRequestLine(logr, request, start, newWriter, newReader)
+	})
+}
+
+func LogRequestLine(logger *zap.Logger, request *http.Request, start time.Time, newWriter *WebWriter, newReader *CountingReadCloser) {
+	if newWriter.Status/100 != 2 || request.Header.Get("X-Backend-Suppress-2xx-Logging") != "t" || logger.Core().Enabled(zap.DebugLevel) {
+		extraInfo := "-"
+		if request.Header.Get("X-Force-Acquire") == "true" {
+			extraInfo = "FA"
+		}
+		logger.Info(
+			"Request log",
+			zap.String("remoteAddr", common.GetDefault(request.Header, "X-Forwarded-For", request.RemoteAddr)),
+			zap.String("eventTime", time.Now().Format("02/Jan/2006:15:04:05 -0700")),
+			zap.String("method", request.Method),
+			zap.String("urlPath", common.Urlencode(request.URL.Path)),
+			zap.Int("status", newWriter.Status),
+			zap.Int("contentBytesIn", newReader.ByteCount),
+			zap.Int("contentBytesOut", newWriter.ByteCount),
+			zap.String("contentLengthIn", common.GetDefault(request.Header, "Content-Length", "-")),
+			zap.String("contentLengthOut", common.GetDefault(newWriter.Header(), "Content-Length", "-")),
+			zap.String("referer", common.GetDefault(request.Header, "Referer", "-")),
+			zap.String("userAgent", common.GetDefault(request.Header, "User-Agent", "-")),
+			zap.Float64("requestTimeSeconds", time.Since(start).Seconds()),
+			zap.Float64("requestTimeToHeaderSeconds", newWriter.ResponseStarted.Sub(start).Seconds()),
+			zap.String("extraInfo", extraInfo),
+		)
+	}
 }
 
 type ConfigLoader interface {
