@@ -87,7 +87,7 @@ type ProxyContext struct {
 	StorageOwner     bool
 	ACL              string
 	subrequestCopy   subrequestCopy
-	Logger           srv.LowLevelLogger
+	Logger           *zap.Logger
 	TxId             string
 	responseSent     time.Time
 	status           int
