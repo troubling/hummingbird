@@ -3,7 +3,9 @@ HUMMINGBIRD_VERSION_NO_V?=$(shell git describe --tags | cut -d v -f 2)
 
 all: bin/hummingbird
 
-bin/hummingbird: */*.go */*/*.go
+.PHONY: bin/hummingbird
+
+bin/hummingbird:
 	mkdir -p bin
 	go build -o bin/hummingbird -ldflags "-X github.com/troubling/hummingbird/common.Version=$(HUMMINGBIRD_VERSION)" github.com/troubling/hummingbird/cmd/hummingbird
 
@@ -20,6 +22,9 @@ test:
 
 functional-test:
 	$(MAKE) -C functional
+
+clean:
+	rm -rf bin
 
 haio: all
 	if hash hball 2>/dev/null ; then hball stop ; fi
