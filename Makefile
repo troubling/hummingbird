@@ -10,7 +10,7 @@ bin/hummingbird:
 	go build -o bin/hummingbird -ldflags "-X github.com/troubling/hummingbird/common.Version=$(HUMMINGBIRD_VERSION)" github.com/troubling/hummingbird/cmd/hummingbird
 
 get:
-	go get -t $(shell go list ./... | grep -v /vendor/)
+	go get -u -t $(shell go list ./... | grep -v /vendor/)
 
 fmt:
 	gofmt -l -w -s $(shell find . -mindepth 1 -maxdepth 1 -type d -print | grep -v vendor)
