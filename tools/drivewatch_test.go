@@ -259,6 +259,102 @@ func TestUpdateDb(t *testing.T) {
 	require.Equal(t, cnt, 1)
 }
 
+func TestUpdateDbUnreachable(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,
+		r *http.Request) {
+		return
+	}))
+	fr := &FakeRing{}
+
+	u, _ := url.Parse(ts.URL)
+	host, ports, _ := net.SplitHostPort(u.Host)
+	port, _ := strconv.Atoi(ports)
+
+	fr.Devs = append(fr.Devs,
+		&ring.Device{Id: 1, Device: "sdb1", Ip: host, Port: port, Weight: 1.1, Scheme: "http"})
+	p := conf.Policy{Name: "hat"}
+	rd := ringData{r: fr, p: &p, builderPath: "hey"}
+
+	dw, _ := getDw(fr)
+	defer closeDw(dw)
+	db, _ := dw.getDbAndLock()
+	defer db.Close()
+
+	tx, err := db.Begin()
+	require.Equal(t, err, nil)
+
+	_, err = tx.Exec("INSERT INTO device "+
+		"(ip, port, device, in_ring, weight, mounted, reachable, policy) VALUES"+
+		"(?,?,?,?,?,?,?,?)", host, port, "sdb1", true, 2.3, true, true, 0)
+	require.Equal(t, err, nil)
+	require.Equal(t, tx.Commit(), nil)
+	dw.dbl.Unlock()
+
+	ts.Close()
+	dw.updateDb(rd)
+	rows, _ := db.Query("SELECT ip, port, device, weight, mounted, reachable FROM device")
+	cnt := 0
+	for rows.Next() {
+		var ip, device string
+		var port int
+		var mounted, reachable bool
+		var weight float64
+
+		err := rows.Scan(&ip, &port, &device, &weight, &mounted, &reachable)
+		require.Equal(t, err, nil)
+		require.Equal(t, mounted, true)
+		require.Equal(t, reachable, false)
+		require.Equal(t, weight, 2.3)
+		cnt += 1
+	}
+	rows.Close()
+	require.Equal(t, cnt, 1)
+	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,
+		r *http.Request) {
+
+		require.Equal(t, "/recon/unmounted", r.URL.Path)
+		if _, err := ioutil.ReadAll(r.Body); err != nil {
+			w.WriteHeader(500)
+			return
+		}
+		w.WriteHeader(200)
+		io.WriteString(w, "[{\"device\": \"sdb1\", \"mounted\": false}]")
+	}))
+	defer ts.Close()
+	u, _ = url.Parse(ts.URL)
+	host, ports, _ = net.SplitHostPort(u.Host)
+	port, _ = strconv.Atoi(ports)
+	fr.Devs[0].Port = port
+
+	db, _ = dw.getDbAndLock()
+	defer db.Close()
+	tx, err = db.Begin()
+	require.Equal(t, err, nil)
+	_, err = tx.Exec("UPDATE device set port = ?", port)
+	require.Equal(t, err, nil)
+	require.Equal(t, tx.Commit(), nil)
+	dw.dbl.Unlock()
+	dw.updateDb(rd)
+	rows, _ = db.Query("SELECT ip, port, device, weight, mounted, reachable FROM device")
+	cnt = 0
+	for rows.Next() {
+		var ip, device string
+		var port int
+		var mounted, reachable bool
+		var weight float64
+
+		err := rows.Scan(&ip, &port, &device, &weight, &mounted, &reachable)
+		require.Equal(t, err, nil)
+		require.Equal(t, mounted, false)
+		require.Equal(t, reachable, true)
+		require.Equal(t, weight, 1.1)
+		cnt += 1
+	}
+	rows.Close()
+	require.Equal(t, cnt, 1)
+}
+
 func TestUpdateRing(t *testing.T) {
 	t.Parallel()
 
@@ -326,7 +422,7 @@ func TestUpdateRing(t *testing.T) {
 		"", -1, "", "http") {
 		require.Equal(t, 1.0, rbd.Weight)
 	}
-	_, err = dw.updateRing(rd)
+	_, err = dw.doUpdateRing(rd)
 	require.Equal(t, err, nil)
 	b, err = ring.NewRingBuilderFromFile(ringBuilderPath, false)
 	require.Equal(t, err, nil)

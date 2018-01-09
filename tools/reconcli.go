@@ -508,6 +508,17 @@ type reconOut struct {
 	Msg string `json:"msg"`
 }
 
+func getAndrewdConf(flags *flag.FlagSet) (*conf.Config, error) {
+	configFile := flags.Lookup("c").Value.(flag.Getter).Get().(string)
+	if configs, err := conf.LoadConfigs(configFile); err != nil {
+		return nil, fmt.Errorf("Error finding configs: %v", err)
+	} else if len(configs) != 1 {
+		return nil, fmt.Errorf("please supply single andrewd config")
+	} else {
+		return &configs[0], nil
+	}
+}
+
 func ReconClient(flags *flag.FlagSet, cnf srv.ConfigLoader) bool {
 	prefix, suffix := getAffixes()
 	oring, err := ring.GetRing("object", prefix, suffix, 0)
@@ -575,15 +586,29 @@ func ReconClient(flags *flag.FlagSet, cnf srv.ConfigLoader) bool {
 		pass = reconReportReplicationCancelled(client, allWeightedServers, w)
 	}
 	if flags.Lookup("d").Value.(flag.Getter).Get().(bool) {
-		configFile := flags.Lookup("c").Value.(flag.Getter).Get().(string)
-		if configs, err := conf.LoadConfigs(configFile); err != nil {
+		if configFile, e := getAndrewdConf(flags); e == nil {
+			if e = PrintLastDispersionReport(*configFile); e == nil {
+				return true
+			} else {
+				fmt.Fprintf(w, "Error printing report: %v\n", e)
+				pass = false
+			}
+		} else {
 			fmt.Fprintf(w, "Error finding configs: %v\n", err)
 			pass = false
-		} else if len(configs) != 1 {
-			fmt.Fprintf(w, "please supply single andrewd config")
-			pass = false
+		}
+	}
+	if flags.Lookup("ds").Value.(flag.Getter).Get().(bool) {
+		if configFile, e := getAndrewdConf(flags); e == nil {
+			if e = PrintDriveReport(*configFile); e == nil {
+				return true
+			} else {
+				fmt.Fprintf(w, "Error printing report: %v\n", e)
+				pass = false
+			}
 		} else {
-			return PrintLastDispersionReport(configs[0]) == nil
+			fmt.Fprintf(w, "Error finding configs: %v\n", err)
+			pass = false
 		}
 	}
 	w.Flush()
