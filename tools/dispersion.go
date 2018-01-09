@@ -17,12 +17,15 @@ package tools
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
+	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -44,6 +47,7 @@ import (
 
 const AdminAccount = ".admin"
 const SLEEP_TIME = 100 * time.Millisecond
+const timeBetweenDispersionScans = 10 * time.Minute
 
 func getDispersionNames(container, prefix string, r ring.Ring, names chan string, cancel chan struct{}) {
 	// if looking for container names, send container=""
@@ -324,6 +328,7 @@ type Dispersion struct {
 	dirClient    *http.Client
 	lonelyClient *http.Client
 	hClient      client.ProxyClient
+	dw           *driveWatch
 
 	metricsScope tally.Scope
 
@@ -354,7 +359,7 @@ func (d *Dispersion) scanDispersionObjs(cancelChan chan struct{}) {
 		var objRing ring.Ring
 		probObjs := map[string]probObj{}
 		goodPartitions := int64(0)
-		numRescues := int64(0)
+		numRescues, objsFound, objsNeed := int64(0), int64(0), int64(0)
 		contArr := strings.Split(cr.Name, "-")
 		if len(contArr) != 3 {
 			continue
@@ -434,6 +439,8 @@ func (d *Dispersion) scanDispersionObjs(cancelChan chan struct{}) {
 						zap.Uint64("partition", partition),
 						zap.String("objPath", fmt.Sprintf("/%s/%s/%s", AdminAccount, cr.Name, objRec.Name)))
 				}
+				objsNeed += int64(len(nodes))
+				objsFound += int64(len(goodNodes))
 
 				marker = objRec.Name
 				if !d.onceFullDispersion {
@@ -442,7 +449,8 @@ func (d *Dispersion) scanDispersionObjs(cancelChan chan struct{}) {
 				}
 			}
 		}
-		d.reportObjectDispersion(policy, objRing.ReplicaCount(), goodPartitions, probObjs, numRescues)
+		d.gaugeObjectDispersion(policy, objRing.ReplicaCount(), goodPartitions, probObjs, numRescues)
+		d.makeObjectDispersionPrintableReport(policy, objRing.ReplicaCount(), goodPartitions, probObjs, objsNeed, objsFound, numRescues)
 		d.logger.Info("Dispersion report written",
 			zap.Int64("policy", policy),
 			zap.Int64("rescuing", numRescues),
@@ -460,7 +468,106 @@ func (d *Dispersion) scanDispersionObjs(cancelChan chan struct{}) {
 	}
 }
 
-func (d *Dispersion) reportObjectDispersion(
+func PrintLastDispersionReport(serverconf conf.Config) error {
+	sqlDir, ok := serverconf.Get("drive_watch", "sql_dir")
+	if !ok {
+		return fmt.Errorf("Invalid Config, no drive_watch sql_dir")
+	}
+	db, err := sql.Open("sqlite3", filepath.Join(sqlDir, DB_NAME))
+	defer db.Close()
+	if err != nil {
+		return err
+	}
+	rows, err := db.Query(`
+    SELECT d.policy, d.create_date, d.report_text FROM
+    (SELECT id, policy, MAX(create_date) mcd FROM dispersion_report GROUP BY policy) r
+    INNER JOIN dispersion_report d ON d.id = r.id`)
+	defer rows.Close()
+	if err != nil {
+		fmt.Printf("ERROR: SELECT for dispersion_report: %v\n", err)
+		return err
+	}
+	for rows.Next() {
+		var createDate time.Time
+		var policy, report string
+		if err := rows.Scan(&policy, &createDate, &report); err == nil {
+			fmt.Println(fmt.Sprintf(
+				"Latest dispersion report for policy %s on %s",
+				policy, createDate.Format(time.UnixDate)))
+			fmt.Print(report)
+			fmt.Println("-----------------------------------------------------")
+		} else {
+			fmt.Println("Error query data:", err)
+		}
+	}
+	return nil
+}
+
+func (d *Dispersion) makeObjectDispersionPrintableReport(policy int64, replicas uint64, goodPartitions int64, probObjects map[string]probObj, objsNeed int64, objsFound int64, numRescues int64) {
+
+	replMissing := map[uint64]int64{}
+	for _, po := range probObjects {
+		nodesMissing := replicas - uint64(po.nodesFound)
+		replMissing[nodesMissing] = replMissing[nodesMissing] + 1
+	}
+	objText := []struct {
+		text string
+		cnt  uint64
+	}{}
+	for pMissing, cnt := range replMissing {
+		objText = append(objText, struct {
+			text string
+			cnt  uint64
+		}{fmt.Sprintf("There were %d partitions missing %d copies.\n", cnt, pMissing), pMissing})
+	}
+	sort.Slice(objText, func(i, j int) bool { return objText[i].cnt < objText[j].cnt })
+	report := fmt.Sprintf("Using storage policy %d\nThere were %d partitions missing 0 copies.\n", policy, goodPartitions)
+	for _, t := range objText {
+		report += t.text
+	}
+	report += fmt.Sprintf("%.2f%% of object copies found (%d of %d)\nSample represents 100%% of the object partition space.\n", float64(objsFound*100)/float64(objsNeed), objsFound, objsNeed)
+
+	if d.onceFullDispersion {
+		fmt.Println(report)
+	}
+	db, err := d.dw.getDbAndLock()
+	defer d.dw.dbl.Unlock()
+	if err != nil {
+		d.logger.Error("error lock report", zap.Error(err))
+		return
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		d.logger.Error("error begin report", zap.Error(err))
+		return
+	}
+	defer tx.Rollback()
+	r, err := tx.Exec("INSERT INTO dispersion_report (policy, objects, objects_found, report_text) VALUES (?,?,?,?)", policy, objsNeed, objsFound, report)
+	if err != nil {
+		d.logger.Error("error insert dispersion_report", zap.Error(err))
+		return
+	}
+	rID, _ := r.LastInsertId()
+	recDetail, err := tx.Prepare("INSERT INTO dispersion_report_detail (dispersion_report_id, policy, partition, partition_object_path, objects_found, objects_need) VALUES (?,?,?,?,?,?)")
+	if err != nil {
+		d.logger.Error("error insert prep dispersion_report_detail", zap.Error(err))
+		return
+	}
+	for o, po := range probObjects {
+		if _, err := recDetail.Exec(rID, policy, po.part, o, po.nodesFound, replicas); err != nil {
+			d.logger.Error("error insert dispersion_report_detail", zap.Error(err))
+			return
+		}
+	}
+	r, err = tx.Exec("DELETE FROM dispersion_report_detail WHERE create_date < ?", time.Now().AddDate(0, -1, 0))
+	if err = tx.Commit(); err != nil {
+		d.logger.Error("error delete old dispersion_report_detail", zap.Error(err))
+		return
+	}
+	return
+}
+
+func (d *Dispersion) gaugeObjectDispersion(
 	policy int64, replicas uint64, goodPartitions int64,
 	probObjects map[string]probObj, numRescues int64) {
 
@@ -473,10 +580,10 @@ func (d *Dispersion) reportObjectDispersion(
 		d.logger.Info("rescue object partitions",
 			zap.Int64("rescues", numRescues), zap.Int64("policy", policy))
 	}
-	objMap := map[uint64]int64{0: goodPartitions}
+	replMissing := map[uint64]int64{0: goodPartitions}
 	for _, po := range probObjects {
 		nodesMissing := replicas - uint64(po.nodesFound)
-		objMap[nodesMissing] = objMap[nodesMissing] + 1
+		replMissing[nodesMissing] = replMissing[nodesMissing] + 1
 	}
 	if _, ok := d.objDispersionGauges[policy]; !ok {
 		d.objDispersionGauges[policy] = make([]tally.Gauge, replicas+1)
@@ -486,7 +593,7 @@ func (d *Dispersion) reportObjectDispersion(
 		}
 	}
 	for i := uint64(0); i <= replicas; i++ {
-		cnt := objMap[i]
+		cnt := replMissing[i]
 		d.objDispersionGauges[policy][i].Update(float64(cnt))
 		d.logger.Info("object partitions missing", zap.Uint64("missing", i),
 			zap.Int64("count", cnt), zap.Int64("policy", policy))
@@ -505,7 +612,7 @@ func (d *Dispersion) dispersionMonitor(ticker <-chan time.Time) {
 }
 
 func (d *Dispersion) checkDispersionRunner() {
-	if time.Since(d.lastPartProcessed) > 10*time.Minute {
+	if time.Since(d.lastPartProcessed) > timeBetweenDispersionScans {
 		if d.dispersionCanceler != nil {
 			close(d.dispersionCanceler)
 		}
@@ -527,7 +634,7 @@ func (d *Dispersion) runDispersionOnce() {
 	d.scanDispersionObjs(dummyCanceler)
 }
 
-func NewDispersion(logger srv.LowLevelLogger, hClient client.ProxyClient, metricsScope tally.Scope, certFile, keyFile string) (*Dispersion, error) {
+func NewDispersion(logger srv.LowLevelLogger, hClient client.ProxyClient, metricsScope tally.Scope, dw *driveWatch, certFile, keyFile string) (*Dispersion, error) {
 	dirTransport := &http.Transport{}
 	lonelyTransport := &http.Transport{}
 	if certFile != "" && keyFile != "" {
@@ -559,6 +666,7 @@ func NewDispersion(logger srv.LowLevelLogger, hClient client.ProxyClient, metric
 		objDispersionGauges: make(map[int64][]tally.Gauge),
 		objRescueCounters:   make(map[int64]tally.Counter),
 		metricsScope:        metricsScope,
+		dw:                  dw,
 	}, nil
 
 }

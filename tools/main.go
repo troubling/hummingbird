@@ -605,39 +605,7 @@ func (server *AutoAdmin) HealthcheckHandler(writer http.ResponseWriter, request 
 }
 
 func (server *AutoAdmin) LogRequest(next http.Handler) http.Handler {
-	fn := func(writer http.ResponseWriter, request *http.Request) {
-		newWriter := &srv.WebWriter{ResponseWriter: writer, Status: 500}
-		start := time.Now()
-		logr := server.logger.With(zap.String("txn", request.Header.Get("X-Trans-Id")))
-		request = srv.SetLogger(request, logr)
-		crc := &srv.CountingReadCloser{ReadCloser: request.Body}
-		request.Body = crc
-		next.ServeHTTP(newWriter, request)
-		forceAcquire := request.Header.Get("X-Force-Acquire") == "true"
-		lvl, _ := server.logLevel.MarshalText()
-		if newWriter.Status/100 != 2 || request.Header.Get("X-Backend-Suppress-2xx-Logging") != "t" || strings.ToUpper(string(lvl)) == "DEBUG" {
-			extraInfo := "-"
-			if forceAcquire {
-				extraInfo = "FA"
-			}
-			logr.Info("Request log",
-				zap.String("remoteAddr", request.RemoteAddr),
-				zap.String("eventTime", time.Now().Format("02/Jan/2006:15:04:05 -0700")),
-				zap.String("method", request.Method),
-				zap.String("urlPath", common.Urlencode(request.URL.Path)),
-				zap.Int("status", newWriter.Status),
-				zap.Int("contentBytesIn", crc.ByteCount),
-				zap.Int("contentBytesOut", newWriter.ByteCount),
-				zap.String("contentLengthIn", common.GetDefault(request.Header, "Content-Length", "-")),
-				zap.String("contentLengthOut", common.GetDefault(newWriter.Header(), "Content-Length", "-")),
-				zap.String("referer", common.GetDefault(request.Header, "Referer", "-")),
-				zap.String("userAgent", common.GetDefault(request.Header, "User-Agent", "-")),
-				zap.Float64("requestTimeSeconds", time.Since(start).Seconds()),
-				zap.Float64("requestTimeToHeaderSeconds", newWriter.ResponseStarted.Sub(start).Seconds()),
-				zap.String("extraInfo", extraInfo))
-		}
-	}
-	return http.HandlerFunc(fn)
+	return srv.LogRequest(server.logger, next)
 }
 
 func (a *AutoAdmin) populateDispersion() {
@@ -719,13 +687,13 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 		Separator:      promreporter.DefaultSeparator,
 	}, time.Second)
 
+	a.dw = NewDriveWatch(a.logger, a.metricsScope, serverconf, cnf, certFile, keyFile)
 	a.di, err = NewDispersion(
-		a.logger, client.NewProxyClient(pdc, nil, nil, logger), a.metricsScope, certFile, keyFile)
+		a.logger, client.NewProxyClient(pdc, nil, nil, logger), a.metricsScope, a.dw, certFile, keyFile)
 	if err != nil {
 		return ipPort, nil, nil, err
 	}
 
-	a.dw = NewDriveWatch(a.logger, a.metricsScope, serverconf, cnf, certFile, keyFile)
 	ipPort = &srv.IpPort{Ip: ip, Port: port, CertFile: certFile, KeyFile: keyFile}
 	return ipPort, a, a.logger, nil
 }

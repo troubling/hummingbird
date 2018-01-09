@@ -114,7 +114,7 @@ func (db *sqliteContainer) connect() error {
 	dbConn.SetMaxIdleConns(maxIdleConns)
 	hasDeletedNameIndex, err := schemaMigrate(dbConn)
 	if err != nil {
-		db.Close()
+		db.closeAlreadyLocked()
 		return fmt.Errorf("Error migrating database: %v", err)
 	}
 	db.hasDeletedNameIndex = hasDeletedNameIndex
@@ -891,12 +891,15 @@ func (db *sqliteContainer) DeleteObject(name string, timestamp string, storagePo
 // Close closes the underlying sqlite database connection.
 func (db *sqliteContainer) Close() error {
 	db.connectLock.Lock()
-	defer func() {
-		db.DB = nil
-		db.connectLock.Unlock()
-	}()
+	defer db.connectLock.Unlock()
+	return db.closeAlreadyLocked()
+}
+
+func (db *sqliteContainer) closeAlreadyLocked() error {
 	if db.DB != nil {
-		return db.DB.Close()
+		err := db.DB.Close()
+		db.DB = nil
+		return err
 	}
 	return nil
 }

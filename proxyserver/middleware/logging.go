@@ -20,58 +20,27 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/uber-go/tally"
-	"go.uber.org/zap"
 )
-
-type countingResponseWriter struct {
-	http.ResponseWriter
-	byteCount int
-}
-
-func (crw *countingResponseWriter) Write(b []byte) (n int, err error) {
-	n, err = crw.ResponseWriter.Write(b)
-	crw.byteCount += n
-	return n, err
-}
 
 func NewRequestLogger(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
 	requestsMetric := metricsScope.Counter("requests")
 	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(
-			func(writer http.ResponseWriter, request *http.Request) {
-				start := time.Now()
-				crw := &countingResponseWriter{ResponseWriter: writer}
-				writer = crw
-				crc := &srv.CountingReadCloser{ReadCloser: request.Body}
-				request.Body = crc
-				next.ServeHTTP(writer, request)
-				ctx := GetProxyContext(request)
-				_, status := ctx.Response()
-				ctx.Logger.Info("Request log",
-					zap.String("remoteAddr", request.RemoteAddr),
-					zap.String("eventTime", time.Now().Format("02/Jan/2006:15:04:05 -0700")),
-					zap.String("method", request.Method),
-					zap.String("urlPath", common.Urlencode(request.URL.Path)),
-					zap.Int("status", status),
-					zap.Int("contentBytesIn", crc.ByteCount),
-					zap.Int("contentBytesOut", crw.byteCount),
-					zap.String("contentLengthIn", common.GetDefault(request.Header, "Content-Length", "-")),
-					zap.String("contentLengthOut", common.GetDefault(writer.Header(), "Content-Length", "-")),
-					zap.String("referer", common.GetDefault(request.Header, "Referer", "-")),
-					zap.String("userAgent", common.GetDefault(request.Header, "User-Agent", "-")),
-					zap.Float64("requestTimeSeconds", time.Since(start).Seconds()),
-					zap.Float64("requestTimeHeaderSeconds", ctx.responseSent.Sub(start).Seconds()),
-				)
-				if ctx.Source == "" {
-					requestsMetric.Inc(1)
-					metricsScope.Counter(request.Method + "_requests").Inc(1)
-					metricsScope.Counter(fmt.Sprintf("%d_responses", status)).Inc(1)
-				}
-			},
-		)
+		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			start := time.Now()
+			newWriter := &srv.WebWriter{ResponseWriter: writer, Status: 500}
+			newReader := &srv.CountingReadCloser{ReadCloser: request.Body}
+			request.Body = newReader
+			next.ServeHTTP(newWriter, request)
+			ctx := GetProxyContext(request)
+			srv.LogRequestLine(ctx.Logger, request, start, newWriter, newReader)
+			if ctx.Source == "" {
+				requestsMetric.Inc(1)
+				metricsScope.Counter(request.Method + "_requests").Inc(1)
+				metricsScope.Counter(fmt.Sprintf("%d_responses", newWriter.Status)).Inc(1)
+			}
+		})
 	}, nil
 }

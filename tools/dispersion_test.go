@@ -61,6 +61,7 @@ type FakeRing struct {
 	Ip        string
 	Port      int
 	nodeCalls int
+	replicas  uint64
 }
 
 func (r *FakeRing) GetNodes(partition uint64) (response []*ring.Device) {
@@ -113,6 +114,9 @@ func (r *FakeRing) PartitionCount() uint64 {
 }
 
 func (r *FakeRing) ReplicaCount() uint64 {
+	if r.replicas > 0 {
+		return r.replicas
+	}
 	return 2
 }
 
@@ -141,8 +145,6 @@ func TestPutDispersionObjects(t *testing.T) {
 }
 
 func TestScanDispersionObjects(t *testing.T) {
-	//p := conf.Policy{Name: "hat"}
-
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Index(r.URL.Path, "sda") >= 0 {
 			srv.SimpleErrorResponse(w, 404, "")
@@ -167,7 +169,9 @@ func TestScanDispersionObjects(t *testing.T) {
 
 	metricsScope := tally.NewTestScope("hb_andrewd", map[string]string{})
 
-	d, _ := NewDispersion(&FakeLowLevelLogger{}, c, metricsScope, "", "")
+	fr := &FakeRing{}
+	dw, _ := getDw(fr)
+	d, _ := NewDispersion(&FakeLowLevelLogger{}, c, metricsScope, dw, "", "")
 	d.onceFullDispersion = true
 
 	dummyCanceler := make(chan struct{})
@@ -179,6 +183,54 @@ func TestScanDispersionObjects(t *testing.T) {
 		} else {
 			require.Equal(t, 0, int(v.Value()))
 		}
+	}
+}
+
+func TestScanDispersionObjectsReport(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Index(r.URL.Path, "sda") >= 0 {
+			srv.SimpleErrorResponse(w, 404, "")
+			return
+		}
+		srv.SimpleErrorResponse(w, 200, "")
+	}))
+
+	defer ts.Close()
+	u, err := url.Parse(ts.URL)
+	require.Nil(t, err)
+	host, ports, err := net.SplitHostPort(u.Host)
+	require.Nil(t, err)
+	port, err := strconv.Atoi(ports)
+	require.Nil(t, err)
+	c := &testDispersionClient{objRing: &FakeRing{
+		Devs: []*ring.Device{
+			{Device: "sda", Ip: host, Port: port, Scheme: "http"},
+			{Device: "sdb", Ip: host, Port: port, Scheme: "http"},
+			{Device: "sdc", Ip: host, Port: port, Scheme: "http"}}, nodeCalls: 3, replicas: 3},
+		contCalls: 1, objCalls: 1}
+
+	metricsScope := tally.NewTestScope("hb_andrewd", map[string]string{})
+
+	fr := &FakeRing{replicas: 3}
+	dw, _ := getDw(fr)
+	d, _ := NewDispersion(&FakeLowLevelLogger{}, c, metricsScope, dw, "", "")
+	d.onceFullDispersion = true
+
+	dummyCanceler := make(chan struct{})
+	defer close(dummyCanceler)
+	d.scanDispersionObjs(dummyCanceler)
+
+	db, err := d.dw.getDbAndLock()
+	require.Nil(t, err)
+	defer d.dw.dbl.Unlock()
+	rows, err := db.Query(`SELECT policy, report_text FROM dispersion_report`)
+	require.Nil(t, err)
+	defer rows.Close()
+	for rows.Next() {
+		var pol, rep string
+		err = rows.Scan(&pol, &rep)
+		require.Nil(t, err)
+		require.True(t, strings.Index(rep, "There were 1 partitions missing 1 copies") > 0)
 	}
 }
 

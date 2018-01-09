@@ -383,6 +383,8 @@ func main() {
 	reconFlags.Bool("rd", false, "Get cluster replication pass duration stats")
 	reconFlags.Bool("rp", false, "Get cluster replication partition/sec stats")
 	reconFlags.Bool("rc", false, "List all drives with replicator cancellations")
+	reconFlags.Bool("d", false, "Show last dispersion report")
+	reconFlags.String("c", findConfig("andrewd"), "Andrewd Config file to use (for dispersion)")
 	reconFlags.Bool("json", false, "Output in json. {\"ok\": true|false, \"msg\": \"text-output\"}")
 	reconFlags.String("certfile", "", "Cert file to use for setting up https client")
 	reconFlags.String("keyfile", "", "Key file to use for setting up https client")
