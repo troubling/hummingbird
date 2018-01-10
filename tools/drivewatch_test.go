@@ -53,7 +53,7 @@ func getDw(testRing ring.Ring, settings ...string) (*driveWatch, error) {
 	}
 
 	metricsScope := tally.NewTestScope("hb_andrewd", map[string]string{})
-	dw := NewDriveWatch(&FakeLowLevelLogger{}, metricsScope, confStr, confLoader)
+	dw := NewDriveWatch(&FakeLowLevelLogger{}, metricsScope, confStr, confLoader, "", "")
 	return dw, nil
 
 }
@@ -89,7 +89,7 @@ func TestGatherReconData(t *testing.T) {
 	dw, _ := getDw(fr)
 	defer closeDw(dw)
 
-	allWeightedServers := []ipPort{{ip: host, port: port}}
+	allWeightedServers := []ipPort{{ip: host, port: port, scheme: "http"}}
 	unmountedDevices, downServers := dw.gatherReconData(allWeightedServers)
 	require.Equal(t, len(downServers), 0)
 	require.Equal(t, len(unmountedDevices), 1)
@@ -149,11 +149,11 @@ func TestPopulateDbWithRing(t *testing.T) {
 	port, _ := strconv.Atoi(ports)
 
 	fr.Devs = append(fr.Devs,
-		&ring.Device{Id: 1, Device: "sdb1", Ip: "1.2", Port: 1, Weight: 1.1})
+		&ring.Device{Id: 1, Device: "sdb1", Ip: "1.2", Port: 1, Weight: 1.1, Scheme: "http"})
 	fr.Devs = append(fr.Devs,
-		&ring.Device{Id: 2, Device: "sdb2", Ip: "1.2", Port: 1, Weight: 3.5})
+		&ring.Device{Id: 2, Device: "sdb2", Ip: "1.2", Port: 1, Weight: 3.5, Scheme: "http"})
 	fr.Devs = append(fr.Devs,
-		&ring.Device{Id: 2, Device: "sdb3", Ip: host, Port: port, Weight: 5.5})
+		&ring.Device{Id: 2, Device: "sdb3", Ip: host, Port: port, Weight: 5.5, Scheme: "http"})
 
 	dw, _ := getDw(fr)
 	defer closeDw(dw)
@@ -219,7 +219,7 @@ func TestUpdateDb(t *testing.T) {
 	port, _ := strconv.Atoi(ports)
 
 	fr.Devs = append(fr.Devs,
-		&ring.Device{Id: 1, Device: "sdb1", Ip: host, Port: port, Weight: 1.1})
+		&ring.Device{Id: 1, Device: "sdb1", Ip: host, Port: port, Weight: 1.1, Scheme: "http"})
 	p := conf.Policy{Name: "hat"}
 	rd := ringData{r: fr, p: &p, builderPath: "hey"}
 
@@ -311,10 +311,10 @@ func TestUpdateRing(t *testing.T) {
 	err = ring.CreateRing(ringBuilderPath, 4, 1, 1, false)
 	require.Equal(t, err, nil)
 
-	_, err = ring.AddDevice(ringBuilderPath, -1, 1, 1, host, int64(port), host, 6500, "sdb1", 1.0, false)
+	_, err = ring.AddDevice(ringBuilderPath, -1, 1, 1, "http", host, int64(port), host, 6500, "sdb1", 1.0, false)
 	require.Equal(t, err, nil)
 
-	_, err = ring.AddDevice(ringBuilderPath, -1, 1, 1, host, int64(port), host, 6500, "sdb2", 1.0, false)
+	_, err = ring.AddDevice(ringBuilderPath, -1, 1, 1, "http", host, int64(port), host, 6500, "sdb2", 1.0, false)
 	require.Equal(t, err, nil)
 
 	_, err = os.Stat(ringBuilderPath)
@@ -323,7 +323,7 @@ func TestUpdateRing(t *testing.T) {
 	b, err := ring.NewRingBuilderFromFile(ringBuilderPath, false)
 	require.Equal(t, err, nil)
 	for _, rbd := range b.SearchDevs(-1, -1, host, int64(port), "", -1,
-		"", -1, "") {
+		"", -1, "", "http") {
 		require.Equal(t, 1.0, rbd.Weight)
 	}
 	_, err = dw.updateRing(rd)
@@ -331,7 +331,7 @@ func TestUpdateRing(t *testing.T) {
 	b, err = ring.NewRingBuilderFromFile(ringBuilderPath, false)
 	require.Equal(t, err, nil)
 	for _, rbd := range b.SearchDevs(-1, -1, host, int64(port), "", -1,
-		"", -1, "") {
+		"", -1, "", "http") {
 		if rbd.Device == "sdb1" {
 			require.Equal(t, 0.0, rbd.Weight)
 		} else {

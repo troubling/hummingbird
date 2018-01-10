@@ -87,9 +87,9 @@ func TestUpdaterProcessAsync(t *testing.T) {
 
 	fakering := &test.FakeRing{
 		MockDevices: []*ring.Device{
-			{Ip: u.Hostname(), Port: port, Device: "sda"},
-			{Ip: u.Hostname(), Port: port, Device: "sdb"},
-			{Ip: u.Hostname(), Port: port, Device: "sdc"},
+			{Ip: u.Hostname(), Port: port, Device: "sda", Scheme: "http"},
+			{Ip: u.Hostname(), Port: port, Device: "sdb", Scheme: "http"},
+			{Ip: u.Hostname(), Port: port, Device: "sdc", Scheme: "http"},
 		},
 	}
 	r := &Replicator{updateStat: make(chan statUpdate, 100), client: http.DefaultClient, containerRing: fakering}

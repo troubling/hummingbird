@@ -32,6 +32,13 @@ import (
 
 var waitForAccountUpdate = time.Second * 5
 
+func splitHeader(header string) []string {
+	if header == "" {
+		return []string{}
+	}
+	return strings.Split(header, ",")
+}
+
 func (server *ContainerServer) accountUpdate(writer http.ResponseWriter, request *http.Request, vars map[string]string, info *ContainerInfo, logger srv.LowLevelLogger) {
 	firstDone := make(chan struct{}, 1)
 	go func() {
@@ -42,16 +49,22 @@ func (server *ContainerServer) accountUpdate(writer http.ResponseWriter, request
 			logger.Error("Account update failed: bad partition")
 			return
 		}
-		hosts := strings.Split(request.Header.Get("X-Account-Host"), ",")
-		devices := strings.Split(request.Header.Get("X-Account-Device"), ",")
+		hosts := splitHeader(request.Header.Get("X-Account-Host"))
+		devices := splitHeader(request.Header.Get("X-Account-Device"))
+
 		if len(hosts) != len(devices) {
 			logger.Error("Account update failed: different numbers of hosts and devices in request")
 			return
 		}
+		schemes := splitHeader(request.Header.Get("X-Account-Scheme"))
+		for len(schemes) < len(hosts) {
+			schemes = append(schemes, "http")
+		}
 		for index, host := range hosts {
-			if err := accountUpdateHelper(info, host, devices[index], accpartition, vars["account"], vars["container"], request.Header.Get("X-Trans-Id"), request.Header.Get("X-Account-Override-Deleted") == "yes", server.updateClient); err != nil {
+			if err := accountUpdateHelper(info, schemes[index], host, devices[index], accpartition, vars["account"], vars["container"], request.Header.Get("X-Trans-Id"), request.Header.Get("X-Account-Override-Deleted") == "yes", server.updateClient); err != nil {
 				logger.Error(
 					"Account update failed:", zap.Error(err),
+					zap.String("schemes[index]", schemes[index]),
 					zap.String("hosts[index]", hosts[index]),
 					zap.String("devices[index]", devices[index]),
 				)
@@ -64,8 +77,8 @@ func (server *ContainerServer) accountUpdate(writer http.ResponseWriter, request
 	}
 }
 
-func accountUpdateHelper(info *ContainerInfo, host, device, accpartition, account, container, transID string, accountOverrideDeleted bool, updateClient *http.Client) error {
-	url := fmt.Sprintf("http://%s/%s/%s/%s/%s", host, device, accpartition,
+func accountUpdateHelper(info *ContainerInfo, scheme, host, device, accpartition, account, container, transID string, accountOverrideDeleted bool, updateClient *http.Client) error {
+	url := fmt.Sprintf("%s://%s/%s/%s/%s/%s", scheme, host, device, accpartition,
 		common.Urlencode(account), common.Urlencode(container))
 	req, err := http.NewRequest("PUT", url, nil)
 	if err != nil {

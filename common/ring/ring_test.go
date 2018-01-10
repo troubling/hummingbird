@@ -35,7 +35,7 @@ func writeARing(w io.Writer, deviceCount int, replicaCount int, partShift uint, 
 	devs := []*Device{}
 	for i := 0; i < deviceCount; i++ {
 		ip := fmt.Sprintf("127.0.0.%d", i)
-		devs = append(devs, &Device{Id: i, Device: "sda", Ip: ip, Meta: "", Port: 1234, Region: 0, ReplicationIp: ip, ReplicationPort: 1234, Weight: 1, Zone: 0})
+		devs = append(devs, &Device{Id: i, Device: "sda", Scheme: "http", Ip: ip, Meta: "", Port: 1234, Region: 0, ReplicationIp: ip, ReplicationPort: 1234, Weight: 1, Zone: 0})
 	}
 	if withANil >= 0 {
 		devs[withANil] = nil

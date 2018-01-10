@@ -28,6 +28,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/http2"
+
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
@@ -39,7 +41,7 @@ import (
 var DB_NAME = "andrewd.db"
 
 type ipPort struct {
-	ip              string
+	ip, scheme      string
 	port            int
 	replicationPort int
 }
@@ -73,11 +75,11 @@ type ReportData struct {
 }
 
 type driveWatch struct {
-	policyToRing map[int]ringData
-	logger       srv.LowLevelLogger
-	db           *sql.DB
-	dbl          sync.Mutex
-
+	policyToRing    map[int]ringData
+	logger          srv.LowLevelLogger
+	db              *sql.DB
+	dbl             sync.Mutex
+	client          *http.Client
 	maxBadDevAge    time.Duration
 	ringUpdateFreq  time.Duration
 	runFreq         time.Duration
@@ -107,7 +109,7 @@ func getRingData(oring ring.Ring, onlyWeighted bool) (map[string]*ring.Device, [
 		if !onlyWeighted || dev.Weight > 0 {
 			if _, ok := weightedServers[serverId(dev.Ip, dev.Port)]; !ok {
 				servers =
-					append(servers, ipPort{ip: dev.Ip, port: dev.Port, replicationPort: dev.ReplicationPort})
+					append(servers, ipPort{ip: dev.Ip, port: dev.Port, scheme: dev.Scheme, replicationPort: dev.ReplicationPort})
 				weightedServers[serverId(dev.Ip, dev.Port)] = true
 			}
 		}
@@ -221,19 +223,17 @@ func (dw *driveWatch) getDbAndLock() (*sql.DB, error) {
 func (dw *driveWatch) gatherReconData(servers []ipPort) (unmountedDevices map[string]ring.Device, downServers map[string]ipPort) {
 	downServers = make(map[string]ipPort)
 	unmountedDevices = make(map[string]ring.Device)
-	client := http.Client{Timeout: 10 * time.Second}
-
 	for _, s := range servers {
-		serverUrl := fmt.Sprintf("http://%s:%d/recon/unmounted", s.ip, s.port)
+		serverUrl := fmt.Sprintf("%s://%s:%d/recon/unmounted", s.scheme, s.ip, s.port)
 		req, err := http.NewRequest("GET", serverUrl, nil)
 		if err != nil {
 			dw.logger.Error("Could not create recon request", zap.String("url", serverUrl), zap.Error(err))
 			continue
 		}
-		resp, err := client.Do(req)
+		resp, err := dw.client.Do(req)
 		if err != nil {
 			dw.logger.Error("Could not do recon request", zap.String("url", serverUrl), zap.Error(err))
-			downServers[serverId(s.ip, s.port)] = ipPort{ip: s.ip, port: s.port}
+			downServers[serverId(s.ip, s.port)] = ipPort{scheme: s.scheme, ip: s.ip, port: s.port}
 			continue
 		}
 		data, err := ioutil.ReadAll(resp.Body)
@@ -563,7 +563,7 @@ func (dw *driveWatch) updateRing(rd ringData) (outputStr string, err error) {
 	}
 	for _, dev := range toZeroDevs {
 		for _, rbd := range b.SearchDevs(-1, -1, dev.Ip, int64(dev.Port), "", -1,
-			dev.Device, -1, "") {
+			dev.Device, -1, "", "") {
 			deviceLoc := deviceId(rbd.Ip, int(rbd.Port), rbd.Device)
 			if e := b.SetDevWeight(rbd.Id, 0); e != nil {
 				dw.logger.Error("erroring setting 0 weight",
@@ -575,7 +575,7 @@ func (dw *driveWatch) updateRing(rd ringData) (outputStr string, err error) {
 			if e := b.UpdateDevInfo(rbd.Id, rbd.Ip, rbd.Port, rbd.ReplicationIp,
 				rbd.ReplicationPort, rbd.Device,
 				fmt.Sprintf("andrewd zeroed weight on: %s",
-					time.Now().UTC().Format(time.UnixDate))); e != nil {
+					time.Now().UTC().Format(time.UnixDate)), ""); e != nil {
 				dw.logger.Error("erroring setting metadata",
 					zap.String("deviceLoc", deviceLoc), zap.Error(e))
 			}
@@ -652,7 +652,7 @@ func (dw *driveWatch) Run() {
 }
 
 func NewDriveWatch(logger srv.LowLevelLogger,
-	metricsScope tally.Scope, serverconf conf.Config, cnf srv.ConfigLoader) *driveWatch {
+	metricsScope tally.Scope, serverconf conf.Config, cnf srv.ConfigLoader, certFile, keyFile string) *driveWatch {
 	pl, err := cnf.GetPolicies()
 	if err != nil {
 		panic(fmt.Sprintf("Unable to load policies: %v", err))
@@ -692,9 +692,25 @@ func NewDriveWatch(logger srv.LowLevelLogger,
 	if !sqlDirOk {
 		panic(fmt.Sprintf("Invalid drive_watch Config, could not open sql_dir: %s. Please create that directory.", sqlDir))
 	}
+	transport := &http.Transport{
+		MaxIdleConnsPerHost: 100,
+		MaxIdleConns:        0,
+	}
+	if certFile != "" && keyFile != "" {
+		tlsConf, err := common.NewClientTLSConfig(certFile, keyFile)
+		if err != nil {
+			panic(fmt.Sprintf("Error getting TLS config: %v", err))
+		}
+		transport.TLSClientConfig = tlsConf
+		if err = http2.ConfigureTransport(transport); err != nil {
+			panic(fmt.Sprintf("Error setting up http2: %v", err))
+		}
+	}
 	return &driveWatch{
 		policyToRing: pMap,
 		logger:       logger,
+		client: &http.Client{Timeout: 10 * time.Second,
+			Transport: transport},
 		//metricsScope: metricsScope,
 		runFreq:         time.Duration(serverconf.GetInt("drive_watch", "run_frequency_sec", 3600) * int64(time.Second)),
 		maxBadDevAge:    time.Duration(serverconf.GetInt("drive_watch", "max_bad_drive_age_sec", common.ONE_WEEK) * int64(time.Second)),

@@ -40,6 +40,7 @@ import (
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/objectserver"
+	"golang.org/x/net/http2"
 )
 
 // ContentLength parses and returns the Content-Length for the object.
@@ -274,6 +275,29 @@ func ecEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.Fl
 	if err != nil {
 		return nil, err
 	}
+	certFile := config.GetDefault("app:object-server", "cert_file", "")
+	keyFile := config.GetDefault("app:object-server", "key_file", "")
+	transport := &http.Transport{
+		MaxIdleConnsPerHost: 256,
+		MaxIdleConns:        0,
+		IdleConnTimeout:     5 * time.Second,
+		DisableCompression:  true,
+		Dial: (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 5 * time.Second,
+		}).Dial,
+		ExpectContinueTimeout: 10 * time.Minute,
+	}
+	if certFile != "" && keyFile != "" {
+		tlsConf, err := common.NewClientTLSConfig(certFile, keyFile)
+		if err != nil {
+			return nil, err
+		}
+		transport.TLSClientConfig = tlsConf
+		if err = http2.ConfigureTransport(transport); err != nil {
+			return nil, err
+		}
+	}
 	logger, _ := zap.NewProduction()
 	engine := &ecEngine{
 		driveRoot:      driveRoot,
@@ -285,18 +309,8 @@ func ecEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.Fl
 		ring:           r,
 		idbs:           map[string]*IndexDB{},
 		client: &http.Client{
-			Timeout: 120 * time.Minute,
-			Transport: &http.Transport{
-				MaxIdleConnsPerHost: 256,
-				MaxIdleConns:        0,
-				IdleConnTimeout:     5 * time.Second,
-				DisableCompression:  true,
-				Dial: (&net.Dialer{
-					Timeout:   10 * time.Second,
-					KeepAlive: 5 * time.Second,
-				}).Dial,
-				ExpectContinueTimeout: 10 * time.Minute,
-			},
+			Timeout:   120 * time.Minute,
+			Transport: transport,
 		},
 	}
 	if engine.dataFrags, err = strconv.Atoi(policy.Config["data_frags"]); err != nil {

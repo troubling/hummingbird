@@ -98,6 +98,7 @@ type RingBuilderDevice struct {
 	Device          string  `pickle:"device"`
 	Zone            int64   `pickle:"zone"`
 	Weight          float64 `pickle:"weight"`
+	Scheme          string  `pickle:"scheme"`
 	Ip              string  `pickle:"ip"`
 	Region          int64   `pickle:"region"`
 	Port            int64   `pickle:"port"`
@@ -1417,7 +1418,7 @@ GATHER:
 	return changedParts, b.GetBalance(), removedDevs, nil
 }
 
-func (b *RingBuilder) SearchDevs(region, zone int64, ip string, port int64, repIp string, repPort int64, device string, weight float64, meta string) []*RingBuilderDevice {
+func (b *RingBuilder) SearchDevs(region, zone int64, ip string, port int64, repIp string, repPort int64, device string, weight float64, meta string, scheme string) []*RingBuilderDevice {
 	foundDevs := make([]*RingBuilderDevice, 0, len(b.Devs))
 	for next, dev := devIterator(b.Devs); dev != nil; dev = next() {
 		if region >= 0 && region != dev.Region {
@@ -1447,12 +1448,15 @@ func (b *RingBuilder) SearchDevs(region, zone int64, ip string, port int64, repI
 		if meta != "" && strings.Contains(dev.Meta, meta) {
 			continue
 		}
+		if scheme != "" && scheme != dev.Scheme {
+			continue
+		}
 		foundDevs = append(foundDevs, dev)
 	}
 	return foundDevs
 }
 
-func (b *RingBuilder) UpdateDevInfo(devId int64, newIp string, newPort int64, newRepIp string, newRepPort int64, newDevice, newMeta string) error {
+func (b *RingBuilder) UpdateDevInfo(devId int64, newIp string, newPort int64, newRepIp string, newRepPort int64, newDevice, newMeta, newScheme string) error {
 	// first check to make sure another device doesn't have the ip/port/device
 	if newIp == "" {
 		newIp = b.Devs[devId].Ip
@@ -1479,6 +1483,12 @@ func (b *RingBuilder) UpdateDevInfo(devId int64, newIp string, newPort int64, ne
 	}
 	if newMeta != "" {
 		b.Devs[devId].Meta = newMeta
+	}
+	if newScheme != "" {
+		if newScheme != "http" && newScheme != "https" {
+			return errors.New("scheme can only http or https")
+		}
+		b.Devs[devId].Scheme = newScheme
 	}
 	return nil
 }
@@ -1513,6 +1523,7 @@ func (b *RingBuilder) GetRing() *hashRing {
 				Id:              int(b.Devs[i].Id),
 				Device:          b.Devs[i].Device,
 				Ip:              b.Devs[i].Ip,
+				Scheme:          b.Devs[i].Scheme,
 				Meta:            b.Devs[i].Meta,
 				Port:            int(b.Devs[i].Port),
 				Region:          int(b.Devs[i].Region),
@@ -1655,7 +1666,7 @@ func Rebalance(builderPath string, debug bool) error {
 // AddDevice adds a device to the builder filer
 //   builderpath must include the filename of the builder file.
 //   Returns the id of the device in the ring.
-func AddDevice(builderPath string, id, region, zone int64, ip string, port int64, replicationIp string, replicationPort int64, device string, weight float64, debug bool) (int64, error) {
+func AddDevice(builderPath string, id, region, zone int64, scheme, ip string, port int64, replicationIp string, replicationPort int64, device string, weight float64, debug bool) (int64, error) {
 	builder, err := NewRingBuilderFromFile(builderPath, debug)
 	if err != nil {
 		return -1, err
@@ -1664,6 +1675,7 @@ func AddDevice(builderPath string, id, region, zone int64, ip string, port int64
 		Id:              id,
 		Region:          region,
 		Zone:            zone,
+		Scheme:          scheme,
 		Ip:              ip,
 		Port:            port,
 		ReplicationIp:   replicationIp,
@@ -1682,12 +1694,12 @@ func AddDevice(builderPath string, id, region, zone int64, ip string, port int64
 	return id, nil
 }
 
-func Search(builderPath string, region, zone int64, ip string, port int64, repIp string, repPort int64, device string, weight float64, meta string) ([]*RingBuilderDevice, error) {
+func Search(builderPath string, region, zone int64, ip string, port int64, repIp string, repPort int64, device string, weight float64, meta string, scheme string) ([]*RingBuilderDevice, error) {
 	builder, err := NewRingBuilderFromFile(builderPath, false)
 	if err != nil {
 		return nil, err
 	}
-	devs := builder.SearchDevs(region, zone, ip, port, repIp, repPort, device, weight, meta)
+	devs := builder.SearchDevs(region, zone, ip, port, repIp, repPort, device, weight, meta, scheme)
 	return devs, nil
 }
 
@@ -1718,13 +1730,13 @@ func RemoveDevs(builderPath string, devs []*RingBuilderDevice) error {
 	return nil
 }
 
-func SetInfo(builderPath string, devs []*RingBuilderDevice, newIp string, newPort int64, newRepIp string, newRepPort int64, newDevice, newMeta string) error {
+func SetInfo(builderPath string, devs []*RingBuilderDevice, newIp string, newPort int64, newRepIp string, newRepPort int64, newDevice, newMeta string, newScheme string) error {
 	builder, err := NewRingBuilderFromFile(builderPath, false)
 	if err != nil {
 		return err
 	}
 	for _, dev := range devs {
-		err := builder.UpdateDevInfo(dev.Id, newIp, newPort, newRepIp, newRepPort, newDevice, newMeta)
+		err := builder.UpdateDevInfo(dev.Id, newIp, newPort, newRepIp, newRepPort, newDevice, newMeta, newScheme)
 		if err != nil {
 			return err
 		}

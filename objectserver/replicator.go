@@ -40,6 +40,7 @@ import (
 	"github.com/troubling/hummingbird/middleware"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/net/http2"
 )
 
 const (
@@ -354,7 +355,7 @@ func (rd *replicationDevice) beginReplication(dev *ring.Device, partition string
 	}
 	headers["X-Trans-Id"] = fmt.Sprintf("%s-%d", common.UUID(), dev.Id)
 
-	if rc, err := NewRepConn(dev, partition, rd.policy, headers); err != nil {
+	if rc, err := NewRepConn(dev, partition, rd.policy, headers, rd.r.CertFile, rd.r.KeyFile); err != nil {
 		rChan <- beginReplicationResponse{dev: dev, err: err}
 	} else if err := rc.SendMessage(BeginReplicationRequest{Device: dev.Device, Partition: partition, NeedHashes: hashes}); err != nil {
 		rChan <- beginReplicationResponse{dev: dev, err: err}
@@ -769,6 +770,8 @@ type Replicator struct {
 	reconCachePath      string
 	port                int
 	bindIp              string
+	CertFile            string
+	KeyFile             string
 	devices             map[string]bool
 	partitions          map[string]bool
 	quorumDelete        bool
@@ -1130,9 +1133,9 @@ func (r *Replicator) Run() {
 	r.reportStats()
 }
 
-func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (ip string, port int, server srv.Server, logger srv.LowLevelLogger, err error) {
+func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (ipPort *srv.IpPort, server srv.Server, logger srv.LowLevelLogger, err error) {
 	if !serverconf.HasSection("object-replicator") {
-		return "", 0, nil, nil, fmt.Errorf("Unable to find object-replicator config section")
+		return ipPort, nil, nil, fmt.Errorf("Unable to find object-replicator config section")
 	}
 	concurrency := int(serverconf.GetInt("object-replicator", "concurrency", 1))
 	updaterConcurrency := int(serverconf.GetInt("object-updater", "concurrency", 2))
@@ -1141,6 +1144,22 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 	logLevelString := serverconf.GetDefault("object-replicator", "log_level", "INFO")
 	logLevel := zap.NewAtomicLevel()
 	logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
+	certFile := serverconf.GetDefault("object-replicator", "cert_file", "")
+	keyFile := serverconf.GetDefault("object-replicator", "key_file", "")
+	transport := &http.Transport{
+		MaxIdleConnsPerHost: 100,
+		MaxIdleConns:        0,
+	}
+	if certFile != "" && keyFile != "" {
+		tlsConf, err := common.NewClientTLSConfig(certFile, keyFile)
+		if err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error getting TLS config: %v", err)
+		}
+		transport.TLSClientConfig = tlsConf
+		if err = http2.ConfigureTransport(transport); err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error setting up http2: %v", err)
+		}
+	}
 
 	replicator := &Replicator{
 		reserve:             serverconf.GetInt("object-replicator", "fallocate_reserve", 0),
@@ -1149,6 +1168,8 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 		deviceRoot:          serverconf.GetDefault("object-replicator", "devices", "/srv/node"),
 		port:                int(serverconf.GetInt("object-replicator", "bind_port", common.DefaultObjectReplicatorPort)),
 		bindIp:              serverconf.GetDefault("object-replicator", "bind_ip", "0.0.0.0"),
+		CertFile:            certFile,
+		KeyFile:             keyFile,
 		quorumDelete:        serverconf.GetBool("object-replicator", "quorum_delete", false),
 		reclaimAge:          int64(serverconf.GetInt("object-replicator", "reclaim_age", int64(common.ONE_WEEK))),
 		incomingLimitPerDev: int64(serverconf.GetInt("object-replicator", "incoming_limit", 3)),
@@ -1164,8 +1185,11 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 		devices:                 make(map[string]bool),
 		partitions:              make(map[string]bool),
 		onceDone:                make(chan struct{}),
-		client:                  &http.Client{Timeout: time.Second * 60},
-		incomingSem:             make(map[string]chan struct{}),
+		client: &http.Client{
+			Timeout:   time.Second * 60,
+			Transport: transport,
+		},
+		incomingSem: make(map[string]chan struct{}),
 		stats: map[string]map[string]*DeviceStats{
 			"object-replicator": {},
 			"object-updater":    {},
@@ -1176,27 +1200,27 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 
 	hashPathPrefix, hashPathSuffix, err := cnf.GetHashPrefixAndSuffix()
 	if err != nil {
-		return "", 0, nil, nil, fmt.Errorf("Unable to get hash prefix and suffix: %s", err)
+		return ipPort, nil, nil, fmt.Errorf("Unable to get hash prefix and suffix: %s", err)
 	}
 	if replicator.policies, err = cnf.GetPolicies(); err != nil {
-		return "", 0, nil, nil, err
+		return ipPort, nil, nil, err
 	}
 	for _, policy := range replicator.policies {
 		if !(policy.Type == "replication" || policy.Type == "replication-nursery" || policy.Type == "hec") {
 			continue
 		}
 		if replicator.objectRings[policy.Index], err = cnf.GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index); err != nil {
-			return "", 0, nil, nil, fmt.Errorf("Unable to load ring for Policy %d: %s", policy.Index, err)
+			return ipPort, nil, nil, fmt.Errorf("Unable to load ring for Policy %d: %s", policy.Index, err)
 		}
 	}
 	if replicator.containerRing, err = cnf.GetRing("container", hashPathPrefix, hashPathSuffix, 0); err != nil {
-		return "", 0, nil, nil, fmt.Errorf("Error loading container ring: %v", err)
+		return ipPort, nil, nil, fmt.Errorf("Error loading container ring: %v", err)
 	}
 	if replicator.objEngines, err = buildEngines(serverconf, flags, cnf); err != nil {
-		return "", 0, nil, nil, err
+		return ipPort, nil, nil, err
 	}
 	if replicator.logger, err = srv.SetupLogger("object-replicator", &logLevel, flags); err != nil {
-		return "", 0, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
+		return ipPort, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 	devices_flag := flags.Lookup("devices")
 	if devices_flag != nil {
@@ -1223,5 +1247,6 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 	if serverconf.HasSection("object-auditor") {
 		replicator.auditor, err = NewAuditorDaemon(serverconf, flags, cnf)
 	}
-	return replicator.bindIp, replicator.port, replicator, replicator.logger, err
+	ipPort = &srv.IpPort{Ip: replicator.bindIp, Port: replicator.port, CertFile: certFile, KeyFile: keyFile}
+	return ipPort, replicator, replicator.logger, err
 }

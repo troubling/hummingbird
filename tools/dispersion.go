@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/net/http2"
 
 	"github.com/troubling/hummingbird/accountserver"
 	"github.com/troubling/hummingbird/client"
@@ -290,18 +291,17 @@ func putDispersionObjects(hClient client.ProxyClient, policy *conf.Policy, logge
 	return false
 }
 
-func rescueLonelyPartition(policy int64, partition uint64, goodNode *ring.Device, toNodes []*ring.Device, moreNodes ring.MoreNodes, resultChan chan<- string) {
+func rescueLonelyPartition(policy int64, partition uint64, goodNode *ring.Device, toNodes []*ring.Device, moreNodes ring.MoreNodes, resultChan chan<- string, c *http.Client) {
 	if len(toNodes) == 0 {
 		toNodes = append(toNodes, moreNodes.Next())
 	}
-	c := http.Client{Timeout: time.Hour}
 	tries := 1
 	for {
 		res, success := objectserver.SendPriRepJob(&objectserver.PriorityRepJob{
 			Partition:  partition,
 			FromDevice: goodNode,
 			ToDevices:  toNodes,
-			Policy:     int(policy)}, &c)
+			Policy:     int(policy)}, c)
 		if success {
 			resultChan <- res
 			return
@@ -324,9 +324,11 @@ type probObj struct {
 }
 
 type Dispersion struct {
-	logger  srv.LowLevelLogger
-	hClient client.ProxyClient
-	dw      *driveWatch
+	logger       srv.LowLevelLogger
+	dirClient    *http.Client
+	lonelyClient *http.Client
+	hClient      client.ProxyClient
+	dw           *driveWatch
 
 	metricsScope tally.Scope
 
@@ -347,7 +349,6 @@ func (d *Dispersion) scanDispersionObjs(cancelChan chan struct{}) {
 		d.logger.Error("Could not get container listing", zap.Error(err))
 		return
 	}
-	dirClient := http.Client{Timeout: 10 * time.Second}
 
 	if len(cRecords) == 0 {
 		d.logger.Error("No dispersion containers found")
@@ -408,11 +409,11 @@ func (d *Dispersion) scanDispersionObjs(cancelChan chan struct{}) {
 				notFoundNodes := []*ring.Device{}
 
 				for _, device := range nodes {
-					url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", device.Ip, device.Port, device.Device, partition,
+					url := fmt.Sprintf("%s://%s:%d/%s/%d/%s/%s/%s", device.Scheme, device.Ip, device.Port, device.Device, partition,
 						common.Urlencode(AdminAccount), common.Urlencode(cr.Name), common.Urlencode(objRec.Name))
 					req, err := http.NewRequest("HEAD", url, nil)
 					req.Header.Set("X-Backend-Storage-Policy-Index", strconv.FormatInt(policy, 10))
-					resp, err := dirClient.Do(req)
+					resp, err := d.dirClient.Do(req)
 
 					if err == nil && resp.StatusCode/100 == 2 {
 						goodNodes = append(goodNodes, device)
@@ -431,7 +432,7 @@ func (d *Dispersion) scanDispersionObjs(cancelChan chan struct{}) {
 				if len(nodes) > 1 && len(goodNodes) == 1 {
 					numRescues += 1
 					go rescueLonelyPartition(policy, partition, goodNodes[0],
-						notFoundNodes, objRing.GetMoreNodes(partition), resultChan)
+						notFoundNodes, objRing.GetMoreNodes(partition), resultChan, d.lonelyClient)
 				}
 				if len(goodNodes) == 0 {
 					d.logger.Error("LOST Partition",
@@ -633,8 +634,32 @@ func (d *Dispersion) runDispersionOnce() {
 	d.scanDispersionObjs(dummyCanceler)
 }
 
-func NewDispersion(logger srv.LowLevelLogger, hClient client.ProxyClient, metricsScope tally.Scope, dw *driveWatch) *Dispersion {
+func NewDispersion(logger srv.LowLevelLogger, hClient client.ProxyClient, metricsScope tally.Scope, dw *driveWatch, certFile, keyFile string) (*Dispersion, error) {
+	dirTransport := &http.Transport{}
+	lonelyTransport := &http.Transport{}
+	if certFile != "" && keyFile != "" {
+		dirTLSConf, err := common.NewClientTLSConfig(certFile, keyFile)
+		if err != nil {
+			return nil, fmt.Errorf("Error getting TLS config: %v", err)
+		}
+		dirTransport.TLSClientConfig = dirTLSConf
+		if err = http2.ConfigureTransport(dirTransport); err != nil {
+			return nil, fmt.Errorf("Error setting up http2: %v", err)
+		}
+		lonelyTLSConf, err := common.NewClientTLSConfig(certFile, keyFile)
+		if err != nil {
+			return nil, fmt.Errorf("Error getting TLS config: %v", err)
+		}
+		lonelyTransport.TLSClientConfig = lonelyTLSConf
+		if err = http2.ConfigureTransport(lonelyTransport); err != nil {
+			return nil, fmt.Errorf("Error setting up http2: %v", err)
+		}
+	}
 	return &Dispersion{
+		dirClient: &http.Client{Timeout: 10 * time.Second,
+			Transport: dirTransport},
+		lonelyClient: &http.Client{Timeout: time.Hour,
+			Transport: lonelyTransport},
 		logger:              logger,
 		hClient:             hClient,
 		partitionProcessed:  make(chan struct{}),
@@ -642,6 +667,6 @@ func NewDispersion(logger srv.LowLevelLogger, hClient client.ProxyClient, metric
 		objRescueCounters:   make(map[int64]tally.Counter),
 		metricsScope:        metricsScope,
 		dw:                  dw,
-	}
+	}, nil
 
 }

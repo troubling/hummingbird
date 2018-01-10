@@ -103,7 +103,7 @@ func (o *ecObject) Copy(dsts ...io.Writer) (written int64, err error) {
 	}
 	bodies := make([]io.Reader, len(nodes))
 	for i, node := range nodes {
-		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s:%d/ec-frag/%s/%s/%d", node.Ip, node.Port, node.Device, o.Hash, i), nil)
+		req, err := http.NewRequest("GET", fmt.Sprintf("%s://%s:%d/ec-frag/%s/%s/%d", node.Scheme, node.Ip, node.Port, node.Device, o.Hash, i), nil)
 		if err != nil {
 			continue
 		}
@@ -202,7 +202,7 @@ func (o *ecObject) Stabilize(ring ring.Ring, dev *ring.Device, policy int) error
 	}
 	if o.Deletion {
 		for i, node := range nodes {
-			req, err := http.NewRequest("DELETE", fmt.Sprintf("http://%s:%d/ec-frag/%s/%s/%d", node.Ip, node.Port, node.Device, o.Hash, i), nil)
+			req, err := http.NewRequest("DELETE", fmt.Sprintf("%s://%s:%d/ec-frag/%s/%s/%d", node.Scheme, node.Ip, node.Port, node.Device, o.Hash, i), nil)
 			if err != nil {
 				return err
 			}
@@ -245,7 +245,7 @@ func (o *ecObject) Stabilize(ring ring.Ring, dev *ring.Device, policy int) error
 			defer rp.Close()
 			defer wp.Close()
 			writers[i] = wp
-			req, err := http.NewRequest("PUT", fmt.Sprintf("http://%s:%d/ec-frag/%s/%s/%d", node.Ip, node.Port, node.Device, o.Hash, i), rp)
+			req, err := http.NewRequest("PUT", fmt.Sprintf("%s://%s:%d/ec-frag/%s/%s/%d", node.Scheme, node.Ip, node.Port, node.Device, o.Hash, i), rp)
 			if err != nil {
 				return err
 			}

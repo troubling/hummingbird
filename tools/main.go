@@ -120,7 +120,7 @@ func storageDirectory(datadir string, partNum uint64, nameHash string, policy *c
 	return filepath.Join(datadir, partition, nameHash[len(nameHash)-3:], nameHash)
 }
 
-func curlHeadCommand(ipStr string, port int, device string, partNum uint64, target string, policy int) string {
+func curlHeadCommand(scheme string, ipStr string, port int, device string, partNum uint64, target string, policy int) string {
 	formatted_ip := ipStr
 	ip := net.ParseIP(ipStr)
 	if ip != nil && strings.Contains(ipStr, ":") {
@@ -130,7 +130,7 @@ func curlHeadCommand(ipStr string, port int, device string, partNum uint64, targ
 	if policy > 0 {
 		policyStr = fmt.Sprintf(" -H \"X-Backend-Storage-Policy-Index: %v\"", policy)
 	}
-	return fmt.Sprintf("curl -g -I -XHEAD \"http://%v:%v/%v/%v/%v\"%v", formatted_ip, port, device, partNum, common.Urlencode(target), policyStr)
+	return fmt.Sprintf("curl -g -I -XHEAD \"%v://%v:%v/%v/%v/%v\"%v", scheme, formatted_ip, port, device, partNum, common.Urlencode(target), policyStr)
 }
 
 func getPathHash(account, container, object string) string {
@@ -205,7 +205,7 @@ func printRingLocations(r ring.Ring, ringType, datadir, account, container, obje
 	}
 	fmt.Printf("\n\n")
 	for _, v := range primaries {
-		cmd := curlHeadCommand(v.Ip, v.Port, v.Device, partNum, target, policy.Index)
+		cmd := curlHeadCommand(v.Scheme, v.Ip, v.Port, v.Device, partNum, target, policy.Index)
 		fmt.Println(cmd)
 	}
 	handoffs = r.GetMoreNodes(partNum)
@@ -213,7 +213,7 @@ func printRingLocations(r ring.Ring, ringType, datadir, account, container, obje
 		if handoffLimit != -1 && i == handoffLimit {
 			break
 		}
-		cmd := curlHeadCommand(v.Ip, v.Port, v.Device, partNum, target, policy.Index)
+		cmd := curlHeadCommand(v.Scheme, v.Ip, v.Port, v.Device, partNum, target, policy.Index)
 		fmt.Printf("%v # [Handoff]\n", cmd)
 	}
 
@@ -640,31 +640,34 @@ func (a *AutoAdmin) RunForever() {
 	}
 }
 
-func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (ip string, port int, server srv.Server, logger srv.LowLevelLogger, err error) {
+func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (ipPort *srv.IpPort, server srv.Server, logger srv.LowLevelLogger, err error) {
 	if !serverconf.HasSection("andrewd") {
-		return "", 0, nil, nil, fmt.Errorf("Unable to find andrewd config section")
+		return ipPort, nil, nil, fmt.Errorf("Unable to find andrewd config section")
 	}
 	logLevelString := serverconf.GetDefault("andrewd", "log_level", "INFO")
 	logLevel := zap.NewAtomicLevel()
 	logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
 	logger, err = srv.SetupLogger("andrewd", &logLevel, flags)
 	if err != nil {
-		return "", 0, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
+		return ipPort, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 	policies, err := cnf.GetPolicies()
 	if err != nil {
-		return "", 0, nil, nil, err
+		return ipPort, nil, nil, err
 	}
-	pdc, pdcerr := client.NewProxyDirectClient(policies, srv.DefaultConfigLoader{}, logger)
+	ip := serverconf.GetDefault("andrewd", "bind_ip", "0.0.0.0")
+	port := int(serverconf.GetInt("andrewd", "bind_port", common.DefaultAndrewdPort))
+	certFile := serverconf.GetDefault("andrewd", "cert_file", "")
+	keyFile := serverconf.GetDefault("andrewd", "key_file", "")
+	pdc, pdcerr := client.NewProxyDirectClient(policies, srv.DefaultConfigLoader{}, logger, certFile, keyFile)
 	if pdcerr != nil {
-		return "", 0, nil, nil, fmt.Errorf("Could not make client: %v", pdcerr)
+		return ipPort, nil, nil, fmt.Errorf("Could not make client: %v", pdcerr)
 	}
 	pl, err := cnf.GetPolicies()
 	if err != nil {
-		return "", 0, nil, nil, err
+		return ipPort, nil, nil, err
 	}
-	ip = serverconf.GetDefault("andrewd", "bind_ip", "0.0.0.0")
-	port = int(serverconf.GetInt("andrewd", "bind_port", common.DefaultAndrewdPort))
+
 	a := &AutoAdmin{
 		hClient:        client.NewProxyClient(pdc, nil, nil, logger),
 		port:           port,
@@ -684,9 +687,13 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 		Separator:      promreporter.DefaultSeparator,
 	}, time.Second)
 
-	a.dw = NewDriveWatch(a.logger, a.metricsScope, serverconf, cnf)
-	a.di = NewDispersion(
-		a.logger, client.NewProxyClient(pdc, nil, nil, logger), a.metricsScope, a.dw)
+	a.dw = NewDriveWatch(a.logger, a.metricsScope, serverconf, cnf, certFile, keyFile)
+	a.di, err = NewDispersion(
+		a.logger, client.NewProxyClient(pdc, nil, nil, logger), a.metricsScope, a.dw, certFile, keyFile)
+	if err != nil {
+		return ipPort, nil, nil, err
+	}
 
-	return ip, port, a, a.logger, nil
+	ipPort = &srv.IpPort{Ip: ip, Port: port, CertFile: certFile, KeyFile: keyFile}
+	return ipPort, a, a.logger, nil
 }

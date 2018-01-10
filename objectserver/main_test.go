@@ -82,7 +82,7 @@ func makeObjectServer(confLoader *srv.TestConfigLoader, settings ...string) (*Te
 	if err != nil {
 		return nil, err
 	}
-	_, _, server, _, err := NewServer(conf, &flag.FlagSet{}, confLoader)
+	_, server, _, err := NewServer(conf, &flag.FlagSet{}, confLoader)
 	if err != nil {
 		return nil, err
 	}

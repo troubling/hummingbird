@@ -175,7 +175,7 @@ or
 		os.Exit(1)
 	}
 
-	authURL := benchconf.GetDefault("bench", "auth", "http://localhost:8080/auth/v1.0")
+	authURL := benchconf.GetDefault("bench", "auth", "https://localhost:8080/auth/v1.0")
 	authTenant := benchconf.GetDefault("bench", "tenant", "")
 	authUser := benchconf.GetDefault("bench", "user", "test:tester")
 	authPassword := benchconf.GetDefault("bench", "password", "")
@@ -274,6 +274,7 @@ func RunThrash(args []string) {
 		fmt.Println("    num_objects = 5000")
 		fmt.Println("    gets_per_object = 5")
 		fmt.Println("    allow_insecure_auth_cert = no")
+
 		os.Exit(1)
 	}
 
@@ -283,14 +284,14 @@ func RunThrash(args []string) {
 		os.Exit(1)
 	}
 
-	authURL := thrashconf.GetDefault("thrash", "auth", "http://localhost:8080/auth/v1.0")
+	authURL := thrashconf.GetDefault("thrash", "auth", "https://localhost:8080/auth/v1.0")
 	authUser := thrashconf.GetDefault("thrash", "user", "test:tester")
 	authKey := thrashconf.GetDefault("thrash", "key", "testing")
 	concurrency := int(thrashconf.GetInt("thrash", "concurrency", 16))
 	objectSize := thrashconf.GetInt("thrash", "object_size", 131072)
 	numObjects := thrashconf.GetInt("thrash", "num_objects", 5000)
 	numGets := int(thrashconf.GetInt("thrash", "gets_per_object", 5))
-	allowInsecureAuthCert := thrashconf.GetBool("bench", "allow_insecure_auth_cert", false)
+	allowInsecureAuthCert := thrashconf.GetBool("thrash", "allow_insecure_auth_cert", false)
 	salt := fmt.Sprintf("%d", rand.Int63())
 
 	var cli nectar.Client

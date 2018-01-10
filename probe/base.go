@@ -162,13 +162,13 @@ func NewEnvironment(settings ...string) *Environment {
 		configString += fmt.Sprintf("bind_ip=%s\n", trsHost)
 		configString += "[object-auditor]\n"
 		conf, _ := conf.StringConfig(configString)
-		_, _, server, _, err := objectserver.NewServer(conf, &flag.FlagSet{}, confLoader)
+		_, server, _, err := objectserver.NewServer(conf, &flag.FlagSet{}, confLoader)
 		if err != nil {
 			log.Fatal(err)
 		}
 		ts.Config.Handler = server.GetHandler(conf, fmt.Sprintf("probe_%d_%d", atomic.AddUint64(&environments, 1), i))
 
-		_, _, replicator, _, err := objectserver.NewReplicator(conf, &flag.FlagSet{}, confLoader)
+		_, replicator, _, err := objectserver.NewReplicator(conf, &flag.FlagSet{}, confLoader)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -181,7 +181,7 @@ func NewEnvironment(settings ...string) *Environment {
 		}
 
 		env.ring.(*test.FakeRing).MockDevices = append(env.ring.(*test.FakeRing).MockDevices, &ring.Device{
-			Id: i, Device: "sda", Ip: host, Port: port, Region: 0, ReplicationIp: trsHost, ReplicationPort: trsPort, Weight: 1, Zone: i,
+			Id: i, Device: "sda", Scheme: "http", Ip: host, Port: port, Region: 0, ReplicationIp: trsHost, ReplicationPort: trsPort, Weight: 1, Zone: i,
 		})
 
 		env.driveRoots = append(env.driveRoots, driveRoot)

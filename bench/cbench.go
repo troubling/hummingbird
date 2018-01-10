@@ -27,10 +27,12 @@ import (
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"golang.org/x/net/http2"
 )
 
 type ContainerObject struct {
-	Url string
+	Url    string
+	client *http.Client
 }
 
 func (obj *ContainerObject) Put() bool {
@@ -42,7 +44,7 @@ func (obj *ContainerObject) Put() bool {
 	req.Header.Set("X-Content-Type", "application/octet-stream")
 	req.Header.Set("X-Size", "0")
 	req.Header.Set("X-Etag", "d41d8cd98f00b204e9800998ecf8427e")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := obj.client.Do(req)
 	if resp != nil {
 		resp.Body.Close()
 	}
@@ -52,7 +54,7 @@ func (obj *ContainerObject) Put() bool {
 func (obj *ContainerObject) Delete() bool {
 	req, _ := http.NewRequest("DELETE", obj.Url, nil)
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := obj.client.Do(req)
 	if resp != nil {
 		resp.Body.Close()
 	}
@@ -72,6 +74,8 @@ func RunCBench(args []string) {
 		fmt.Println("    delete = yes")
 		fmt.Println("    check_mounted = false")
 		fmt.Println("    #drive_list = sdb1,sdb2")
+		fmt.Println("    #cert_file = /etc/hummingbird/server.crt")
+		fmt.Println("    #key_file = /etc/hummingbird/server.key")
 		os.Exit(1)
 	}
 
@@ -94,7 +98,31 @@ func RunCBench(args []string) {
 	numPartitions := int64(100)
 	delete := benchconf.GetBool("cbench", "delete", true)
 
-	deviceList := GetDevices(address, checkMounted)
+	certFile := benchconf.GetDefault("cbench", "cert_file", "")
+	keyFile := benchconf.GetDefault("cbench", "key_file", "")
+
+	transport := &http.Transport{
+		MaxIdleConnsPerHost: 100,
+		MaxIdleConns:        0,
+		IdleConnTimeout:     5 * time.Second,
+	}
+	if certFile != "" && keyFile != "" {
+		tlsConf, err := common.NewClientTLSConfig(certFile, keyFile)
+		if err != nil {
+			fmt.Printf("Error getting TLS config: %v", err)
+			os.Exit(1)
+		}
+		transport.TLSClientConfig = tlsConf
+		if err = http2.ConfigureTransport(transport); err != nil {
+			fmt.Printf("Error setting up http2: %v", err)
+			os.Exit(1)
+		}
+	}
+	client := &http.Client{
+		Transport: transport,
+	}
+
+	deviceList := GetDevices(client, address, checkMounted)
 	if driveList != "" {
 		deviceList = strings.Split(driveList, ",")
 	}
@@ -107,7 +135,7 @@ func RunCBench(args []string) {
 		containers[i] = fmt.Sprintf("%s%s/%d/%s/%d", address, device, part, "a", cid)
 		req, _ := http.NewRequest("PUT", containers[i], nil)
 		req.Header.Set("X-Timestamp", common.GetTimestamp())
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := client.Do(req)
 		if resp != nil {
 			resp.Body.Close()
 		}
@@ -121,7 +149,8 @@ func RunCBench(args []string) {
 	for i := range objects {
 		container := containers[i%len(containers)]
 		objects[i] = &ContainerObject{
-			Url: fmt.Sprintf("%s/%d", container, rand.Int63()),
+			Url:    fmt.Sprintf("%s/%d", container, rand.Int63()),
+			client: client,
 		}
 	}
 
@@ -136,7 +165,7 @@ func RunCBench(args []string) {
 	getContainer := func() bool {
 		container := containers[rand.Int()%len(containers)]
 		req, _ := http.NewRequest("GET", container+"?format=json", nil)
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := client.Do(req)
 		if err == nil {
 			defer resp.Body.Close()
 			w, err := io.Copy(ioutil.Discard, resp.Body)
@@ -175,6 +204,8 @@ func RunCGBench(args []string) {
 		fmt.Println("    num_gets = 10")
 		fmt.Println("    check_mounted = false")
 		fmt.Println("    #drive_list = sdb1,sdb2")
+		fmt.Println("    #cert_file = /etc/hummingbird/server.crt")
+		fmt.Println("    #key_file = /etc/hummingbird/server.key")
 		os.Exit(1)
 	}
 
@@ -196,7 +227,31 @@ func RunCGBench(args []string) {
 	driveList := benchconf.GetDefault("cgbench", "drive_list", "")
 	numPartitions := int64(100)
 
-	deviceList := GetDevices(address, checkMounted)
+	certFile := benchconf.GetDefault("cgbench", "cert_file", "")
+	keyFile := benchconf.GetDefault("cgbench", "key_file", "")
+
+	transport := &http.Transport{
+		MaxIdleConnsPerHost: 100,
+		MaxIdleConns:        0,
+		IdleConnTimeout:     5 * time.Second,
+	}
+	if certFile != "" && keyFile != "" {
+		tlsConf, err := common.NewClientTLSConfig(certFile, keyFile)
+		if err != nil {
+			fmt.Printf("Error getting TLS config: %v", err)
+			os.Exit(1)
+		}
+		transport.TLSClientConfig = tlsConf
+		if err = http2.ConfigureTransport(transport); err != nil {
+			fmt.Printf("Error setting up http2: %v", err)
+			os.Exit(1)
+		}
+	}
+	client := &http.Client{
+		Transport: transport,
+	}
+
+	deviceList := GetDevices(client, address, checkMounted)
 	if driveList != "" {
 		deviceList = strings.Split(driveList, ",")
 	}
@@ -207,7 +262,7 @@ func RunCGBench(args []string) {
 	container := fmt.Sprintf("%s%s/%d/%s/%d", address, device, part, "a", cid)
 	req, _ := http.NewRequest("PUT", container, nil)
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if resp != nil {
 		resp.Body.Close()
 	}
@@ -221,7 +276,8 @@ func RunCGBench(args []string) {
 		objects := make([]*ContainerObject, int(reportInterval))
 		for i := range objects {
 			objects[i] = &ContainerObject{
-				Url: fmt.Sprintf("%s/%d", container, rand.Int63()),
+				Url:    fmt.Sprintf("%s/%d", container, rand.Int63()),
+				client: client,
 			}
 		}
 
@@ -235,7 +291,7 @@ func RunCGBench(args []string) {
 
 		getContainer := func() bool {
 			req, _ := http.NewRequest("GET", container+"?format=json&marker=5", nil)
-			resp, err := http.DefaultClient.Do(req)
+			resp, err := client.Do(req)
 			if err == nil {
 				defer resp.Body.Close()
 				w, err := io.Copy(ioutil.Discard, resp.Body)

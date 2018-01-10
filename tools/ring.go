@@ -30,11 +30,11 @@ import (
 
 func PrintDevs(devs []*ring.RingBuilderDevice) {
 	data := make([][]string, 0)
-	data = append(data, []string{"ID", "REGION", "ZONE", "IP ADDRESS", "PORT", "REPLICATION IP", "REPLICATION PORT", "NAME", "WEIGHT", "PARTITIONS", "META"})
+	data = append(data, []string{"ID", "REGION", "ZONE", "SCHEME", "IP ADDRESS", "PORT", "REPLICATION IP", "REPLICATION PORT", "NAME", "WEIGHT", "PARTITIONS", "META"})
 	data = append(data, nil)
 	for _, dev := range devs {
 		if dev != nil {
-			data = append(data, []string{strconv.FormatInt(dev.Id, 10), strconv.FormatInt(dev.Region, 10), strconv.FormatInt(dev.Zone, 10), dev.Ip, strconv.FormatInt(dev.Port, 10), dev.ReplicationIp, strconv.FormatInt(dev.ReplicationPort, 10), dev.Device, strconv.FormatFloat(dev.Weight, 'f', -1, 64), strconv.FormatInt(dev.Parts, 10), dev.Meta})
+			data = append(data, []string{strconv.FormatInt(dev.Id, 10), strconv.FormatInt(dev.Region, 10), strconv.FormatInt(dev.Zone, 10), dev.Scheme, dev.Ip, strconv.FormatInt(dev.Port, 10), dev.ReplicationIp, strconv.FormatInt(dev.ReplicationPort, 10), dev.Device, strconv.FormatFloat(dev.Weight, 'f', -1, 64), strconv.FormatInt(dev.Parts, 10), dev.Meta})
 		}
 	}
 	fmt.Println(brimtext.Align(data, brimtext.NewSimpleAlignOptions()))
@@ -107,10 +107,11 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		device := searchFlags.String("device", "", "Device name.")
 		weight := searchFlags.Float64("weight", -1.0, "Device weight.")
 		meta := searchFlags.String("meta", "", "Metadata.")
+		scheme := searchFlags.String("scheme", "", "URI scheme(http/https).")
 		if err := searchFlags.Parse(args[2:]); err != nil {
 			fmt.Println(err)
 		}
-		devs, err := ring.Search(pth, *region, *zone, *ip, *port, *repIp, *repPort, *device, *weight, *meta)
+		devs, err := ring.Search(pth, *region, *zone, *ip, *port, *repIp, *repPort, *device, *weight, *meta, *scheme)
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -133,7 +134,9 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		device := changeFlags.String("device", "", "Device name.")
 		weight := changeFlags.Float64("weight", -1.0, "Device weight.")
 		meta := changeFlags.String("meta", "", "Metadata.")
+		scheme := changeFlags.String("scheme", "", "URI scheme(http/https).")
 		yes := changeFlags.Bool("yes", false, "Force yes.")
+		newScheme := changeFlags.String("change-scheme", "", "New URI scheme(http/https).")
 		newIp := changeFlags.String("change-ip", "", "New ip address.")
 		newPort := changeFlags.Int64("change-port", -1, "New port.")
 		newRepIp := changeFlags.String("change-replication-ip", "", "New replication ip address.")
@@ -144,7 +147,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 			fmt.Println(err)
 			return
 		}
-		devs, err := ring.Search(pth, *region, *zone, *ip, *port, *repIp, *repPort, *device, *weight, *meta)
+		devs, err := ring.Search(pth, *region, *zone, *ip, *port, *repIp, *repPort, *device, *weight, *meta, *scheme)
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -168,7 +171,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 					return
 				}
 			}
-			err := ring.SetInfo(pth, devs, *newIp, *newPort, *newRepIp, *newRepPort, *newDevice, *newMeta)
+			err := ring.SetInfo(pth, devs, *newIp, *newPort, *newRepIp, *newRepPort, *newDevice, *newMeta, *newScheme)
 			if err != nil {
 				fmt.Println(err)
 			} else {
@@ -180,6 +183,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		weightFlags := flag.NewFlagSet("set_weight", flag.ExitOnError)
 		region := weightFlags.Int64("region", -1, "Device region.")
 		zone := weightFlags.Int64("zone", -1, "Device zone.")
+		scheme := weightFlags.String("scheme", "", "URI scheme(http/https)")
 		ip := weightFlags.String("ip", "", "Device ip address.")
 		port := weightFlags.Int64("port", -1, "Device port.")
 		repIp := weightFlags.String("replication-ip", "", "Device replication address.")
@@ -202,7 +206,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 			fmt.Println(err)
 			return
 		}
-		devs, err := ring.Search(pth, *region, *zone, *ip, *port, *repIp, *repPort, *device, *weight, *meta)
+		devs, err := ring.Search(pth, *region, *zone, *ip, *port, *repIp, *repPort, *device, *weight, *meta, *scheme)
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -235,22 +239,23 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		}
 
 	case "remove":
-		weightFlags := flag.NewFlagSet("set_weight", flag.ExitOnError)
-		region := weightFlags.Int64("region", -1, "Device region.")
-		zone := weightFlags.Int64("zone", -1, "Device zone.")
-		ip := weightFlags.String("ip", "", "Device ip address.")
-		port := weightFlags.Int64("port", -1, "Device port.")
-		repIp := weightFlags.String("replication-ip", "", "Device replication address.")
-		repPort := weightFlags.Int64("replication-port", -1, "Device replication port.")
-		device := weightFlags.String("device", "", "Device name.")
-		weight := weightFlags.Float64("weight", -1.0, "Device weight.")
-		meta := weightFlags.String("meta", "", "Metadata.")
-		yes := weightFlags.Bool("yes", false, "Force yes.")
-		if err := weightFlags.Parse(args[2:]); err != nil {
+		removeFlags := flag.NewFlagSet("set_weight", flag.ExitOnError)
+		region := removeFlags.Int64("region", -1, "Device region.")
+		zone := removeFlags.Int64("zone", -1, "Device zone.")
+		ip := removeFlags.String("ip", "", "Device ip address.")
+		port := removeFlags.Int64("port", -1, "Device port.")
+		repIp := removeFlags.String("replication-ip", "", "Device replication address.")
+		repPort := removeFlags.Int64("replication-port", -1, "Device replication port.")
+		device := removeFlags.String("device", "", "Device name.")
+		weight := removeFlags.Float64("weight", -1.0, "Device weight.")
+		meta := removeFlags.String("meta", "", "Metadata.")
+		scheme := removeFlags.String("scheme", "", "URI scheme(http/https).")
+		yes := removeFlags.Bool("yes", false, "Force yes.")
+		if err := removeFlags.Parse(args[2:]); err != nil {
 			fmt.Println(err)
 			return
 		}
-		devs, err := ring.Search(pth, *region, *zone, *ip, *port, *repIp, *repPort, *device, *weight, *meta)
+		devs, err := ring.Search(pth, *region, *zone, *ip, *port, *repIp, *repPort, *device, *weight, *meta, *scheme)
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -290,7 +295,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		// TODO: Add support for multiple adds in a single command
 		var err error
 		var region, zone, port, replicationPort int64
-		var ip, replicationIp, device string
+		var ip, replicationIp, device, scheme string
 		var weight float64
 
 		if len(args) < 4 {
@@ -298,7 +303,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 			return
 		}
 		deviceStr := args[2]
-		rx := regexp.MustCompile(`^(?:r(?P<region>\d+))?z(?P<zone>\d+)-(?P<ip>[\d\.]+):(?P<port>\d+)(?:R(?P<replication_ip>[\d\.]+):(?P<replication_port>\d+))?\/(?P<device>[^_]+)(?:_(?P<metadata>.+))?$`)
+		rx := regexp.MustCompile(`^(?:r(?P<region>\d+))?z(?P<zone>\d+)(?:s(?P<scheme>http|https))?-(?P<ip>[\d\.]+):(?P<port>\d+)(?:R(?P<replication_ip>[\d\.]+):(?P<replication_port>\d+))?\/(?P<device>[^_]+)(?:_(?P<metadata>.+))?$`)
 		matches := rx.FindAllStringSubmatch(deviceStr, -1)
 		if len(matches) == 0 {
 			flags.Usage()
@@ -318,16 +323,21 @@ func RingBuildCmd(flags *flag.FlagSet) {
 			fmt.Println(err)
 			return
 		}
-		ip = matches[0][3]
-		port, err = strconv.ParseInt(matches[0][4], 0, 64)
+		if matches[0][3] != "" {
+			scheme = matches[0][3]
+		} else {
+			scheme = "http"
+		}
+		ip = matches[0][4]
+		port, err = strconv.ParseInt(matches[0][5], 0, 64)
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
 
-		if matches[0][5] != "" {
-			replicationIp = matches[0][5]
-			replicationPort, err = strconv.ParseInt(matches[0][6], 0, 64)
+		if matches[0][6] != "" {
+			replicationIp = matches[0][6]
+			replicationPort, err = strconv.ParseInt(matches[0][7], 0, 64)
 			if err != nil {
 				fmt.Println(err)
 				return
@@ -336,13 +346,13 @@ func RingBuildCmd(flags *flag.FlagSet) {
 			replicationIp = ""
 			replicationPort = 0
 		}
-		device = matches[0][7]
+		device = matches[0][8]
 		weight, err = strconv.ParseFloat(args[3], 64)
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
-		id, err := ring.AddDevice(pth, -1, region, zone, ip, port, replicationIp, replicationPort, device, weight, debug)
+		id, err := ring.AddDevice(pth, -1, region, zone, scheme, ip, port, replicationIp, replicationPort, device, weight, debug)
 		if err != nil {
 			fmt.Println(err)
 			return

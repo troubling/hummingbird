@@ -66,8 +66,8 @@ func (server *ObjectServer) expirerContainer(deleteAt time.Time, account, contai
 	return fmt.Sprintf("%010d", timestamp)
 }
 
-func (server *ObjectServer) sendContainerUpdate(host, device, method, partition, account, container, obj string, headers http.Header) bool {
-	obj_url := fmt.Sprintf("http://%s/%s/%s/%s/%s/%s", host, device, partition,
+func (server *ObjectServer) sendContainerUpdate(scheme, host, device, method, partition, account, container, obj string, headers http.Header) bool {
+	obj_url := fmt.Sprintf("%s://%s/%s/%s/%s/%s/%s", scheme, host, device, partition,
 		common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj))
 	if req, err := http.NewRequest(method, obj_url, nil); err == nil {
 		req.Header = headers
@@ -110,8 +110,12 @@ func (server *ObjectServer) updateContainer(metadata map[string]string, request 
 	partition := request.Header.Get("X-Container-Partition")
 	hosts := splitHeader(request.Header.Get("X-Container-Host"))
 	devices := splitHeader(request.Header.Get("X-Container-Device"))
+	schemes := splitHeader(request.Header.Get("X-Container-Scheme"))
 	if partition == "" || len(hosts) == 0 || len(devices) == 0 {
 		return
+	}
+	for len(schemes) < len(hosts) {
+		schemes = append(schemes, "http")
 	}
 	requestHeaders := http.Header{
 		"X-Backend-Storage-Policy-Index": {common.GetDefault(request.Header, "X-Backend-Storage-Policy-Index", "0")},
@@ -127,7 +131,7 @@ func (server *ObjectServer) updateContainer(metadata map[string]string, request 
 	}
 	failures := 0
 	for index := range hosts {
-		if !server.sendContainerUpdate(hosts[index], devices[index], request.Method, partition, vars["account"], vars["container"], vars["obj"], requestHeaders) {
+		if !server.sendContainerUpdate(schemes[index], hosts[index], devices[index], request.Method, partition, vars["account"], vars["container"], vars["obj"], requestHeaders) {
 			logger.Error("ERROR container update failed (saving for async update later)",
 				zap.String("Host", hosts[index]),
 				zap.String("Device", devices[index]))
@@ -148,6 +152,10 @@ func (server *ObjectServer) updateDeleteAt(method string, header http.Header, de
 	partition := common.GetDefault(header, "X-Delete-At-Partition", "")
 	hosts := splitHeader(header.Get("X-Delete-At-Host"))
 	devices := splitHeader(header.Get("X-Delete-At-Device"))
+	schemes := splitHeader(header.Get("X-Delete-At-Scheme"))
+	for len(schemes) < len(hosts) {
+		schemes = append(schemes, "http")
+	}
 	requestHeaders := http.Header{
 		"X-Backend-Storage-Policy-Index": {common.GetDefault(header, "X-Backend-Storage-Policy-Index", "0")},
 		"Referer":                        {common.GetDefault(header, "Referer", "-")},
@@ -162,7 +170,7 @@ func (server *ObjectServer) updateDeleteAt(method string, header http.Header, de
 	}
 	failures := 0
 	for index := range hosts {
-		if !server.sendContainerUpdate(hosts[index], devices[index], method, partition, deleteAtAccount, container, obj, requestHeaders) {
+		if !server.sendContainerUpdate(schemes[index], hosts[index], devices[index], method, partition, deleteAtAccount, container, obj, requestHeaders) {
 			logger.Error("ERROR container update failed with (saving for async update later)",
 				zap.String("Host", hosts[index]),
 				zap.String("Device", devices[index]))

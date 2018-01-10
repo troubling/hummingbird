@@ -41,6 +41,7 @@ import (
 	"github.com/uber-go/tally"
 	promreporter "github.com/uber-go/tally/prometheus"
 	"go.uber.org/zap"
+	"golang.org/x/net/http2"
 )
 
 type ObjectServer struct {
@@ -624,7 +625,9 @@ func (server *ObjectServer) GetHandler(config conf.Config, metricsPrefix string)
 	return alice.New(middleware.Metrics(metricsScope)).Append(middleware.GrepObject).Then(router)
 }
 
-func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (bindIP string, bindPort int, serv srv.Server, logger srv.LowLevelLogger, err error) {
+func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (*srv.IpPort, srv.Server, srv.LowLevelLogger, error) {
+	var ipPort *srv.IpPort
+	var err error
 	server := &ObjectServer{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: "",
 		allowedHeaders: map[string]bool{
 			"Content-Disposition":   true,
@@ -636,10 +639,10 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 	}
 	server.hashPathPrefix, server.hashPathSuffix, err = cnf.GetHashPrefixAndSuffix()
 	if err != nil {
-		return "", 0, nil, nil, err
+		return ipPort, nil, nil, err
 	}
 	if server.objEngines, err = buildEngines(serverconf, flags, cnf); err != nil {
-		return "", 0, nil, nil, err
+		return ipPort, nil, nil, err
 	}
 
 	server.driveRoot = serverconf.GetDefault("app:object-server", "devices", "/srv/node")
@@ -649,8 +652,10 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 	server.diskInUse = common.NewKeyedLimit(serverconf.GetLimit("app:object-server", "disk_limit", 25, 0))
 	server.accountDiskInUse = common.NewKeyedLimit(serverconf.GetLimit("app:object-server", "account_rate_limit", 0, 0))
 	server.expiringDivisor = serverconf.GetInt("app:object-server", "expiring_objects_container_divisor", 86400)
-	bindIP = serverconf.GetDefault("app:object-server", "bind_ip", "0.0.0.0")
-	bindPort = int(serverconf.GetInt("app:object-server", "bind_port", common.DefaultObjectServerPort))
+	bindIP := serverconf.GetDefault("app:object-server", "bind_ip", "0.0.0.0")
+	bindPort := int(serverconf.GetInt("app:object-server", "bind_port", common.DefaultObjectServerPort))
+	certFile := serverconf.GetDefault("app:object-server", "cert_file", "")
+	keyFile := serverconf.GetDefault("app:object-server", "key_file", "")
 	if allowedHeaders, ok := serverconf.Get("app:object-server", "allowed_headers"); ok {
 		headers := strings.Split(allowedHeaders, ",")
 		for i := range headers {
@@ -661,26 +666,38 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 	server.logLevel = zap.NewAtomicLevel()
 	server.logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
 	if server.logger, err = srv.SetupLogger("object-server", &server.logLevel, flags); err != nil {
-		return "", 0, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
+		return ipPort, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 
 	server.updateTimeout = time.Duration(serverconf.GetFloat("app:object-server", "container_update_timeout", 0.25) * float64(time.Second))
 	connTimeout := time.Duration(serverconf.GetFloat("app:object-server", "conn_timeout", 1.0) * float64(time.Second))
 	nodeTimeout := time.Duration(serverconf.GetFloat("app:object-server", "node_timeout", 10.0) * float64(time.Second))
+	transport := &http.Transport{
+		Dial:                (&net.Dialer{Timeout: connTimeout}).Dial,
+		MaxIdleConnsPerHost: 100,
+		MaxIdleConns:        0,
+		IdleConnTimeout:     5 * time.Second,
+		DisableCompression:  true,
+	}
+	if certFile != "" && keyFile != "" {
+		tlsConf, err := common.NewClientTLSConfig(certFile, keyFile)
+		if err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error getting TLS config: %v", err)
+		}
+		transport.TLSClientConfig = tlsConf
+		if err = http2.ConfigureTransport(transport); err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error setting up http2: %v", err)
+		}
+	}
 	server.updateClient = &http.Client{
-		Timeout: nodeTimeout,
-		Transport: &http.Transport{
-			Dial:                (&net.Dialer{Timeout: connTimeout}).Dial,
-			MaxIdleConnsPerHost: 100,
-			MaxIdleConns:        0,
-			IdleConnTimeout:     5 * time.Second,
-			DisableCompression:  true,
-		},
+		Timeout:   nodeTimeout,
+		Transport: transport,
 	}
 
 	deviceLockUpdateSeconds := serverconf.GetInt("app:object-server", "device_lock_update_seconds", 0)
 	if deviceLockUpdateSeconds > 0 {
 		go server.updateDeviceLocks(deviceLockUpdateSeconds)
 	}
-	return bindIP, bindPort, server, server.logger, nil
+	ipPort = &srv.IpPort{Ip: bindIP, Port: bindPort, CertFile: certFile, KeyFile: keyFile}
+	return ipPort, server, server.logger, nil
 }

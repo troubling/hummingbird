@@ -22,6 +22,7 @@ import (
 	"io"
 	"io/ioutil"
 	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -30,6 +31,7 @@ import (
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"golang.org/x/net/http2"
 )
 
 type DirectObject struct {
@@ -88,10 +90,10 @@ func (obj *DirectObject) Delete() bool {
 	return err == nil && resp.StatusCode/100 == 2
 }
 
-func GetDevices(address string, checkMounted bool) []string {
+func GetDevices(client *http.Client, address string, checkMounted bool) []string {
 	deviceUrl := fmt.Sprintf("%srecon/diskusage", address)
 	req, err := http.NewRequest("GET", deviceUrl, nil)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Println(fmt.Sprintf("ERROR GETTING DEVICES: %s", err))
 		os.Exit(1)
@@ -115,7 +117,7 @@ func RunDBench(args []string) {
 		fmt.Println("Usage: [configuration file]")
 		fmt.Println("The configuration file should look something like:")
 		fmt.Println("    [dbench]")
-		fmt.Println("    address = http://localhost:6010/")
+		fmt.Println("    address = http://127.0.0.1:6010/")
 		fmt.Println("    concurrency = 15")
 		fmt.Println("    object_size = 131072")
 		fmt.Println("    num_objects = 5000")
@@ -125,6 +127,8 @@ func RunDBench(args []string) {
 		fmt.Println("    minimum_partition_number = 1000000000")
 		fmt.Println("    check_mounted = false")
 		fmt.Println("    #drive_list = sdb1,sdb2")
+		fmt.Println("    #cert_file = /etc/hummingbird/server.crt")
+		fmt.Println("    #key_file = /etc/hummingbird/server.key")
 		os.Exit(1)
 	}
 
@@ -134,7 +138,7 @@ func RunDBench(args []string) {
 		os.Exit(1)
 	}
 
-	address := benchconf.GetDefault("dbench", "address", "http://localhost:6010/")
+	address := benchconf.GetDefault("dbench", "address", "http://127.0.0.1:6010/")
 	if !strings.HasSuffix(address, "/") {
 		address = address + "/"
 	}
@@ -148,16 +152,39 @@ func RunDBench(args []string) {
 	numPartitions := int64(100)
 	minPartition := benchconf.GetInt("dbench", "minimum_partition_number", 1000000000)
 	delete := benchconf.GetBool("dbench", "delete", true)
+	certFile := benchconf.GetDefault("dbench", "cert_file", "")
+	keyFile := benchconf.GetDefault("dbench", "key_file", "")
 
-	deviceList := GetDevices(address, checkMounted)
+	transport := &http.Transport{
+		MaxIdleConnsPerHost: 100,
+		MaxIdleConns:        0,
+		IdleConnTimeout:     5 * time.Second,
+		DisableCompression:  true,
+		Dial: (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 5 * time.Second,
+		}).Dial,
+		ExpectContinueTimeout: 10 * time.Minute,
+	}
+	if certFile != "" && keyFile != "" {
+		tlsConf, err := common.NewClientTLSConfig(certFile, keyFile)
+		if err != nil {
+			fmt.Printf("Error getting TLS config: %v", err)
+			os.Exit(1)
+		}
+		transport.TLSClientConfig = tlsConf
+		if err = http2.ConfigureTransport(transport); err != nil {
+			fmt.Printf("Error setting up http2: %v", err)
+			os.Exit(1)
+		}
+	}
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   10 * time.Second,
+	}
+	deviceList := GetDevices(client, address, checkMounted)
 	if driveList != "" {
 		deviceList = strings.Split(driveList, ",")
-	}
-
-	client := &http.Client{
-		Transport: &http.Transport{
-			MaxIdleConnsPerHost: 300,
-		},
 	}
 
 	data := make([]byte, objectSize)

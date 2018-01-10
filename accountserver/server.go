@@ -39,6 +39,7 @@ import (
 	"github.com/uber-go/tally"
 	promreporter "github.com/uber-go/tally/prometheus"
 	"go.uber.org/zap"
+	"golang.org/x/net/http2"
 )
 
 // AccountServer contains all of the information for a running account server.
@@ -513,36 +514,58 @@ func (server *AccountServer) GetHandler(config conf.Config, metricsPrefix string
 }
 
 // NewServer parses configs and command-line flags, returning a configured server object and the ip and port it should bind on.
-func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (bindIP string, bindPort int, serv srv.Server, logger srv.LowLevelLogger, err error) {
+func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (*srv.IpPort, srv.Server, srv.LowLevelLogger, error) {
+	var ipPort *srv.IpPort
+	var err error
 	server := &AccountServer{driveRoot: "/srv/node", hashPathPrefix: "", hashPathSuffix: ""}
 	server.hashPathPrefix, server.hashPathSuffix, err = cnf.GetHashPrefixAndSuffix()
 	if err != nil {
-		return "", 0, nil, nil, err
+		return ipPort, nil, nil, err
 	}
 	server.policyList, err = cnf.GetPolicies()
 	if err != nil {
-		return "", 0, nil, nil, err
+		return ipPort, nil, nil, err
 	}
 	server.autoCreatePrefix = serverconf.GetDefault("app:account-server", "auto_create_account_prefix", ".")
 	server.driveRoot = serverconf.GetDefault("app:account-server", "devices", "/srv/node")
 	server.reconCachePath = serverconf.GetDefault("app:account-server", "recon_cache_path", "/var/cache/swift")
 	server.checkMounts = serverconf.GetBool("app:account-server", "mount_check", true)
 	server.diskInUse = common.NewKeyedLimit(serverconf.GetLimit("app:account-server", "disk_limit", 0, 0))
-	bindIP = serverconf.GetDefault("app:account-server", "bind_ip", "0.0.0.0")
-	bindPort = int(serverconf.GetInt("app:account-server", "bind_port", common.DefaultAccountServerPort))
+	bindIP := serverconf.GetDefault("app:account-server", "bind_ip", "0.0.0.0")
+	bindPort := int(serverconf.GetInt("app:account-server", "bind_port", common.DefaultAccountServerPort))
+	certFile := serverconf.GetDefault("app:account-server", "cert_file", "")
+	keyFile := serverconf.GetDefault("app:account-server", "key_file", "")
 
 	logLevelString := serverconf.GetDefault("app:account-server", "log_level", "INFO")
 	server.logLevel = zap.NewAtomicLevel()
 	server.logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
 	if server.logger, err = srv.SetupLogger("account-server", &server.logLevel, flags); err != nil {
-		return "", 0, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
+		return ipPort, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 	server.accountEngine = newLRUEngine(server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, 32)
 	connTimeout := time.Duration(serverconf.GetFloat("app:account-server", "conn_timeout", 1.0) * float64(time.Second))
 	nodeTimeout := time.Duration(serverconf.GetFloat("app:account-server", "node_timeout", 10.0) * float64(time.Second))
+	transport := &http.Transport{
+		Dial:                (&net.Dialer{Timeout: connTimeout}).Dial,
+		MaxIdleConnsPerHost: 100,
+		MaxIdleConns:        0,
+		IdleConnTimeout:     5 * time.Second,
+		DisableCompression:  true,
+	}
+	if certFile != "" && keyFile != "" {
+		tlsConf, err := common.NewClientTLSConfig(certFile, keyFile)
+		if err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error getting TLS config: %v", err)
+		}
+		transport.TLSClientConfig = tlsConf
+		if err = http2.ConfigureTransport(transport); err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error setting up http2: %v", err)
+		}
+	}
 	server.updateClient = &http.Client{
 		Timeout:   nodeTimeout,
-		Transport: &http.Transport{Dial: (&net.Dialer{Timeout: connTimeout}).Dial},
+		Transport: transport,
 	}
-	return bindIP, bindPort, server, server.logger, nil
+	ipPort = &srv.IpPort{Ip: bindIP, Port: bindPort, CertFile: certFile, KeyFile: keyFile}
+	return ipPort, server, server.logger, nil
 }

@@ -29,8 +29,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
+	"golang.org/x/net/http2"
 )
 
 type devLimiter struct {
@@ -74,7 +76,7 @@ func (d *devLimiter) waitForSomethingToFinish() {
 }
 
 func SendPriRepJob(job *PriorityRepJob, client *http.Client) (string, bool) {
-	url := fmt.Sprintf("http://%s:%d/priorityrep", job.FromDevice.ReplicationIp, job.FromDevice.ReplicationPort)
+	url := fmt.Sprintf("%s://%s:%d/priorityrep", job.FromDevice.Scheme, job.FromDevice.ReplicationIp, job.FromDevice.ReplicationPort)
 	jsonned, err := json.Marshal(job)
 	if err != nil {
 		return fmt.Sprintf("Failed to serialize job for some reason: %s", err), false
@@ -197,6 +199,8 @@ func objectRingPolicyIndex(s string) (int, error) {
 func doMoveParts(args []string, cnf srv.ConfigLoader) int {
 	flags := flag.NewFlagSet("moveparts", flag.ExitOnError)
 	policy := flags.Int("p", 0, "policy index to use")
+	certFile := flags.String("certfile", "", "Cert file to use for setting up https client")
+	keyFile := flags.String("keyfile", "", "Key file to use for setting up https client")
 	flags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "USAGE: hummingbird moveparts [old ringfile]")
 		flags.PrintDefaults()
@@ -233,7 +237,25 @@ func doMoveParts(args []string, cnf srv.ConfigLoader) int {
 		fmt.Println("Unable to load current ring:", err)
 		return 1
 	}
-	client := &http.Client{Timeout: time.Hour}
+	transport := &http.Transport{
+		MaxIdleConnsPerHost: 100,
+		MaxIdleConns:        0,
+	}
+	if *certFile != "" && *keyFile != "" {
+		tlsConf, err := common.NewClientTLSConfig(*certFile, *keyFile)
+		if err != nil {
+			fmt.Println("Error getting TLS config:", err)
+			return 1
+		}
+		transport.TLSClientConfig = tlsConf
+		if err = http2.ConfigureTransport(transport); err != nil {
+			fmt.Println("Error setting up http2:", err)
+			return 1
+		}
+	}
+	client := &http.Client{Timeout: time.Hour,
+		Transport: transport,
+	}
 	badParts := []uint64{}
 	for {
 		jobs := getPartMoveJobs(oldRing, curRing, badParts)
@@ -327,6 +349,8 @@ func RestoreDevice(args []string, cnf srv.ConfigLoader) {
 	ringLoc := flags.String("r", "", "Specify which ring file to use")
 	conc := flags.Int("c", 2, "limit of per device concurrency priority repl calls")
 	full := flags.Bool("f", false, "send priority replicate calls to every qualifying peer primary (slow)")
+	certFile := flags.String("certfile", "", "Cert file to use for setting up https client")
+	keyFile := flags.String("keyfile", "", "Key file to use for setting up https client")
 	flags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "USAGE: hummingbird restoredevice [ip] [device]\n")
 		flags.PrintDefaults()
@@ -357,7 +381,26 @@ func RestoreDevice(args []string, cnf srv.ConfigLoader) {
 		}
 
 	}
-	client := &http.Client{Timeout: time.Hour * 4}
+	transport := &http.Transport{
+		MaxIdleConnsPerHost: 100,
+		MaxIdleConns:        0,
+	}
+	if *certFile != "" && *keyFile != "" {
+		tlsConf, err := common.NewClientTLSConfig(*certFile, *keyFile)
+		if err != nil {
+			fmt.Println("Error getting TLS config:", err)
+			return
+		}
+		transport.TLSClientConfig = tlsConf
+		if err = http2.ConfigureTransport(transport); err != nil {
+			fmt.Println("Error setting up http2:", err)
+			return
+		}
+	}
+	client := &http.Client{
+		Timeout:   time.Hour * 4,
+		Transport: transport,
+	}
 	badParts := []uint64{}
 	for {
 		jobs := getRestoreDeviceJobs(objRing, flags.Arg(0), flags.Arg(1), *region, *full, badParts)
@@ -404,6 +447,8 @@ func getRescuePartsJobs(objRing ring.Ring, partitions []uint64) []*PriorityRepJo
 func RescueParts(args []string, cnf srv.ConfigLoader) {
 	flags := flag.NewFlagSet("rescueparts", flag.ExitOnError)
 	policy := flags.Int("p", 0, "policy index to use")
+	certFile := flags.String("certfile", "", "Cert file to use for setting up https client")
+	keyFile := flags.String("keyfile", "", "Key file to use for setting up https client")
 	flags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "USAGE: hummingbird rescueparts partnum1,partnum2,...\n")
 		flags.PrintDefaults()
@@ -433,7 +478,25 @@ func RescueParts(args []string, cnf srv.ConfigLoader) {
 			return
 		}
 	}
-	client := &http.Client{Timeout: time.Hour}
+	transport := &http.Transport{
+		MaxIdleConnsPerHost: 100,
+		MaxIdleConns:        0,
+	}
+	if *certFile != "" && *keyFile != "" {
+		tlsConf, err := common.NewClientTLSConfig(*certFile, *keyFile)
+		if err != nil {
+			fmt.Println("Error getting TLS config:", err)
+			return
+		}
+		transport.TLSClientConfig = tlsConf
+		if err = http2.ConfigureTransport(transport); err != nil {
+			fmt.Println("Error setting up http2:", err)
+		}
+	}
+	client := &http.Client{
+		Timeout:   time.Hour,
+		Transport: transport,
+	}
 	jobs := getRescuePartsJobs(objRing, partsInt)
 	fmt.Println("Job count:", len(jobs))
 	doPriRepJobs(jobs, 1, client)

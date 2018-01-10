@@ -22,6 +22,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -38,6 +39,7 @@ import (
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
+	"golang.org/x/net/http2"
 )
 
 // NurseryObject implements an Object that is compatible with Swift's object
@@ -120,6 +122,7 @@ type nurseryObject struct {
 	reclaimAge     int64
 	cacheHashDirs  bool
 	asyncWG        *sync.WaitGroup // Used to keep track of async goroutines
+	client         *http.Client
 }
 
 // Metadata returns the object's metadata.
@@ -279,11 +282,11 @@ func (o *nurseryObject) canStabilize(ring ring.Ring, dev *ring.Device, policy in
 		if device.Ip == dev.Ip && device.Port == dev.Port && device.Device == device.Device {
 			continue
 		}
-		url := fmt.Sprintf("http://%s:%d/%s/%d%s", device.Ip, device.Port, device.Device, partition, common.Urlencode(metadata["name"]))
+		url := fmt.Sprintf("%s://%s:%d/%s/%d%s", device.Scheme, device.Ip, device.Port, device.Device, partition, common.Urlencode(metadata["name"]))
 		req, err := http.NewRequest("HEAD", url, nil)
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.FormatInt(int64(policy), 10))
 		req.Header.Set("User-Agent", "nursery-stabilizer")
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := o.client.Do(req)
 
 		if err == nil && (resp.StatusCode/100 == 2 || resp.StatusCode == 404) &&
 			resp.Header.Get("X-Backend-Data-Timestamp") != "" &&
@@ -315,13 +318,13 @@ func (o *nurseryObject) notifyPeers(ring ring.Ring, dev *ring.Device, policy int
 		if device.Ip == dev.Ip && device.Port == dev.Port && device.Device == device.Device {
 			continue
 		}
-		url := fmt.Sprintf("http://%s:%d/stabilize/%s/%d%s", device.Ip, device.ReplicationPort, device.Device, partition, common.Urlencode(metadata["name"]))
+		url := fmt.Sprintf("%s://%s:%d/stabilize/%s/%d%s", device.Scheme, device.Ip, device.ReplicationPort, device.Device, partition, common.Urlencode(metadata["name"]))
 		if req, err := http.NewRequest("POST", url, nil); err == nil {
 			req.Header.Set("X-Backend-Storage-Policy-Index", strconv.FormatInt(int64(policy), 10))
 			req.Header.Set("X-Backend-Nursery-Stabilize", "true")
 			req.Header.Set("X-Timestamp", metadata["X-Backend-Data-Timestamp"])
 			req.Header.Set("User-Agent", "nursery-peer-stabilizer")
-			resp, _ := http.DefaultClient.Do(req)
+			resp, _ := o.client.Do(req)
 
 			if resp != nil {
 				resp.Body.Close()
@@ -388,6 +391,7 @@ type nurseryEngine struct {
 	logger         srv.LowLevelLogger
 	policy         int
 	cacheHashDirs  bool
+	client         *http.Client
 }
 
 func neObjectFiles(nurseryDir, stableDir string) (string, string, bool) {
@@ -462,7 +466,7 @@ func nurseryHashDirs(vars map[string]string, driveRoot string, hashPathPrefix st
 func (f *nurseryEngine) New(vars map[string]string, needData bool, asyncWG *sync.WaitGroup) (Object, error) {
 	//TODO the vars map is lame. it expects there to always be "account", "container", etc. this should be moved into a separate struct. this struct will handle the hashDir, suffix crap. until them i'm going to make this a little worse :p
 	var err error
-	sor := &nurseryObject{reclaimAge: f.reclaimAge, reserve: f.reserve, asyncWG: asyncWG, cacheHashDirs: f.cacheHashDirs}
+	sor := &nurseryObject{reclaimAge: f.reclaimAge, reserve: f.reserve, asyncWG: asyncWG, cacheHashDirs: f.cacheHashDirs, client: f.client}
 	sor.nurseryHashDir, sor.stableHashDir = nurseryHashDirs(vars, f.driveRoot, f.hashPathPrefix, f.hashPathSuffix, f.policy)
 	if vars["nurseryHashDir"] != "" {
 		// this is being built by walking the disk- the nurseryHashDir is where it was found. not necessarily where it should be.
@@ -618,6 +622,29 @@ func nurseryEngineConstructor(config conf.Config, policy *conf.Policy, flags *fl
 		return nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 	cacheHashDirs := common.LooksTrue(policy.Config["cache_hash_dirs"])
+	certFile := config.GetDefault("app:object-server", "cert_file", "")
+	keyFile := config.GetDefault("app:object-server", "key_file", "")
+	transport := &http.Transport{
+		MaxIdleConnsPerHost: 256,
+		MaxIdleConns:        0,
+		IdleConnTimeout:     5 * time.Second,
+		DisableCompression:  true,
+		Dial: (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 5 * time.Second,
+		}).Dial,
+		ExpectContinueTimeout: 10 * time.Minute,
+	}
+	if certFile != "" && keyFile != "" {
+		tlsConf, err := common.NewClientTLSConfig(certFile, keyFile)
+		if err != nil {
+			return nil, err
+		}
+		transport.TLSClientConfig = tlsConf
+		if err = http2.ConfigureTransport(transport); err != nil {
+			return nil, err
+		}
+	}
 	return &nurseryEngine{
 		driveRoot:      driveRoot,
 		hashPathPrefix: hashPathPrefix,
@@ -626,7 +653,11 @@ func nurseryEngineConstructor(config conf.Config, policy *conf.Policy, flags *fl
 		reclaimAge:     reclaimAge,
 		logger:         logger,
 		cacheHashDirs:  cacheHashDirs,
-		policy:         policy.Index}, nil
+		client: &http.Client{
+			Timeout:   120 * time.Minute,
+			Transport: transport,
+		},
+		policy: policy.Index}, nil
 }
 
 func init() {

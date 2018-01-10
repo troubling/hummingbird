@@ -21,6 +21,7 @@ import (
 	"github.com/troubling/nectar"
 	"github.com/troubling/nectar/nectarutil"
 	"go.uber.org/zap"
+	"golang.org/x/net/http2"
 )
 
 const PostQuorumTimeoutMs = 100
@@ -30,10 +31,13 @@ func addUpdateHeaders(prefix string, headers http.Header, devices []*ring.Device
 	if i < len(devices) {
 		host := ""
 		device := ""
+		scheme := ""
 		for ; i < len(devices); i += replicas {
 			host += fmt.Sprintf("%s:%d,", devices[i].Ip, devices[i].Port)
 			device += devices[i].Device + ","
+			scheme += devices[i].Scheme + ","
 		}
+		headers.Set(prefix+"-Scheme", strings.TrimRight(scheme, ","))
 		headers.Set(prefix+"-Host", strings.TrimRight(host, ","))
 		headers.Set(prefix+"-Device", strings.TrimRight(device, ","))
 	}
@@ -49,7 +53,7 @@ type ProxyDirectClient struct {
 	Logger        srv.LowLevelLogger
 }
 
-func NewProxyDirectClient(policyList conf.PolicyList, cnf srv.ConfigLoader, logger srv.LowLevelLogger) (*ProxyDirectClient, error) {
+func NewProxyDirectClient(policyList conf.PolicyList, cnf srv.ConfigLoader, logger srv.LowLevelLogger, certFile, keyFile string) (*ProxyDirectClient, error) {
 	var xport http.RoundTripper = &http.Transport{
 		MaxIdleConnsPerHost: 100,
 		MaxIdleConns:        0,
@@ -60,6 +64,16 @@ func NewProxyDirectClient(policyList conf.PolicyList, cnf srv.ConfigLoader, logg
 			KeepAlive: 5 * time.Second,
 		}).Dial,
 		ExpectContinueTimeout: 10 * time.Minute, // TODO: this should probably be like infinity.
+	}
+	if certFile != "" && keyFile != "" {
+		tlsConf, err := common.NewClientTLSConfig(certFile, keyFile)
+		if err != nil {
+			return nil, err
+		}
+		xport.(*http.Transport).TLSClientConfig = tlsConf
+		if err = http2.ConfigureTransport(xport.(*http.Transport)); err != nil {
+			return nil, err
+		}
 	}
 	// Debug hook to auto-close responses and report on it. See debug.go
 	// xport = &autoCloseResponses{transport: xport}
@@ -329,7 +343,7 @@ func (c *proxyClient) ContainerRing() ring.Ring {
 func (c *ProxyDirectClient) PutAccount(account string, headers http.Header) *http.Response {
 	partition := c.AccountRing.GetPartition(account, "", "")
 	return c.quorumResponse(c.AccountRing, partition, func(i int, dev *ring.Device) (*http.Request, error) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", dev.Ip, dev.Port, dev.Device, partition, common.Urlencode(account))
+		url := fmt.Sprintf("%s://%s:%d/%s/%d/%s", dev.Scheme, dev.Ip, dev.Port, dev.Device, partition, common.Urlencode(account))
 		req, err := http.NewRequest("PUT", url, nil)
 		if err != nil {
 			return nil, err
@@ -344,7 +358,7 @@ func (c *ProxyDirectClient) PutAccount(account string, headers http.Header) *htt
 func (c *ProxyDirectClient) PostAccount(account string, headers http.Header) *http.Response {
 	partition := c.AccountRing.GetPartition(account, "", "")
 	return c.quorumResponse(c.AccountRing, partition, func(i int, dev *ring.Device) (*http.Request, error) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", dev.Ip, dev.Port, dev.Device, partition, common.Urlencode(account))
+		url := fmt.Sprintf("%s://%s:%d/%s/%d/%s", dev.Scheme, dev.Ip, dev.Port, dev.Device, partition, common.Urlencode(account))
 		req, err := http.NewRequest("POST", url, nil)
 		if err != nil {
 			return nil, err
@@ -360,7 +374,7 @@ func (c *ProxyDirectClient) GetAccount(account string, options map[string]string
 	partition := c.AccountRing.GetPartition(account, "", "")
 	query := nectarutil.Mkquery(options)
 	return c.firstResponse(c.AccountRing, partition, 0, func(dev *ring.Device) (*http.Request, error) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s%s", dev.Ip, dev.Port, dev.Device, partition,
+		url := fmt.Sprintf("%s://%s:%d/%s/%d/%s%s", dev.Scheme, dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), query)
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
@@ -376,7 +390,7 @@ func (c *ProxyDirectClient) GetAccount(account string, options map[string]string
 func (c *ProxyDirectClient) HeadAccount(account string, headers http.Header) *http.Response {
 	partition := c.AccountRing.GetPartition(account, "", "")
 	return c.firstResponse(c.AccountRing, partition, 0, func(dev *ring.Device) (*http.Request, error) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", dev.Ip, dev.Port, dev.Device, partition,
+		url := fmt.Sprintf("%s://%s:%d/%s/%d/%s", dev.Scheme, dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account))
 		req, err := http.NewRequest("HEAD", url, nil)
 		if err != nil {
@@ -392,7 +406,7 @@ func (c *ProxyDirectClient) HeadAccount(account string, headers http.Header) *ht
 func (c *ProxyDirectClient) DeleteAccount(account string, headers http.Header) *http.Response {
 	partition := c.AccountRing.GetPartition(account, "", "")
 	return c.quorumResponse(c.AccountRing, partition, func(i int, dev *ring.Device) (*http.Request, error) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s", dev.Ip, dev.Port, dev.Device, partition, common.Urlencode(account))
+		url := fmt.Sprintf("%s://%s:%d/%s/%d/%s", dev.Scheme, dev.Ip, dev.Port, dev.Device, partition, common.Urlencode(account))
 		req, err := http.NewRequest("DELETE", url, nil)
 		if err != nil {
 			return nil, err
@@ -421,7 +435,7 @@ func (c *ProxyDirectClient) PutContainer(account string, container string, heade
 	}
 	containerReplicaCount := int(c.ContainerRing.ReplicaCount())
 	return c.quorumResponse(c.ContainerRing, partition, func(i int, dev *ring.Device) (*http.Request, error) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", dev.Ip, dev.Port, dev.Device, partition,
+		url := fmt.Sprintf("%s://%s:%d/%s/%d/%s/%s", dev.Scheme, dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), common.Urlencode(container))
 		req, err := http.NewRequest("PUT", url, nil)
 		if err != nil {
@@ -443,7 +457,7 @@ func (c *ProxyDirectClient) PutContainer(account string, container string, heade
 func (c *ProxyDirectClient) PostContainer(account string, container string, headers http.Header) *http.Response {
 	partition := c.ContainerRing.GetPartition(account, container, "")
 	return c.quorumResponse(c.ContainerRing, partition, func(i int, dev *ring.Device) (*http.Request, error) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", dev.Ip, dev.Port, dev.Device, partition,
+		url := fmt.Sprintf("%s://%s:%d/%s/%d/%s/%s", dev.Scheme, dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), common.Urlencode(container))
 		req, err := http.NewRequest("POST", url, nil)
 		if err != nil {
@@ -460,7 +474,7 @@ func (c *ProxyDirectClient) GetContainer(account string, container string, optio
 	partition := c.ContainerRing.GetPartition(account, container, "")
 	query := nectarutil.Mkquery(options)
 	return c.firstResponse(c.ContainerRing, partition, 0, func(dev *ring.Device) (*http.Request, error) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s%s", dev.Ip, dev.Port, dev.Device, partition,
+		url := fmt.Sprintf("%s://%s:%d/%s/%d/%s/%s%s", dev.Scheme, dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), common.Urlencode(container), query)
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
@@ -540,7 +554,7 @@ func (c *ProxyDirectClient) GetContainerInfo(account string, container string, m
 func (c *ProxyDirectClient) HeadContainer(account string, container string, headers http.Header) *http.Response {
 	partition := c.ContainerRing.GetPartition(account, container, "")
 	return c.firstResponse(c.ContainerRing, partition, 0, func(dev *ring.Device) (*http.Request, error) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", dev.Ip, dev.Port, dev.Device, partition,
+		url := fmt.Sprintf("%s://%s:%d/%s/%d/%s/%s", dev.Scheme, dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), common.Urlencode(container))
 		req, err := http.NewRequest("HEAD", url, nil)
 		if err != nil {
@@ -559,7 +573,7 @@ func (c *ProxyDirectClient) DeleteContainer(account string, container string, he
 	accountDevices := c.AccountRing.GetNodes(accountPartition)
 	containerReplicaCount := int(c.ContainerRing.ReplicaCount())
 	return c.quorumResponse(c.ContainerRing, partition, func(i int, dev *ring.Device) (*http.Request, error) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", dev.Ip, dev.Port, dev.Device, partition,
+		url := fmt.Sprintf("%s://%s:%d/%s/%d/%s/%s", dev.Scheme, dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), common.Urlencode(container))
 		req, err := http.NewRequest("DELETE", url, nil)
 		if err != nil {
@@ -708,7 +722,7 @@ func (oc *standardObjectClient) putObject(account, container, obj string, header
 	devToRequest := func(index int, dev *ring.Device) (*http.Request, error) {
 		trp, wp := io.Pipe()
 		rp := &putReader{Reader: trp, cancel: cancel, w: wp, ready: ready}
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", dev.Ip, dev.Port, dev.Device, objectPartition,
+		url := fmt.Sprintf("%s://%s:%d/%s/%d/%s/%s/%s", dev.Scheme, dev.Ip, dev.Port, dev.Device, objectPartition,
 			common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj))
 		req, err := http.NewRequest("PUT", url, rp)
 		if err != nil {
@@ -721,7 +735,7 @@ func (oc *standardObjectClient) putObject(account, container, obj string, header
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(oc.policy))
 		req.Header.Set("X-Container-Partition", strconv.FormatUint(containerPartition, 10))
 		addUpdateHeaders("X-Container", req.Header, containerDevices, index, objectReplicaCount)
-		req.Header.Set("Expect", "100-Continue")
+		req.Header.Set("Expect", "100-continue")
 		return req, nil
 	}
 
@@ -799,7 +813,7 @@ func (oc *standardObjectClient) postObject(account, container, obj string, heade
 	containerDevices := oc.proxyDirectClient.ContainerRing.GetNodes(containerPartition)
 	objectReplicaCount := int(oc.objectRing.ReplicaCount())
 	return oc.proxyDirectClient.quorumResponse(oc.objectRing, partition, func(i int, dev *ring.Device) (*http.Request, error) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", dev.Ip, dev.Port, dev.Device, partition,
+		url := fmt.Sprintf("%s://%s:%d/%s/%d/%s/%s/%s", dev.Scheme, dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj))
 		req, err := http.NewRequest("POST", url, nil)
 		if err != nil {
@@ -818,7 +832,7 @@ func (oc *standardObjectClient) postObject(account, container, obj string, heade
 func (oc *standardObjectClient) getObject(account, container, obj string, headers http.Header) *http.Response {
 	partition := oc.objectRing.GetPartition(account, container, obj)
 	return oc.proxyDirectClient.firstResponse(oc.objectRing, partition, oc.deviceLimit, func(dev *ring.Device) (*http.Request, error) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", dev.Ip, dev.Port, dev.Device, partition,
+		url := fmt.Sprintf("%s://%s:%d/%s/%d/%s/%s/%s", dev.Scheme, dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj))
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
@@ -835,7 +849,7 @@ func (oc *standardObjectClient) getObject(account, container, obj string, header
 func (oc *standardObjectClient) grepObject(account, container, obj string, search string) *http.Response {
 	partition := oc.objectRing.GetPartition(account, container, obj)
 	return oc.proxyDirectClient.firstResponse(oc.objectRing, partition, oc.deviceLimit, func(dev *ring.Device) (*http.Request, error) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s?e=%s", dev.Ip, dev.Port, dev.Device, partition,
+		url := fmt.Sprintf("%s://%s:%d/%s/%d/%s/%s/%s?e=%s", dev.Scheme, dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj), common.Urlencode(search))
 		req, err := http.NewRequest("GREP", url, nil)
 		if err != nil {
@@ -849,7 +863,7 @@ func (oc *standardObjectClient) grepObject(account, container, obj string, searc
 func (oc *standardObjectClient) headObject(account, container, obj string, headers http.Header) *http.Response {
 	partition := oc.objectRing.GetPartition(account, container, obj)
 	return oc.proxyDirectClient.firstResponse(oc.objectRing, partition, oc.deviceLimit, func(dev *ring.Device) (*http.Request, error) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", dev.Ip, dev.Port, dev.Device, partition,
+		url := fmt.Sprintf("%s://%s:%d/%s/%d/%s/%s/%s", dev.Scheme, dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj))
 		req, err := http.NewRequest("HEAD", url, nil)
 		if err != nil {
@@ -869,7 +883,7 @@ func (oc *standardObjectClient) deleteObject(account, container, obj string, hea
 	containerDevices := oc.proxyDirectClient.ContainerRing.GetNodes(containerPartition)
 	objectReplicaCount := int(oc.objectRing.ReplicaCount())
 	return oc.proxyDirectClient.quorumResponse(oc.objectRing, partition, func(i int, dev *ring.Device) (*http.Request, error) {
-		url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s/%s", dev.Ip, dev.Port, dev.Device, partition,
+		url := fmt.Sprintf("%s://%s:%d/%s/%d/%s/%s/%s", dev.Scheme, dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj))
 		req, err := http.NewRequest("DELETE", url, nil)
 		if err != nil {
@@ -1047,13 +1061,4 @@ func (c *directClient) DeleteObject(container string, obj string, headers map[st
 
 func (c *directClient) Raw(method, urlAfterAccount string, headers map[string]string, body io.Reader) *http.Response {
 	return nectarutil.ResponseStub(http.StatusNotImplemented, "Raw requests not implemented for direct clients")
-}
-
-// NewDirectClient creates a new direct client with the given account name.
-func NewDirectClient(account string) (nectar.Client, error) {
-	pdc, err := NewProxyDirectClient(nil, srv.DefaultConfigLoader{}, zap.NewNop())
-	if err != nil {
-		return nil, err
-	}
-	return &directClient{account: account, pc: NewProxyClient(pdc, nil, nil, zap.NewNop())}, nil
 }
