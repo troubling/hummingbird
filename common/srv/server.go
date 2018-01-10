@@ -92,6 +92,10 @@ func (w *customWriter) WriteHeader(status int) {
 	w.ResponseWriter.WriteHeader(w.f(w.ResponseWriter, status))
 }
 
+func (w *customWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return w.ResponseWriter.(http.Hijacker).Hijack()
+}
+
 // NewCustomWriter creates an http.ResponseWriter wrapper that calls your function on WriteHeader.
 func NewCustomWriter(w http.ResponseWriter, f func(w http.ResponseWriter, status int) int) http.ResponseWriter {
 	return &customWriter{ResponseWriter: w, f: f}
