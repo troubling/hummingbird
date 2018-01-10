@@ -133,6 +133,15 @@ func initCommand(args []string) error {
 	print(`sudo chmod 0644 %s/etc/hummingbird/hummingbird.conf`, prefix)
 	print(``)
 
+	print(`sudo tee %s/etc/hummingbird/andrewd-server.conf >/dev/null << EOF`, prefix)
+	print(`[andrewd]`)
+	print(`EOF`)
+	if subcmd != "deb" {
+		print(`sudo chown %s: %s/etc/hummingbird/andrewd-server.conf`, username, prefix)
+	}
+	print(`sudo chmod 0644 %s/etc/hummingbird/andrewd-server.conf`, prefix)
+	print(``)
+
 	print(`sudo tee %s/etc/hummingbird/proxy-server.conf >/dev/null << EOF`, prefix)
 	print(`[DEFAULT]`)
 	print(`bind_ip = 127.0.0.1`)
@@ -558,6 +567,7 @@ func initCommand(args []string) error {
 		print(`sudo chmod 0755 /var/cache`)
 		print(`sudo chmod 0755 /var/log`)
 		print(`sudo chmod 0755 /var/run`)
+		print(`sudo rm /var/local/hummingbird/andrewd.db || true`)
 		print(`sudo chown -R ${USER}: /srv/hb /var/cache/swift* /var/log/hummingbird /var/run/swift /var/run/hummingbird /var/local/hummingbird`)
 		print(`if hash systemctl 2>/dev/null ; then`)
 		print(`    sudo systemctl restart memcached`)
