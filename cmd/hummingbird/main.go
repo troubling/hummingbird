@@ -318,7 +318,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  Builds a swift style ring.  Commands are:\n")
 		fmt.Fprintf(os.Stderr, "    create <part_power> <replicas> <min_part_hours> (create a new ring)\n")
 		fmt.Fprintf(os.Stderr, "    add <device> <weight> (add a new device to the ring)\n")
-		fmt.Fprintf(os.Stderr, "    rebalance (rebalance the ring)\n")
+		fmt.Fprintf(os.Stderr, "    rebalance [-dryrun] (rebalance the ring)\n")
 		fmt.Fprintf(os.Stderr, "    search <search_flags> (search for devices in the ring)\n")
 		fmt.Fprintf(os.Stderr, "    set_weight <search_flags> [-yes] <weight> (change the weight of 1 or more devices)\n")
 		fmt.Fprintf(os.Stderr, "    remove <search_flags> [-yes] (remove device from the ring)\n")
