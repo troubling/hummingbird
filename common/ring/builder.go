@@ -1618,7 +1618,7 @@ func CreateRing(builderPath string, partPower int, replicas float64, minPartHour
 }
 
 // Rebalance attempts to rebalance the ring by reassigning partitions that haven't been recently reassigned.
-func Rebalance(builderPath string, debug bool) error {
+func Rebalance(builderPath string, debug bool, dryrun bool) error {
 	builder, err := NewRingBuilderFromFile(builderPath, debug)
 	if err != nil {
 		return err
@@ -1633,6 +1633,10 @@ func Rebalance(builderPath string, debug bool) error {
 		return err
 	}
 	fmt.Printf("Changed: %d Balance: %f Removed: %d\n", changed, balance, removed)
+	if dryrun {
+		fmt.Println("Dry run complete; rebalance was not saved.")
+		return nil
+	}
 	backupPath := path.Join(path.Dir(builderPath), "backups")
 	err = os.Mkdir(backupPath, 0777)
 	if err != nil {

@@ -587,7 +587,7 @@ func (dw *driveWatch) updateRing(rd ringData) (outputStr string, err error) {
 		dw.logger.Info("NOT Rebalancing ring",
 			zap.Int("policy", policy))
 	} else {
-		if e := ring.Rebalance(rd.builderPath, false); e != nil {
+		if e := ring.Rebalance(rd.builderPath, false, false); e != nil {
 			dw.logger.Error("error rebalancing ring",
 				zap.String("builderPath", rd.builderPath), zap.Error(e))
 			return "error rebalancing ring", e

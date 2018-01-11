@@ -82,11 +82,12 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		}
 
 	case "rebalance":
-		if len(args) < 1 {
-			flags.Usage()
-			return
+		rebalanceFlags := flag.NewFlagSet("rebalance", flag.ExitOnError)
+		dryrun := rebalanceFlags.Bool("dryrun", false, "A dry run will rebalance but not save the results.")
+		if err := rebalanceFlags.Parse(args[2:]); err != nil {
+			fmt.Println(err)
 		}
-		err := ring.Rebalance(pth, debug)
+		err := ring.Rebalance(pth, debug, *dryrun)
 		if err != nil {
 			fmt.Println(err)
 		}
