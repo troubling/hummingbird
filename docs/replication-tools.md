@@ -1,6 +1,44 @@
 Hummingbird Priority Replication Tools
 ======================================
 
+## hummingbird nodes -p &lt;partition&gt;
+
+If you'd like to know where the cluster is storing a given partition, you can use the `hummingbird nodes -p <partition>` command. For example:
+
+```
+$ hummingbird nodes -p 365
+
+Account
+Container
+Object
+Partition       365
+Hash
+
+Server:Port Device      127.0.0.1:6030 sdb3
+Server:Port Device      127.0.0.1:6020 sdb2
+Server:Port Device      127.0.0.1:6040 sdb4
+Server:Port Device      127.0.0.1:6010 sdb1      [Handoff]
+
+
+curl -g -I -XHEAD "http://127.0.0.1:6030/sdb3/365/"
+curl -g -I -XHEAD "http://127.0.0.1:6020/sdb2/365/"
+curl -g -I -XHEAD "http://127.0.0.1:6040/sdb4/365/"
+curl -g -I -XHEAD "http://127.0.0.1:6010/sdb1/365/" # [Handoff]
+
+
+Use your own device location of servers:
+such as "export DEVICE=/srv/node"
+ssh 127.0.0.1 "ls -lah ${DEVICE:-/srv/node*}/sdb3/objects/365"
+ssh 127.0.0.1 "ls -lah ${DEVICE:-/srv/node*}/sdb2/objects/365"
+ssh 127.0.0.1 "ls -lah ${DEVICE:-/srv/node*}/sdb4/objects/365"
+ssh 127.0.0.1 "ls -lah ${DEVICE:-/srv/node*}/sdb1/objects/365" # [Handoff]
+
+note: `/srv/node*` is used as default value of `devices`, the real value is set in the config file on each storage node.
+```
+
+This shows that the partition #365 was primarily stored on the 127.0.0.1:6030/sdb3, 127.0.0.1:6020/sdb2, and 127.0.0.1:6040/sdb4 devices (this was an all-in-one development cluster.) Using this information, you can directly check if the devices actually have that partition's information, or double-check the devices are online and receiving writes etc.
+
+
 ## moveparts
 
 After a ring rebalance / deployment, the swift cluster will heal itself / fill
