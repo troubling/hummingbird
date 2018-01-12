@@ -192,20 +192,22 @@ func (dw *driveWatch) getDbAndLock() (*sql.DB, error) {
         CREATE TABLE IF NOT EXISTS dispersion_report (
             id INTEGER PRIMARY KEY,
             create_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			rtype VARCHAR(20) NOT NULL,
             policy INTEGER NOT NULL,
-            objects INTEGER NOT NULL,
-            objects_found INTEGER NOT NULL,
+            items INTEGER NOT NULL,
+            items_found INTEGER NOT NULL,
             report_text TEXT
             );
 
         CREATE TABLE IF NOT EXISTS dispersion_report_detail (
             id INTEGER PRIMARY KEY,
             dispersion_report_id INTEGER NOT NULL,
+			rtype VARCHAR(20) NOT NULL,
             policy INTEGER NOT NULL,
             partition INTEGER NOT NULL,
-            partition_object_path VARCHAR(100) NOT NULL,
-            objects_found INTEGER NOT NULL,
-            objects_need INTEGER NOT NULL,
+            partition_item_path VARCHAR(100) NOT NULL,
+            items_found INTEGER NOT NULL,
+            items_need INTEGER NOT NULL,
             create_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 		`

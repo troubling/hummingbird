@@ -117,7 +117,6 @@ func putDispersionContainers(hClient client.ProxyClient, logger srv.LowLevelLogg
 	if resp.StatusCode/100 == 2 {
 		return true
 	}
-
 	contRing := hClient.ContainerRing()
 	contNames := make(chan string, 100)
 	cancel := make(chan struct{})
@@ -209,8 +208,7 @@ func putDispersionObjects(hClient client.ProxyClient, policy *conf.Policy, logge
 			zap.Int("respCode", resp.StatusCode))
 		return false
 	}
-	numObjs := uint64(0)
-	successes := uint64(0)
+	var numObjs, successes uint64
 	objNames := make(chan string, 100)
 	var objRing ring.Ring
 	objRing, resp = hClient.ObjectRingFor(AdminAccount, container)
@@ -318,7 +316,7 @@ func rescueLonelyPartition(policy int64, partition uint64, goodNode *ring.Device
 	}
 }
 
-type probObj struct {
+type probPart struct {
 	part       int
 	nodesFound int
 }
@@ -341,6 +339,80 @@ type Dispersion struct {
 	objRescueCounters   map[int64]tally.Counter
 }
 
+func (d *Dispersion) scanDispersionConts(cancelChan chan struct{}) bool {
+	contRing := d.hClient.ContainerRing()
+	marker := ""
+	var goodPartitions, cFound, cNeed int64
+	probConts := map[string]probPart{}
+	for {
+		select {
+		case <-cancelChan:
+			return false
+		default:
+		}
+		resp := d.hClient.GetAccount(AdminAccount, map[string]string{"format": "json", "marker": marker, "prefix": "disp-conts-"}, http.Header{})
+		var crs []accountserver.ContainerListingRecord
+		err := json.NewDecoder(resp.Body).Decode(&crs)
+		if err != nil {
+			d.logger.Error("Could not get account listing", zap.Error(err))
+			return true
+		}
+		if len(crs) == 0 {
+			break
+		}
+		for _, cRec := range crs {
+			contArr := strings.Split(cRec.Name, "-")
+			if len(contArr) != 4 {
+				continue
+			}
+			partition, e := strconv.ParseUint(contArr[2], 10, 64)
+			if e != nil {
+				continue
+			}
+			nodes := contRing.GetNodes(partition)
+			goodNodes := []*ring.Device{}
+			notFoundNodes := []*ring.Device{}
+			for _, device := range nodes {
+				url := fmt.Sprintf("http://%s:%d/%s/%d/%s/%s", device.Ip, device.Port, device.Device, partition,
+					common.Urlencode(AdminAccount), common.Urlencode(cRec.Name))
+				req, _ := http.NewRequest("HEAD", url, nil)
+				resp, err := d.dirClient.Do(req)
+
+				if err == nil && resp.StatusCode/100 == 2 {
+					goodNodes = append(goodNodes, device)
+				} else if resp != nil && resp.StatusCode == 404 {
+					notFoundNodes = append(notFoundNodes, device)
+				}
+				if resp != nil {
+					resp.Body.Close()
+				}
+			}
+			if len(nodes) != len(goodNodes) {
+				probConts[cRec.Name] = probPart{int(partition), len(goodNodes)}
+			} else {
+				goodPartitions += 1
+			}
+			if len(nodes) == len(notFoundNodes) {
+				d.logger.Error("LOST Partition",
+					zap.Uint64("partition", partition),
+					zap.String("contPath", fmt.Sprintf("/%s/%s", AdminAccount, cRec.Name)))
+			}
+			cNeed += int64(len(nodes))
+			cFound += int64(len(goodNodes))
+			marker = cRec.Name
+			if !d.onceFullDispersion {
+				time.Sleep(SLEEP_TIME)
+				d.partitionProcessed <- struct{}{}
+			}
+		}
+	}
+	d.makeDispersionPrintableReport("container", 0, contRing.ReplicaCount(), goodPartitions, probConts, cNeed, cFound, 0)
+	d.logger.Info("Container Dispersion report written",
+		zap.Int64("goodPartitions", goodPartitions),
+		zap.Uint64("totalPartitions", contRing.PartitionCount()))
+	return true
+}
+
 func (d *Dispersion) scanDispersionObjs(cancelChan chan struct{}) {
 	resp := d.hClient.GetAccount(AdminAccount, map[string]string{"format": "json", "prefix": "disp-objs-"}, http.Header{})
 	var cRecords []accountserver.ContainerListingRecord
@@ -349,7 +421,6 @@ func (d *Dispersion) scanDispersionObjs(cancelChan chan struct{}) {
 		d.logger.Error("Could not get container listing", zap.Error(err))
 		return
 	}
-
 	if len(cRecords) == 0 {
 		d.logger.Error("No dispersion containers found")
 		return
@@ -357,9 +428,8 @@ func (d *Dispersion) scanDispersionObjs(cancelChan chan struct{}) {
 	resultChan := make(chan string)
 	for _, cr := range cRecords {
 		var objRing ring.Ring
-		probObjs := map[string]probObj{}
-		goodPartitions := int64(0)
-		numRescues, objsFound, objsNeed := int64(0), int64(0), int64(0)
+		probObjs := map[string]probPart{}
+		var goodPartitions, numRescues, objsFound, objsNeed int64
 		contArr := strings.Split(cr.Name, "-")
 		if len(contArr) != 3 {
 			continue
@@ -375,7 +445,7 @@ func (d *Dispersion) scanDispersionObjs(cancelChan chan struct{}) {
 			return
 		}
 		marker := ""
-		for true {
+		for {
 			select {
 			case <-cancelChan:
 				return
@@ -411,7 +481,7 @@ func (d *Dispersion) scanDispersionObjs(cancelChan chan struct{}) {
 				for _, device := range nodes {
 					url := fmt.Sprintf("%s://%s:%d/%s/%d/%s/%s/%s", device.Scheme, device.Ip, device.Port, device.Device, partition,
 						common.Urlencode(AdminAccount), common.Urlencode(cr.Name), common.Urlencode(objRec.Name))
-					req, err := http.NewRequest("HEAD", url, nil)
+					req, _ := http.NewRequest("HEAD", url, nil)
 					req.Header.Set("X-Backend-Storage-Policy-Index", strconv.FormatInt(policy, 10))
 					resp, err := d.dirClient.Do(req)
 
@@ -425,7 +495,7 @@ func (d *Dispersion) scanDispersionObjs(cancelChan chan struct{}) {
 					}
 				}
 				if len(nodes) != len(goodNodes) {
-					probObjs[fmt.Sprintf("%s/%s", cr.Name, objRec.Name)] = probObj{int(partition), len(goodNodes)}
+					probObjs[fmt.Sprintf("%s/%s", cr.Name, objRec.Name)] = probPart{int(partition), len(goodNodes)}
 				} else {
 					goodPartitions += 1
 				}
@@ -434,7 +504,7 @@ func (d *Dispersion) scanDispersionObjs(cancelChan chan struct{}) {
 					go rescueLonelyPartition(policy, partition, goodNodes[0],
 						notFoundNodes, objRing.GetMoreNodes(partition), resultChan, d.lonelyClient)
 				}
-				if len(goodNodes) == 0 {
+				if len(nodes) == len(notFoundNodes) {
 					d.logger.Error("LOST Partition",
 						zap.Uint64("partition", partition),
 						zap.String("objPath", fmt.Sprintf("/%s/%s/%s", AdminAccount, cr.Name, objRec.Name)))
@@ -450,8 +520,8 @@ func (d *Dispersion) scanDispersionObjs(cancelChan chan struct{}) {
 			}
 		}
 		d.gaugeObjectDispersion(policy, objRing.ReplicaCount(), goodPartitions, probObjs, numRescues)
-		d.makeObjectDispersionPrintableReport(policy, objRing.ReplicaCount(), goodPartitions, probObjs, objsNeed, objsFound, numRescues)
-		d.logger.Info("Dispersion report written",
+		d.makeDispersionPrintableReport("object", policy, objRing.ReplicaCount(), goodPartitions, probObjs, objsNeed, objsFound, numRescues)
+		d.logger.Info("Object Dispersion report written",
 			zap.Int64("policy", policy),
 			zap.Int64("rescuing", numRescues),
 			zap.Int64("goodPartitions", goodPartitions),
@@ -481,12 +551,12 @@ func PrintLastDispersionReport(serverconf conf.Config) error {
 	rows, err := db.Query(`
     SELECT d.policy, d.create_date, d.report_text FROM
     (SELECT id, policy, MAX(create_date) mcd FROM dispersion_report GROUP BY policy) r
-    INNER JOIN dispersion_report d ON d.id = r.id`)
-	defer rows.Close()
+    INNER JOIN dispersion_report d ON d.id = r.id WHERE d.rtype = "object"`)
 	if err != nil {
 		fmt.Printf("ERROR: SELECT for dispersion_report: %v\n", err)
 		return err
 	}
+	defer rows.Close()
 	for rows.Next() {
 		var createDate time.Time
 		var policy, report string
@@ -500,32 +570,57 @@ func PrintLastDispersionReport(serverconf conf.Config) error {
 			fmt.Println("Error query data:", err)
 		}
 	}
+	rows, err = db.Query(`
+    SELECT create_date, report_text FROM
+    dispersion_report WHERE rtype = "container" ORDER BY create_date DESC LIMIT 1`)
+	if err != nil {
+		fmt.Printf("ERROR: SELECT for container dispersion_report: %v\n", err)
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var createDate time.Time
+		var report string
+		if err := rows.Scan(&createDate, &report); err == nil {
+			fmt.Println(fmt.Sprintf(
+				"Latest container dispersion report on %s", createDate.Format(time.UnixDate)))
+			fmt.Print(report)
+			fmt.Println("-----------------------------------------------------")
+		} else {
+			fmt.Println("Error query data:", err)
+		}
+	}
 	return nil
 }
 
-func (d *Dispersion) makeObjectDispersionPrintableReport(policy int64, replicas uint64, goodPartitions int64, probObjects map[string]probObj, objsNeed int64, objsFound int64, numRescues int64) {
+func (d *Dispersion) makeDispersionPrintableReport(rtype string, policy int64, replicas uint64, goodPartitions int64, probParts map[string]probPart, itemsNeed int64, itemsFound int64, numRescues int64) {
 
 	replMissing := map[uint64]int64{}
-	for _, po := range probObjects {
-		nodesMissing := replicas - uint64(po.nodesFound)
+	for _, pp := range probParts {
+		nodesMissing := replicas - uint64(pp.nodesFound)
 		replMissing[nodesMissing] = replMissing[nodesMissing] + 1
 	}
-	objText := []struct {
+	rText := []struct {
 		text string
 		cnt  uint64
 	}{}
 	for pMissing, cnt := range replMissing {
-		objText = append(objText, struct {
+		rText = append(rText, struct {
 			text string
 			cnt  uint64
 		}{fmt.Sprintf("There were %d partitions missing %d copies.\n", cnt, pMissing), pMissing})
 	}
-	sort.Slice(objText, func(i, j int) bool { return objText[i].cnt < objText[j].cnt })
-	report := fmt.Sprintf("Using storage policy %d\nThere were %d partitions missing 0 copies.\n", policy, goodPartitions)
-	for _, t := range objText {
+	sort.Slice(rText, func(i, j int) bool { return rText[i].cnt < rText[j].cnt })
+	var report string
+	if rtype == "object" {
+		report = fmt.Sprintf("Using storage policy %d\nThere were %d partitions missing 0 copies.\n", policy, goodPartitions)
+	} else {
+		report = fmt.Sprintf("For container dispersion.\nThere were %d partitions missing 0 copies.\n", goodPartitions)
+	}
+	for _, t := range rText {
 		report += t.text
 	}
-	report += fmt.Sprintf("%.2f%% of object copies found (%d of %d)\nSample represents 100%% of the object partition space.\n", float64(objsFound*100)/float64(objsNeed), objsFound, objsNeed)
+	report += fmt.Sprintf("%.2f%% of %s copies found (%d of %d)\nSample represents 100%% of the %s partition space.\n", float64(itemsFound*100)/float64(itemsNeed), rtype, itemsFound, itemsNeed, rtype)
 
 	if d.onceFullDispersion {
 		fmt.Println(report)
@@ -542,19 +637,19 @@ func (d *Dispersion) makeObjectDispersionPrintableReport(policy int64, replicas 
 		return
 	}
 	defer tx.Rollback()
-	r, err := tx.Exec("INSERT INTO dispersion_report (policy, objects, objects_found, report_text) VALUES (?,?,?,?)", policy, objsNeed, objsFound, report)
+	r, err := tx.Exec("INSERT INTO dispersion_report (rtype, policy, items, items_found, report_text) VALUES (?,?,?,?,?)", rtype, policy, itemsNeed, itemsFound, report)
 	if err != nil {
 		d.logger.Error("error insert dispersion_report", zap.Error(err))
 		return
 	}
 	rID, _ := r.LastInsertId()
-	recDetail, err := tx.Prepare("INSERT INTO dispersion_report_detail (dispersion_report_id, policy, partition, partition_object_path, objects_found, objects_need) VALUES (?,?,?,?,?,?)")
+	recDetail, err := tx.Prepare("INSERT INTO dispersion_report_detail (dispersion_report_id, rtype, policy, partition, partition_item_path, items_found, items_need) VALUES (?,?,?,?,?,?,?)")
 	if err != nil {
 		d.logger.Error("error insert prep dispersion_report_detail", zap.Error(err))
 		return
 	}
-	for o, po := range probObjects {
-		if _, err := recDetail.Exec(rID, policy, po.part, o, po.nodesFound, replicas); err != nil {
+	for o, pp := range probParts {
+		if _, err := recDetail.Exec(rID, rtype, policy, pp.part, o, pp.nodesFound, replicas); err != nil {
 			d.logger.Error("error insert dispersion_report_detail", zap.Error(err))
 			return
 		}
@@ -569,7 +664,7 @@ func (d *Dispersion) makeObjectDispersionPrintableReport(policy int64, replicas 
 
 func (d *Dispersion) gaugeObjectDispersion(
 	policy int64, replicas uint64, goodPartitions int64,
-	probObjects map[string]probObj, numRescues int64) {
+	probObjects map[string]probPart, numRescues int64) {
 
 	if numRescues > 0 {
 		if _, ok := d.objRescueCounters[policy]; !ok {
@@ -617,7 +712,11 @@ func (d *Dispersion) checkDispersionRunner() {
 			close(d.dispersionCanceler)
 		}
 		d.dispersionCanceler = make(chan struct{})
-		go d.scanDispersionObjs(d.dispersionCanceler)
+		go func() {
+			if d.scanDispersionConts(d.dispersionCanceler) {
+				d.scanDispersionObjs(d.dispersionCanceler)
+			}
+		}()
 	}
 }
 
@@ -631,7 +730,9 @@ func (d *Dispersion) runDispersionOnce() {
 	d.onceFullDispersion = true
 	dummyCanceler := make(chan struct{})
 	defer close(dummyCanceler)
-	d.scanDispersionObjs(dummyCanceler)
+	if d.scanDispersionConts(dummyCanceler) {
+		d.scanDispersionObjs(dummyCanceler)
+	}
 }
 
 func NewDispersion(logger srv.LowLevelLogger, hClient client.ProxyClient, metricsScope tally.Scope, dw *driveWatch, certFile, keyFile string) (*Dispersion, error) {
