@@ -556,6 +556,7 @@ func PrintLastDispersionReport(serverconf conf.Config) error {
 		fmt.Printf("ERROR: SELECT for dispersion_report: %v\n", err)
 		return err
 	}
+	defer rows.Close()
 	for rows.Next() {
 		var createDate time.Time
 		var policy, report string
@@ -569,15 +570,14 @@ func PrintLastDispersionReport(serverconf conf.Config) error {
 			fmt.Println("Error query data:", err)
 		}
 	}
-	rows.Close()
 	rows, err = db.Query(`
     SELECT create_date, report_text FROM
     dispersion_report WHERE rtype = "container" ORDER BY create_date DESC LIMIT 1`)
-	defer rows.Close()
 	if err != nil {
 		fmt.Printf("ERROR: SELECT for container dispersion_report: %v\n", err)
 		return err
 	}
+	defer rows.Close()
 	for rows.Next() {
 		var createDate time.Time
 		var report string
