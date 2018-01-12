@@ -19,6 +19,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -367,5 +368,82 @@ func TestPolicyStats(t *testing.T) {
 	}
 	if polstat2.BytesUsed != 9012 {
 		t.Fatal(polstat2.BytesUsed)
+	}
+}
+
+func TestMalformed(t *testing.T) {
+	dir, err := ioutil.TempDir("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dbFile := filepath.Join(dir, "device", "accounts", "1", "000", "db", "db.db")
+	if err := os.MkdirAll(filepath.Dir(dbFile), 0777); err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	err = sqliteCreateAccount(dbFile, "a", "200000000.00000", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(dbFile, os.O_RDWR, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Seek(100, 0)
+	_, err = f.Write([]byte("garbage"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sqliteOpenAccount(dbFile)
+	sa := db.(*sqliteAccount)
+	err = sa.connect()
+	if err == nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(err.Error(), "database disk image is malformed; quarantined") {
+		t.Fatal(err)
+	}
+}
+
+func TestNotADB(t *testing.T) {
+	dir, err := ioutil.TempDir("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dbFile := filepath.Join(dir, "device", "accounts", "1", "000", "db", "db.db")
+	if err := os.MkdirAll(filepath.Dir(dbFile), 0777); err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	err = sqliteCreateAccount(dbFile, "a", "200000000.00000", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(dbFile, os.O_RDWR, 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Seek(10, 0)
+	_, err = f.Write([]byte("garbage"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sqliteOpenAccount(dbFile)
+	sa := db.(*sqliteAccount)
+	err = sa.connect()
+	if err == nil {
+		t.Fatal(err)
+	}
+	// Different library versions give slightly different errors.
+	if !strings.Contains(err.Error(), "file is encrypted or is not a database; quarantined") && !strings.Contains(err.Error(), "file is not a database; quarantined") {
+		t.Fatal(err)
 	}
 }
