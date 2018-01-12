@@ -525,8 +525,8 @@ func ReconClient(flags *flag.FlagSet, cnf srv.ConfigLoader) bool {
 		MaxIdleConnsPerHost: 100,
 		MaxIdleConns:        0,
 	}
-	certFile := flags.Lookup("certFile").Value.(flag.Getter).Get().(string)
-	keyFile := flags.Lookup("keyFile").Value.(flag.Getter).Get().(string)
+	certFile := flags.Lookup("certfile").Value.(flag.Getter).Get().(string)
+	keyFile := flags.Lookup("keyfile").Value.(flag.Getter).Get().(string)
 	if certFile != "" && keyFile != "" {
 		tlsConf, err := common.NewClientTLSConfig(certFile, keyFile)
 		if err != nil {
