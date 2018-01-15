@@ -122,8 +122,10 @@ func getRingData(oring ring.Ring, onlyWeighted bool) (map[string]*ring.Device, [
 
 func PrintDriveReport(serverconf conf.Config) error {
 	sqlDir := serverconf.GetDefault("drive_watch", "sql_dir", "/var/local/hummingbird")
-	if _, err := os.Open(sqlDir); err != nil {
+	if sd, err := os.Open(sqlDir); err != nil {
 		return fmt.Errorf("Invalid Config, no sql_dir at %s", sqlDir)
+	} else {
+		sd.Close()
 	}
 	db, err := sql.Open("sqlite3", filepath.Join(sqlDir, DB_NAME))
 	if err != nil {
