@@ -139,7 +139,18 @@ func PrintDriveReport(serverconf conf.Config) error {
 	}
 	for _, p := range pList {
 		fmt.Printf("Weighted / Unmounted / Unreachable devices report for Policy %d\n", p.Index)
-		rows, err := db.Query("SELECT ip, port, device, weight, mounted, "+
+		rows, err := db.Query("SELECT create_date FROM run_log WHERE policy = ? AND success = 1 ORDER BY create_date DESC LIMIT 1", p.Index)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		if rows.Next() {
+			var createDate time.Time
+			if err := rows.Scan(&createDate); err == nil {
+				fmt.Printf("Last successful recon run was %.2f hours ago.\n", float64(time.Since(createDate))/float64(time.Hour))
+			}
+		}
+		rows, err = db.Query("SELECT ip, port, device, weight, mounted, "+
 			"reachable, last_update FROM device WHERE policy = ? AND "+
 			"(mounted=0 OR reachable=0) ORDER BY last_update",
 			p.Index)
