@@ -30,8 +30,10 @@ import (
 
 	"golang.org/x/net/http2"
 
+	"github.com/gholt/brimtext"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/uber-go/tally"
@@ -39,6 +41,7 @@ import (
 )
 
 var DB_NAME = "andrewd.db"
+var RING_LOCK_DIR = "ringUpdateLock"
 
 type ipPort struct {
 	ip, scheme      string
@@ -84,7 +87,7 @@ type driveWatch struct {
 	ringUpdateFreq  time.Duration
 	runFreq         time.Duration
 	maxWeightChange float64
-	doNotRebalance  bool
+	updateRing      bool
 	sqlDir          string
 }
 
@@ -115,6 +118,72 @@ func getRingData(oring ring.Ring, onlyWeighted bool) (map[string]*ring.Device, [
 		}
 	}
 	return allRingDevices, servers
+}
+
+func PrintDriveReport(serverconf conf.Config) error {
+	sqlDir := serverconf.GetDefault("drive_watch", "sql_dir", "/var/local/hummingbird")
+	if sd, err := os.Open(sqlDir); err != nil {
+		return fmt.Errorf("Invalid Config, no sql_dir at %s", sqlDir)
+	} else {
+		sd.Close()
+	}
+	db, err := sql.Open("sqlite3", filepath.Join(sqlDir, DB_NAME))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	maxBadDevAge := time.Duration(serverconf.GetInt("drive_watch", "max_bad_drive_age_sec", common.ONE_WEEK) * int64(time.Second))
+	pList, err := conf.GetPolicies()
+	if err != nil {
+		return err
+	}
+	for _, p := range pList {
+		fmt.Printf("Weighted / Unmounted / Unreachable devices report for Policy %d\n", p.Index)
+		rows, err := db.Query("SELECT create_date FROM run_log WHERE policy = ? AND success = 1 ORDER BY create_date DESC LIMIT 1", p.Index)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		if rows.Next() {
+			var createDate time.Time
+			if err := rows.Scan(&createDate); err == nil {
+				fmt.Printf("Last successful recon run was %.2f hours ago.\n", float64(time.Since(createDate))/float64(time.Hour))
+			}
+		}
+		rows, err = db.Query("SELECT ip, port, device, weight, mounted, "+
+			"reachable, last_update FROM device WHERE policy = ? AND "+
+			"(mounted=0 OR reachable=0) ORDER BY last_update",
+			p.Index)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		data := make([][]string, 0)
+		data = append(data, []string{"POLICY", "IP ADDRESS", "PORT", "DEVICE", "WEIGHT", "MOUNTED", "REACHABLE", "LAST STATE CHANGE", "SHOULD BE ZEROED"})
+		for rows.Next() {
+			var ip, device string
+			var port int
+			var weight float64
+			var mounted, reachable bool
+			var lastUpdate time.Time
+			if err := rows.Scan(&ip, &port, &device,
+				&weight, &mounted, &reachable, &lastUpdate); err != nil {
+				return err
+			} else {
+				data = append(data, []string{strconv.Itoa(p.Index), ip,
+					strconv.Itoa(port), device, fmt.Sprintf("%.2f", weight),
+					fmt.Sprintf("%v", mounted), fmt.Sprintf("%v", reachable),
+					lastUpdate.UTC().Format(time.UnixDate),
+					fmt.Sprintf("%v", time.Since(lastUpdate) > maxBadDevAge)})
+			}
+		}
+		if len(data) == 1 {
+			fmt.Println("No weighted drives are currently reported as unmounted or unreachable.")
+		} else {
+			fmt.Println(brimtext.Align(data, brimtext.NewSimpleAlignOptions()))
+		}
+	}
+	return nil
 }
 
 func (dw *driveWatch) getDbAndLock() (*sql.DB, error) {
@@ -266,12 +335,26 @@ func (dw *driveWatch) needRingUpdate(rd ringData) bool {
 		dw.logger.Error("getDbAndLock for needRingUpdate", zap.Error(err))
 		return false
 	}
-	rows, err := db.Query("SELECT create_date FROM ring_action WHERE policy = ? ORDER BY create_date DESC LIMIT 1", rd.p.Index)
+	rows, err := db.Query("SELECT create_date FROM run_log WHERE policy = ? ORDER BY create_date DESC LIMIT 1", rd.p.Index)
+	if err != nil {
+		dw.logger.Error("SELECT for needUpdate run_log report", zap.Error(err))
+		return false
+	}
 	defer rows.Close()
+	if rows.Next() {
+		var createDate time.Time
+		if err := rows.Scan(&createDate); err == nil {
+			if time.Since(createDate) > 2*dw.runFreq {
+				return false
+			}
+		}
+	}
+	rows, err = db.Query("SELECT create_date FROM ring_action WHERE policy = ? ORDER BY create_date DESC LIMIT 1", rd.p.Index)
 	if err != nil {
 		dw.logger.Error("SELECT for needRingUpdate", zap.Error(err))
 		return false
 	}
+	defer rows.Close()
 	if rows.Next() {
 		var createDate time.Time
 		if err := rows.Scan(&createDate); err == nil {
@@ -315,7 +398,6 @@ func (dw *driveWatch) updateDb(rd ringData) error {
 		if err := rows.Scan(&dID, &ip, &port, &device, &weight, &mounted); err != nil {
 			qryErrors = append(qryErrors, err)
 		} else {
-
 			dKey := deviceId(ip, port, device)
 			rDev, inRing := allRingDevices[dKey]
 			_, inUnmounted := unmountedDevices[dKey]
@@ -337,6 +419,29 @@ func (dw *driveWatch) updateDb(rd ringData) error {
 				}
 			}
 			delete(allRingDevices, dKey)
+		}
+	}
+	rows, err = tx.Query(
+		"SELECT id, ip, port, device FROM device WHERE policy = ? AND reachable = 0", policy)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ip, device string
+		var dID, port int
+
+		if err := rows.Scan(&dID, &ip, &port, &device); err != nil {
+			qryErrors = append(qryErrors, err)
+		} else {
+
+			_, notReachable := downServers[serverId(ip, port)]
+			if !notReachable {
+				changesMade++
+				if _, err = tx.Exec("UPDATE device SET reachable=? WHERE id=?", true, dID); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	for _, ipp := range downServers {
@@ -412,10 +517,12 @@ func (dw *driveWatch) getReportData(rd ringData) (*ReportData, error) {
 		TotalDevices: numDevices,
 		TotalWeight:  totalWeight}
 
-	if rows, err = db.Query("SELECT ip, port, device, weight, mounted, reachable, last_update "+
-		"FROM device WHERE policy = ? AND (mounted=0 OR reachable=0) AND in_ring=1 ORDER BY last_update", policy); err != nil {
+	rows, err = db.Query("SELECT ip, port, device, weight, mounted, reachable, last_update "+
+		"FROM device WHERE policy = ? AND (mounted=0 OR reachable=0) AND in_ring=1 ORDER BY last_update", policy)
+	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 	for rows.Next() {
 		var ip, device string
 		var port int
@@ -434,10 +541,12 @@ func (dw *driveWatch) getReportData(rd ringData) (*ReportData, error) {
 					Mounted: mounted, Reachable: reachable, LastUpdate: lastUpdate})
 		}
 	}
-	if rows, err = db.Query("SELECT ip, port, device, action, create_date FROM ring_action WHERE policy = ? AND action = ? AND "+
-		"create_date = (SELECT MAX(create_date) FROM ring_action) ORDER BY create_date", policy, "ZEROED"); err != nil {
+	rows, err = db.Query("SELECT ip, port, device, action, create_date FROM ring_action WHERE policy = ? AND action = ? AND "+
+		"create_date = (SELECT MAX(create_date) FROM ring_action) ORDER BY create_date", policy, "ZEROED")
+	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 	for rows.Next() {
 		var action string
 		var ip, device sql.NullString
@@ -453,19 +562,18 @@ func (dw *driveWatch) getReportData(rd ringData) (*ReportData, error) {
 					Ip: ip.String, Port: int(port.Int64), Device: device.String, LastUpdate: createDate})
 		}
 	}
-	rows.Close()
 	rows, err = db.Query("SELECT create_date FROM run_log WHERE policy = ? ORDER BY create_date DESC LIMIT 1", policy)
 	if err != nil {
 		dw.logger.Error("SELECT for run_log report", zap.Error(err))
 		return nil, err
 	}
+	defer rows.Close()
 	if rows.Next() {
 		var createDate time.Time
 		if err := rows.Scan(&createDate); err == nil {
 			rData.LastSuccessfulRun = createDate
 		}
 	}
-	rows.Close()
 	return &rData, nil
 }
 
@@ -546,7 +654,12 @@ func (dw *driveWatch) getOverdueDevices(rd ringData) (toZeroDevs []ring.Device, 
 	return toZeroDevs, overweightToZeroDevs, nil
 }
 
-func (dw *driveWatch) updateRing(rd ringData) (outputStr string, err error) {
+func (dw *driveWatch) doUpdateRing(rd ringData) (outputStr string, err error) {
+	lock, err := fs.LockPath(filepath.Join(dw.sqlDir, RING_LOCK_DIR), 10*time.Second)
+	if err != nil {
+		return "", err
+	}
+	defer lock.Close()
 	toZeroDevs, _, err := dw.getOverdueDevices(rd)
 	if err != nil {
 		return "", err
@@ -585,15 +698,10 @@ func (dw *driveWatch) updateRing(rd ringData) (outputStr string, err error) {
 	}
 	b.Save(rd.builderPath)
 
-	if dw.doNotRebalance {
-		dw.logger.Info("NOT Rebalancing ring",
-			zap.Int("policy", policy))
-	} else {
-		if e := ring.Rebalance(rd.builderPath, false, false); e != nil {
-			dw.logger.Error("error rebalancing ring",
-				zap.String("builderPath", rd.builderPath), zap.Error(e))
-			return "error rebalancing ring", e
-		}
+	if e := ring.Rebalance(rd.builderPath, false, false); e != nil {
+		dw.logger.Error("error rebalancing ring",
+			zap.String("builderPath", rd.builderPath), zap.Error(e))
+		return "error rebalancing ring", e
 	}
 	db, err := dw.getDbAndLock()
 	defer dw.dbl.Unlock()
@@ -615,13 +723,11 @@ func (dw *driveWatch) updateRing(rd ringData) (outputStr string, err error) {
 			return "", err
 		}
 	}
-	if !dw.doNotRebalance {
-		_, err = tx.Exec("INSERT INTO ring_action "+
-			"(policy, action, create_date) "+
-			"VALUES (?,?,?)", policy, "REBALANCED", now)
-		if err != nil {
-			return "", err
-		}
+	_, err = tx.Exec("INSERT INTO ring_action "+
+		"(policy, action, create_date) "+
+		"VALUES (?,?,?)", policy, "REBALANCED", now)
+	if err != nil {
+		return "", err
 	}
 	if err = tx.Commit(); err != nil {
 		return "", err
@@ -640,8 +746,8 @@ func (dw *driveWatch) Run() {
 			dw.logger.Error("error updating db", zap.Error(err))
 		}
 		var msg string
-		if dw.needRingUpdate(rd) {
-			msg, err = dw.updateRing(rd)
+		if dw.updateRing && dw.needRingUpdate(rd) {
+			msg, err = dw.doUpdateRing(rd)
 			if err != nil {
 				msg = fmt.Sprintf("update ring Error: %v", err)
 			}
@@ -718,7 +824,7 @@ func NewDriveWatch(logger srv.LowLevelLogger,
 		maxBadDevAge:    time.Duration(serverconf.GetInt("drive_watch", "max_bad_drive_age_sec", common.ONE_WEEK) * int64(time.Second)),
 		ringUpdateFreq:  time.Duration(serverconf.GetInt("drive_watch", "ring_update_frequency_sec", common.ONE_WEEK) * int64(time.Second)),
 		maxWeightChange: serverconf.GetFloat("drive_watch", "max_weight_change", 0.01),
-		doNotRebalance:  serverconf.GetBool("drive_watch", "do_not_rebalance", false),
+		updateRing:      serverconf.GetBool("drive_watch", "update_ring", false),
 		sqlDir:          sqlDir,
 	}
 }

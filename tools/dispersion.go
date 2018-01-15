@@ -23,6 +23,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -539,9 +540,11 @@ func (d *Dispersion) scanDispersionObjs(cancelChan chan struct{}) {
 }
 
 func PrintLastDispersionReport(serverconf conf.Config) error {
-	sqlDir, ok := serverconf.Get("drive_watch", "sql_dir")
-	if !ok {
-		return fmt.Errorf("Invalid Config, no drive_watch sql_dir")
+	sqlDir := serverconf.GetDefault("drive_watch", "sql_dir", "/var/local/hummingbird")
+	if sd, err := os.Open(sqlDir); err != nil {
+		return fmt.Errorf("Invalid Config, no sql_dir at %s", sqlDir)
+	} else {
+		sd.Close()
 	}
 	db, err := sql.Open("sqlite3", filepath.Join(sqlDir, DB_NAME))
 	defer db.Close()
