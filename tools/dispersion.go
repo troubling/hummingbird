@@ -19,11 +19,11 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
-	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -539,61 +539,186 @@ func (d *Dispersion) scanDispersionObjs(cancelChan chan struct{}) {
 	}
 }
 
-func PrintLastDispersionReport(serverconf conf.Config) error {
-	sqlDir := serverconf.GetDefault("drive_watch", "sql_dir", "/var/local/hummingbird")
-	if sd, err := os.Open(sqlDir); err != nil {
-		return fmt.Errorf("Invalid Config, no sql_dir at %s", sqlDir)
-	} else {
-		sd.Close()
+type dispersionReport struct {
+	Name            string
+	Time            time.Time
+	Pass            bool
+	Errors          []string
+	ContainerReport *containerDispersionReport
+	ObjectReports   []*objectDispersionReport
+}
+
+func (r *dispersionReport) Passed() bool {
+	return r.Pass
+}
+
+func (r *dispersionReport) String() string {
+	s := fmt.Sprintf(
+		"[%s] %s\n",
+		r.Time.Format("2006-01-02 15:04:05"),
+		r.Name,
+	)
+	for _, e := range r.Errors {
+		s += fmt.Sprintf("!! %s\n", e)
 	}
-	db, err := sql.Open("sqlite3", filepath.Join(sqlDir, DB_NAME))
+	if r.ContainerReport != nil {
+		s += fmt.Sprintf("\nContainer Dispersion Report at %s\n%s", r.ContainerReport.Time, r.ContainerReport.Report)
+	}
+	for _, or := range r.ObjectReports {
+		s += fmt.Sprintf("\nObject Dispersion Report at %s for Policy %d\n%s", or.Time, or.Policy, or.Report)
+	}
+	return s
+}
+
+type containerDispersionReport struct {
+	Time   time.Time
+	Report string
+	Stats  []*dispersionStat
+}
+
+type objectDispersionReport struct {
+	Time   time.Time
+	Policy int
+	Report string
+	Stats  []*dispersionStat
+}
+
+type dispersionStat struct {
+	Time              time.Time
+	Partition         int
+	PartitionItemPath string
+	ItemsFound        int
+	ItemsNeed         int
+}
+
+func getDispersionReport(flags *flag.FlagSet) *dispersionReport {
+	report := &dispersionReport{
+		Name: "Dispersion Report",
+		Time: time.Now().UTC(),
+		Pass: true,
+	}
+	serverconf, err := getAndrewdConf(flags)
+	if err != nil {
+		report.Errors = append(report.Errors, err.Error())
+		report.Pass = false
+		return report
+	}
+	db, err := sql.Open("sqlite3", filepath.Join(serverconf.GetDefault("drive_watch", "sql_dir", "/var/local/hummingbird"), DB_NAME))
 	defer db.Close()
 	if err != nil {
-		return err
+		report.Errors = append(report.Errors, err.Error())
+		report.Pass = false
+		return report
 	}
 	rows, err := db.Query(`
+    SELECT create_date, report_text FROM
+    dispersion_report WHERE rtype = "container" ORDER BY create_date DESC LIMIT 1`)
+	if err != nil {
+		report.Errors = append(report.Errors, err.Error())
+		report.Pass = false
+		return report
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var createDate time.Time
+		var rprt string
+		if err := rows.Scan(&createDate, &rprt); err != nil {
+			report.Errors = append(report.Errors, err.Error())
+			report.Pass = false
+			continue
+		}
+		report.ContainerReport = &containerDispersionReport{
+			Time:   createDate,
+			Report: rprt,
+		}
+	}
+	if report.ContainerReport != nil {
+		rows, err = db.Query(`
+        SELECT create_date, partition, partition_item_path, items_found, items_need
+        FROM dispersion_report_detail 
+        WHERE rtype = "container" ORDER BY create_date DESC LIMIT 1`)
+		if err != nil {
+			report.Errors = append(report.Errors, err.Error())
+			report.Pass = false
+			return report
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var createDate time.Time
+			var partition int
+			var partitionItemPath string
+			var itemsFound int
+			var itemsNeed int
+			if err := rows.Scan(&createDate, &partition, &partitionItemPath, &itemsFound, &itemsNeed); err != nil {
+				report.Errors = append(report.Errors, err.Error())
+				report.Pass = false
+				continue
+			}
+			report.ContainerReport.Stats = append(report.ContainerReport.Stats, &dispersionStat{
+				Time:              createDate,
+				Partition:         partition,
+				PartitionItemPath: partitionItemPath,
+				ItemsFound:        itemsFound,
+				ItemsNeed:         itemsNeed,
+			})
+		}
+	}
+	rows, err = db.Query(`
     SELECT d.policy, d.create_date, d.report_text FROM
     (SELECT id, policy, MAX(create_date) mcd FROM dispersion_report GROUP BY policy) r
     INNER JOIN dispersion_report d ON d.id = r.id WHERE d.rtype = "object"`)
 	if err != nil {
-		fmt.Printf("ERROR: SELECT for dispersion_report: %v\n", err)
-		return err
+		report.Errors = append(report.Errors, err.Error())
+		report.Pass = false
+		return report
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var createDate time.Time
-		var policy, report string
-		if err := rows.Scan(&policy, &createDate, &report); err == nil {
-			fmt.Println(fmt.Sprintf(
-				"Latest dispersion report for policy %s on %s",
-				policy, createDate.Format(time.UnixDate)))
-			fmt.Print(report)
-			fmt.Println("-----------------------------------------------------")
-		} else {
-			fmt.Println("Error query data:", err)
+		var policy int
+		var rprt string
+		if err := rows.Scan(&policy, &createDate, &rprt); err != nil {
+			report.Errors = append(report.Errors, err.Error())
+			report.Pass = false
+			continue
 		}
-	}
-	rows, err = db.Query(`
-    SELECT create_date, report_text FROM
-    dispersion_report WHERE rtype = "container" ORDER BY create_date DESC LIMIT 1`)
-	if err != nil {
-		fmt.Printf("ERROR: SELECT for container dispersion_report: %v\n", err)
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var createDate time.Time
-		var report string
-		if err := rows.Scan(&createDate, &report); err == nil {
-			fmt.Println(fmt.Sprintf(
-				"Latest container dispersion report on %s", createDate.Format(time.UnixDate)))
-			fmt.Print(report)
-			fmt.Println("-----------------------------------------------------")
-		} else {
-			fmt.Println("Error query data:", err)
+		objectReport := &objectDispersionReport{
+			Time:   createDate,
+			Policy: policy,
+			Report: rprt,
 		}
+		report.ObjectReports = append(report.ObjectReports, objectReport)
+		detailRows, err := db.Query(`
+        SELECT create_date, partition, partition_item_path, items_found, items_need
+        FROM dispersion_report_detail 
+        WHERE rtype = "object" AND policy = ? ORDER BY create_date DESC LIMIT 1`, policy)
+		if err != nil {
+			report.Errors = append(report.Errors, err.Error())
+			report.Pass = false
+			continue
+		}
+		for detailRows.Next() {
+			var createDate time.Time
+			var partition int
+			var partitionItemPath string
+			var itemsFound int
+			var itemsNeed int
+			if err := detailRows.Scan(&createDate, &partition, &partitionItemPath, &itemsFound, &itemsNeed); err != nil {
+				report.Errors = append(report.Errors, err.Error())
+				report.Pass = false
+				continue
+			}
+			objectReport.Stats = append(objectReport.Stats, &dispersionStat{
+				Time:              createDate,
+				Partition:         partition,
+				PartitionItemPath: partitionItemPath,
+				ItemsFound:        itemsFound,
+				ItemsNeed:         itemsNeed,
+			})
+		}
+		detailRows.Close()
 	}
-	return nil
+	return report
 }
 
 func (d *Dispersion) makeDispersionPrintableReport(rtype string, policy int64, replicas uint64, goodPartitions int64, probParts map[string]probPart, itemsNeed int64, itemsFound int64, numRescues int64) {

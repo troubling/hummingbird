@@ -89,7 +89,7 @@ func TestGatherReconData(t *testing.T) {
 	dw, _ := getDw(fr)
 	defer closeDw(dw)
 
-	allWeightedServers := []ipPort{{ip: host, port: port, scheme: "http"}}
+	allWeightedServers := []*ipPort{{ip: host, port: port, scheme: "http"}}
 	unmountedDevices, downServers := dw.gatherReconData(allWeightedServers)
 	require.Equal(t, len(downServers), 0)
 	require.Equal(t, len(unmountedDevices), 1)

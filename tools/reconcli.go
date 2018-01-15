@@ -16,17 +16,14 @@
 package tools
 
 import (
-	"bufio"
-	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/troubling/hummingbird/common"
@@ -37,7 +34,7 @@ import (
 	"golang.org/x/net/http2"
 )
 
-func queryHostRecon(client http.Client, s ipPort, endpoint string) ([]byte, error) {
+func queryHostRecon(client http.Client, s *ipPort, endpoint string) ([]byte, error) {
 	serverUrl := fmt.Sprintf("%s://%s:%d/recon/%s", s.scheme, s.ip, s.port, endpoint)
 	req, err := http.NewRequest("GET", serverUrl, nil)
 	if err != nil {
@@ -54,7 +51,7 @@ func queryHostRecon(client http.Client, s ipPort, endpoint string) ([]byte, erro
 	return data, nil
 }
 
-func queryHostReplication(client http.Client, s ipPort) (map[string]objectserver.DeviceStats, error) {
+func queryHostReplication(client http.Client, s *ipPort) (map[string]objectserver.DeviceStats, error) {
 	serverUrl := fmt.Sprintf("http://%s:%d/progress", s.ip, s.replicationPort)
 	req, err := http.NewRequest("GET", serverUrl, nil)
 	if err != nil {
@@ -75,168 +72,302 @@ func queryHostReplication(client http.Client, s ipPort) (map[string]objectserver
 	return stats, nil
 }
 
-func reconReportRingMd5(client http.Client, servers []ipPort, ringMap map[string]string, w io.Writer) bool {
-	fmt.Fprintf(w, "[%s] Checking ring md5sums\n", time.Now().Format("2006-01-02 15:04:05"))
-	errors := 0
-	successes := 0
+type passable interface {
+	Passed() bool
+}
+
+type ringMD5Report struct {
+	Name      string
+	Time      time.Time
+	Pass      bool
+	Servers   int
+	Successes int
+	Errors    []string
+}
+
+func (r *ringMD5Report) Passed() bool {
+	return r.Pass
+}
+
+func (r *ringMD5Report) String() string {
+	s := fmt.Sprintf(
+		"[%s] %s\n",
+		r.Time.Format("2006-01-02 15:04:05"),
+		r.Name,
+	)
+	for _, e := range r.Errors {
+		s += fmt.Sprintf("!! %s\n", e)
+	}
+	s += fmt.Sprintf(
+		"%d/%d hosts matched, %d error[s] while checking hosts.\n",
+		r.Successes, r.Servers, len(r.Errors),
+	)
+	return s
+}
+
+func getRingMD5Report(client http.Client, servers []*ipPort, ringMap map[string]string) *ringMD5Report {
+	report := &ringMD5Report{
+		Name:    "Ring MD5 Report",
+		Time:    time.Now().UTC(),
+		Servers: len(servers),
+		Pass:    true,
+	}
+	if ringMap == nil {
+		var err error
+		ringMap, err = common.GetAllRingFileMd5s()
+		if err != nil {
+			report.Errors = append(report.Errors, fmt.Sprintf("Unrecoverable error on ringmd5 report: %v", err))
+			report.Pass = false
+			return report
+		}
+	}
 	for _, server := range servers {
 		rBytes, err := queryHostRecon(client, server, "ringmd5")
 		if err != nil {
-			errors++
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
+			report.Pass = false
 			continue
 		}
 		var rData map[string]string
 		if err := json.Unmarshal(rBytes, &rData); err != nil {
-			errors++
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
+			report.Pass = false
 			continue
 		}
 		allMatch := true
 		for fName, md5sum := range ringMap {
 			if rData[fName] != md5sum {
-				fmt.Fprintf(w,
-					"!! %s://%s:%d/recon/ringmd5 (%s => %s) doesn't "+
-						"match on disk md5sum\n", server.scheme,
-					server.ip, server.port, filepath.Base(fName), md5sum)
+				report.Errors = append(report.Errors, fmt.Sprintf("%s://%s:%d/recon/ringmd5 (%s => %s) doesn't match on disk md5sum %s", server.scheme, server.ip, server.port, filepath.Base(fName), rData[fName], md5sum))
+				report.Pass = false
 				allMatch = false
 			}
 		}
 		if allMatch {
-			successes++
+			report.Successes++
 		}
 	}
-	fmt.Fprintf(w, "%d/%d hosts matched, %d error[s] while checking hosts.\n",
-		successes, len(servers), errors)
-	fmt.Fprintln(w, strings.Repeat("=", 79))
-	return successes == len(servers)
+	report.Pass = report.Successes == report.Servers
+	return report
 }
 
-func reconReportMainConfMd5(client http.Client, servers []ipPort, w io.Writer) bool {
-	fmt.Fprintf(w, "[%s] Checking hummingbird.conf md5sums\n", time.Now().Format("2006-01-02 15:04:05"))
+type mainConfMD5Report struct {
+	Name      string
+	Time      time.Time
+	Pass      bool
+	Servers   int
+	Successes int
+	Errors    []string
+}
+
+func (r *mainConfMD5Report) Passed() bool {
+	return r.Pass
+}
+
+func (r *mainConfMD5Report) String() string {
+	s := fmt.Sprintf(
+		"[%s] %s\n",
+		r.Time.Format("2006-01-02 15:04:05"),
+		r.Name,
+	)
+	for _, e := range r.Errors {
+		s += fmt.Sprintf("!! %s\n", e)
+	}
+	s += fmt.Sprintf(
+		"%d/%d hosts matched, %d error[s] while checking hosts.\n",
+		r.Successes, r.Servers, len(r.Errors),
+	)
+	return s
+}
+
+func getMainConfMD5Report(client http.Client, servers []*ipPort) *mainConfMD5Report {
+	report := &mainConfMD5Report{
+		Name:    "hummingbird.conf MD5 Report",
+		Time:    time.Now().UTC(),
+		Servers: len(servers),
+		Pass:    true,
+	}
 	md5Map, err := common.FileMD5("/etc/hummingbird/hummingbird.conf")
 	if err != nil {
 		md5Map, err = common.FileMD5("/etc/swift/swift.conf")
 		if err != nil {
-			fmt.Fprintf(w, "Unrecoverable error on confmd5 report: %v\n", err)
-			return false
+			report.Errors = append(report.Errors, fmt.Sprintf("Unrecoverable error on confmd5 report: %v", err))
+			report.Pass = false
+			return report
 		}
 	}
-	errors := 0
-	successes := 0
 	for _, server := range servers {
 		rBytes, err := queryHostRecon(client, server, "hummingbirdconfmd5")
 		if err != nil {
-			errors++
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
+			report.Pass = false
 			continue
 		}
 		var rData map[string]string
 		if err := json.Unmarshal(rBytes, &rData); err != nil {
-			errors++
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
+			report.Pass = false
 			continue
 		}
 		allMatch := true
 		for fName, md5sum := range md5Map {
 			if rData[fName] != md5sum {
-				fmt.Fprintf(w,
-					"!! %s://%s:%d/recon/hummingbirdconfmd5 (%s => %s) doesn't "+
-						"match on disk md5sum\n", server.scheme,
-					server.ip, server.port, filepath.Base(fName), md5sum)
+				report.Errors = append(report.Errors, fmt.Sprintf("%s://%s:%d/recon/hummingbirdconfmd5 (%s => %s) doesn't match on disk md5sum %s", server.scheme, server.ip, server.port, filepath.Base(fName), rData[fName], md5sum))
+				report.Pass = false
 				allMatch = false
 			}
 		}
 		if allMatch {
-			successes++
+			report.Successes++
 		}
 	}
-	fmt.Fprintf(w, "%d/%d hosts matched, %d error[s] while checking hosts.\n",
-		successes, len(servers), errors)
-	fmt.Fprintln(w, strings.Repeat("=", 79))
-	return successes == len(servers)
+	report.Pass = report.Successes == report.Servers
+	return report
 }
 
-func reconReportHummingbirdMd5(client http.Client, servers []ipPort, w io.Writer) bool {
-	fmt.Fprintf(w, "[%s] Checking hummingbird md5sums\n", time.Now().Format("2006-01-02 15:04:05"))
+type hummingbirdMD5Report struct {
+	Name      string
+	Time      time.Time
+	Pass      bool
+	Servers   int
+	Successes int
+	Errors    []string
+}
+
+func (r *hummingbirdMD5Report) Passed() bool {
+	return r.Pass
+}
+
+func (r *hummingbirdMD5Report) String() string {
+	s := fmt.Sprintf(
+		"[%s] %s\n",
+		r.Time.Format("2006-01-02 15:04:05"),
+		r.Name,
+	)
+	for _, e := range r.Errors {
+		s += fmt.Sprintf("!! %s\n", e)
+	}
+	s += fmt.Sprintf(
+		"%d/%d hosts matched, %d error[s] while checking hosts.\n",
+		r.Successes, r.Servers, len(r.Errors),
+	)
+	return s
+}
+
+func getHummingbirdMD5Report(client http.Client, servers []*ipPort) *hummingbirdMD5Report {
+	report := &hummingbirdMD5Report{
+		Name:    "hummingbird MD5 Report",
+		Time:    time.Now().UTC(),
+		Servers: len(servers),
+		Pass:    true,
+	}
 	var md5Map map[string]string
 	if exePath, err := os.Executable(); err != nil {
-		fmt.Fprintf(w, "Unrecoverable error on confmd5 report: %v\n", err)
-		return false
-	} else {
-		md5Map, err = common.FileMD5(exePath)
-		if err != nil {
-			fmt.Fprintf(w, "Unrecoverable error on hummingbird md5 report: %v\n", err)
-			return false
-		}
+		report.Errors = append(report.Errors, err.Error())
+		report.Pass = false
+		return report
+	} else if md5Map, err = common.FileMD5(exePath); err != nil {
+		report.Errors = append(report.Errors, err.Error())
+		report.Pass = false
+		return report
 	}
-	errors := 0
-	successes := 0
 	for _, server := range servers {
 		rBytes, err := queryHostRecon(client, server, "hummingbirdmd5")
 		if err != nil {
-			errors++
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
+			report.Pass = false
 			continue
 		}
 		var rData map[string]string
 		if err := json.Unmarshal(rBytes, &rData); err != nil {
-			errors++
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
+			report.Pass = false
 			continue
 		}
 		allMatch := true
 		for fName, md5sum := range md5Map {
 			if rData[fName] != md5sum {
-				fmt.Fprintf(w,
-					"!! http://%s:%d/recon/hummingbirdmd5 (%s => %s) doesn't "+
-						"match on disk md5sum\n",
-					server.ip, server.port, filepath.Base(fName), md5sum)
+				report.Errors = append(report.Errors, fmt.Sprintf("%s://%s:%d/recon/hummingbirdmd5 (%s => %s) doesn't match on disk md5sum %s", server.scheme, server.ip, server.port, filepath.Base(fName), rData[fName], md5sum))
+				report.Pass = false
 				allMatch = false
 			}
 		}
 		if allMatch {
-			successes++
+			report.Successes++
 		}
 	}
-	fmt.Fprintf(w, "%d/%d hosts matched, %d error[s] while checking hosts.\n",
-		successes, len(servers), errors)
-	fmt.Fprintln(w, strings.Repeat("=", 79))
-	return successes == len(servers)
+	report.Pass = report.Successes == report.Servers
+	return report
 }
 
-func reconReportTime(client http.Client, servers []ipPort, w io.Writer) bool {
-	fmt.Fprintf(w, "[%s] Checking time-sync\n", time.Now().Format("2006-01-02 15:04:05"))
-	errors := 0
-	successes := 0
+type timeReport struct {
+	Name      string
+	Time      time.Time
+	Pass      bool
+	Servers   int
+	Successes int
+	Errors    []string
+}
+
+func (r *timeReport) Passed() bool {
+	return r.Pass
+}
+
+func (r *timeReport) String() string {
+	s := fmt.Sprintf(
+		"[%s] %s\n",
+		r.Time.Format("2006-01-02 15:04:05"),
+		r.Name,
+	)
+	for _, e := range r.Errors {
+		s += fmt.Sprintf("!! %s\n", e)
+	}
+	s += fmt.Sprintf(
+		"%d/%d hosts matched, %d error[s] while checking hosts.\n",
+		r.Successes, r.Servers, len(r.Errors),
+	)
+	return s
+}
+
+func getTimeReport(client http.Client, servers []*ipPort) *timeReport {
+	report := &timeReport{
+		Name:    "Time Sync Report",
+		Time:    time.Now().UTC(),
+		Servers: len(servers),
+	}
 	for _, server := range servers {
 		preCall := time.Now().Round(time.Microsecond)
 		rBytes, err := queryHostRecon(client, server, "hummingbirdtime")
 		if err != nil {
-			errors++
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
 			continue
 		}
 		postCall := time.Now().Round(time.Microsecond)
 		var rData map[string]time.Time
 		if err := json.Unmarshal(rBytes, &rData); err != nil {
-			errors++
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
 			continue
 		}
 		if rData["time"].IsZero() {
-			errors++
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: time was zeroed", server))
 			continue
 		}
 		remoteTime := rData["time"].Round(time.Microsecond)
 		if remoteTime.Before(preCall) || remoteTime.After(postCall) {
-			fmt.Fprintf(w,
-				"!! %s://%s:%d/recon/hummingbirdtime current time is %s "+
-					"but remote time is %s, differs by %.2f nsecs\n",
-				server.scheme, server.ip, server.port, postCall.Format(time.StampMicro), remoteTime.Format(time.StampMicro), float64(postCall.Sub(remoteTime)))
+			report.Errors = append(report.Errors, fmt.Sprintf(
+				"%s://%s:%d/recon/hummingbirdtime current time is %s but remote time is %s, differs by %.2f nsecs",
+				server.scheme,
+				server.ip,
+				server.port,
+				postCall.Format(time.StampMicro),
+				remoteTime.Format(time.StampMicro),
+				float64(postCall.Sub(remoteTime)),
+			))
 		} else {
-			successes++
+			report.Successes++
 		}
 	}
-	fmt.Fprintf(w, "%d/%d hosts matched, %d error[s] while checking hosts.\n",
-		successes, len(servers), errors)
-	fmt.Fprintln(w, strings.Repeat("=", 79))
-	return successes == len(servers)
-}
-
-func genStats() {
+	report.Pass = report.Successes == report.Servers
+	return report
 }
 
 type quarData struct {
@@ -247,10 +378,10 @@ type quarData struct {
 }
 
 type quarReconStats struct {
-	a        map[string]int
-	c        map[string]int
-	o        map[string]int
-	policies map[string]map[string]int
+	Accounts   map[string]int
+	Containers map[string]int
+	Objects    map[string]int
+	Policies   map[string]map[string]int
 }
 
 func statsLine(tag string, stats map[string]int) string {
@@ -313,88 +444,172 @@ func statsLineF(tag string, stats map[string]float64) string {
 		tag, low, high, ave, pFail, num_none, reported)
 }
 
-func reconReportQuarantine(client http.Client, servers []ipPort, w io.Writer) bool {
-	fmt.Fprintf(w, "[%s] Checking quarantine\n", time.Now().Format("2006-01-02 15:04:05"))
-	errors := 0
-	successes := 0
-	rStats := quarReconStats{a: map[string]int{},
-		c:        map[string]int{},
-		o:        map[string]int{},
-		policies: map[string]map[string]int{},
-	}
+type quarantineReport struct {
+	Name      string
+	Time      time.Time
+	Pass      bool
+	Servers   int
+	Successes int
+	Errors    []string
+	Stats     *quarReconStats
+}
 
+func (r *quarantineReport) Passed() bool {
+	return r.Pass
+}
+
+func (r *quarantineReport) String() string {
+	s := fmt.Sprintf(
+		"[%s] %s\n",
+		r.Time.Format("2006-01-02 15:04:05"),
+		r.Name,
+	)
+	for _, e := range r.Errors {
+		s += fmt.Sprintf("!! %s\n", e)
+	}
+	s += statsLine("quarantined_account", r.Stats.Accounts) + "\n"
+	s += statsLine("quarantined_container", r.Stats.Containers) + "\n"
+	s += statsLine("quarantined_objects", r.Stats.Objects) + "\n"
+	for pid, pmap := range r.Stats.Policies {
+		s += statsLine(fmt.Sprintf("quarantined_objects_%s", pid), pmap) + "\n"
+	}
+	return s
+}
+
+func getQuarantineReport(client http.Client, servers []*ipPort) *quarantineReport {
+	report := &quarantineReport{
+		Name:    "Quarantine Report",
+		Time:    time.Now().UTC(),
+		Servers: len(servers),
+		Stats: &quarReconStats{
+			Accounts:   map[string]int{},
+			Containers: map[string]int{},
+			Objects:    map[string]int{},
+			Policies:   map[string]map[string]int{},
+		},
+	}
 	for _, server := range servers {
 		rBytes, err := queryHostRecon(client, server, "quarantined")
-		rStats.a[serverId(server.ip, server.port)] = -1
-		rStats.c[serverId(server.ip, server.port)] = -1
-		rStats.o[serverId(server.ip, server.port)] = -1
+		report.Stats.Accounts[serverId(server.ip, server.port)] = -1
+		report.Stats.Containers[serverId(server.ip, server.port)] = -1
+		report.Stats.Objects[serverId(server.ip, server.port)] = -1
 		if err != nil {
-			errors++
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
 			continue
 		}
 		var rData quarData
 		if err := json.Unmarshal(rBytes, &rData); err != nil {
-			errors++
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
 			continue
 		}
-		rStats.a[serverId(server.ip, server.port)] = rData.Accounts
-		rStats.c[serverId(server.ip, server.port)] = rData.Containers
-		rStats.o[serverId(server.ip, server.port)] = rData.Objects
+		report.Stats.Accounts[serverId(server.ip, server.port)] = rData.Accounts
+		report.Stats.Containers[serverId(server.ip, server.port)] = rData.Containers
+		report.Stats.Objects[serverId(server.ip, server.port)] = rData.Objects
 		for pIndex, v := range rData.Policies {
-			if _, ok := rStats.policies[pIndex]; !ok {
-				rStats.policies[pIndex] = map[string]int{}
+			if _, ok := report.Stats.Policies[pIndex]; !ok {
+				report.Stats.Policies[pIndex] = map[string]int{}
 			}
-			rStats.policies[pIndex][serverId(server.ip, server.port)] = v["objects"]
+			report.Stats.Policies[pIndex][serverId(server.ip, server.port)] = v["objects"]
 		}
-		successes++
+		report.Successes++
 	}
-	fmt.Fprint(w, statsLine("quarantined_account", rStats.a)+"\n")
-	fmt.Fprint(w, statsLine("quarantined_container", rStats.c)+"\n")
-	fmt.Fprint(w, statsLine("quarantined_objects", rStats.o)+"\n")
-	for pid, pmap := range rStats.policies {
-		fmt.Fprint(w, statsLine(fmt.Sprintf("quarantined_objects_%s", pid), pmap)+"\n")
-	}
-	fmt.Fprintln(w, strings.Repeat("=", 79))
-	return successes == len(servers)
+	report.Pass = report.Successes == report.Servers
+	return report
 }
 
-func reconReportAsync(client http.Client, servers []ipPort, w io.Writer) bool {
-	fmt.Fprintf(w, "[%s] Checking async pendings\n", time.Now().Format("2006-01-02 15:04:05"))
-	errors := 0
-	successes := 0
-	rStats := map[string]int{}
+type asyncReport struct {
+	Name      string
+	Time      time.Time
+	Pass      bool
+	Servers   int
+	Successes int
+	Errors    []string
+	Stats     map[string]int
+}
 
+func (r *asyncReport) Passed() bool {
+	return r.Pass
+}
+
+func (r *asyncReport) String() string {
+	s := fmt.Sprintf(
+		"[%s] %s\n",
+		r.Time.Format("2006-01-02 15:04:05"),
+		r.Name,
+	)
+	for _, e := range r.Errors {
+		s += fmt.Sprintf("!! %s\n", e)
+	}
+	s += statsLine("async_pending", r.Stats) + "\n"
+	return s
+}
+
+func getAsyncReport(client http.Client, servers []*ipPort) *asyncReport {
+	report := &asyncReport{
+		Name:    "Async Pending Report",
+		Time:    time.Now().UTC(),
+		Servers: len(servers),
+		Stats:   map[string]int{},
+	}
 	for _, server := range servers {
 		rBytes, err := queryHostRecon(client, server, "async")
-		rStats[serverId(server.ip, server.port)] = -1
+		report.Stats[serverId(server.ip, server.port)] = -1
 		if err != nil {
-			errors++
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
 			continue
 		}
 		var rData map[string]int
 		if err := json.Unmarshal(rBytes, &rData); err != nil {
-			errors++
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
 			continue
 		}
-		rStats[serverId(server.ip, server.port)] = rData["async_pending"]
-		successes++
+		report.Stats[serverId(server.ip, server.port)] = rData["async_pending"]
+		report.Successes++
 	}
-	fmt.Fprint(w, statsLine("async_pending", rStats)+"\n")
-	fmt.Fprintln(w, strings.Repeat("=", 79))
-	return successes == len(servers)
+	report.Pass = report.Successes == report.Servers
+	return report
 }
 
-func reconReportReplicationDuration(client http.Client, servers []ipPort, w io.Writer) bool {
-	fmt.Fprintf(w, "[%s] Checking replication durations\n", time.Now().Format("2006-01-02 15:04:05"))
-	errors := 0
-	successes := 0
-	rStats := map[string]float64{}
+type replicationDurationReport struct {
+	Name           string
+	Time           time.Time
+	Pass           bool
+	Servers        int
+	Successes      int
+	Errors         []string
+	Stats          map[string]float64
+	TotalDriveZero int
+}
 
-	totalDriveZero := 0
+func (r *replicationDurationReport) Passed() bool {
+	return r.Pass
+}
+
+func (r *replicationDurationReport) String() string {
+	s := fmt.Sprintf(
+		"[%s] %s\n",
+		r.Time.Format("2006-01-02 15:04:05"),
+		r.Name,
+	)
+	for _, e := range r.Errors {
+		s += fmt.Sprintf("!! %s\n", e)
+	}
+	s += statsLineF("replication_duration_secs", r.Stats) + "\n"
+	s += fmt.Sprintf("Number of drives not completed a pass: %d\n", r.TotalDriveZero)
+	return s
+}
+
+func getReplicationDurationReport(client http.Client, servers []*ipPort) *replicationDurationReport {
+	report := &replicationDurationReport{
+		Name:    "Replication Duration Report",
+		Time:    time.Now().UTC(),
+		Servers: len(servers),
+		Stats:   map[string]float64{},
+	}
 	for _, server := range servers {
 		data, err := queryHostReplication(client, server)
 		if err != nil {
-			errors += 1
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
 			continue
 		}
 		totalDuration := time.Duration(0)
@@ -404,37 +619,71 @@ func reconReportReplicationDuration(client http.Client, servers []ipPort, w io.W
 				totalDuration += dStats.LastPassDuration
 				totalSet++
 			} else {
-				totalDriveZero++
+				report.TotalDriveZero++
 			}
 		}
 		if totalSet > 0 {
-			rStats[serverId(server.ip, server.port)] = totalDuration.Seconds() / totalSet
+			report.Stats[serverId(server.ip, server.port)] = totalDuration.Seconds() / totalSet
 		} else {
-			rStats[serverId(server.ip, server.port)] = 0
+			report.Stats[serverId(server.ip, server.port)] = 0
 		}
-		successes++
+		report.Successes++
 	}
-	fmt.Fprint(w, statsLineF("replication_duration_secs", rStats)+"\n")
-	fmt.Fprint(w, fmt.Sprintf("Number of drives not completed a pass: %d\n", totalDriveZero))
-	fmt.Fprintln(w, strings.Repeat("=", 79))
-	return successes == len(servers)
+	report.Pass = report.Successes == report.Servers
+	return report
 }
 
-func reconReportReplicationPartsSec(client http.Client, servers []ipPort, w io.Writer) bool {
-	fmt.Fprintf(w, "[%s] Checking replication partitions/sec\n", time.Now().Format("2006-01-02 15:04:05"))
-	errors := 0
-	successes := 0
-	rStats := map[string]float64{}
-	driveSpeeds := map[string]float64{}
+type replicationPartsSecReport struct {
+	Name           string
+	Time           time.Time
+	Pass           bool
+	Servers        int
+	Successes      int
+	Errors         []string
+	Warnings       []string
+	Stats          map[string]float64
+	DriveSpeeds    map[string]float64
+	OverallAverage float64
+	TotalDriveZero int
+}
+
+func (r *replicationPartsSecReport) Passed() bool {
+	return r.Pass
+}
+
+func (r *replicationPartsSecReport) String() string {
+	s := fmt.Sprintf(
+		"[%s] %s\n",
+		r.Time.Format("2006-01-02 15:04:05"),
+		r.Name,
+	)
+	for _, e := range r.Errors {
+		s += fmt.Sprintf("!! %s\n", e)
+	}
+	for _, w := range r.Warnings {
+		s += fmt.Sprintf("! %s\n", w)
+	}
+	s += statsLineF("replication_srv_parts_per_sec", r.Stats) + "\n"
+	s += fmt.Sprintf("Number drives with no partitions completed: %d\n", r.TotalDriveZero)
+	s += fmt.Sprintf("Cluster wide parts/sec: %.3f\n", r.OverallAverage)
+	return s
+}
+
+func getReplicationPartsSecReport(client http.Client, servers []*ipPort) *replicationPartsSecReport {
+	report := &replicationPartsSecReport{
+		Name:        "Replication Partitions Per Second Report",
+		Time:        time.Now().UTC(),
+		Servers:     len(servers),
+		Stats:       map[string]float64{},
+		DriveSpeeds: map[string]float64{},
+	}
 	allDur := time.Duration(0)
 	allPartsDone := int64(0)
-
-	totalDriveZero := 0
 	for _, server := range servers {
-		rStats[serverId(server.ip, server.port)] = -1
+		report.Stats[serverId(server.ip, server.port)] = -1
 		data, err := queryHostReplication(client, server)
 		if err != nil {
-			errors += 1
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
 			continue
 		}
 		serverDuration := time.Duration(0)
@@ -450,57 +699,89 @@ func reconReportReplicationPartsSec(client http.Client, servers []ipPort, w io.W
 			allDur += driveDur
 			allPartsDone += dStats.PartitionsDone
 			if dStats.PartitionsTotal == 0 {
-				fmt.Fprint(w, fmt.Sprintf("! %s has no partitions\n", deviceId(server.ip, server.port, d)))
+				report.Warnings = append(report.Warnings, fmt.Sprintf("%s has no partitions\n", deviceId(server.ip, server.port, d)))
 			} else {
 				if dStats.PartitionsDone == 0 && driveDur > time.Hour {
-					fmt.Fprint(w, fmt.Sprintf("! %s has no partitions processed\n", deviceId(server.ip, server.port, d)))
+					report.Warnings = append(report.Warnings, fmt.Sprintf("%s has no partitions processed\n", deviceId(server.ip, server.port, d)))
 				}
 			}
-			driveSpeeds[deviceId(server.ip, server.port, d)] = float64(dStats.PartitionsDone) / driveDur.Seconds()
+			report.DriveSpeeds[deviceId(server.ip, server.port, d)] = float64(dStats.PartitionsDone) / driveDur.Seconds()
 		}
 		if serverPartsDone > 0 {
-			rStats[serverId(server.ip, server.port)] = float64(serverPartsDone) / serverDuration.Seconds()
+			report.Stats[serverId(server.ip, server.port)] = float64(serverPartsDone) / serverDuration.Seconds()
 		} else {
-			rStats[serverId(server.ip, server.port)] = 0
-			totalDriveZero++
+			report.Stats[serverId(server.ip, server.port)] = 0
+			report.TotalDriveZero++
 		}
-		successes++
+		report.Successes++
 	}
-	fmt.Fprint(w, statsLineF("replication_srv_parts_per_sec", rStats)+"\n")
-	overallAve := float64(allPartsDone) / allDur.Seconds()
-	for dId, speed := range driveSpeeds {
-		if speed > 0 && speed*2 < overallAve {
-			fmt.Fprint(w, fmt.Sprintf("! %s @ %.3f parts/sec is %.2fx slower than cluster parts/sec: %.3f\n", dId, speed, overallAve/speed, overallAve))
+	report.OverallAverage = float64(allPartsDone) / allDur.Seconds()
+	if math.IsNaN(report.OverallAverage) {
+		report.OverallAverage = 0
+	}
+	for dId, speed := range report.DriveSpeeds {
+		if speed > 0 && speed*2 < report.OverallAverage {
+			report.Warnings = append(report.Warnings, fmt.Sprintf("%s @ %.3f parts/sec is %.2fx slower than cluster parts/sec: %.3f\n", dId, speed, report.OverallAverage/speed, report.OverallAverage))
 		}
 	}
-	fmt.Fprint(w, fmt.Sprintf("Number drives with no partitions completed: %d\n", totalDriveZero))
-	fmt.Fprint(w, fmt.Sprintf("Cluster wide parts/sec: %.3f\n", overallAve))
-	fmt.Fprintln(w, strings.Repeat("=", 79))
-	return successes == len(servers)
+	report.Pass = report.Successes == report.Servers
+	return report
 }
-func reconReportReplicationCancelled(client http.Client, servers []ipPort, w io.Writer) bool {
-	fmt.Fprintf(w, "[%s] Checking stalled replicators \n", time.Now().Format("2006-01-02 15:04:05"))
-	errors := 0
-	successes := 0
 
-	rStats := map[string]int{}
+type replicationCanceledReport struct {
+	Name      string
+	Time      time.Time
+	Pass      bool
+	Servers   int
+	Successes int
+	Errors    []string
+	Warnings  []string
+	Stats     map[string]int
+}
+
+func (r *replicationCanceledReport) Passed() bool {
+	return r.Pass
+}
+
+func (r *replicationCanceledReport) String() string {
+	s := fmt.Sprintf(
+		"[%s] %s\n",
+		r.Time.Format("2006-01-02 15:04:05"),
+		r.Name,
+	)
+	for _, e := range r.Errors {
+		s += fmt.Sprintf("!! %s\n", e)
+	}
+	for _, w := range r.Warnings {
+		s += fmt.Sprintf("! %s\n", w)
+	}
+	s += statsLine("replication_device_cancelations", r.Stats) + "\n"
+	return s
+}
+
+func getReplicationCanceledReport(client http.Client, servers []*ipPort) *replicationCanceledReport {
+	report := &replicationCanceledReport{
+		Name:    "Stalled Replicators Report",
+		Time:    time.Now().UTC(),
+		Servers: len(servers),
+		Stats:   map[string]int{},
+	}
 	for _, server := range servers {
 		data, err := queryHostReplication(client, server)
 		if err != nil {
-			errors += 1
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
 			continue
 		}
 		for d, dStats := range data {
-			rStats[deviceId(server.ip, server.port, d)] = int(dStats.CancelCount)
+			report.Stats[deviceId(server.ip, server.port, d)] = int(dStats.CancelCount)
 			if dStats.CancelCount > 0 {
-				fmt.Fprint(w, fmt.Sprintf("! %s has had to restart its replicator %d times.\n", deviceId(server.ip, server.port, d), dStats.CancelCount))
+				report.Warnings = append(report.Warnings, fmt.Sprintf("%s has had to restart its replicator %d times.\n", deviceId(server.ip, server.port, d), dStats.CancelCount))
 			}
 		}
-		successes++
+		report.Successes++
 	}
-	fmt.Fprint(w, statsLine("replication_device_cancelations", rStats)+"\n")
-	fmt.Fprintln(w, strings.Repeat("=", 79))
-	return successes == len(servers)
+	report.Pass = report.Successes == report.Servers
+	return report
 }
 
 type reconOut struct {
@@ -526,12 +807,6 @@ func ReconClient(flags *flag.FlagSet, cnf srv.ConfigLoader) bool {
 		fmt.Printf("Unrecoverable error on recon: %v\n", err)
 		return false
 	}
-	jsonOut := flags.Lookup("json").Value.(flag.Getter).Get().(bool)
-	var buf bytes.Buffer
-	w := bufio.NewWriter(os.Stdout)
-	if jsonOut {
-		w = bufio.NewWriter(&buf)
-	}
 	transport := &http.Transport{
 		MaxIdleConnsPerHost: 100,
 		MaxIdleConns:        0,
@@ -552,74 +827,52 @@ func ReconClient(flags *flag.FlagSet, cnf srv.ConfigLoader) bool {
 	}
 	client := http.Client{Timeout: 10 * time.Second, Transport: transport}
 	_, allWeightedServers := getRingData(oring, false)
-	fmt.Fprintln(w, strings.Repeat("=", 79))
-	fmt.Fprintf(w, "--> Starting reconnaissance on %d hosts\n", len(allWeightedServers))
-	fmt.Fprintln(w, strings.Repeat("=", 79))
-	pass := false
+	var reports []passable
 	if flags.Lookup("md5").Value.(flag.Getter).Get().(bool) {
-		if ringMap, err := common.GetAllRingFileMd5s(); err != nil {
-			fmt.Fprintf(w, "Unrecoverable error on ringmd5 report: %v\n", err)
-		} else {
-			if pass = reconReportRingMd5(client, allWeightedServers, ringMap, w); pass {
-				if pass = reconReportMainConfMd5(client, allWeightedServers, w); pass {
-					pass = reconReportHummingbirdMd5(client, allWeightedServers, w)
-				}
-			}
-		}
+		reports = append(reports, getRingMD5Report(client, allWeightedServers, nil))
+		reports = append(reports, getMainConfMD5Report(client, allWeightedServers))
+		reports = append(reports, getHummingbirdMD5Report(client, allWeightedServers))
 	}
 	if flags.Lookup("time").Value.(flag.Getter).Get().(bool) {
-		pass = reconReportTime(client, allWeightedServers, w)
+		reports = append(reports, getTimeReport(client, allWeightedServers))
 	}
 	if flags.Lookup("q").Value.(flag.Getter).Get().(bool) {
-		pass = reconReportQuarantine(client, allWeightedServers, w)
+		reports = append(reports, getQuarantineReport(client, allWeightedServers))
 	}
 	if flags.Lookup("a").Value.(flag.Getter).Get().(bool) {
-		pass = reconReportAsync(client, allWeightedServers, w)
+		reports = append(reports, getAsyncReport(client, allWeightedServers))
 	}
 	if flags.Lookup("rd").Value.(flag.Getter).Get().(bool) {
-		pass = reconReportReplicationDuration(client, allWeightedServers, w)
+		reports = append(reports, getReplicationDurationReport(client, allWeightedServers))
 	}
 	if flags.Lookup("rp").Value.(flag.Getter).Get().(bool) {
-		pass = reconReportReplicationPartsSec(client, allWeightedServers, w)
+		reports = append(reports, getReplicationPartsSecReport(client, allWeightedServers))
 	}
 	if flags.Lookup("rc").Value.(flag.Getter).Get().(bool) {
-		pass = reconReportReplicationCancelled(client, allWeightedServers, w)
+		reports = append(reports, getReplicationCanceledReport(client, allWeightedServers))
 	}
 	if flags.Lookup("d").Value.(flag.Getter).Get().(bool) {
-		if configFile, e := getAndrewdConf(flags); e == nil {
-			if e = PrintLastDispersionReport(*configFile); e == nil {
-				return true
-			} else {
-				fmt.Fprintf(w, "Error printing report: %v\n", e)
-				pass = false
-			}
-		} else {
-			fmt.Fprintf(w, "Error finding configs: %v\n", err)
-			pass = false
-		}
+		reports = append(reports, getDispersionReport(flags))
 	}
 	if flags.Lookup("ds").Value.(flag.Getter).Get().(bool) {
-		if configFile, e := getAndrewdConf(flags); e == nil {
-			if e = PrintDriveReport(*configFile); e == nil {
-				return true
+		reports = append(reports, getDriveReport(flags))
+	}
+	if len(reports) == 0 {
+		flags.Usage()
+	}
+	allPassed := true
+	for _, report := range reports {
+		if flags.Lookup("json").Value.(flag.Getter).Get().(bool) {
+			if byts, err := json.MarshalIndent(report, "", "    "); err != nil {
+				fmt.Println(err)
+				return false
 			} else {
-				fmt.Fprintf(w, "Error printing report: %v\n", e)
-				pass = false
+				fmt.Println(string(byts))
 			}
 		} else {
-			fmt.Fprintf(w, "Error finding configs: %v\n", err)
-			pass = false
+			fmt.Print(report)
 		}
+		allPassed = allPassed && report.Passed()
 	}
-	w.Flush()
-	if jsonOut {
-		if jOut, err := json.Marshal(reconOut{pass, buf.String()}); err == nil {
-			os.Stdout.Write(jOut)
-			os.Stdout.Write([]byte("\n"))
-		} else {
-			fmt.Printf("Unrecoverable error on recon: %v\n", err)
-			return false
-		}
-	}
-	return pass
+	return allPassed
 }
