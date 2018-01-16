@@ -1,7 +1,7 @@
 Cluster Health
 ==============
 
-The andrewd service as well as the recon tool monitor the overall cluster health. Andrewd is more of a background, automated process whereas the recon tool is interactive.
+The andrewd service as well as the recon tool monitor the overall cluster health. Andrewd is more of a background, automated process that should be run on one server (often called the admin server) whereas the recon tool is more interactive, often also run on the admin server since it can read information from the andrewd database.
 
 Andrewd will initially populate "dispersion objects" and containers into the clusters within a hidden .admin account. These dispersion objects land, one each, on all ring partitions throughout the cluster. After these dispersion objects are in place, andrewd can check for their presence on a recurring schedule and make note of when they are out of place, missing replicas, etc. For example, 1 of 3 replicas being out of place is a common occurrence as a cluster rebalances itself, but 2 of 3 or worse all 3 replicas being out of place can cause temporary errors until rebalancing is performed. Andrewd can prioritize replication based on this information.
 
@@ -264,39 +264,9 @@ $ hummingbird recon -rc -json
 }
 ```
 
-## Replication Duration Report
-
-The Replication Duration Report is straightforward in that it gives the average amount of time it takes to run a full replication pass. The JSON output will give averages for each server whereas the plain text report just gives the overall average. If this duration starts dramatically increasing it can indicate an overloaded cluster. For a normal cluster, the high value plus some margin should be used for the min-part-hours of the rings.
-
-```
-$ hummingbird recon -rd
-[2018-01-16 17:47:33] Replication Duration Report
-[replication_duration_secs] low: 10.606, high: 10.850, avg: 10.746, Failed: 0.0%, no_result: 0, reported: 4
-Number of drives not completed a pass: 0
-```
-
-```
-$ hummingbird recon -rd -json
-{
-    "Name": "Replication Duration Report",
-    "Time": "2018-01-16T17:47:35.645741121Z",
-    "Pass": true,
-    "Servers": 4,
-    "Successes": 4,
-    "Errors": null,
-    "Stats": {
-        "127.0.0.1:6010": 10.784847003,
-        "127.0.0.1:6020": 10.742181572,
-        "127.0.0.1:6030": 10.6057160435,
-        "127.0.0.1:6040": 10.849519436
-    },
-    "TotalDriveZero": 0
-}
-```
-
 ## Replication Partitions Per Second Report
 
-The Replication Partitions Per Second Report is related to the Replication Duration Report in that it shows the speed that replication is occurring throughout the cluster. Cluster-wide low counts can indicate an overloaded cluster, whereas low counts on specific servers can indicate hardware failures on those servers such as a slow reading drive or a faulty network interface.
+The Replication Partitions Per Second Report shows the speed that replication is occurring throughout the cluster. Cluster-wide low counts can indicate an overloaded cluster, whereas low counts on specific servers can indicate hardware failures on those servers such as a slow reading drive or a faulty network interface.
 
 Note that the JSON output gives specific drive and server speeds whereas the plain text report gives just the overall values.
 
@@ -335,6 +305,36 @@ $ hummingbird recon -rp -json
         "127.0.0.1:6040/sdb4-1": 67.34428040540625
     },
     "OverallAverage": 63.54168655592484,
+    "TotalDriveZero": 0
+}
+```
+
+## Replication Duration Report
+
+The Replication Duration Report gives the average amount of time it takes to run a replication pass of each drive. The JSON output will give averages for each server whereas the plain text report just gives the overall average. If this duration starts dramatically increasing it can indicate an overloaded cluster. For a normal cluster, twice the high value should be used for the min-part-hours of the rings.
+
+```
+$ hummingbird recon -rd
+[2018-01-16 17:47:33] Replication Duration Report
+[replication_duration_secs] low: 10.606, high: 10.850, avg: 10.746, Failed: 0.0%, no_result: 0, reported: 4
+Number of drives not completed a pass: 0
+```
+
+```
+$ hummingbird recon -rd -json
+{
+    "Name": "Replication Duration Report",
+    "Time": "2018-01-16T17:47:35.645741121Z",
+    "Pass": true,
+    "Servers": 4,
+    "Successes": 4,
+    "Errors": null,
+    "Stats": {
+        "127.0.0.1:6010": 10.784847003,
+        "127.0.0.1:6020": 10.742181572,
+        "127.0.0.1:6030": 10.6057160435,
+        "127.0.0.1:6040": 10.849519436
+    },
     "TotalDriveZero": 0
 }
 ```
