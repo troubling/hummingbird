@@ -130,7 +130,7 @@ func getRingMD5Report(client http.Client, servers []*ipPort, ringMap map[string]
 		}
 		var rData map[string]string
 		if err := json.Unmarshal(rBytes, &rData); err != nil {
-			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s - %q", server, err, string(rBytes)))
 			report.Pass = false
 			continue
 		}
@@ -204,7 +204,7 @@ func getMainConfMD5Report(client http.Client, servers []*ipPort) *mainConfMD5Rep
 		}
 		var rData map[string]string
 		if err := json.Unmarshal(rBytes, &rData); err != nil {
-			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s - %q", server, err, string(rBytes)))
 			report.Pass = false
 			continue
 		}
@@ -279,7 +279,7 @@ func getHummingbirdMD5Report(client http.Client, servers []*ipPort) *hummingbird
 		}
 		var rData map[string]string
 		if err := json.Unmarshal(rBytes, &rData); err != nil {
-			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s - %q", server, err, string(rBytes)))
 			report.Pass = false
 			continue
 		}
@@ -344,7 +344,7 @@ func getTimeReport(client http.Client, servers []*ipPort) *timeReport {
 		postCall := time.Now().Round(time.Microsecond)
 		var rData map[string]time.Time
 		if err := json.Unmarshal(rBytes, &rData); err != nil {
-			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s - %q", server, err, string(rBytes)))
 			continue
 		}
 		if rData["time"].IsZero() {
@@ -499,7 +499,7 @@ func getQuarantineReport(client http.Client, servers []*ipPort) *quarantineRepor
 		}
 		var rData quarData
 		if err := json.Unmarshal(rBytes, &rData); err != nil {
-			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s - %q", server, err, string(rBytes)))
 			continue
 		}
 		report.Stats.Accounts[serverId(server.ip, server.port)] = rData.Accounts
@@ -560,7 +560,7 @@ func getAsyncReport(client http.Client, servers []*ipPort) *asyncReport {
 		}
 		var rData map[string]int
 		if err := json.Unmarshal(rBytes, &rData); err != nil {
-			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s - %q", server, err, string(rBytes)))
 			continue
 		}
 		report.Stats[serverId(server.ip, server.port)] = rData["async_pending"]
