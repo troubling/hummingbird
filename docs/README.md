@@ -3,6 +3,7 @@ Hummingbird Docs
 
 ## [Cluster Health](cluster-health.md)
 
+## [Cluster Admin](cluster-admin.md)
 
 ## [Replication Tools](replication-tools.md)
 
