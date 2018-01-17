@@ -78,11 +78,17 @@ script:
     fi
 
 deploy:
-  provider: releases
-  api_key: $GITHUB_TOKEN
-  file: /usr/bin/hummingbird
-  skip_cleanup: true
-  overwrite: true
-  on:
-    branch: master
-    tags: true
+  - provider: pages
+    github_token: $GITHUB_TOKEN
+    local_dir: /tmp/output
+    skip_cleanup: true
+    on:
+      branch: master
+  - provider: releases
+    api_key: $GITHUB_TOKEN
+    file: /usr/bin/hummingbird
+    skip_cleanup: true
+    overwrite: true
+    on:
+      branch: master
+      tags: true
