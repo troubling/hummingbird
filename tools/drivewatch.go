@@ -18,6 +18,7 @@ package tools
 import (
 	"database/sql"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -47,6 +48,10 @@ type ipPort struct {
 	ip, scheme      string
 	port            int
 	replicationPort int
+}
+
+func (v *ipPort) String() string {
+	return fmt.Sprintf("%s://%s:%d|%d", v.scheme, v.ip, v.port, v.replicationPort)
 }
 
 type reconData struct {
@@ -99,9 +104,9 @@ func serverId(ip string, port int) string {
 	return fmt.Sprintf("%s:%d", ip, port)
 }
 
-func getRingData(oring ring.Ring, onlyWeighted bool) (map[string]*ring.Device, []ipPort) {
+func getRingData(oring ring.Ring, onlyWeighted bool) (map[string]*ring.Device, []*ipPort) {
 	allRingDevices := make(map[string]*ring.Device)
-	var servers []ipPort
+	var servers []*ipPort
 	weightedServers := make(map[string]bool)
 	for _, dev := range oring.AllDevices() {
 		if dev == nil {
@@ -112,7 +117,7 @@ func getRingData(oring ring.Ring, onlyWeighted bool) (map[string]*ring.Device, [
 		if !onlyWeighted || dev.Weight > 0 {
 			if _, ok := weightedServers[serverId(dev.Ip, dev.Port)]; !ok {
 				servers =
-					append(servers, ipPort{ip: dev.Ip, port: dev.Port, scheme: dev.Scheme, replicationPort: dev.ReplicationPort})
+					append(servers, &ipPort{ip: dev.Ip, port: dev.Port, scheme: dev.Scheme, replicationPort: dev.ReplicationPort})
 				weightedServers[serverId(dev.Ip, dev.Port)] = true
 			}
 		}
@@ -120,70 +125,158 @@ func getRingData(oring ring.Ring, onlyWeighted bool) (map[string]*ring.Device, [
 	return allRingDevices, servers
 }
 
-func PrintDriveReport(serverconf conf.Config) error {
-	sqlDir := serverconf.GetDefault("drive_watch", "sql_dir", "/var/local/hummingbird")
-	if sd, err := os.Open(sqlDir); err != nil {
-		return fmt.Errorf("Invalid Config, no sql_dir at %s", sqlDir)
-	} else {
-		sd.Close()
+type driveReport struct {
+	Name          string
+	Time          time.Time
+	Pass          bool
+	Errors        []string
+	PolicyReports []*policyDriveReport
+	MaxBadDevAge  time.Duration
+}
+
+func (r *driveReport) Passed() bool {
+	return r.Pass
+}
+
+func (r *driveReport) String() string {
+	s := fmt.Sprintf(
+		"[%s] %s\n",
+		r.Time.Format("2006-01-02 15:04:05"),
+		r.Name,
+	)
+	for _, e := range r.Errors {
+		s += fmt.Sprintf("!! %s\n", e)
 	}
-	db, err := sql.Open("sqlite3", filepath.Join(sqlDir, DB_NAME))
+	for _, pr := range r.PolicyReports {
+		s += fmt.Sprintf("Weighted / Unmounted / Unreachable devices report for Policy %d\n", pr.Policy)
+		s += fmt.Sprintf("Last successful recon run was %.2f hours ago.\n", float64(time.Since(pr.Time))/float64(time.Hour))
+		data := [][]string{{
+			"IP ADDRESS",
+			"PORT",
+			"DEVICE",
+			"WEIGHT",
+			"MOUNTED",
+			"REACHABLE",
+			"LAST STATE CHANGE",
+			"SHOULD BE ZEROED",
+		}}
+		for _, sr := range pr.SingleReports {
+			data = append(data, []string{
+				sr.IP,
+				strconv.Itoa(sr.Port),
+				sr.Device,
+				fmt.Sprintf("%.2f", sr.Weight),
+				fmt.Sprintf("%v", sr.Mounted),
+				fmt.Sprintf("%v", sr.Reachable),
+				sr.Time.UTC().Format(time.UnixDate),
+				fmt.Sprintf("%v", time.Since(sr.Time) > r.MaxBadDevAge),
+			})
+		}
+		if len(data) == 1 {
+			s += fmt.Sprintln("No weighted drives are currently reported as unmounted or unreachable.")
+		} else {
+			s += fmt.Sprintln(brimtext.Align(data, brimtext.NewSimpleAlignOptions()))
+		}
+	}
+	return s
+}
+
+type policyDriveReport struct {
+	Policy        int
+	Time          time.Time
+	SingleReports []*policySingleDriveReport
+}
+
+type policySingleDriveReport struct {
+	Time      time.Time
+	IP        string
+	Port      int
+	Device    string
+	Weight    float64
+	Mounted   bool
+	Reachable bool
+}
+
+func getDriveReport(flags *flag.FlagSet) *driveReport {
+	report := &driveReport{
+		Name: "Drive Report",
+		Time: time.Now().UTC(),
+		Pass: true,
+	}
+	serverconf, err := getAndrewdConf(flags)
 	if err != nil {
-		return err
+		report.Errors = append(report.Errors, err.Error())
+		report.Pass = false
+		return report
+	}
+	db, err := sql.Open("sqlite3", filepath.Join(serverconf.GetDefault("drive_watch", "sql_dir", "/var/local/hummingbird"), DB_NAME))
+	if err != nil {
+		report.Errors = append(report.Errors, err.Error())
+		report.Pass = false
+		return report
 	}
 	defer db.Close()
-	maxBadDevAge := time.Duration(serverconf.GetInt("drive_watch", "max_bad_drive_age_sec", common.ONE_WEEK) * int64(time.Second))
+	report.MaxBadDevAge = time.Duration(serverconf.GetInt("drive_watch", "max_bad_drive_age_sec", common.ONE_WEEK) * int64(time.Second))
 	pList, err := conf.GetPolicies()
 	if err != nil {
-		return err
+		report.Errors = append(report.Errors, err.Error())
+		report.Pass = false
+		return report
 	}
 	for _, p := range pList {
-		fmt.Printf("Weighted / Unmounted / Unreachable devices report for Policy %d\n", p.Index)
+		pReport := &policyDriveReport{
+			Policy: p.Index,
+		}
+		report.PolicyReports = append(report.PolicyReports, pReport)
 		rows, err := db.Query("SELECT create_date FROM run_log WHERE policy = ? AND success = 1 ORDER BY create_date DESC LIMIT 1", p.Index)
 		if err != nil {
-			return err
+			report.Errors = append(report.Errors, err.Error())
+			report.Pass = false
+			continue
 		}
 		defer rows.Close()
 		if rows.Next() {
 			var createDate time.Time
-			if err := rows.Scan(&createDate); err == nil {
-				fmt.Printf("Last successful recon run was %.2f hours ago.\n", float64(time.Since(createDate))/float64(time.Hour))
+			if err := rows.Scan(&createDate); err != nil {
+				report.Errors = append(report.Errors, err.Error())
+				report.Pass = false
+				continue
 			}
+			pReport.Time = createDate
 		}
 		rows, err = db.Query("SELECT ip, port, device, weight, mounted, "+
 			"reachable, last_update FROM device WHERE policy = ? AND "+
 			"(mounted=0 OR reachable=0) ORDER BY last_update",
 			p.Index)
 		if err != nil {
-			return err
+			report.Errors = append(report.Errors, err.Error())
+			report.Pass = false
+			continue
 		}
 		defer rows.Close()
-		data := make([][]string, 0)
-		data = append(data, []string{"POLICY", "IP ADDRESS", "PORT", "DEVICE", "WEIGHT", "MOUNTED", "REACHABLE", "LAST STATE CHANGE", "SHOULD BE ZEROED"})
 		for rows.Next() {
 			var ip, device string
 			var port int
 			var weight float64
 			var mounted, reachable bool
 			var lastUpdate time.Time
-			if err := rows.Scan(&ip, &port, &device,
-				&weight, &mounted, &reachable, &lastUpdate); err != nil {
-				return err
-			} else {
-				data = append(data, []string{strconv.Itoa(p.Index), ip,
-					strconv.Itoa(port), device, fmt.Sprintf("%.2f", weight),
-					fmt.Sprintf("%v", mounted), fmt.Sprintf("%v", reachable),
-					lastUpdate.UTC().Format(time.UnixDate),
-					fmt.Sprintf("%v", time.Since(lastUpdate) > maxBadDevAge)})
+			if err := rows.Scan(&ip, &port, &device, &weight, &mounted, &reachable, &lastUpdate); err != nil {
+				report.Errors = append(report.Errors, err.Error())
+				report.Pass = false
+				continue
 			}
-		}
-		if len(data) == 1 {
-			fmt.Println("No weighted drives are currently reported as unmounted or unreachable.")
-		} else {
-			fmt.Println(brimtext.Align(data, brimtext.NewSimpleAlignOptions()))
+			pReport.SingleReports = append(pReport.SingleReports, &policySingleDriveReport{
+				Time:      lastUpdate,
+				IP:        ip,
+				Port:      port,
+				Device:    device,
+				Weight:    weight,
+				Mounted:   mounted,
+				Reachable: reachable,
+			})
 		}
 	}
-	return nil
+	return report
 }
 
 func (dw *driveWatch) getDbAndLock() (*sql.DB, error) {
@@ -291,7 +384,7 @@ func (dw *driveWatch) getDbAndLock() (*sql.DB, error) {
 	return dw.db, nil
 }
 
-func (dw *driveWatch) gatherReconData(servers []ipPort) (unmountedDevices map[string]ring.Device, downServers map[string]ipPort) {
+func (dw *driveWatch) gatherReconData(servers []*ipPort) (unmountedDevices map[string]ring.Device, downServers map[string]ipPort) {
 	downServers = make(map[string]ipPort)
 	unmountedDevices = make(map[string]ring.Device)
 	for _, s := range servers {

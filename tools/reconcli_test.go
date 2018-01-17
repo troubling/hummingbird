@@ -16,8 +16,6 @@
 package tools
 
 import (
-	"bufio"
-	"bytes"
 	"encoding/json"
 	"io"
 	"io/ioutil"
@@ -25,7 +23,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -56,10 +53,9 @@ func TestReconReportTimeFail(t *testing.T) {
 	host, ports, _ := net.SplitHostPort(u.Host)
 	port, _ := strconv.Atoi(ports)
 
-	servers := []ipPort{{ip: host, port: port}}
+	servers := []*ipPort{{ip: host, port: port}}
 	client := http.Client{Timeout: 10 * time.Second}
-	w := bufio.NewWriter(os.Stdout)
-	require.Equal(t, false, reconReportTime(client, servers, w))
+	require.Equal(t, false, getTimeReport(client, servers).Passed())
 }
 
 func TestReconReportTimePass(t *testing.T) {
@@ -86,10 +82,9 @@ func TestReconReportTimePass(t *testing.T) {
 	host, ports, _ := net.SplitHostPort(u.Host)
 	port, _ := strconv.Atoi(ports)
 
-	servers := []ipPort{{ip: host, port: port, scheme: "http"}}
+	servers := []*ipPort{{ip: host, port: port, scheme: "http"}}
 	client := http.Client{Timeout: 10 * time.Second}
-	w := bufio.NewWriter(os.Stdout)
-	require.Equal(t, true, reconReportTime(client, servers, w))
+	require.Equal(t, true, getTimeReport(client, servers).Passed())
 }
 
 func TestReconReportRingMd5Fail(t *testing.T) {
@@ -116,11 +111,10 @@ func TestReconReportRingMd5Fail(t *testing.T) {
 	host, ports, _ := net.SplitHostPort(u.Host)
 	port, _ := strconv.Atoi(ports)
 
-	servers := []ipPort{{ip: host, port: port, scheme: "http"}}
+	servers := []*ipPort{{ip: host, port: port, scheme: "http"}}
 	client := http.Client{Timeout: 10 * time.Second}
-	w := bufio.NewWriter(os.Stdout)
-	require.Equal(t, false, reconReportRingMd5(
-		client, servers, map[string]string{"/a/object.ring.gz": "abcdf"}, w))
+	require.Equal(t, false, getRingMD5Report(
+		client, servers, map[string]string{"/a/object.ring.gz": "abcdf"}).Passed())
 }
 
 func TestReconReportRingMd5Pass(t *testing.T) {
@@ -147,11 +141,10 @@ func TestReconReportRingMd5Pass(t *testing.T) {
 	host, ports, _ := net.SplitHostPort(u.Host)
 	port, _ := strconv.Atoi(ports)
 
-	servers := []ipPort{{ip: host, port: port, scheme: "http"}}
+	servers := []*ipPort{{ip: host, port: port, scheme: "http"}}
 	client := http.Client{Timeout: 10 * time.Second}
-	w := bufio.NewWriter(os.Stdout)
-	require.Equal(t, true, reconReportRingMd5(
-		client, servers, map[string]string{"/a/object.ring.gz": "abcde"}, w))
+	require.Equal(t, true, getRingMD5Report(
+		client, servers, map[string]string{"/a/object.ring.gz": "abcde"}).Passed())
 }
 
 func TestReconReportQuarantine(t *testing.T) {
@@ -197,14 +190,11 @@ func TestReconReportQuarantine(t *testing.T) {
 	host1, ports1, _ := net.SplitHostPort(u.Host)
 	port1, _ := strconv.Atoi(ports1)
 
-	servers := []ipPort{{ip: host, port: port, scheme: "http"}, {ip: host1, port: port1, scheme: "http"}}
+	servers := []*ipPort{{ip: host, port: port, scheme: "http"}, {ip: host1, port: port1, scheme: "http"}}
 	client := http.Client{Timeout: 10 * time.Second}
-	var buf bytes.Buffer
-	w := bufio.NewWriter(&buf)
-	require.Equal(t, true, reconReportQuarantine(
-		client, servers, w))
-	w.Flush()
-	out := buf.String()
+	report := getQuarantineReport(client, servers)
+	require.Equal(t, true, report.Passed())
+	out := report.String()
 	require.True(t, strings.Contains(out, "[quarantined_account] low: 0, high: 0, avg: 0.0"))
 	require.True(t, strings.Contains(out, "[quarantined_container] low: 5, high: 5, avg: 5.0, total: 10"))
 	require.True(t, strings.Contains(out, "[quarantined_objects] low: 10, high: 20, avg: 15.0, total: 30, Failed: 0.0"))
@@ -253,13 +243,10 @@ func TestReconReportAsync(t *testing.T) {
 	host1, ports1, _ := net.SplitHostPort(u.Host)
 	port1, _ := strconv.Atoi(ports1)
 
-	servers := []ipPort{{ip: host, port: port, scheme: "http"}, {ip: host1, port: port1, scheme: "http"}}
+	servers := []*ipPort{{ip: host, port: port, scheme: "http"}, {ip: host1, port: port1, scheme: "http"}}
 	client := http.Client{Timeout: 10 * time.Second}
-	var buf bytes.Buffer
-	w := bufio.NewWriter(&buf)
-	require.Equal(t, true, reconReportAsync(
-		client, servers, w))
-	w.Flush()
-	out := buf.String()
+	report := getAsyncReport(client, servers)
+	require.Equal(t, true, report.Passed())
+	out := report.String()
 	require.True(t, strings.Contains(out, "[async_pending] low: 50, high: 100, avg: 75.0, total: 150, Failed: 0.0%, no_result: 0, reported: 2"))
 }
