@@ -79,8 +79,12 @@ script:
 
 deploy:
   skip_cleanup: true
-  provider: pages
-  github_token: $GITHUB_TOKEN
-  local_dir: /tmp/output
-  on:
-    branch: master
+  - provider: pages
+    github_token: $GITHUB_TOKEN
+    local_dir: /tmp/output
+    on:
+      branch: master
+  - provider: releases
+    file: /tmp/output/bin/hummingbird
+    on:
+      tags: true
