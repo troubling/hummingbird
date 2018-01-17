@@ -78,15 +78,14 @@ script:
     fi
 
 deploy:
+  - skip_cleanup: true
   - provider: pages
     github_token: $GITHUB_TOKEN
-    skip_cleanup: true
     local_dir: /tmp/output
     on:
       branch: master
   - provider: releases
     api_key: $GITHUB_TOKEN
-    skip_cleanup: true
     file: /tmp/output/bin/hummingbird
     on:
       branch: master
