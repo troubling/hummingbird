@@ -85,6 +85,7 @@ deploy:
     on:
       branch: master
   - provider: releases
+    github_token: $GITHUB_TOKEN
     file: /tmp/output/bin/hummingbird
     on:
       tags: true
