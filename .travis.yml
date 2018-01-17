@@ -79,9 +79,10 @@ script:
 
 deploy:
   provider: releases
-  skip_cleanup: true
   api_key: $GITHUB_TOKEN
-  file: /tmp/output/bin/hummingbird
+  file: /usr/bin/hummingbird
+  skip_cleanup: true
+  overwrite: true
   on:
     branch: master
     tags: true
