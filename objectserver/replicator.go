@@ -355,7 +355,7 @@ func (rd *replicationDevice) beginReplication(dev *ring.Device, partition string
 	}
 	headers["X-Trans-Id"] = fmt.Sprintf("%s-%d", common.UUID(), dev.Id)
 
-	if rc, err := NewRepConn(dev, partition, rd.policy, headers, rd.r.CertFile, rd.r.KeyFile); err != nil {
+	if rc, err := NewRepConn(dev, partition, rd.policy, headers, rd.r.CertFile, rd.r.KeyFile, rd.r.rcTimeout); err != nil {
 		rChan <- beginReplicationResponse{dev: dev, err: err}
 	} else if err := rc.SendMessage(BeginReplicationRequest{Device: dev.Device, Partition: partition, NeedHashes: hashes}); err != nil {
 		rChan <- beginReplicationResponse{dev: dev, err: err}
@@ -802,6 +802,7 @@ type Replicator struct {
 	incomingSemLock         sync.Mutex
 	incomingSem             map[string]chan struct{}
 	asyncWG                 sync.WaitGroup // Used to wait on async goroutines
+	rcTimeout               time.Duration
 }
 
 func (server *Replicator) Type() string {
@@ -1181,6 +1182,7 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 		replicateConcurrencySem: make(chan struct{}, concurrency),
 		updateConcurrencySem:    make(chan struct{}, updaterConcurrency),
 		nurseryConcurrencySem:   make(chan struct{}, nurseryConcurrency),
+		rcTimeout:               time.Duration(serverconf.GetInt("object-replicator", "replication_timeout_sec", 0)) * time.Second,
 		updateStat:              make(chan statUpdate),
 		devices:                 make(map[string]bool),
 		partitions:              make(map[string]bool),

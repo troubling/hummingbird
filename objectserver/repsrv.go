@@ -166,6 +166,7 @@ func (r *Replicator) objRepConnHandler(writer http.ResponseWriter, request *http
 	var brr BeginReplicationRequest
 
 	vars := srv.GetVars(request)
+	startTime := time.Now()
 
 	policy, err := strconv.Atoi(request.Header.Get("X-Backend-Storage-Policy-Index"))
 	if err != nil {
@@ -184,7 +185,7 @@ func (r *Replicator) objRepConnHandler(writer http.ResponseWriter, request *http
 	}
 	defer conn.Close()
 
-	rc := NewIncomingRepConn(rw, conn)
+	rc := NewIncomingRepConn(rw, conn, r.rcTimeout)
 	if err := rc.RecvMessage(&brr); err != nil {
 		srv.GetLogger(request).Error("[ObjRepConnHandler] Error receiving BeginReplicationRequest", zap.Error(err))
 		writer.WriteHeader(http.StatusBadRequest)
@@ -208,13 +209,16 @@ func (r *Replicator) objRepConnHandler(writer http.ResponseWriter, request *http
 		}
 	}
 	if err := rc.SendMessage(BeginReplicationResponse{Hashes: hashes}); err != nil {
-		srv.GetLogger(request).Error("[ObjRepConnHandler] Error sending BeginReplicationResponse", zap.Error(err))
+		srv.GetLogger(request).Error("[ObjRepConnHandler] Error sending BeginReplicationResponse", zap.Duration("connectionTime", time.Since(startTime)), zap.Error(err))
 		writer.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	sfrsProcessed := int64(0)
+	startTime = time.Now()
 	for {
 		errType, err := func() (string, error) { // this is a closure so we can use defers inside
 			var sfr SyncFileRequest
+			sfrsProcessed++
 			if err := rc.RecvMessage(&sfr); err != nil {
 				return "receiving SyncFileRequest", err
 			}
@@ -275,6 +279,8 @@ func (r *Replicator) objRepConnHandler(writer http.ResponseWriter, request *http
 		} else if err != nil {
 			srv.GetLogger(request).Error("[ObjRepConnHandler] Error replicating",
 				zap.String("errType", errType),
+				zap.Int64("sfrsProcessed", sfrsProcessed),
+				zap.Duration("sfrProcessTime", time.Since(startTime)),
 				zap.Error(err))
 			writer.WriteHeader(http.StatusInternalServerError)
 			return

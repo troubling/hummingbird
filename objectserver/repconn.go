@@ -35,8 +35,6 @@ import (
 var RepUnmountedError = fmt.Errorf("Device unmounted")
 var repDialer = (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).Dial
 
-const repITimeout = time.Minute * 10
-const repOTimeout = time.Minute
 const repConnBufferSize = 32768
 
 type BeginReplicationRequest struct {
@@ -84,6 +82,21 @@ type repConn struct {
 	rw           *bufio.ReadWriter
 	c            net.Conn
 	disconnected bool
+	rcTimeout    time.Duration
+}
+
+func (r *repConn) iTimeout() time.Duration {
+	if r.rcTimeout > 0 {
+		return r.rcTimeout
+	}
+	return time.Minute * 10
+}
+
+func (r *repConn) oTimeout() time.Duration {
+	if r.rcTimeout > 0 {
+		return r.rcTimeout
+	}
+	return time.Minute
 }
 
 func (r *repConn) Disconnected() bool {
@@ -112,7 +125,7 @@ func (r *repConn) SendMessage(v interface{}) error {
 }
 
 func (r *repConn) RecvMessage(v interface{}) (err error) {
-	r.c.SetDeadline(time.Now().Add(repITimeout))
+	r.c.SetDeadline(time.Now().Add(r.iTimeout()))
 	var length uint32
 	if err = binary.Read(r, binary.BigEndian, &length); err != nil {
 		r.Close()
@@ -131,7 +144,7 @@ func (r *repConn) RecvMessage(v interface{}) (err error) {
 }
 
 func (r *repConn) Write(data []byte) (l int, err error) {
-	r.c.SetDeadline(time.Now().Add(repOTimeout))
+	r.c.SetDeadline(time.Now().Add(r.oTimeout()))
 	if l, err = r.rw.Write(data); err != nil {
 		r.Close()
 	}
@@ -139,7 +152,7 @@ func (r *repConn) Write(data []byte) (l int, err error) {
 }
 
 func (r *repConn) Flush() (err error) {
-	r.c.SetDeadline(time.Now().Add(repOTimeout))
+	r.c.SetDeadline(time.Now().Add(r.oTimeout()))
 	if err = r.rw.Flush(); err != nil {
 		r.Close()
 	}
@@ -147,7 +160,7 @@ func (r *repConn) Flush() (err error) {
 }
 
 func (r *repConn) Read(data []byte) (l int, err error) {
-	r.c.SetDeadline(time.Now().Add(repITimeout))
+	r.c.SetDeadline(time.Now().Add(r.iTimeout()))
 	if l, err = io.ReadFull(r.rw, data); err != nil {
 		r.Close()
 	}
@@ -159,7 +172,7 @@ func (r *repConn) Close() {
 	r.c.Close()
 }
 
-func NewRepConn(dev *ring.Device, partition string, policy int, headers map[string]string, certFile, keyFile string) (RepConn, error) {
+func NewRepConn(dev *ring.Device, partition string, policy int, headers map[string]string, certFile, keyFile string, rcTimeout time.Duration) (RepConn, error) {
 	url := fmt.Sprintf("%s://%s:%d/%s/%s", dev.Scheme, dev.ReplicationIp, dev.ReplicationPort, dev.Device, partition)
 	req, err := http.NewRequest("REPCONN", url, nil)
 	if err != nil {
@@ -199,10 +212,11 @@ func NewRepConn(dev *ring.Device, partition string, policy int, headers map[stri
 		rw: bufio.NewReadWriter(
 			bufio.NewReaderSize(newc, repConnBufferSize),
 			bufio.NewWriterSize(newc, repConnBufferSize)),
-		c: newc,
+		c:         newc,
+		rcTimeout: rcTimeout,
 	}, nil
 }
 
-func NewIncomingRepConn(rw *bufio.ReadWriter, c net.Conn) RepConn {
-	return &repConn{rw: rw, c: c}
+func NewIncomingRepConn(rw *bufio.ReadWriter, c net.Conn, rcTimeout time.Duration) RepConn {
+	return &repConn{rw: rw, c: c, rcTimeout: rcTimeout}
 }
