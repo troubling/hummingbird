@@ -1,6 +1,8 @@
 Hummingbird Docs
 ================
 
+## [Architecture](arch.md)
+
 ## [Cluster Health](cluster-health.md)
 
 ## [Cluster Admin](cluster-admin.md)
