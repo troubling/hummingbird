@@ -19,15 +19,15 @@ install:
   - ./hummingbird-init-haio.sh
   - sudo apt remove python-nose # since we'll be installing the pip edition
   - go get github.com/haya14busa/goverage
-  - mkdir -p $TRAVIS_BUILD_DIR/output
+  - mkdir -p /tmp/output
   - |
     set -e
     if [ "$HYBRID" = "YES" ] ; then
       cd ~/swift
       git checkout stable/pike
     else
-      mkdir -p $TRAVIS_BUILD_DIR/output/bin
-      cp /usr/bin/hummingbird $TRAVIS_BUILD_DIR/output/bin
+      mkdir -p /tmp/output/bin
+      cp /usr/bin/hummingbird /tmp/output/bin
     fi
   - virtualenv ~/swift-venv
   - ~/swift-venv/bin/pip install -U pip setuptools python-subunit nose-htmloutput nose-exclude
@@ -52,14 +52,14 @@ script:
       hummingbird start container
       hummingbird start account
       PATH=$PATH:~/swift-venv/bin swift-init start proxy
-      PATH=$PATH:~/swift-venv/bin nosetests -e test_unicode_metadata --with-html --html-file=$TRAVIS_BUILD_DIR/output/functional_swiftproxy.html ~/swift/test/functional
+      PATH=$PATH:~/swift-venv/bin nosetests -e test_unicode_metadata --with-html --html-file=/tmp/output/functional_swiftproxy.html ~/swift/test/functional
     else
       test -z "$(find . -name '*.go' | xargs gofmt -l -s)" || (echo "You need to run 'make fmt'"; exit 1)
       go vet github.com/troubling/hummingbird/...
-      goverage -coverprofile=$TRAVIS_BUILD_DIR/coverage.out github.com/troubling/hummingbird/...
-      go tool cover -html=$TRAVIS_BUILD_DIR/coverage.out -o "$TRAVIS_BUILD_DIR/output/coverage.html"
+      goverage -coverprofile=/tmp/coverage.out github.com/troubling/hummingbird/...
+      go tool cover -html=/tmp/coverage.out -o "/tmp/output/coverage.html"
       hummingbird start main
-      PATH=$PATH:~/swift-venv/bin nosetests --with-html --html-file=$TRAVIS_BUILD_DIR/output/functional_hbproxy.html ~/swift/test/functional \
+      PATH=$PATH:~/swift-venv/bin nosetests --with-html --html-file=/tmp/output/functional_hbproxy.html ~/swift/test/functional \
         --exclude-test=test.functional.test_account.TestAccount.test_unicode_metadata `# violates rfc specifying 7-bit clean headers, go server rejects.` \
         --exclude-test=test.functional.test_container.TestContainer.test_unicode_metadata \
         --exclude-test=test.functional.tests.TestFile.testBadHeaders `# Go's http server returns 400 not 501 for Transfer-Encoding: gzip,chunked` \
@@ -78,10 +78,11 @@ script:
     fi
 
 deploy:
-  provider: pages
-  github_token: $GITHUB_TOKEN
+  provider: releases
+  api_key: $GITHUB_TOKEN
+  file: /usr/bin/hummingbird
   skip_cleanup: true
-  keep_history: true
-  local_dir: $TRAVIS_BUILD_DIR/output
+  overwrite: true
   on:
     branch: master
+    tags: true
