@@ -300,9 +300,9 @@ func (dw *driveWatch) getDbAndLock() (*sql.DB, error) {
 		CREATE TABLE IF NOT EXISTS device (
 			id INTEGER PRIMARY KEY,
 			policy INTEGER NOT NULL,
-			ip VARCHAR(40) NOT NULL,
+			ip TEXT NOT NULL,
 			port INTEGER NOT NULL,
-			device VARCHAR(40) NOT NULL,
+			device TEXT NOT NULL,
 			in_ring INTEGER NOT NULL,
 			weight FLOAT NOT NULL,
 			mounted INTEGER NOT NULL,
@@ -316,17 +316,17 @@ func (dw *driveWatch) getDbAndLock() (*sql.DB, error) {
 			mounted INTEGER,
 			reachable INTEGER,
 			create_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			notes VARCHAR(255),
+			notes TEXT,
 			FOREIGN KEY (deviceId) REFERENCES device(id)
 		); 
 
 		CREATE TABLE IF NOT EXISTS ring_action (
 			id INTEGER PRIMARY KEY,
 			policy INTEGER NOT NULL,
-			ip VARCHAR(40),
+			ip TEXT,
 			port INTEGER,
-			device VARCHAR(40),
-			action VARCHAR(20) NOT NULL,
+			device TEXT,
+			action TEXT NOT NULL,
 			create_date TIMESTAMP NOT NULL
 		); 
 
@@ -354,7 +354,7 @@ func (dw *driveWatch) getDbAndLock() (*sql.DB, error) {
         CREATE TABLE IF NOT EXISTS dispersion_report (
             id INTEGER PRIMARY KEY,
             create_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			rtype VARCHAR(20) NOT NULL,
+            rtype TEXT NOT NULL,
             policy INTEGER NOT NULL,
             items INTEGER NOT NULL,
             items_found INTEGER NOT NULL,
@@ -362,12 +362,11 @@ func (dw *driveWatch) getDbAndLock() (*sql.DB, error) {
             );
 
         CREATE TABLE IF NOT EXISTS dispersion_report_detail (
-            id INTEGER PRIMARY KEY,
             dispersion_report_id INTEGER NOT NULL,
-			rtype VARCHAR(20) NOT NULL,
+            rtype TEXT NOT NULL,
             policy INTEGER NOT NULL,
             partition INTEGER NOT NULL,
-            partition_item_path VARCHAR(100) NOT NULL,
+            partition_item_path TEXT NOT NULL,
             items_found INTEGER NOT NULL,
             items_need INTEGER NOT NULL,
             create_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
