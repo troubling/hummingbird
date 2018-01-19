@@ -857,6 +857,9 @@ func ReconClient(flags *flag.FlagSet, cnf srv.ConfigLoader) bool {
 	if flags.Lookup("ds").Value.(flag.Getter).Get().(bool) {
 		reports = append(reports, getDriveReport(flags))
 	}
+	if flags.Lookup("rar").Value.(flag.Getter).Get().(bool) {
+		reports = append(reports, getRingActionReport(flags))
+	}
 	if len(reports) == 0 {
 		flags.Usage()
 	}
