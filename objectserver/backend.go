@@ -37,8 +37,6 @@ import (
 	"go.uber.org/zap"
 )
 
-const METADATA_CHUNK_SIZE = 65536
-
 var LockPathError = errors.New("Error locking path")
 var PathNotDirError = errors.New("Path is not a directory")
 
@@ -65,84 +63,6 @@ func UnPolicyDir(dir string) (int, error) {
 		return policy, nil
 	}
 	return 0, fmt.Errorf("Unable to parse policy from dir: %s", dir)
-}
-
-func RawReadMetadata(fileNameOrFd interface{}) ([]byte, error) {
-	var pickledMetadata []byte
-	offset := 0
-	for index := 0; ; index += 1 {
-		var metadataName string
-		// get name of next xattr
-		if index == 0 {
-			metadataName = "user.swift.metadata"
-		} else {
-			metadataName = "user.swift.metadata" + strconv.Itoa(index)
-		}
-		// get size of xattr
-		length, err := fs.Getxattr(fileNameOrFd, metadataName, nil)
-		if err != nil || length <= 0 {
-			break
-		}
-		// grow buffer to hold xattr
-		for cap(pickledMetadata) < offset+length {
-			pickledMetadata = append(pickledMetadata, 0)
-		}
-		pickledMetadata = pickledMetadata[0 : offset+length]
-		if _, err := fs.Getxattr(fileNameOrFd, metadataName, pickledMetadata[offset:]); err != nil {
-			return nil, err
-		}
-		offset += length
-	}
-	return pickledMetadata, nil
-}
-
-func ReadMetadata(fileNameOrFd interface{}) (map[string]string, error) {
-	pickledMetadata, err := RawReadMetadata(fileNameOrFd)
-	if err != nil {
-		return nil, err
-	}
-	v, err := pickle.PickleLoads(pickledMetadata)
-	if err != nil {
-		return nil, err
-	}
-	if v, ok := v.(map[interface{}]interface{}); ok {
-		metadata := make(map[string]string, len(v))
-		for mk, mv := range v {
-			var mks, mvs string
-			if mks, ok = mk.(string); !ok {
-				return nil, fmt.Errorf("Metadata key not string: %T %v", mk, mk)
-			} else if mvs, ok = mv.(string); !ok {
-				return nil, fmt.Errorf("Metadata value not string: %T %v", mv, mv)
-			}
-			metadata[mks] = mvs
-		}
-		return metadata, nil
-	}
-	return nil, fmt.Errorf("Unpickled metadata not correct type: %T", v)
-}
-
-func RawWriteMetadata(fd uintptr, buf []byte) error {
-	for index := 0; len(buf) > 0; index++ {
-		var metadataName string
-		if index == 0 {
-			metadataName = "user.swift.metadata"
-		} else {
-			metadataName = "user.swift.metadata" + strconv.Itoa(index)
-		}
-		writelen := METADATA_CHUNK_SIZE
-		if len(buf) < writelen {
-			writelen = len(buf)
-		}
-		if _, err := fs.Setxattr(fd, metadataName, buf[0:writelen]); err != nil {
-			return err
-		}
-		buf = buf[writelen:]
-	}
-	return nil
-}
-
-func WriteMetadata(fd uintptr, v map[string]string) error {
-	return RawWriteMetadata(fd, pickle.PickleDumps(v))
 }
 
 func QuarantineHash(hashDir string) error {
@@ -399,7 +319,7 @@ func ObjectFiles(directory string) (string, string) {
 }
 
 func applyMetaFile(metaFile string, datafileMetadata map[string]string) (map[string]string, error) {
-	if metadata, err := ReadMetadata(metaFile); err != nil {
+	if metadata, err := common.SwiftObjectReadMetadata(metaFile); err != nil {
 		return nil, err
 	} else {
 		for k, v := range datafileMetadata {
@@ -413,7 +333,7 @@ func applyMetaFile(metaFile string, datafileMetadata map[string]string) (map[str
 }
 
 func OpenObjectMetadata(fd uintptr, metaFile string) (map[string]string, error) {
-	datafileMetadata, err := ReadMetadata(fd)
+	datafileMetadata, err := common.SwiftObjectReadMetadata(fd)
 	if err != nil {
 		return nil, err
 	}
@@ -425,7 +345,7 @@ func OpenObjectMetadata(fd uintptr, metaFile string) (map[string]string, error) 
 }
 
 func ObjectMetadata(dataFile string, metaFile string) (map[string]string, error) {
-	datafileMetadata, err := ReadMetadata(dataFile)
+	datafileMetadata, err := common.SwiftObjectReadMetadata(dataFile)
 	if err != nil {
 		return nil, err
 	}

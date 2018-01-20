@@ -295,7 +295,7 @@ func TestGetFile(t *testing.T) {
 	defer file.Close()
 	defer os.RemoveAll(file.Name())
 	file.Write([]byte("SOME DATA"))
-	WriteMetadata(file.Fd(), map[string]string{
+	common.SwiftObjectWriteMetadata(file.Fd(), map[string]string{
 		"ETag":           "662411c1698ecc13dd07aee13439eadc",
 		"X-Timestamp":    "1234567890.12345",
 		"Content-Length": "9",
@@ -333,19 +333,19 @@ func TestGetFileBadMetadata(t *testing.T) {
 	defer file.Close()
 	defer os.RemoveAll(file.Name())
 
-	require.Nil(t, RawWriteMetadata(file.Fd(), []byte("HI")))
+	require.Nil(t, common.SwiftObjectRawWriteMetadata(file.Fd(), []byte("HI")))
 	_, _, _, err = getFile(file.Name())
 	require.NotNil(t, err)
 
-	require.Nil(t, RawWriteMetadata(file.Fd(), []byte("\x80\x02U\x02HIq\x01.")))
+	require.Nil(t, common.SwiftObjectRawWriteMetadata(file.Fd(), []byte("\x80\x02U\x02HIq\x01.")))
 	_, _, _, err = getFile(file.Name())
 	require.NotNil(t, err)
 
-	require.Nil(t, RawWriteMetadata(file.Fd(), []byte("\x80\x02}q\x01K\x00U\x02hiq\x02s.")))
+	require.Nil(t, common.SwiftObjectRawWriteMetadata(file.Fd(), []byte("\x80\x02}q\x01K\x00U\x02hiq\x02s.")))
 	_, _, _, err = getFile(file.Name())
 	require.NotNil(t, err)
 
-	require.Nil(t, RawWriteMetadata(file.Fd(), []byte("\x80\x02}q\x01U\x02hiq\x02K\x00s.")))
+	require.Nil(t, common.SwiftObjectRawWriteMetadata(file.Fd(), []byte("\x80\x02}q\x01U\x02hiq\x02K\x00s.")))
 	_, _, _, err = getFile(file.Name())
 	require.NotNil(t, err)
 
@@ -353,7 +353,7 @@ func TestGetFileBadMetadata(t *testing.T) {
 	require.Nil(t, err)
 	defer dfile.Close()
 	defer os.RemoveAll(dfile.Name())
-	require.Nil(t, WriteMetadata(dfile.Fd(), nil))
+	require.Nil(t, common.SwiftObjectWriteMetadata(dfile.Fd(), nil))
 	_, _, _, err = getFile(dfile.Name())
 	require.NotNil(t, err)
 
@@ -361,7 +361,7 @@ func TestGetFileBadMetadata(t *testing.T) {
 	require.Nil(t, err)
 	defer tfile.Close()
 	defer os.RemoveAll(tfile.Name())
-	require.Nil(t, WriteMetadata(tfile.Fd(), nil))
+	require.Nil(t, common.SwiftObjectWriteMetadata(tfile.Fd(), nil))
 	_, _, _, err = getFile(tfile.Name())
 	require.NotNil(t, err)
 
@@ -369,7 +369,7 @@ func TestGetFileBadMetadata(t *testing.T) {
 	require.Nil(t, err)
 	defer dfile.Close()
 	defer os.RemoveAll(dfile.Name())
-	require.Nil(t, WriteMetadata(dfile.Fd(), nil))
+	require.Nil(t, common.SwiftObjectWriteMetadata(dfile.Fd(), nil))
 	_, _, _, err = getFile(dfile.Name())
 	require.NotNil(t, err)
 }
@@ -488,7 +488,7 @@ func TestSyncFile(t *testing.T) {
 	file, err := os.Create(filename)
 	require.Nil(t, err)
 	file.Write([]byte("SOME DATA"))
-	WriteMetadata(file.Fd(), map[string]string{
+	common.SwiftObjectWriteMetadata(file.Fd(), map[string]string{
 		"ETag":           "662411c1698ecc13dd07aee13439eadc",
 		"X-Timestamp":    "1472940619.68559",
 		"Content-Length": "9",
@@ -534,7 +534,7 @@ func TestSyncFileExists(t *testing.T) {
 	file, err := os.Create(filename)
 	require.Nil(t, err)
 	file.Write([]byte("SOME DATA"))
-	WriteMetadata(file.Fd(), map[string]string{
+	common.SwiftObjectWriteMetadata(file.Fd(), map[string]string{
 		"ETag":           "662411c1698ecc13dd07aee13439eadc",
 		"X-Timestamp":    "1472940619.68559",
 		"Content-Length": "9",
@@ -578,7 +578,7 @@ func TestSyncFileNewerExists(t *testing.T) {
 	require.Nil(t, err)
 	defer file.Close()
 	file.Write([]byte("SOME DATA"))
-	WriteMetadata(file.Fd(), map[string]string{
+	common.SwiftObjectWriteMetadata(file.Fd(), map[string]string{
 		"ETag":           "662411c1698ecc13dd07aee13439eadc",
 		"X-Timestamp":    "1472940619.68559",
 		"Content-Length": "9",
@@ -1269,7 +1269,7 @@ func TestAllDifferentRegionsSync(t *testing.T) {
 	file, err := os.Create(filename)
 	require.Nil(t, err)
 	file.Write([]byte("SOME DATA"))
-	WriteMetadata(file.Fd(), map[string]string{
+	common.SwiftObjectWriteMetadata(file.Fd(), map[string]string{
 		"ETag":           "662411c1698ecc13dd07aee13439eadc",
 		"X-Timestamp":    "1472940619.68559",
 		"Content-Length": "9",
@@ -1318,7 +1318,7 @@ func TestAllSameRegionsSync(t *testing.T) {
 	file, err := os.Create(filename)
 	require.Nil(t, err)
 	file.Write([]byte("SOME DATA"))
-	WriteMetadata(file.Fd(), map[string]string{
+	common.SwiftObjectWriteMetadata(file.Fd(), map[string]string{
 		"ETag":           "662411c1698ecc13dd07aee13439eadc",
 		"X-Timestamp":    "1472940619.68559",
 		"Content-Length": "9",
@@ -1367,7 +1367,7 @@ func TestHalfSameRegionsSync(t *testing.T) {
 	file, err := os.Create(filename)
 	require.Nil(t, err)
 	file.Write([]byte("SOME DATA"))
-	WriteMetadata(file.Fd(), map[string]string{
+	common.SwiftObjectWriteMetadata(file.Fd(), map[string]string{
 		"ETag":           "662411c1698ecc13dd07aee13439eadc",
 		"X-Timestamp":    "1472940619.68559",
 		"Content-Length": "9",
@@ -1423,7 +1423,7 @@ func TestHalfSameRegionsSyncHandoffNotExists(t *testing.T) {
 	file, err := os.Create(filename)
 	require.Nil(t, err)
 	file.Write([]byte("SOME DATA"))
-	WriteMetadata(file.Fd(), map[string]string{
+	common.SwiftObjectWriteMetadata(file.Fd(), map[string]string{
 		"ETag":           "662411c1698ecc13dd07aee13439eadc",
 		"X-Timestamp":    "1472940619.68559",
 		"Content-Length": "9",
@@ -1484,7 +1484,7 @@ func TestHalfSameRegionsSyncHandoffYesExists(t *testing.T) {
 	file, err := os.Create(filename)
 	require.Nil(t, err)
 	file.Write([]byte("SOME DATA"))
-	WriteMetadata(file.Fd(), map[string]string{
+	common.SwiftObjectWriteMetadata(file.Fd(), map[string]string{
 		"ETag":           "662411c1698ecc13dd07aee13439eadc",
 		"X-Timestamp":    "1472940619.68559",
 		"Content-Length": "9",

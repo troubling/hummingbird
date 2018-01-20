@@ -17,17 +17,20 @@ package middleware
 
 import (
 	"bufio"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/load"
 	"github.com/shirou/gopsutil/mem"
@@ -342,6 +345,78 @@ func quarantineCounts(driveRoot string) (map[string]interface{}, error) {
 	return qcounts, nil
 }
 
+func quarantineDetail(driveRoot string) (interface{}, error) {
+	type entry struct {
+		NameOnDevice string
+		NameInURL    string
+	}
+	// Map of type to entries; type is accounts, containers, objects, objects-1, etc.
+	entries := map[string][]*entry{}
+	deviceList, err := ioutil.ReadDir(driveRoot)
+	if err != nil {
+		return nil, err
+	}
+	for _, device := range deviceList {
+		qTypeList, err := ioutil.ReadDir(filepath.Join(driveRoot, device.Name(), "quarantined"))
+		if err != nil {
+			if os.IsNotExist(err) {
+				return entries, nil
+			}
+			return nil, err
+		}
+		for _, qType := range qTypeList {
+			key := qType.Name()
+			if key == "accounts" || key == "containers" || strings.HasPrefix(key, "objects") {
+				listing, err := ioutil.ReadDir(filepath.Join(driveRoot, device.Name(), "quarantined", key))
+				if err != nil {
+					continue
+				}
+				for _, listingItem := range listing {
+					ent := &entry{NameOnDevice: listingItem.Name()}
+					entries[key] = append(entries[key], ent)
+					if key == "accounts" || key == "containers" {
+						parts := strings.SplitN(listingItem.Name(), "-", 2)
+						if len(parts) != 2 {
+							continue
+						}
+						db, err := sql.Open("sqlite3", filepath.Join(driveRoot, device.Name(), "quarantined", key, listingItem.Name(), parts[0]+".db"))
+						if err != nil {
+							continue
+						}
+						var a, c string
+						if key == "accounts" {
+							if db.QueryRow("select account from account_stat").Scan(&a) == nil {
+								ent.NameInURL = "/" + a
+							}
+						} else {
+							if db.QueryRow("select account, container from container_info").Scan(&a, &c) == nil {
+								ent.NameInURL = "/" + path.Join(a, c)
+							}
+						}
+						db.Close()
+					} else { // strings.HasPrefix(key, "objects")
+						listing2, err := ioutil.ReadDir(filepath.Join(driveRoot, device.Name(), "quarantined", key, listingItem.Name()))
+						if err != nil {
+							continue
+						}
+						for _, listing2Item := range listing2 {
+							metadata, err := common.SwiftObjectReadMetadata(filepath.Join(driveRoot, device.Name(), "quarantined", key, listingItem.Name(), listing2Item.Name()))
+							if err != nil {
+								continue
+							}
+							ent.NameInURL = metadata["name"]
+							if ent.NameInURL != "" {
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return entries, nil
+}
+
 func diskUsage(driveRoot string) ([]map[string]interface{}, error) {
 	devices := make([]map[string]interface{}, 0)
 	dirInfo, err := os.Stat(driveRoot)
@@ -485,6 +560,12 @@ func ReconHandler(driveRoot string, reconCachePath string, mountCheck bool, writ
 		}
 	case "quarantined":
 		content, err = quarantineCounts(driveRoot)
+		if err != nil {
+			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+	case "quarantineddetail":
+		content, err = quarantineDetail(driveRoot)
 		if err != nil {
 			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return

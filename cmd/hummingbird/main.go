@@ -379,6 +379,7 @@ func main() {
 	reconFlags.Bool("md5", false, "Get md5sum of servers ring and compare to local copy")
 	reconFlags.Bool("time", false, "Check time synchronization")
 	reconFlags.Bool("q", false, "Get cluster quarantine stats")
+	reconFlags.Bool("qd", false, "Get cluster quarantine detailed report")
 	reconFlags.Bool("a", false, "Get cluster async pending stats")
 	reconFlags.Bool("rd", false, "Get cluster replication pass duration stats")
 	reconFlags.Bool("rp", false, "Get cluster replication partition/sec stats")
