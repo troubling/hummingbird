@@ -125,6 +125,123 @@ func getRingData(oring ring.Ring, onlyWeighted bool) (map[string]*ring.Device, [
 	return allRingDevices, servers
 }
 
+type ringActionReport struct {
+	Time              time.Time
+	Name              string
+	Pass              bool
+	Errors            []string
+	RingActionReports []*policyRingActionReport
+}
+
+type policyRingActionReport struct {
+	Policy      int
+	RingActions []*ringAction
+}
+
+type ringAction struct {
+	Time   time.Time
+	IP     string
+	Port   int64
+	Device string
+	Action string
+}
+
+func (r *ringActionReport) Passed() bool {
+	return r.Pass
+}
+
+func (r *ringActionReport) String() string {
+	if len(r.Errors) > 0 {
+		return fmt.Sprintf("Ring Action report failure: %v", r.Errors)
+	}
+	s := fmt.Sprintf(
+		"[%s] %s\n",
+		r.Time.Format("2006-01-02 15:04:05"),
+		r.Name,
+	)
+	for _, e := range r.Errors {
+		s += fmt.Sprintf("!! %s\n", e)
+	}
+	for _, p := range r.RingActionReports {
+		data := [][]string{{
+			"IP ADDRESS",
+			"PORT",
+			"DEVICE",
+			"ACTION",
+			"DATE",
+		}}
+		for _, ra := range p.RingActions {
+			port := ""
+			if ra.Port > 0 {
+				port = strconv.FormatInt(ra.Port, 10)
+			}
+			data = append(data, []string{
+				ra.IP, port, ra.Device, ra.Action, ra.Time.UTC().Format(time.UnixDate)})
+		}
+		s += fmt.Sprintf("Ring Actions for Policy %d.\n", p.Policy)
+		if len(data) == 1 {
+			s += fmt.Sprintln("No Ring Actions Made")
+		} else {
+			s += fmt.Sprintln(brimtext.Align(data, brimtext.NewSimpleAlignOptions()))
+		}
+	}
+	return s
+}
+
+func getRingActionReport(flags *flag.FlagSet) *ringActionReport {
+	report := &ringActionReport{
+		Name:              "Ring Action Report",
+		Time:              time.Now().UTC(),
+		Pass:              true,
+		RingActionReports: []*policyRingActionReport{},
+	}
+	serverconf, err := getAndrewdConf(flags)
+	if err != nil {
+		report.Errors = append(report.Errors, err.Error())
+		report.Pass = false
+		return report
+	}
+	db, err := sql.Open("sqlite3", filepath.Join(serverconf.GetDefault("drive_watch", "sql_dir", "/var/local/hummingbird"), DB_NAME))
+	if err != nil {
+		report.Errors = append(report.Errors, err.Error())
+		report.Pass = false
+		return report
+	}
+	defer db.Close()
+	pList, err := conf.GetPolicies()
+	if err != nil {
+		report.Errors = append(report.Errors, err.Error())
+		report.Pass = false
+		return report
+	}
+	for _, p := range pList {
+		pReport := &policyRingActionReport{
+			Policy:      p.Index,
+			RingActions: []*ringAction{},
+		}
+		rows, err := db.Query("SELECT ip, port, device, action, create_date FROM ring_action WHERE policy = ? ORDER BY create_date DESC", p.Index)
+		if err != nil {
+			report.Errors = append(report.Errors, err.Error())
+			report.Pass = false
+			continue
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var ip, device, action sql.NullString
+			var port sql.NullInt64
+			var createDate time.Time
+			if err := rows.Scan(&ip, &port, &device, &action, &createDate); err != nil {
+				report.Errors = append(report.Errors, err.Error())
+				report.Pass = false
+				continue
+			}
+			pReport.RingActions = append(pReport.RingActions, &ringAction{Time: createDate, IP: ip.String, Port: port.Int64, Device: device.String, Action: action.String})
+		}
+		report.RingActionReports = append(report.RingActionReports, pReport)
+	}
+	return report
+}
+
 type driveReport struct {
 	Name          string
 	Time          time.Time
