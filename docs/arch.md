@@ -20,3 +20,5 @@ No support for Swift's Container Sync feature.
 No support for Swift's EC feature. Hummingbird will support erasure coding, but the implementation will be quite different with no plans to support Swift's implementation.
 
 No support for Swift's Modifying Ring Partition Power feature, therefore no equivalent of the swift-object-relinker.
+
+No support for Swift's Symbolic Linking feature at this time.
