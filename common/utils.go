@@ -36,6 +36,7 @@ import (
 )
 
 const ONE_WEEK = 604800
+const ONE_DAY = 86400
 
 type HttpRange struct {
 	Start, End int64
