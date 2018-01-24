@@ -30,11 +30,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openstack/swift/go/objectserver"
 	"github.com/stretchr/testify/require"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/objectserver"
 	"github.com/uber-go/tally"
 )
 
