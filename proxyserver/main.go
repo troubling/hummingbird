@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	_ "net/http/pprof"
+	"path"
 	"strings"
 	"time"
 
@@ -62,6 +63,7 @@ func (server *ProxyServer) Finalize() {
 }
 
 func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) http.Handler {
+	obfuscatedPrefix, _ := config.Get("proxy-server", "obfuscated_prefix")
 	var metricsScope tally.Scope
 	metricsScope, server.metricsCloser = tally.NewRootScope(tally.ScopeOptions{
 		Prefix:         metricsPrefix,
@@ -70,9 +72,13 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 		Separator:      promreporter.DefaultSeparator,
 	}, time.Second)
 	router := srv.NewRouter()
-	router.Get("/metrics", prometheus.Handler())
-	router.Get("/loglevel", server.logLevel)
-	router.Put("/loglevel", server.logLevel)
+	if obfuscatedPrefix != "" {
+		router.Get(path.Join("/", obfuscatedPrefix, "metrics"), prometheus.Handler())
+		router.Get(path.Join("/", obfuscatedPrefix, "loglevel"), server.logLevel)
+		router.Put(path.Join("/", obfuscatedPrefix, "loglevel"), server.logLevel)
+		router.Get(path.Join("/", obfuscatedPrefix, "debug/pprof/:parm"), http.DefaultServeMux)
+		router.Post(path.Join("/", obfuscatedPrefix, "debug/pprof/:parm"), http.DefaultServeMux)
+	}
 	router.Get("/v1/:account/:container/*obj", http.HandlerFunc(server.ObjectGetHandler))
 	router.Head("/v1/:account/:container/*obj", http.HandlerFunc(server.ObjectHeadHandler))
 	router.Put("/v1/:account/:container/*obj", http.HandlerFunc(server.ObjectPutHandler))
@@ -105,11 +111,6 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 	router.Post("/v1/:account/", http.HandlerFunc(server.AccountPostHandler))
 	router.Options("/v1/:account", http.HandlerFunc(server.OptionsHandler))
 	router.Options("/v1/:account/", http.HandlerFunc(server.OptionsHandler))
-
-	if config.GetBool("proxy-server", "pprof_enabled", false) {
-		router.Get("/debug/pprof/:parm", http.DefaultServeMux)
-		router.Post("/debug/pprof/:parm", http.DefaultServeMux)
-	}
 
 	tempAuth := config.GetBool("proxy-server", "tempauth_enabled", true)
 	var middlewares []struct {
