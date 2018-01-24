@@ -371,7 +371,12 @@ func quarantineDetail(driveRoot string) (interface{}, error) {
 				if err != nil {
 					continue
 				}
-				for _, listingItem := range listing {
+				for count, listingItem := range listing {
+					if count > 100 {
+						// We only show detail for the first 100. As they get
+						// repaired, the remaining items will be shown.
+						break
+					}
 					ent := &entry{NameOnDevice: listingItem.Name()}
 					entries[key] = append(entries[key], ent)
 					if key == "accounts" || key == "containers" {
