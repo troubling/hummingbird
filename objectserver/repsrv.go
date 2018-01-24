@@ -255,7 +255,7 @@ func (r *Replicator) objRepConnHandler(writer http.ResponseWriter, request *http
 			}
 			if xattrs, err := hex.DecodeString(sfr.Xattrs); err != nil || len(xattrs) == 0 {
 				return "parsing xattrs", rc.SendMessage(SyncFileResponse{Msg: "bad xattrs"})
-			} else if err := RawWriteMetadata(tempFile.Fd(), xattrs); err != nil {
+			} else if err := common.SwiftObjectRawWriteMetadata(tempFile.Fd(), xattrs); err != nil {
 				return "writing metadata", err
 			}
 			if err := rc.SendMessage(SyncFileResponse{GoAhead: true, Msg: "go ahead"}); err != nil {

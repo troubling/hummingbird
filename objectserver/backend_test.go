@@ -19,8 +19,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/troubling/hummingbird/common"
@@ -29,30 +27,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func TestWriteReadMetadata(t *testing.T) {
-
-	data := map[string]string{
-		strings.Repeat("la", 5):    strings.Repeat("la", 30),
-		strings.Repeat("moo", 500): strings.Repeat("moo", 300),
-	}
-	testFile, err := ioutil.TempFile("/tmp", "backend_test")
-	defer testFile.Close()
-	defer os.Remove(testFile.Name())
-	assert.Equal(t, err, nil)
-	WriteMetadata(testFile.Fd(), data)
-	checkData := map[string]string{
-		strings.Repeat("la", 5):    strings.Repeat("la", 30),
-		strings.Repeat("moo", 500): strings.Repeat("moo", 300),
-	}
-	readData, err := ReadMetadata(testFile.Name())
-	assert.Equal(t, err, nil)
-	assert.True(t, reflect.DeepEqual(checkData, readData))
-
-	readData, err = ReadMetadata(testFile.Fd())
-	assert.Equal(t, err, nil)
-	assert.True(t, reflect.DeepEqual(checkData, readData))
-}
 
 func TestGetHashes(t *testing.T) {
 	driveRoot, _ := ioutil.TempDir("", "")

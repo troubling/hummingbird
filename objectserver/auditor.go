@@ -99,7 +99,7 @@ func auditHash(hashPath string, skipMd5 bool) (bytesProcessed int64, err error) 
 			return bytesProcessed, fmt.Errorf("Object file isn't a normal file: %s", err)
 		}
 
-		metadata, err := ReadMetadata(filePath)
+		metadata, err := common.SwiftObjectReadMetadata(filePath)
 		if err != nil {
 			return bytesProcessed, fmt.Errorf("Error getting file metadata: %v", err)
 		}

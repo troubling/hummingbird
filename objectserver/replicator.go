@@ -90,7 +90,7 @@ func getFile(filePath string) (fp *os.File, xattrs []byte, size int64, err error
 	if err != nil || !finfo.Mode().IsRegular() {
 		return nil, nil, 0, quarantineFileError{"not a regular file"}
 	}
-	rawxattr, err := RawReadMetadata(fp.Fd())
+	rawxattr, err := common.SwiftObjectRawReadMetadata(fp.Fd())
 	if err != nil || len(rawxattr) == 0 {
 		return nil, nil, 0, quarantineFileError{"error reading xattrs"}
 	}

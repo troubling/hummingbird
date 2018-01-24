@@ -127,7 +127,7 @@ func (o *SwiftObject) Commit(metadata map[string]string) error {
 	if !ok {
 		return errors.New("No timestamp in metadata")
 	}
-	if err := WriteMetadata(o.afw.Fd(), metadata); err != nil {
+	if err := common.SwiftObjectWriteMetadata(o.afw.Fd(), metadata); err != nil {
 		return fmt.Errorf("Error writing metadata: %v", err)
 	}
 	fileName := filepath.Join(o.hashDir, fmt.Sprintf("%s.%s", timestamp, o.workingClass))

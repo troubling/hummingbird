@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/troubling/hummingbird/common"
@@ -517,6 +518,102 @@ func getQuarantineReport(client http.Client, servers []*ipPort) *quarantineRepor
 	return report
 }
 
+type quarantineDetailReport struct {
+	Name                string
+	Time                time.Time
+	Pass                bool
+	Servers             int
+	Successes           int
+	Errors              []string
+	TypeToServerToItems map[string]map[string][]*quarantineDetailItem
+}
+
+func (r *quarantineDetailReport) Passed() bool {
+	return r.Pass
+}
+
+func (r *quarantineDetailReport) String() string {
+	s := fmt.Sprintf(
+		"[%s] %s\n",
+		r.Time.Format("2006-01-02 15:04:05"),
+		r.Name,
+	)
+	for _, e := range r.Errors {
+		s += fmt.Sprintf("!! %s\n", e)
+	}
+	s += fmt.Sprintf(
+		"%d/%d hosts matched, %d error[s] while checking hosts.\n",
+		r.Successes, r.Servers, len(r.Errors),
+	)
+	var types []string
+	for typ := range r.TypeToServerToItems {
+		types = append(types, typ)
+	}
+	sort.Strings(types)
+	for _, typ := range types {
+		s += fmt.Sprintln(typ)
+		var servers []string
+		for server := range r.TypeToServerToItems[typ] {
+			servers = append(servers, server)
+		}
+		sort.Strings(servers)
+		for _, server := range servers {
+			items := r.TypeToServerToItems[typ][server]
+			sort.Slice(items, func(i, j int) bool {
+				if items[i].NameOnDevice < items[j].NameOnDevice {
+					return true
+				}
+				if items[i].NameOnDevice == items[j].NameOnDevice {
+					if items[i].NameInURL < items[j].NameInURL {
+						return true
+					}
+				}
+				return false
+			})
+			s += fmt.Sprintln(" ", server)
+			for _, item := range items {
+				s += fmt.Sprintln("   ", item.NameOnDevice, item.NameInURL)
+			}
+		}
+	}
+	return s
+}
+
+type quarantineDetailItem struct {
+	NameOnDevice string
+	NameInURL    string
+}
+
+func getQuarantineDetailReport(client http.Client, servers []*ipPort) *quarantineDetailReport {
+	report := &quarantineDetailReport{
+		Name:                "Quarantine Detail Report",
+		Time:                time.Now().UTC(),
+		Servers:             len(servers),
+		TypeToServerToItems: map[string]map[string][]*quarantineDetailItem{},
+	}
+	for _, server := range servers {
+		jsonBytes, err := queryHostRecon(client, server, "quarantineddetail")
+		if err != nil {
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
+			continue
+		}
+		var serverReport map[string][]*quarantineDetailItem
+		if err := json.Unmarshal(jsonBytes, &serverReport); err != nil {
+			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s - %q", server, err, string(jsonBytes)))
+			continue
+		}
+		for typ, items := range serverReport {
+			if report.TypeToServerToItems[typ] == nil {
+				report.TypeToServerToItems[typ] = map[string][]*quarantineDetailItem{}
+			}
+			report.TypeToServerToItems[typ][fmt.Sprintf("%s:%d", server.ip, server.port)] = items
+		}
+		report.Successes++
+	}
+	report.Pass = report.Successes == report.Servers
+	return report
+}
+
 type asyncReport struct {
 	Name      string
 	Time      time.Time
@@ -838,6 +935,9 @@ func ReconClient(flags *flag.FlagSet, cnf srv.ConfigLoader) bool {
 	}
 	if flags.Lookup("q").Value.(flag.Getter).Get().(bool) {
 		reports = append(reports, getQuarantineReport(client, allWeightedServers))
+	}
+	if flags.Lookup("qd").Value.(flag.Getter).Get().(bool) {
+		reports = append(reports, getQuarantineDetailReport(client, allWeightedServers))
 	}
 	if flags.Lookup("a").Value.(flag.Getter).Get().(bool) {
 		reports = append(reports, getAsyncReport(client, allWeightedServers))

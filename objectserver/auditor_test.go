@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/pickle"
 	"github.com/troubling/hummingbird/common/srv"
@@ -43,11 +44,11 @@ func TestAuditHashPasses(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), 0777)
 	f, _ := os.Create(filepath.Join(dir, "fffffffffffffffffffffffffffffabc", "12345.data"))
 	defer f.Close()
-	WriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
+	common.SwiftObjectWriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
 	f.Write([]byte("testcontents"))
 	f, _ = os.Create(filepath.Join(dir, "fffffffffffffffffffffffffffffabc", "12346.ts"))
 	defer f.Close()
-	WriteMetadata(f.Fd(), map[string]string{"name": "somename", "X-Timestamp": ""})
+	common.SwiftObjectWriteMetadata(f.Fd(), map[string]string{"name": "somename", "X-Timestamp": ""})
 	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
 	assert.Nil(t, err)
 	assert.Equal(t, bytesProcessed, int64(12))
@@ -60,7 +61,7 @@ func TestAuditNonStringKey(t *testing.T) {
 	f, _ := os.Create(filepath.Join(dir, "fffffffffffffffffffffffffffffabc", "12345.data"))
 	defer f.Close()
 	metadata := map[interface{}]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "Content-Type": "", "X-Timestamp": "", "name": "", 3: "hi"}
-	RawWriteMetadata(f.Fd(), pickle.PickleDumps(metadata))
+	common.SwiftObjectRawWriteMetadata(f.Fd(), pickle.PickleDumps(metadata))
 	f.Write([]byte("testcontents"))
 	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
 	assert.NotNil(t, err)
@@ -74,7 +75,7 @@ func TestAuditNonStringValue(t *testing.T) {
 	f, _ := os.Create(filepath.Join(dir, "fffffffffffffffffffffffffffffabc", "12345.data"))
 	defer f.Close()
 	metadata := map[string]interface{}{"Content-Length": 12, "ETag": "d3ac5112fe464b81184352ccba743001", "Content-Type": "", "X-Timestamp": "", "name": ""}
-	RawWriteMetadata(f.Fd(), pickle.PickleDumps(metadata))
+	common.SwiftObjectRawWriteMetadata(f.Fd(), pickle.PickleDumps(metadata))
 	f.Write([]byte("testcontents"))
 	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
 	assert.NotNil(t, err)
@@ -87,7 +88,7 @@ func TestAuditHashDataMissingMetadata(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), 0777)
 	f, _ := os.Create(filepath.Join(dir, "fffffffffffffffffffffffffffffabc", "12345.data"))
 	defer f.Close()
-	WriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "Content-Type": "", "X-Timestamp": ""})
+	common.SwiftObjectWriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "Content-Type": "", "X-Timestamp": ""})
 	f.Write([]byte("testcontents"))
 	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
 	assert.NotNil(t, err)
@@ -100,7 +101,7 @@ func TestAuditHashTSMissingMetadata(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), 0777)
 	f, _ := os.Create(filepath.Join(dir, "fffffffffffffffffffffffffffffabc", "12345.ts"))
 	defer f.Close()
-	WriteMetadata(f.Fd(), map[string]string{"name": "somename"})
+	common.SwiftObjectWriteMetadata(f.Fd(), map[string]string{"name": "somename"})
 	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
 	assert.NotNil(t, err)
 	assert.Equal(t, bytesProcessed, int64(0))
@@ -112,7 +113,7 @@ func TestAuditHashIncorrectContentLength(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), 0777)
 	f, _ := os.Create(filepath.Join(dir, "fffffffffffffffffffffffffffffabc", "12345.data"))
 	defer f.Close()
-	WriteMetadata(f.Fd(), map[string]string{"Content-Length": "0", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
+	common.SwiftObjectWriteMetadata(f.Fd(), map[string]string{"Content-Length": "0", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
 	f.Write([]byte("testcontents"))
 	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
 	assert.NotNil(t, err)
@@ -125,7 +126,7 @@ func TestAuditHashInvalidContentLength(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), 0777)
 	f, _ := os.Create(filepath.Join(dir, "fffffffffffffffffffffffffffffabc", "12345.data"))
 	defer f.Close()
-	WriteMetadata(f.Fd(), map[string]string{"Content-Length": "X", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
+	common.SwiftObjectWriteMetadata(f.Fd(), map[string]string{"Content-Length": "X", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
 	f.Write([]byte("testcontents"))
 	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
 	assert.NotNil(t, err)
@@ -138,7 +139,7 @@ func TestAuditHashBadHash(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), 0777)
 	f, _ := os.Create(filepath.Join(dir, "fffffffffffffffffffffffffffffabc", "12345.data"))
 	defer f.Close()
-	WriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "f3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
+	common.SwiftObjectWriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "f3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
 	f.Write([]byte("testcontents"))
 	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
 	assert.NotNil(t, err)
@@ -151,7 +152,7 @@ func TestAuditHashBadFilename(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), 0777)
 	f, _ := os.Create(filepath.Join(dir, "fffffffffffffffffffffffffffffabc", "12345.xxx"))
 	defer f.Close()
-	WriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
+	common.SwiftObjectWriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
 	f.Write([]byte("testcontents"))
 	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
 	assert.NotNil(t, err)
@@ -243,7 +244,7 @@ func TestAuditSuffixPasses(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "abc", "fffffffffffffffffffffffffffffabc"), 0777)
 	f, _ := os.Create(filepath.Join(dir, "abc", "fffffffffffffffffffffffffffffabc", "12345.data"))
 	defer f.Close()
-	WriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
+	common.SwiftObjectWriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
 	f.Write([]byte("testcontents"))
 	testRing := &test.FakeRing{}
 	confLoader := srv.NewTestConfigLoader(testRing)
@@ -301,7 +302,7 @@ func TestAuditPartitionPasses(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "1", "abc", "fffffffffffffffffffffffffffffabc"), 0777)
 	f, _ := os.Create(filepath.Join(dir, "1", "abc", "fffffffffffffffffffffffffffffabc", "12345.data"))
 	defer f.Close()
-	WriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
+	common.SwiftObjectWriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
 	f.Write([]byte("testcontents"))
 	testRing := &test.FakeRing{}
 	confLoader := srv.NewTestConfigLoader(testRing)
@@ -323,7 +324,7 @@ func TestAuditPartitionSkipsBadData(t *testing.T) {
 	f.Close()
 	f, _ = os.Create(filepath.Join(dir, "1", "abc", "fffffffffffffffffffffffffffffabc", "12345.data"))
 	defer f.Close()
-	WriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
+	common.SwiftObjectWriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
 	f.Write([]byte("testcontents"))
 	testRing := &test.FakeRing{}
 	confLoader := srv.NewTestConfigLoader(testRing)
@@ -353,7 +354,7 @@ func TestAuditDevicePasses(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "sda", "objects", "1", "abc", "fffffffffffffffffffffffffffffabc"), 0777)
 	f, _ := os.Create(filepath.Join(dir, "sda", "objects", "1", "abc", "fffffffffffffffffffffffffffffabc", "12345.data"))
 	defer f.Close()
-	WriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
+	common.SwiftObjectWriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
 	f.Write([]byte("testcontents"))
 	testRing := &test.FakeRing{}
 	confLoader := srv.NewTestConfigLoader(testRing)
@@ -371,7 +372,7 @@ func TestAuditDeviceSkipsBadData(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "sda", "objects", "X"), 0777)
 	f, _ := os.Create(filepath.Join(dir, "sda", "objects", "1", "abc", "fffffffffffffffffffffffffffffabc", "12345.data"))
 	defer f.Close()
-	WriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
+	common.SwiftObjectWriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
 	f.Write([]byte("testcontents"))
 	testRing := &test.FakeRing{}
 	confLoader := srv.NewTestConfigLoader(testRing)
@@ -437,7 +438,7 @@ func TestAuditRun(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "sda", "objects", "1", "abc", "fffffffffffffffffffffffffffffabc"), 0777)
 	f, _ := os.Create(filepath.Join(dir, "sda", "objects", "1", "abc", "fffffffffffffffffffffffffffffabc", "12345.data"))
 	defer f.Close()
-	WriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
+	common.SwiftObjectWriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
 	f.Write([]byte("testcontents"))
 	testRing := &test.FakeRing{}
 	confLoader := srv.NewTestConfigLoader(testRing)

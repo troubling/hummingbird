@@ -180,3 +180,73 @@ func TestGetLoad(t *testing.T) {
 	require.True(t, ok)
 	require.True(t, m5f > 0.0)
 }
+
+func TestQuarantineDetail(t *testing.T) {
+	jsonStruct, err := quarantineDetail("testdata/quarantineDetail")
+	if err != nil {
+		t.Fatal(err)
+	}
+	jsonBytes, err := json.MarshalIndent(jsonStruct, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var jsonIface interface{}
+	err = json.Unmarshal(jsonBytes, &jsonIface)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jsonMap := jsonIface.(map[string]interface{})
+	if len(jsonMap) != 3 {
+		t.Fatal(len(jsonMap))
+	}
+
+	accounts := jsonMap["accounts"].([]interface{})
+	if len(accounts) != 2 {
+		t.Fatal(len(accounts))
+	}
+	pathToItem := map[string]string{}
+	for _, account := range accounts {
+		accountMap := account.(map[string]interface{})
+		pathToItem[accountMap["NameOnDevice"].(string)] = accountMap["NameInURL"].(string)
+	}
+	if v, ok := pathToItem["52f9146296db1c31308103a83a7667ed-8848222"]; !ok || v != "" {
+		t.Fatal(ok, v)
+	}
+	if v, ok := pathToItem["a2d288042a86975c5e000e0e4b8d5a2b-12343444"]; !ok || v != "/.admin" {
+		t.Fatal(ok, v)
+	}
+
+	containers := jsonMap["containers"].([]interface{})
+	if len(containers) != 2 {
+		t.Fatal(len(containers))
+	}
+	pathToItem = map[string]string{}
+	for _, container := range containers {
+		containerMap := container.(map[string]interface{})
+		pathToItem[containerMap["NameOnDevice"].(string)] = containerMap["NameInURL"].(string)
+	}
+	if v, ok := pathToItem["ff2d04f90fe4099ce8ecc514bbf514b2-413332114"]; !ok || v != "" {
+		t.Fatal(ok, v)
+	}
+	if v, ok := pathToItem["330db13d1978d2eaca43612c433bb1be-234234234"]; !ok || v != "/.admin/disp-conts-204-270" {
+		t.Fatal(ok, v)
+	}
+
+	objects := jsonMap["objects"].([]interface{})
+	if len(objects) != 2 {
+		t.Fatal(len(objects))
+	}
+	pathToItem = map[string]string{}
+	for _, object := range objects {
+		objectMap := object.(map[string]interface{})
+		pathToItem[objectMap["NameOnDevice"].(string)] = objectMap["NameInURL"].(string)
+	}
+	if v, ok := pathToItem["197ce7d697904ffaada1a16ee3f7a8c0-8585858"]; !ok || v != "" {
+		t.Fatal(ok, v)
+	}
+	// Have to accept "" as a valid v since not all systems will get the xattrs
+	// from the testdata files.
+	if v, ok := pathToItem["a4f4d624d9a18c20addf439bcb7192e8-2399494"]; !ok || (v != "/AUTH_test/test-container/.git/objects/ea/0192ee16fc8ee99f594c42c6804012732d9153" && v != "") {
+		t.Fatal(ok, v)
+	}
+}
