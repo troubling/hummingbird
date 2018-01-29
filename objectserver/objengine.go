@@ -75,6 +75,20 @@ type NurseryObjectEngine interface {
 	GetNurseryObjects(device string, c chan ObjectStabilizer, cancel chan struct{})
 }
 
+type FilesystemPartitionObjectEngine interface {
+	ObjectEngine
+	// used by replication daemon that constantly scans local disk fs to verify all its partitions are properly replicated
+	GetObjFilesForPartitionDir(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool, logger srv.LowLevelLogger)
+}
+
+/* TBD
+type IndexDBObjectEngine interface {
+	ObjectEngine
+	// this will basically call the underlying index.db. not sure about IndexDBItem
+	GetObjFilesForPartition(objChan chan IndexDBItem, cancel chan struct{}, partition uint64)
+}
+*/
+
 type PolicyHandlerRegistrator interface {
 	RegisterHandlers(addRoute func(method, path string, handler http.HandlerFunc))
 }
