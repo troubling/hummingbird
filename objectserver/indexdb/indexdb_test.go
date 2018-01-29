@@ -1,4 +1,4 @@
-package internal
+package indexdb
 
 import (
 	"crypto/md5"
@@ -48,11 +48,11 @@ func TestIndexDB_Commit(t *testing.T) {
 	timestamp := time.Now().UnixNano()
 	body := "just testing"
 	// Initial commit.
-	f, err := ot.TempFile(hsh, 0, timestamp, int64(len(body)))
+	f, err := ot.TempFile(hsh, 0, timestamp, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil))
-	pth, err = ot.wholeObjectPath(hsh, 0, timestamp)
+	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true))
+	pth, err = ot.wholeObjectPath(hsh, 0, timestamp, true)
 	errnil(t, err)
 	fi, err := os.Stat(pth)
 	errnil(t, err)
@@ -60,18 +60,18 @@ func TestIndexDB_Commit(t *testing.T) {
 		t.Fatal(fi.Size(), len(body))
 	}
 	// Same commit should return (nil, nil).
-	f, err = ot.TempFile(hsh, 0, timestamp, int64(len(body)))
+	f, err = ot.TempFile(hsh, 0, timestamp, int64(len(body)), true)
 	if f != nil || err != nil {
 		t.Fatal(f, err)
 	}
 	// So we'll fake the timestamp on the TempFile call, but try to do the same
 	// as the stored timestamp on the commit again, which should not fail (but
 	// won't really do anything behind the scenes).
-	f, err = ot.TempFile(hsh, 0, timestamp+1, int64(len(body)))
+	f, err = ot.TempFile(hsh, 0, timestamp+1, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil))
-	pth, err = ot.wholeObjectPath(hsh, 0, timestamp)
+	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true))
+	pth, err = ot.wholeObjectPath(hsh, 0, timestamp, true)
 	errnil(t, err)
 	fi, err = os.Stat(pth)
 	errnil(t, err)
@@ -79,24 +79,24 @@ func TestIndexDB_Commit(t *testing.T) {
 		t.Fatal(fi.Size(), len(body))
 	}
 	// Attempting an older commit should return (nil, nil).
-	f, err = ot.TempFile(hsh, 0, timestamp-1, int64(len(body)))
+	f, err = ot.TempFile(hsh, 0, timestamp-1, int64(len(body)), true)
 	if f != nil || err != nil {
 		t.Fatal(f, err)
 	}
 	// Doing an older commit should be discarded. We're going to fake like
 	// we're doing a newer commit to get the temp file, but then actually try
 	// to do an old commit.
-	f, err = ot.TempFile(hsh, 0, timestamp+1, int64(len(body)))
+	f, err = ot.TempFile(hsh, 0, timestamp+1, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh, 0, timestamp-1, false, "", nil))
-	pth, err = ot.wholeObjectPath(hsh, 0, timestamp-1)
+	errnil(t, ot.Commit(f, hsh, 0, timestamp-1, false, "", nil, true))
+	pth, err = ot.wholeObjectPath(hsh, 0, timestamp-1, true)
 	fi, err = os.Stat(pth)
 	if !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
 	// Original commit should still be there.
-	pth, err = ot.wholeObjectPath(hsh, 0, timestamp)
+	pth, err = ot.wholeObjectPath(hsh, 0, timestamp, true)
 	errnil(t, err)
 	fi, err = os.Stat(pth)
 	errnil(t, err)
@@ -104,11 +104,11 @@ func TestIndexDB_Commit(t *testing.T) {
 		t.Fatal(fi.Size(), len(body))
 	}
 	// Doing a newer commit should discard the original.
-	f, err = ot.TempFile(hsh, 0, timestamp+1, int64(len(body)))
+	f, err = ot.TempFile(hsh, 0, timestamp+1, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh, 0, timestamp+1, false, "", nil))
-	pth, err = ot.wholeObjectPath(hsh, 0, timestamp+1)
+	errnil(t, ot.Commit(f, hsh, 0, timestamp+1, false, "", nil, true))
+	pth, err = ot.wholeObjectPath(hsh, 0, timestamp+1, true)
 	errnil(t, err)
 	fi, err = os.Stat(pth)
 	errnil(t, err)
@@ -116,7 +116,7 @@ func TestIndexDB_Commit(t *testing.T) {
 		t.Fatal(fi.Size(), len(body))
 	}
 	// Original commit should be gone.
-	pth, err = ot.wholeObjectPath(hsh, 0, timestamp)
+	pth, err = ot.wholeObjectPath(hsh, 0, timestamp, true)
 	errnil(t, err)
 	fi, err = os.Stat(pth)
 	if !os.IsNotExist(err) {
@@ -133,29 +133,30 @@ func TestIndexDB_Lookup(t *testing.T) {
 	timestamp := time.Now().UnixNano()
 	body := "just testing"
 	// Commit file.
-	f, err := ot.TempFile(hsh, 0, timestamp, int64(len(body)))
+	f, err := ot.TempFile(hsh, 0, timestamp, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil))
+	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true))
 	// Do the lookup.
-	lookedupTimestamp, deletion, metahash, metadata, path, err := ot.Lookup(hsh, 0)
+	//lookedupTimestamp, deletion, metahash, metadata, path, err := ot.Lookup(hsh, 0)
+	i, err := ot.Lookup(hsh, 0, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lookedupTimestamp != timestamp {
-		t.Fatal(lookedupTimestamp, timestamp)
+	if i.Timestamp != timestamp {
+		t.Fatal(i.Timestamp, timestamp)
 	}
-	if deletion {
-		t.Fatal(deletion)
+	if i.Deletion {
+		t.Fatal(i.Deletion)
 	}
-	if metahash != "" || metadata != nil {
-		t.Fatalf("%#v %#v\n", metahash, metadata)
+	if i.Metahash != "" || i.Metabytes != nil {
+		t.Fatalf("%#v %#v\n", i.Metahash, i.Metabytes)
 	}
-	if path == "" {
-		t.Fatal(path)
+	if i.Path == "" {
+		t.Fatal(i.Path)
 	}
 	// Check the file.
-	b, err := ioutil.ReadFile(path)
+	b, err := ioutil.ReadFile(i.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,36 +177,37 @@ func TestIndexDB_Lookup_withOverwrite(t *testing.T) {
 	timestamp := time.Now().UnixNano()
 	body := "just testing"
 	// Commit file.
-	f, err := ot.TempFile(hsh, 0, timestamp, int64(len(body)))
+	f, err := ot.TempFile(hsh, 0, timestamp, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil))
+	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true))
 	// Commit newer file.
 	timestamp = time.Now().UnixNano()
 	body = "just testing newer"
-	f, err = ot.TempFile(hsh, 0, timestamp, int64(len(body)))
+	f, err = ot.TempFile(hsh, 0, timestamp, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil))
+	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true))
 	// Do the lookup.
-	lookedupTimestamp, deletion, metahash, metadata, path, err := ot.Lookup(hsh, 0)
+	//lookedupTimestamp, deletion, metahash, metadata, path, err := ot.Lookup(hsh, 0)
+	i, err := ot.Lookup(hsh, 0, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lookedupTimestamp != timestamp {
-		t.Fatal(lookedupTimestamp, timestamp)
+	if i.Timestamp != timestamp {
+		t.Fatal(i.Timestamp, timestamp)
 	}
-	if deletion {
-		t.Fatal(deletion)
+	if i.Deletion {
+		t.Fatal(i.Deletion)
 	}
-	if metahash != "" || metadata != nil {
-		t.Fatalf("%#v %#v\n", metahash, metadata)
+	if i.Metahash != "" || i.Metabytes != nil {
+		t.Fatalf("%#v %#v\n", i.Metahash, i.Metabytes)
 	}
-	if path == "" {
-		t.Fatal(path)
+	if i.Path == "" {
+		t.Fatal(i.Path)
 	}
 	// Check the file.
-	b, err := ioutil.ReadFile(path)
+	b, err := ioutil.ReadFile(i.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,37 +228,38 @@ func TestIndexDB_Lookup_withUnderwrite(t *testing.T) {
 	timestamp := time.Now().UnixNano()
 	body := "just testing"
 	// Commit file.
-	f, err := ot.TempFile(hsh, 0, timestamp, int64(len(body)))
+	f, err := ot.TempFile(hsh, 0, timestamp, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil))
+	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true))
 	// Commit older file (should be discarded).
 	timestampOlder := timestamp - 1
 	bodyOlder := "just testing older"
 	// Fake newer commit, but we'll really commit with timestampOlder.
-	f, err = ot.TempFile(hsh, 0, timestamp+1, int64(len(bodyOlder)))
+	f, err = ot.TempFile(hsh, 0, timestamp+1, int64(len(bodyOlder)), true)
 	errnil(t, err)
 	f.Write([]byte(bodyOlder))
-	errnil(t, ot.Commit(f, hsh, 0, timestampOlder, false, "", nil))
+	errnil(t, ot.Commit(f, hsh, 0, timestampOlder, false, "", nil, true))
 	// Do the lookup.
-	lookedupTimestamp, deletion, metahash, metadata, path, err := ot.Lookup(hsh, 0)
+	//lookedupTimestamp, deletion, metahash, metadata, path, err := ot.Lookup(hsh, 0)
+	i, err := ot.Lookup(hsh, 0, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lookedupTimestamp != timestamp {
-		t.Fatal(lookedupTimestamp, timestamp)
+	if i.Timestamp != timestamp {
+		t.Fatal(i.Timestamp, timestamp)
 	}
-	if deletion {
-		t.Fatal(deletion)
+	if i.Deletion {
+		t.Fatal(i.Deletion)
 	}
-	if metahash != "" || metadata != nil {
-		t.Fatalf("%#v %#v\n", metahash, metadata)
+	if i.Metahash != "" || i.Metabytes != nil {
+		t.Fatalf("%#v %#v\n", i.Metahash, i.Metabytes)
 	}
-	if path == "" {
-		t.Fatal(path)
+	if i.Path == "" {
+		t.Fatal(i.Path)
 	}
 	// Check the file.
-	b, err := ioutil.ReadFile(path)
+	b, err := ioutil.ReadFile(i.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,10 +297,10 @@ func TestIndexDB_List(t *testing.T) {
 		}
 		timestamp := time.Now().UnixNano()
 		body := "just testing"
-		f, err := ot.TempFile(hsh, 0, timestamp, int64(len(body)))
+		f, err := ot.TempFile(hsh, 0, timestamp, int64(len(body)), true)
 		errnil(t, err)
 		f.Write([]byte(body))
-		errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil))
+		errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true))
 	}
 	listing, err := ot.List(0)
 	if err != nil {
