@@ -16,6 +16,7 @@
 package objectserver
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -72,6 +73,11 @@ type nurseryDevice struct {
 	objEngine NurseryObjectEngine
 }
 
+type PriorityReplicationResult struct {
+	ObjectsReplicated int64
+	ObjectsErrored    int64
+}
+
 func (nrd *nurseryDevice) updateStat(stat string, amount int64) {
 	key := deviceKeyId(nrd.dev.Device, nrd.policy)
 	nrd.r.updateStat <- statUpdate{"object-nursery", key, stat, amount}
@@ -107,6 +113,36 @@ func (nrd *nurseryDevice) stabilizeDevice() {
 		}
 	}
 	nrd.updateStat("PassComplete", 1)
+}
+
+func (nrd *nurseryDevice) priorityReplicate(w http.ResponseWriter, pri PriorityRepJob) {
+	objc := make(chan ObjectStabilizer)
+	canchan := make(chan struct{})
+
+	go nrd.objEngine.GetStabilizedObjects(pri.FromDevice.Device, pri.Partition, objc, canchan)
+	//TODO: add concurrency to this
+	w.WriteHeader(http.StatusOK)
+	t := time.Now()
+	prp := PriorityReplicationResult{}
+	for o := range objc {
+		if err := o.Replicate(pri); err != nil {
+			nrd.r.logger.Error("error prirep Replicate", zap.Error(err))
+			prp.ObjectsErrored++
+		} else {
+			prp.ObjectsReplicated++
+			if time.Since(t) > time.Minute {
+				w.Write([]byte(" "))
+				t = time.Now()
+			}
+		}
+	}
+	b, err := json.Marshal(prp)
+	if err != nil {
+		nrd.r.logger.Error("error prirep jsoning", zap.Error(err))
+		b = []byte("There was an internal server error generating JSON.")
+	}
+	w.Write(b)
+	w.Write([]byte("\n"))
 }
 
 func (nrd *nurseryDevice) stabilizeLoop() {

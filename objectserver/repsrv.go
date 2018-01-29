@@ -95,14 +95,19 @@ func (r *Replicator) priorityRepHandler(w http.ResponseWriter, req *http.Request
 			return
 		}
 	}
-	if !fs.Exists(filepath.Join(r.deviceRoot, pri.FromDevice.Device, "objects", strconv.FormatUint(pri.Partition, 10))) {
-		w.WriteHeader(404)
+	if pri.Version == "INDEXDB" {
+		r.priorityReplicateIndexDB(w, pri)
 		return
-	}
-	if r.priorityReplicate(pri, time.Hour) {
-		w.WriteHeader(200)
 	} else {
-		w.WriteHeader(500)
+		if !fs.Exists(filepath.Join(r.deviceRoot, pri.FromDevice.Device, "objects", strconv.FormatUint(pri.Partition, 10))) {
+			w.WriteHeader(404)
+			return
+		}
+		if r.priorityReplicate(pri, time.Hour) {
+			w.WriteHeader(200)
+		} else {
+			w.WriteHeader(500)
+		}
 	}
 }
 
