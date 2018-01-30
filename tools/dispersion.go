@@ -636,7 +636,7 @@ func getDispersionReport(flags *flag.FlagSet) *dispersionReport {
 	if report.ContainerReport != nil {
 		rows, err = db.Query(`
 			SELECT create_date, partition,
-			account || '/' || container || '/' object as partition_item_path,
+			account || '/' || container as partition_item_path,
 			items_found, items_need
 			FROM dispersion_report_detail
 			WHERE rtype = "container" ORDER BY create_date DESC LIMIT 1`)
@@ -693,7 +693,7 @@ func getDispersionReport(flags *flag.FlagSet) *dispersionReport {
 		report.ObjectReports = append(report.ObjectReports, objectReport)
 		detailRows, err := db.Query(`
 			SELECT create_date, partition,
-			account || '/' || container || '/' object as partition_item_path,
+			account || '/' || container || '/' || object as partition_item_path,
 			items_found, items_need
 			FROM dispersion_report_detail
 			WHERE rtype = "object" AND policy = ? ORDER BY create_date DESC LIMIT 1`, policy)

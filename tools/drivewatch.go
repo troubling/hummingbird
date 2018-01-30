@@ -615,14 +615,14 @@ func (dw *driveWatch) checkMissingDispersionObjects(rd ringData, cancel chan str
 	}
 	longMissingPartitions := []int64{}
 
-	for p := range missingPartitions {
+	for part := range missingPartitions {
 
 		rows, err := tx.Query(`
 			SELECT drd.partition
 			FROM dispersion_report dr LEFT JOIN dispersion_report_detail drd
 			ON dr.id = drd.dispersion_report_id AND drd.partition = ?
 			WHERE dr.policy = ? AND dr.rtype = ? AND dr.create_date > ?
-			`, p, policy, "object", time.Now().Add(-dw.rescueMissingPartAge))
+			`, part, policy, "object", time.Now().Add(-dw.rescueMissingPartAge))
 
 		if err != nil {
 			dw.logger.Error("SELECT for reports checkMissingDispersionObjects", zap.Error(err))
@@ -633,7 +633,7 @@ func (dw *driveWatch) checkMissingDispersionObjects(rd ringData, cancel chan str
 		for rows.Next() {
 			var p sql.NullInt64
 			if err := rows.Scan(&p); err == nil {
-				if p.Int64 == 0 {
+				if !p.Valid {
 					// if part not in report, all copies were found
 					isReportWithPart = true
 				}
@@ -643,7 +643,7 @@ func (dw *driveWatch) checkMissingDispersionObjects(rd ringData, cancel chan str
 			}
 		}
 		if !isReportWithPart {
-			longMissingPartitions = append(longMissingPartitions, p)
+			longMissingPartitions = append(longMissingPartitions, part)
 		}
 	}
 	dw.logger.Info("Dispersion heal start", zap.Int("numPartitions", len(longMissingPartitions)))
