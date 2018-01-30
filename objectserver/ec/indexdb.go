@@ -14,6 +14,10 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	shardAny = -1
+)
+
 // IndexDBItem is a single item returned by List.
 type IndexDBItem struct {
 	Hash      string
@@ -396,13 +400,20 @@ func (ot *IndexDB) Lookup(hsh string, shard int, justStable bool) (*IndexDBItem,
 	var rows *sql.Rows
 	if justStable {
 		rows, err = db.Query(`
-			SELECT timestamp, deletion, metahash, metadata, nursery
+			SELECT timestamp, deletion, metahash, metadata, nursery, shard
 			FROM objects
 			WHERE hash = ? AND shard = ? AND nursery = 0
 		`, hsh, shard)
+	} else if shard == shardAny {
+		rows, err = db.Query(`
+			SELECT timestamp, deletion, metahash, metadata, nursery, shard
+			FROM objects
+			WHERE hash = ? AND metadata IS NOT NULL
+			ORDER BY nursery DESC, shard ASC
+		`, hsh)
 	} else {
 		rows, err = db.Query(`
-			SELECT timestamp, deletion, metahash, metadata, nursery
+			SELECT timestamp, deletion, metahash, metadata, nursery, shard
 			FROM objects
 			WHERE hash = ? AND shard = ?
 			ORDER BY nursery DESC
@@ -415,11 +426,9 @@ func (ot *IndexDB) Lookup(hsh string, shard int, justStable bool) (*IndexDBItem,
 	if !rows.Next() {
 		return nil, rows.Err()
 	}
-	item := &IndexDBItem{
-		Hash:  hsh,
-		Shard: shard,
-	}
-	if err = rows.Scan(&item.Timestamp, &item.Deletion, &item.Metahash, &item.Metabytes, &item.Nursery); err != nil {
+	item := &IndexDBItem{Hash: hsh}
+	if err = rows.Scan(&item.Timestamp, &item.Deletion, &item.Metahash,
+		&item.Metabytes, &item.Nursery, &item.Shard); err != nil {
 		return nil, err
 	}
 	item.Path, err = ot.wholeObjectPath(item.Hash, item.Shard, item.Timestamp, item.Nursery)

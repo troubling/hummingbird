@@ -102,7 +102,7 @@ func (f *ecEngine) New(vars map[string]string, needData bool, asyncWG *sync.Wait
 	}
 	if idb, err := f.getDB(vars["device"]); err == nil {
 		obj.idb = idb
-		if item, err := idb.Lookup(hash, 0, false); err == nil && item != nil {
+		if item, err := idb.Lookup(hash, shardAny, false); err == nil && item != nil {
 			obj.IndexDBItem = *item
 			if err = json.Unmarshal(item.Metabytes, &obj.metadata); err != nil {
 				return nil, fmt.Errorf("Error parsing metadata: %v", err)
