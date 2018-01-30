@@ -18,11 +18,14 @@ package middleware
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -248,5 +251,108 @@ func TestQuarantineDetail(t *testing.T) {
 	// from the testdata files.
 	if v, ok := pathToItem["a4f4d624d9a18c20addf439bcb7192e8-2399494"]; !ok || (v != "/AUTH_test/test-container/.git/objects/ea/0192ee16fc8ee99f594c42c6804012732d9153" && v != "") {
 		t.Fatal(ok, v)
+	}
+}
+
+func TestQuarantineDeleteAndQuarantineHistoryDelete(t *testing.T) {
+	driveRoot, err := ioutil.TempDir("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(driveRoot)
+	if err = os.MkdirAll(path.Join(driveRoot, "sda1/quarantined/accounts/item"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.MkdirAll(path.Join(driveRoot, "sda1/quarantined/containers/item"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.MkdirAll(path.Join(driveRoot, "sda1/quarantined/objects/item"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	var contents map[string]interface{}
+	if contents, err = quarantineDelete(driveRoot, "sda1", "accounts", "item"); err != nil {
+		t.Fatal(err)
+	}
+	if contents != nil {
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(path.Join(driveRoot, "sda1/quarantined-history/accounts/item")); err != nil {
+		t.Fatal(err)
+	}
+	if contents, err = quarantineDelete(driveRoot, "sda1", "containers", "item"); err != nil {
+		t.Fatal(err)
+	}
+	if contents != nil {
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(path.Join(driveRoot, "sda1/quarantined-history/containers/item")); err != nil {
+		t.Fatal(err)
+	}
+	if contents, err = quarantineDelete(driveRoot, "sda1", "objects", "item"); err != nil {
+		t.Fatal(err)
+	}
+	if contents != nil {
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(path.Join(driveRoot, "sda1/quarantined-history/objects/item")); err != nil {
+		t.Fatal(err)
+	}
+
+	if contents, err = quarantineHistoryDelete(driveRoot, "sda1", "accounts", "30"); err != nil {
+		t.Fatal(err)
+	}
+	if v := fmt.Sprintf("%v", contents["items_left"]); v != "1" {
+		t.Fatal(v)
+	}
+	if contents, err = quarantineHistoryDelete(driveRoot, "sda1", "containers", "30"); err != nil {
+		t.Fatal(err)
+	}
+	if v := fmt.Sprintf("%v", contents["items_left"]); v != "1" {
+		t.Fatal(v)
+	}
+	if contents, err = quarantineHistoryDelete(driveRoot, "sda1", "objects", "30"); err != nil {
+		t.Fatal(err)
+	}
+	if v := fmt.Sprintf("%v", contents["items_left"]); v != "1" {
+		t.Fatal(v)
+	}
+
+	newTime := time.Now().Add(-time.Hour * 24 * 31)
+	if err = os.Chtimes(path.Join(driveRoot, "sda1/quarantined-history/accounts/item"), newTime, newTime); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Chtimes(path.Join(driveRoot, "sda1/quarantined-history/containers/item"), newTime, newTime); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Chtimes(path.Join(driveRoot, "sda1/quarantined-history/objects/item"), newTime, newTime); err != nil {
+		t.Fatal(err)
+	}
+	if contents, err = quarantineHistoryDelete(driveRoot, "sda1", "accounts", "30"); err != nil {
+		t.Fatal(err)
+	}
+	if v := fmt.Sprintf("%v", contents["items_left"]); v != "0" {
+		t.Fatal(v)
+	}
+	if _, err = os.Stat(path.Join(driveRoot, "sda1/quarantined-history/accounts/item")); !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if contents, err = quarantineHistoryDelete(driveRoot, "sda1", "containers", "30"); err != nil {
+		t.Fatal(err)
+	}
+	if v := fmt.Sprintf("%v", contents["items_left"]); v != "0" {
+		t.Fatal(v)
+	}
+	if _, err = os.Stat(path.Join(driveRoot, "sda1/quarantined-history/containers/item")); !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if contents, err = quarantineHistoryDelete(driveRoot, "sda1", "objects", "30"); err != nil {
+		t.Fatal(err)
+	}
+	if v := fmt.Sprintf("%v", contents["items_left"]); v != "0" {
+		t.Fatal(v)
+	}
+	if _, err = os.Stat(path.Join(driveRoot, "sda1/quarantined-history/objects/item")); !os.IsNotExist(err) {
+		t.Fatal(err)
 	}
 }

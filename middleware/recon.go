@@ -345,6 +345,77 @@ func quarantineCounts(driveRoot string) (map[string]interface{}, error) {
 	return qcounts, nil
 }
 
+func quarantineDelete(driveRoot, deviceName, reconType, itemPath string) (map[string]interface{}, error) {
+	cleanedDeviceName := path.Clean(deviceName)
+	// don't allow full paths, empty paths ".", nor up paths ".."
+	if cleanedDeviceName[0] == '/' || cleanedDeviceName[0] == '.' {
+		return nil, fmt.Errorf("invalid device name given: %q", deviceName)
+	}
+	deviceName = cleanedDeviceName
+	if reconType != "accounts" && reconType != "containers" && reconType != "objects" {
+		return nil, fmt.Errorf("invalid recon type: %q", reconType)
+	}
+	cleanedItemPath := path.Clean(itemPath)
+	// don't allow full paths, empty paths ".", nor up paths ".."
+	if cleanedItemPath[0] == '/' || cleanedItemPath[0] == '.' {
+		return nil, fmt.Errorf("invalid item path given: %q", itemPath)
+	}
+	fromPath := path.Join(driveRoot, deviceName, "quarantined", reconType, cleanedItemPath)
+	toDir := path.Join(driveRoot, deviceName, "quarantined-history", reconType)
+	toPath := path.Join(toDir, cleanedItemPath)
+	if err := os.MkdirAll(toDir, 0755); err != nil {
+		return nil, err
+	}
+	if err := os.Rename(fromPath, toPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if err := os.Chtimes(toPath, time.Now(), time.Now()); err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
+
+func quarantineHistoryDelete(driveRoot, deviceName, reconType, trailingPath string) (map[string]interface{}, error) {
+	cleanedDeviceName := path.Clean(deviceName)
+	// don't allow full paths, empty paths ".", nor up paths ".."
+	if cleanedDeviceName[0] == '/' || cleanedDeviceName[0] == '.' {
+		return nil, fmt.Errorf("invalid device name given: %q", deviceName)
+	}
+	deviceName = cleanedDeviceName
+	if reconType != "accounts" && reconType != "containers" && reconType != "objects" {
+		return nil, fmt.Errorf("invalid recon type: %q", reconType)
+	}
+	days, err := strconv.Atoi(trailingPath)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse days value: %q", trailingPath)
+	}
+	historyPath := path.Join(driveRoot, deviceName, "quarantined-history", reconType)
+	items, err := ioutil.ReadDir(historyPath)
+	if err != nil {
+		return nil, err
+	}
+	checkTime := time.Now().Add(-time.Hour * time.Duration(24*days))
+	itemsPurged := 0
+	itemsLeft := 0
+	for _, item := range items {
+		if item.ModTime().Before(checkTime) {
+			os.RemoveAll(path.Join(historyPath, item.Name())) // ignoring any error
+			itemsPurged++
+		} else {
+			itemsLeft++
+		}
+	}
+	return map[string]interface{}{
+		"message":      "history deletion complete",
+		"days":         days,
+		"items_purged": itemsPurged,
+		"items_left":   itemsLeft,
+	}, nil
+}
+
 func quarantineDetail(driveRoot string) (interface{}, error) {
 	type entry struct {
 		NameOnDevice string
@@ -564,13 +635,25 @@ func ReconHandler(driveRoot string, reconCachePath string, mountCheck bool, writ
 			return
 		}
 	case "quarantined":
-		content, err = quarantineCounts(driveRoot)
+		if request.Method == "DELETE" {
+			content, err = quarantineDelete(driveRoot, vars["device"], vars["recon_type"], vars["item_path"])
+		} else {
+			content, err = quarantineCounts(driveRoot)
+		}
 		if err != nil {
 			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
 	case "quarantineddetail":
 		content, err = quarantineDetail(driveRoot)
+		if err != nil {
+			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+	case "quarantinedhistory":
+		if request.Method == "DELETE" {
+			content, err = quarantineHistoryDelete(driveRoot, vars["device"], vars["recon_type"], vars["item_path"])
+		}
 		if err != nil {
 			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
