@@ -16,6 +16,7 @@
 package tools
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -25,6 +26,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,6 +34,7 @@ import (
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/objectserver"
 	"github.com/uber-go/tally"
 )
 
@@ -536,4 +539,88 @@ func TestNeedRingUpdate(t *testing.T) {
 	require.True(t, dw.needRingUpdate(rd))
 	dw.ringUpdateFreq = 1000000000
 	require.False(t, dw.needRingUpdate(rd))
+}
+
+func TestCheckMissingDispersionObjects(t *testing.T) {
+	t.Parallel()
+
+	p := conf.Policy{Name: "hat", Index: 1}
+	postRan := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "HEAD" {
+			if strings.Index(r.URL.Path, "sda") >= 0 {
+				srv.SimpleErrorResponse(w, 404, "")
+				return
+			}
+		}
+		if r.Method == "POST" {
+			postRan++
+			data, err := ioutil.ReadAll(r.Body)
+			require.Nil(t, err)
+			var prj objectserver.PriorityRepJob
+			err = json.Unmarshal(data, &prj)
+			require.Nil(t, err)
+			require.Equal(t, uint64(100), prj.Partition)
+			require.Equal(t, "sdb", prj.FromDevice.Device)
+			require.Equal(t, 1, len(prj.ToDevices))
+			require.Equal(t, "sda", prj.ToDevices[0].Device)
+		}
+		srv.SimpleErrorResponse(w, 200, "")
+	}))
+
+	defer ts.Close()
+	u, err := url.Parse(ts.URL)
+	require.Nil(t, err)
+	host, ports, err := net.SplitHostPort(u.Host)
+	require.Nil(t, err)
+	port, err := strconv.Atoi(ports)
+	require.Nil(t, err)
+	fr := &FakeRing{Devs: []*ring.Device{
+		{Device: "sda", Ip: host, Port: port, ReplicationPort: port, Scheme: "http"},
+		{Device: "sdb", Ip: host, Port: port, ReplicationPort: port, Scheme: "http"}}, nodeCalls: 1}
+
+	rd := ringData{r: fr, p: &p, builderPath: "hey"}
+	dw, _ := getDw(fr)
+	dw.rescueMissingPartAge = 5 * time.Minute
+	defer closeDw(dw)
+
+	db, err := dw.getDbAndLock()
+	tx, err := db.Begin()
+	require.Equal(t, err, nil)
+	_, err = tx.Exec("INSERT INTO dispersion_report "+
+		"(id, rtype, policy, items, items_found, create_date) VALUES"+
+		"(?,?,?,?,?,?)", 1, "object", 1, 10, 9, time.Now().Add(-3*time.Minute))
+	require.Equal(t, err, nil)
+	_, err = tx.Exec("INSERT INTO dispersion_report "+
+		"(id, rtype, policy, items, items_found, create_date) VALUES"+
+		"(?,?,?,?,?,?)", 2, "object", 1, 10, 9, time.Now().Add(-1*time.Minute))
+	require.Equal(t, err, nil)
+	_, err = tx.Exec("INSERT INTO dispersion_report_detail "+
+		"(dispersion_report_id, rtype, policy, partition, account, container,"+
+		"object, items_found, items_need, create_date) VALUES"+
+		"(?,?,?,?,?,?,?,?,?,?)",
+		1, "object", 1, 100, ".admin", "c",
+		"o1", 2, 3, time.Now().Add(-3*time.Minute))
+	require.Equal(t, err, nil)
+	_, err = tx.Exec("INSERT INTO dispersion_report_detail "+
+		"(dispersion_report_id, rtype, policy, partition, account, container,"+
+		"object, items_found, items_need, create_date) VALUES"+
+		"(?,?,?,?,?,?,?,?,?,?)",
+		2, "object", 1, 100, ".admin", "c",
+		"o100", 2, 3, time.Now().Add(-1*time.Minute))
+	require.Equal(t, err, nil)
+	_, err = tx.Exec("INSERT INTO dispersion_report_detail "+
+		"(dispersion_report_id, rtype, policy, partition, account, container,"+
+		"object, items_found, items_need, create_date) VALUES"+
+		"(?,?,?,?,?,?,?,?,?,?)",
+		2, "object", 1, 101, ".admin", "c",
+		"o101", 2, 3, time.Now().Add(-1*time.Minute))
+	require.Equal(t, err, nil)
+	require.Equal(t, tx.Commit(), nil)
+
+	dw.dbl.Unlock()
+	cancel := make(chan struct{})
+	defer close(cancel)
+	require.Nil(t, dw.checkMissingDispersionObjects(rd, cancel))
+	require.Equal(t, 1, postRan)
 }

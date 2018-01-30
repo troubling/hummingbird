@@ -21,6 +21,7 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -83,17 +84,18 @@ type ReportData struct {
 }
 
 type driveWatch struct {
-	policyToRing    map[int]ringData
-	logger          srv.LowLevelLogger
-	db              *sql.DB
-	dbl             sync.Mutex
-	client          *http.Client
-	maxBadDevAge    time.Duration
-	ringUpdateFreq  time.Duration
-	runFreq         time.Duration
-	maxWeightChange float64
-	updateRing      bool
-	sqlDir          string
+	policyToRing         map[int]ringData
+	logger               srv.LowLevelLogger
+	db                   *sql.DB
+	dbl                  sync.Mutex
+	client               *http.Client
+	maxBadDevAge         time.Duration
+	ringUpdateFreq       time.Duration
+	rescueMissingPartAge time.Duration
+	runFreq              time.Duration
+	maxWeightChange      float64
+	updateRing           bool
+	sqlDir               string
 }
 
 func deviceId(ip string, port int, device string) string {
@@ -483,7 +485,9 @@ func (dw *driveWatch) getDbAndLock() (*sql.DB, error) {
             rtype TEXT NOT NULL,
             policy INTEGER NOT NULL,
             partition INTEGER NOT NULL,
-            partition_item_path TEXT NOT NULL,
+            account TEXT NOT NULL,
+            container TEXT NOT NULL,
+            object TEXT NOT NULL,
             items_found INTEGER NOT NULL,
             items_need INTEGER NOT NULL,
             create_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -573,6 +577,122 @@ func (dw *driveWatch) needRingUpdate(rd ringData) bool {
 		return true
 	}
 	return false
+}
+
+func (dw *driveWatch) checkMissingDispersionObjects(rd ringData, cancel chan struct{}) error {
+	policy := rd.p.Index
+	db, err := dw.getDbAndLock()
+	defer dw.dbl.Unlock()
+	if err != nil {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	rows, err := tx.Query(`
+	SELECT partition, account, container, object from dispersion_report_detail
+	WHERE dispersion_report_id = (
+		SELECT id FROM dispersion_report
+		WHERE policy = ? AND rtype = ? ORDER BY create_date DESC LIMIT 1)
+	`, policy, "object")
+	if err != nil {
+		dw.logger.Error("SELECT for max checkMissingDispersionObjects", zap.Error(err))
+		return err
+	}
+	defer rows.Close()
+	missingPartitions := map[int64]string{}
+	for rows.Next() {
+		var p int64
+		var a, c, o string
+		if err := rows.Scan(&p, &a, &c, &o); err == nil {
+			missingPartitions[p] = fmt.Sprintf("%s/%s/%s",
+				common.Urlencode(a), common.Urlencode(c), common.Urlencode(o))
+		} else {
+			dw.logger.Error("SELECT for checkMissingDispersion", zap.Error(err))
+		}
+	}
+	longMissingPartitions := []int64{}
+
+	for part := range missingPartitions {
+
+		rows, err := tx.Query(`
+			SELECT drd.partition
+			FROM dispersion_report dr LEFT JOIN dispersion_report_detail drd
+			ON dr.id = drd.dispersion_report_id AND drd.partition = ?
+			WHERE dr.policy = ? AND dr.rtype = ? AND dr.create_date > ?
+			`, part, policy, "object", time.Now().Add(-dw.rescueMissingPartAge))
+
+		if err != nil {
+			dw.logger.Error("SELECT for reports checkMissingDispersionObjects", zap.Error(err))
+			return err
+		}
+		defer rows.Close()
+		isReportWithPart := false
+		for rows.Next() {
+			var p sql.NullInt64
+			if err := rows.Scan(&p); err == nil {
+				if !p.Valid {
+					// if part not in report, all copies were found
+					isReportWithPart = true
+				}
+			} else {
+				dw.logger.Error("SELECT for reports checkMissingDispersionObjects scan", zap.Error(err))
+				continue
+			}
+		}
+		if !isReportWithPart {
+			longMissingPartitions = append(longMissingPartitions, part)
+		}
+	}
+	dw.logger.Info("Dispersion heal start", zap.Int("numPartitions", len(longMissingPartitions)))
+	for i := len(longMissingPartitions) - 1; i > 0; i-- { // shuffle
+		j := rand.Intn(i + 1)
+		longMissingPartitions[j], longMissingPartitions[i] = longMissingPartitions[i], longMissingPartitions[j]
+	}
+	for _, p := range longMissingPartitions {
+		select {
+		case <-cancel:
+			break
+		default:
+		}
+		nodes := rd.r.GetNodes(uint64(p))
+		goodNodes := []*ring.Device{}
+		notFoundNodes := []*ring.Device{}
+		for _, device := range nodes {
+			url := fmt.Sprintf("http://%s:%d/%s/%d/%s", device.Ip, device.Port, device.Device, p, missingPartitions[p])
+			req, _ := http.NewRequest("HEAD", url, nil)
+			resp, err := dw.client.Do(req)
+
+			if err == nil && resp.StatusCode/100 == 2 {
+				goodNodes = append(goodNodes, device)
+			} else if resp != nil && resp.StatusCode == 404 {
+				notFoundNodes = append(notFoundNodes, device)
+			} else {
+				dw.logger.Error("Dispersion heal invalid response.", zap.String("url", url), zap.Error(err))
+			}
+			if resp != nil {
+				resp.Body.Close()
+			}
+		}
+		if len(goodNodes) == 0 {
+			dw.logger.Error("Dispersion heal found no good nodes.", zap.String("partPath", missingPartitions[p]))
+			continue
+		}
+		if len(notFoundNodes) == 0 {
+			continue
+		}
+		goodNode := goodNodes[rand.Intn(len(goodNodes))]
+		resultChan := make(chan string, 1)
+		go rescueLonelyPartition(int64(policy), uint64(p), goodNode, notFoundNodes, rd.r.GetMoreNodes(uint64(p)), resultChan, dw.client)
+		res := <-resultChan
+		dw.logger.Info("Dispersion heal rescue partition result", zap.String("result", res), zap.String("partPath", missingPartitions[p]))
+	}
+	if len(longMissingPartitions) == 0 {
+		dw.logger.Info("There are no long missing dispersion objects")
+	}
+	return nil
 }
 
 func (dw *driveWatch) updateDb(rd ringData) error {
@@ -964,6 +1084,14 @@ func (dw *driveWatch) Run() {
 		if e := dw.logRun(rd, err == nil, msg); e != nil {
 			dw.logger.Error("error logging run", zap.Error(e))
 		}
+		if dw.rescueMissingPartAge > 0 {
+			cancel := make(chan struct{})
+			go func() {
+				defer close(cancel)
+				time.Sleep(4 * time.Hour)
+			}()
+			dw.checkMissingDispersionObjects(rd, cancel)
+		}
 	}
 	time.Sleep(dw.runFreq)
 }
@@ -1029,11 +1157,12 @@ func NewDriveWatch(logger srv.LowLevelLogger,
 		client: &http.Client{Timeout: 10 * time.Second,
 			Transport: transport},
 		//metricsScope: metricsScope,
-		runFreq:         time.Duration(serverconf.GetInt("drive_watch", "run_frequency_sec", 3600) * int64(time.Second)),
-		maxBadDevAge:    time.Duration(serverconf.GetInt("drive_watch", "max_bad_drive_age_sec", common.ONE_WEEK) * int64(time.Second)),
-		ringUpdateFreq:  time.Duration(serverconf.GetInt("drive_watch", "ring_update_frequency_sec", common.ONE_WEEK) * int64(time.Second)),
-		maxWeightChange: serverconf.GetFloat("drive_watch", "max_weight_change", 0.01),
-		updateRing:      serverconf.GetBool("drive_watch", "update_ring", false),
-		sqlDir:          sqlDir,
+		runFreq:              time.Duration(serverconf.GetInt("drive_watch", "run_frequency_sec", 3600) * int64(time.Second)),
+		maxBadDevAge:         time.Duration(serverconf.GetInt("drive_watch", "max_bad_drive_age_sec", common.ONE_DAY*3) * int64(time.Second)),
+		ringUpdateFreq:       time.Duration(serverconf.GetInt("drive_watch", "ring_update_frequency_sec", common.ONE_DAY*3) * int64(time.Second)),
+		rescueMissingPartAge: time.Duration(serverconf.GetInt("drive_watch", "rescue_missing_partitions_after_sec", common.ONE_DAY*3) * int64(time.Second)),
+		maxWeightChange:      serverconf.GetFloat("drive_watch", "max_weight_change", 0.01),
+		updateRing:           serverconf.GetBool("drive_watch", "update_ring", false),
+		sqlDir:               sqlDir,
 	}
 }

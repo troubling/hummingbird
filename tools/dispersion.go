@@ -49,6 +49,7 @@ import (
 const AdminAccount = ".admin"
 const SLEEP_TIME = 100 * time.Millisecond
 const timeBetweenDispersionScans = 10 * time.Minute
+const timeMonitorDispersion = 30 * time.Second
 
 func getDispersionNames(container, prefix string, r ring.Ring, names chan string, cancel chan struct{}) {
 	// if looking for container names, send container=""
@@ -318,8 +319,8 @@ func rescueLonelyPartition(policy int64, partition uint64, goodNode *ring.Device
 }
 
 type probPart struct {
-	part       int
-	nodesFound int
+	part, nodesFound           int
+	account, container, object string
 }
 
 type Dispersion struct {
@@ -389,7 +390,7 @@ func (d *Dispersion) scanDispersionConts(cancelChan chan struct{}) bool {
 				}
 			}
 			if len(nodes) != len(goodNodes) {
-				probConts[cRec.Name] = probPart{int(partition), len(goodNodes)}
+				probConts[cRec.Name] = probPart{int(partition), len(goodNodes), AdminAccount, cRec.Name, ""}
 			} else {
 				goodPartitions += 1
 			}
@@ -496,7 +497,7 @@ func (d *Dispersion) scanDispersionObjs(cancelChan chan struct{}) {
 					}
 				}
 				if len(nodes) != len(goodNodes) {
-					probObjs[fmt.Sprintf("%s/%s", cr.Name, objRec.Name)] = probPart{int(partition), len(goodNodes)}
+					probObjs[fmt.Sprintf("%s/%s", cr.Name, objRec.Name)] = probPart{int(partition), len(goodNodes), AdminAccount, cr.Name, objRec.Name}
 				} else {
 					goodPartitions += 1
 				}
@@ -611,8 +612,8 @@ func getDispersionReport(flags *flag.FlagSet) *dispersionReport {
 		return report
 	}
 	rows, err := db.Query(`
-    SELECT create_date, report_text FROM
-    dispersion_report WHERE rtype = "container" ORDER BY create_date DESC LIMIT 1`)
+		SELECT create_date, report_text FROM
+		dispersion_report WHERE rtype = "container" ORDER BY create_date DESC LIMIT 1`)
 	if err != nil {
 		report.Errors = append(report.Errors, err.Error())
 		report.Pass = false
@@ -634,9 +635,11 @@ func getDispersionReport(flags *flag.FlagSet) *dispersionReport {
 	}
 	if report.ContainerReport != nil {
 		rows, err = db.Query(`
-        SELECT create_date, partition, partition_item_path, items_found, items_need
-        FROM dispersion_report_detail 
-        WHERE rtype = "container" ORDER BY create_date DESC LIMIT 1`)
+			SELECT create_date, partition,
+			account || '/' || container as partition_item_path,
+			items_found, items_need
+			FROM dispersion_report_detail
+			WHERE rtype = "container" ORDER BY create_date DESC LIMIT 1`)
 		if err != nil {
 			report.Errors = append(report.Errors, err.Error())
 			report.Pass = false
@@ -664,9 +667,9 @@ func getDispersionReport(flags *flag.FlagSet) *dispersionReport {
 		}
 	}
 	rows, err = db.Query(`
-    SELECT d.policy, d.create_date, d.report_text FROM
-    (SELECT id, policy, MAX(create_date) mcd FROM dispersion_report GROUP BY policy) r
-    INNER JOIN dispersion_report d ON d.id = r.id WHERE d.rtype = "object"`)
+		SELECT d.policy, d.create_date, d.report_text FROM
+		(SELECT id, policy, MAX(create_date) mcd FROM dispersion_report GROUP BY policy) r
+		INNER JOIN dispersion_report d ON d.id = r.id WHERE d.rtype = "object"`)
 	if err != nil {
 		report.Errors = append(report.Errors, err.Error())
 		report.Pass = false
@@ -689,9 +692,11 @@ func getDispersionReport(flags *flag.FlagSet) *dispersionReport {
 		}
 		report.ObjectReports = append(report.ObjectReports, objectReport)
 		detailRows, err := db.Query(`
-        SELECT create_date, partition, partition_item_path, items_found, items_need
-        FROM dispersion_report_detail 
-        WHERE rtype = "object" AND policy = ? ORDER BY create_date DESC LIMIT 1`, policy)
+			SELECT create_date, partition,
+			account || '/' || container || '/' || object as partition_item_path,
+			items_found, items_need
+			FROM dispersion_report_detail
+			WHERE rtype = "object" AND policy = ? ORDER BY create_date DESC LIMIT 1`, policy)
 		if err != nil {
 			report.Errors = append(report.Errors, err.Error())
 			report.Pass = false
@@ -771,13 +776,13 @@ func (d *Dispersion) makeDispersionPrintableReport(rtype string, policy int64, r
 		return
 	}
 	rID, _ := r.LastInsertId()
-	recDetail, err := tx.Prepare("INSERT INTO dispersion_report_detail (dispersion_report_id, rtype, policy, partition, partition_item_path, items_found, items_need) VALUES (?,?,?,?,?,?,?)")
+	recDetail, err := tx.Prepare("INSERT INTO dispersion_report_detail (dispersion_report_id, rtype, policy, partition, account, container, object, items_found, items_need) VALUES (?,?,?,?,?,?,?,?,?)")
 	if err != nil {
 		d.logger.Error("error insert prep dispersion_report_detail", zap.Error(err))
 		return
 	}
-	for o, pp := range probParts {
-		if _, err := recDetail.Exec(rID, rtype, policy, pp.part, o, pp.nodesFound, replicas); err != nil {
+	for _, pp := range probParts {
+		if _, err := recDetail.Exec(rID, rtype, policy, pp.part, pp.account, pp.container, pp.object, pp.nodesFound, replicas); err != nil {
 			d.logger.Error("error insert dispersion_report_detail", zap.Error(err))
 			return
 		}
@@ -851,7 +856,7 @@ func (d *Dispersion) checkDispersionRunner() {
 func (d *Dispersion) runDispersionForever() {
 	d.onceFullDispersion = false
 	d.checkDispersionRunner()
-	d.dispersionMonitor(time.NewTicker(time.Second * 30).C)
+	d.dispersionMonitor(time.NewTicker(timeMonitorDispersion).C)
 }
 
 func (d *Dispersion) runDispersionOnce() {
