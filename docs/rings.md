@@ -2,15 +2,15 @@
 
 ## Ring Overview
 
-The hummingbird rings are responsible for mapping what devices data is stored on.  There is a separate ring for the objects, containers and accounts. Rings are created when you build a new cluster and updated when changes to the cluster need to be made like for example, adding or removing nodes or devices to the storage cluster.  It is important that all servers in the cluster have the same and most current version of the ring.
+The hummingbird rings are responsible for mapping data to devices.  There is a separate ring for the objects, containers, and accounts. Rings are created when you build a new cluster and updated when changes to the cluster need to be made, for example, adding or removing nodes or devices to the storage cluster.  It is important that all servers in the cluster have the same and most current version of the rings.
 
 ### Zones
 
-A Zone is an abstract concept in the ring that allows you to define failure domains within the cluster.  Each copy of an object will be stored in a device in a different zone.  It is recommended to choose the highest level of isolation that makes sense for the cluster size.  For example for a small cluster, with a handful of machines, each server might be a zone.  For a larger cluster, it might be each rack of servers, etc.
+A Zone is an abstract concept in the ring that allows you to define failure domains within the cluster.  Each copy of an object will be stored in a device in a different zone.  It is recommended to choose the highest level of isolation that makes sense for the cluster size.  For example for a small cluster, with a handful of machines, each server might be a zone.  For a larger cluster, it might be each rack of servers.
 
 ### Partitions
 
-When an object is stored in the cluster, it is not directly to a device, but instead to a partition via a hash.  The partitions are evenly distributed across all of the devices in the cluster.
+When an object is stored in the cluster, the ring maps the object to a partition using a hash.  The partitions are evenly distributed across all of the devices in the cluster.
 
 ## Ring Creation
 
@@ -26,7 +26,7 @@ The Partition Power is the number of partitions used by the ring.  A typical clu
 
 ### Min Partition Hours
 
-When the state of the cluster changes, and data needs to be moved, it will try to only move 1 replica at a time (in a 3 replica cluster) to ensure that objects in the cluster remain available.  When a ring change is issued, the ring will not move partitions that have been moved in the Min Partition Hours setting.  This helps prevent the cluster from getting into a bad state through a series of ring changes.  A typical cluster will set the Min Partition Hours to 168 (1 week).
+When the state of the cluster changes, and data needs to be moved, it will try to only move 1 replica at a time (in a 3 replica cluster) to ensure that objects in the cluster remain available.  When a ring change is issued, the ring will not move partitions that have moved more recently than Min Partition Hours.  This helps prevent the cluster from getting into a bad state through a series of ring changes.  A typical cluster will set the Min Partition Hours to 168 (1 week).
 
 A ring can be generated with the command `hummingbird ring <builder_file> create <part_power> <replicas> <min_part_hours>` and an example object ring with the typical settings can be created with `hummingbird ring object.builder create 22 3 168`.
 
@@ -34,15 +34,15 @@ The builder file contains extra information needed for building the rings and ca
 
 ## Adding Devices
 
-Each individual storage devices is stored in the ring.  Before adding the device, you will need to know the zone, server ip address and port, device name, and weight of the device.  The server ip address and port should be address and port that the server for that ring is running on.  The device name should be the name of the partitioned device.  The weight should be the number of Gigabytes the device can store.
+Each individual storage device is stored in the ring.  Before adding the device, you will need to know the zone, server ip address and port, device name, and weight of the device.  The server ip address and port should be the address and port that the server for that ring is running on.  The device name should be the name of the partitioned device.  The weight should be the number of Gigabytes the device can store.
 
-A device can be added with the command `hummingbird ring <builder_file> add add z<zone>-<ip>:<port>/<device_name>` and an example deivce added to the object ring might look like `hummingbird ring object.builder add z1-10.0.0.1:6000/xvdd 1000` for a 1TB device.
+A device can be added with the command `hummingbird ring <builder_file> add add z<zone>-<ip>:<port>/<device_name>` and an example device added to the object ring might look like `hummingbird ring object.builder add z1-10.0.0.1:6000/xvdd 1000` for a 1TB device.
 
-Note:  As devices are added to the ring, the actual mappings do not change until you run the reblance command.  It is best to make all the changes you want to make before rebalancing.
+Note:  As devices are added to the ring, the actual mappings do not change until you run the rebalance command.  It is best to make all the changes you want to make before rebalancing.
 
 ## Rebalancing the Ring
 
-The `hummingbird ring <builder_file> rebalance` command will take the information in the ring builder file and builde a compressed ring file that can be used by the servers.  When done, the comannd will return how many partitions moved and the balance of the new ring.
+The `hummingbird ring <builder_file> rebalance` command will take the information in the ring builder file and build a compressed ring file that can be used by the servers.  When done, the comannd will return how many partitions moved and the balance of the new ring.
 
 # Ring Best Practices
 
@@ -93,9 +93,9 @@ It is *very* important that you add all nodes and devices to the ring before run
 
 ## Handling a Device failure
 
-If a device has failed and will be replaced in the near future, then no ring changes are neccesary.  The system will work around the failure and replication will copy the data over when the drive is replaced.  Note that there will be some dedigration in performance until the device is replaced and fully replicated.
+If a device has failed and will be replaced in the near future, then no ring changes are neccesary.  The system will work around the failure and replication will copy the data over when the drive is replaced.  Note that there will be some degradation in performance until the device is replaced and fully replicated.
 
-If a devices has failed and it will either not be replaced or will be a while before being replaced, then it would be a good idea to set the device's weight to 0.  The ring will spread the partitions that the device was responsible for to other devices in the cluster.  For example if device sde1 failed on node 10.1.1.11, the following commands would be issued:
+If a device has failed and it will either not be replaced or will be a while before being replaced, then it would be a good idea to set the device's weight to 0.  The ring will spread the partitions that the device was responsible for to other devices in the cluster.  For example if device sde1 failed on node 10.1.1.11, the following commands would be issued:
 
 ```
 hummingbird ring object.builder set_weight -ip 10.1.1.11 -device sde1 0
