@@ -497,6 +497,7 @@ func (server *AccountServer) GetHandler(config conf.Config, metricsPrefix string
 	router.Get("/diskusage", commonHandlers.ThenFunc(server.DiskUsageHandler))
 	router.Get("/recon/:method/:recon_type", commonHandlers.ThenFunc(server.ReconHandler))
 	router.Get("/recon/:method", commonHandlers.ThenFunc(server.ReconHandler))
+	router.Delete("/recon/:device/:method/:recon_type/*item_path", commonHandlers.ThenFunc(server.ReconHandler))
 	router.Get("/debug/pprof/:parm", http.DefaultServeMux)
 	router.Post("/debug/pprof/:parm", http.DefaultServeMux)
 	router.Put("/:device/tmp/:filename", commonHandlers.ThenFunc(server.TmpUploadHandler))

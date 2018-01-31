@@ -574,6 +574,7 @@ func (server *ContainerServer) GetHandler(config conf.Config, metricsPrefix stri
 	router.Post("/debug/pprof/:parm", http.DefaultServeMux)
 	router.Get("/recon/:method/:recon_type", commonHandlers.ThenFunc(server.ReconHandler))
 	router.Get("/recon/:method", commonHandlers.ThenFunc(server.ReconHandler))
+	router.Delete("/recon/:device/:method/:recon_type/*item_path", commonHandlers.ThenFunc(server.ReconHandler))
 	router.Put("/:device/tmp/:filename", commonHandlers.ThenFunc(server.ContainerTmpUploadHandler))
 	router.Put("/:device/:partition/:account/:container/*obj", commonHandlers.ThenFunc(server.ObjPutHandler))
 	router.Delete("/:device/:partition/:account/:container/*obj", commonHandlers.ThenFunc(server.ObjDeleteHandler))
