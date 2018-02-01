@@ -152,15 +152,17 @@ func (idbo *indexDBObject) load() error {
 	}
 	var metabytes []byte
 	//var err error
-	idbi, err := idbo.indexDB.Lookup(idbo.hash, 0, false)
+	dbItem, err := idbo.indexDB.Lookup(idbo.hash, 0, false)
 	if err != nil {
 		return err
 	}
-	idbo.timestamp, idbo.deletion, metabytes, idbo.path = idbi.Timestamp, idbi.Deletion, idbi.Metabytes, idbi.Path
-
 	idbo.metadata = map[string]string{}
-	if err = json.Unmarshal(metabytes, &idbo.metadata); err != nil {
-		return err
+	if dbItem != nil {
+		idbo.timestamp, idbo.deletion, metabytes, idbo.path = dbItem.Timestamp, dbItem.Deletion, dbItem.Metabytes, dbItem.Path
+
+		if err = json.Unmarshal(metabytes, &idbo.metadata); err != nil {
+			return err
+		}
 	}
 	idbo.loaded = true
 	return nil
@@ -201,7 +203,10 @@ func (idbo *indexDBObject) Exists() bool {
 		// Maybe we should refactor to be able to return an error.
 		return false
 	}
-	return !idbo.deletion
+	if idbo.deletion {
+		return false
+	}
+	return idbo.path != ""
 }
 
 func (idbo *indexDBObject) Copy(dsts ...io.Writer) (written int64, err error) {

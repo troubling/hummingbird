@@ -390,6 +390,7 @@ func (ot *IndexDB) Remove(hsh string, shard int, timestamp int64, nursery bool) 
 }
 
 // Lookup returns the stored information for the hsh and shard.
+// Will return (nil, error) if there is an error. (nil, nil) if not found
 func (ot *IndexDB) Lookup(hsh string, shard int, justStable bool) (*IndexDBItem, error) {
 	var err error
 	hsh, _, dbPart, _, err := ot.validateHash(hsh)
