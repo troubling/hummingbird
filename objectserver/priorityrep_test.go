@@ -52,6 +52,8 @@ func (p *priFakeRing) GetJobNodes(partition uint64, localDevice int) (response [
 
 func (p *priFakeRing) GetPartition(account string, container string, object string) uint64 { return 0 }
 
+func (p *priFakeRing) PartitionForHash(hsh uint64) uint64 { return 0 }
+
 func (p *priFakeRing) LocalDevices(localPort int) (devs []*ring.Device, err error) {
 	return nil, nil
 }

@@ -421,8 +421,9 @@ func quarantineDetail(driveRoot string) (interface{}, error) {
 		NameOnDevice string
 		NameInURL    string
 	}
-	// Map of type to entries; type is accounts, containers, objects, objects-1, etc.
-	entries := map[string][]*entry{}
+	// Map of type to device to entries; type is accounts, containers, objects,
+	// objects-1, etc.
+	typeToDeviceToEntries := map[string]map[string][]*entry{}
 	deviceList, err := ioutil.ReadDir(driveRoot)
 	if err != nil {
 		return nil, err
@@ -431,7 +432,7 @@ func quarantineDetail(driveRoot string) (interface{}, error) {
 		qTypeList, err := ioutil.ReadDir(filepath.Join(driveRoot, device.Name(), "quarantined"))
 		if err != nil {
 			if os.IsNotExist(err) {
-				return entries, nil
+				return typeToDeviceToEntries, nil
 			}
 			return nil, err
 		}
@@ -449,7 +450,10 @@ func quarantineDetail(driveRoot string) (interface{}, error) {
 						break
 					}
 					ent := &entry{NameOnDevice: listingItem.Name()}
-					entries[key] = append(entries[key], ent)
+					if typeToDeviceToEntries[key] == nil {
+						typeToDeviceToEntries[key] = map[string][]*entry{}
+					}
+					typeToDeviceToEntries[key][device.Name()] = append(typeToDeviceToEntries[key][device.Name()], ent)
 					if key == "accounts" || key == "containers" {
 						parts := strings.SplitN(listingItem.Name(), "-", 2)
 						if len(parts) != 2 {
@@ -490,7 +494,7 @@ func quarantineDetail(driveRoot string) (interface{}, error) {
 			}
 		}
 	}
-	return entries, nil
+	return typeToDeviceToEntries, nil
 }
 
 func diskUsage(driveRoot string) ([]map[string]interface{}, error) {

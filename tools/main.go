@@ -17,6 +17,7 @@ package tools
 
 import (
 	"crypto/md5"
+	"database/sql"
 	"encoding/hex"
 	"flag"
 	"fmt"
@@ -29,11 +30,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
-
-	"github.com/uber-go/tally"
-	promreporter "github.com/uber-go/tally/prometheus"
-	"go.uber.org/zap"
 
 	"github.com/justinas/alice"
 	"github.com/prometheus/client_golang/prometheus"
@@ -44,6 +42,10 @@ import (
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/middleware"
 	"github.com/troubling/hummingbird/objectserver"
+	"github.com/uber-go/tally"
+	promreporter "github.com/uber-go/tally/prometheus"
+	"go.uber.org/zap"
+	"golang.org/x/net/http2"
 )
 
 func getAffixes() (string, string) {
@@ -532,11 +534,13 @@ func ObjectInfo(flags *flag.FlagSet, cnf srv.ConfigLoader) {
 }
 
 type AutoAdmin struct {
+	serverconf     conf.Config
 	logger         srv.LowLevelLogger
 	logLevel       zap.AtomicLevel
 	port           int
 	bindIp         string
 	workDir        string
+	client         *http.Client
 	hClient        client.ProxyClient
 	policies       conf.PolicyList
 	metricsScope   tally.Scope
@@ -544,6 +548,8 @@ type AutoAdmin struct {
 	di             *Dispersion
 	dw             *driveWatch
 	runningForever bool
+	db             *sql.DB
+	dbl            sync.Mutex
 }
 
 func (server *AutoAdmin) Type() string {
@@ -634,10 +640,52 @@ func (a *AutoAdmin) Run() {
 
 func (a *AutoAdmin) RunForever() {
 	go a.di.runDispersionForever()
+	go newQuarantineRepairman(a).runForever()
 	a.runningForever = true
 	for {
 		a.Run()
 	}
+}
+
+func (a *AutoAdmin) getDB() (*sql.DB, error) {
+	a.dbl.Lock()
+	db := a.db
+	if db == nil {
+		sqlDir, ok := a.serverconf.Get("andrewd", "sql_dir")
+		if !ok {
+			sqlDir = a.serverconf.GetDefault("drive_watch", "sql_dir", "/var/local/hummingbird")
+		}
+		err := os.MkdirAll(sqlDir, 0755)
+		if err != nil {
+			a.dbl.Unlock()
+			a.logger.Error("getDB MkdirAll", zap.String("sqlDir", sqlDir), zap.Error(err))
+			return nil, err
+		}
+		db, err = sql.Open("sqlite3", filepath.Join(sqlDir, DB_NAME))
+		if err != nil {
+			a.dbl.Unlock()
+			a.logger.Error("getDB sql.Open", zap.String("dbPath", filepath.Join(sqlDir, DB_NAME)), zap.Error(err))
+			return nil, err
+		}
+		_, err = db.Exec(`
+            CREATE TABLE IF NOT EXISTS replication_queue (
+                rtype TEXT NOT NULL,        -- account, container, object
+                policy INTEGER NOT NULL,    -- only used with object
+                partition INTEGER NOT NULL, -- the partition number to replicate
+                reason TEXT NOT NULL,       -- ring, dispersion, quarantine
+                fromDevice INTEGER,         -- the device to replicate from, NULL = any
+                toDevice INTEGER            -- the device to replicate to, NULL = all
+            );
+        `)
+		if err != nil {
+			a.dbl.Unlock()
+			a.logger.Error("getDB db.Exec", zap.Error(err))
+			return nil, err
+		}
+		a.db = db
+	}
+	a.dbl.Unlock()
+	return db, nil
 }
 
 func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (ipPort *srv.IpPort, server srv.Server, logger srv.LowLevelLogger, err error) {
@@ -667,8 +715,23 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 	if err != nil {
 		return ipPort, nil, nil, err
 	}
-
+	transport := &http.Transport{
+		MaxIdleConnsPerHost: 100,
+		MaxIdleConns:        0,
+	}
+	if certFile != "" && keyFile != "" {
+		tlsConf, err := common.NewClientTLSConfig(certFile, keyFile)
+		if err != nil {
+			panic(fmt.Sprintf("Error getting TLS config: %v", err))
+		}
+		transport.TLSClientConfig = tlsConf
+		if err = http2.ConfigureTransport(transport); err != nil {
+			panic(fmt.Sprintf("Error setting up http2: %v", err))
+		}
+	}
 	a := &AutoAdmin{
+		serverconf:     serverconf,
+		client:         &http.Client{Timeout: 10 * time.Second, Transport: transport},
 		hClient:        client.NewProxyClient(pdc, nil, nil, logger),
 		port:           port,
 		bindIp:         ip,

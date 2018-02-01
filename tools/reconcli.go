@@ -519,13 +519,13 @@ func getQuarantineReport(client http.Client, servers []*ipPort) *quarantineRepor
 }
 
 type quarantineDetailReport struct {
-	Name                string
-	Time                time.Time
-	Pass                bool
-	Servers             int
-	Successes           int
-	Errors              []string
-	TypeToServerToItems map[string]map[string][]*quarantineDetailItem
+	Name                        string
+	Time                        time.Time
+	Pass                        bool
+	Servers                     int
+	Successes                   int
+	Errors                      []string
+	TypeToServerToDeviceToItems map[string]map[string]map[string][]*quarantineDetailItem
 }
 
 func (r *quarantineDetailReport) Passed() bool {
@@ -546,33 +546,41 @@ func (r *quarantineDetailReport) String() string {
 		r.Successes, r.Servers, len(r.Errors),
 	)
 	var types []string
-	for typ := range r.TypeToServerToItems {
+	for typ := range r.TypeToServerToDeviceToItems {
 		types = append(types, typ)
 	}
 	sort.Strings(types)
 	for _, typ := range types {
 		s += fmt.Sprintln(typ)
 		var servers []string
-		for server := range r.TypeToServerToItems[typ] {
+		for server := range r.TypeToServerToDeviceToItems[typ] {
 			servers = append(servers, server)
 		}
 		sort.Strings(servers)
 		for _, server := range servers {
-			items := r.TypeToServerToItems[typ][server]
-			sort.Slice(items, func(i, j int) bool {
-				if items[i].NameOnDevice < items[j].NameOnDevice {
-					return true
-				}
-				if items[i].NameOnDevice == items[j].NameOnDevice {
-					if items[i].NameInURL < items[j].NameInURL {
+			s += fmt.Sprintln(" ", server)
+			var devices []string
+			for device := range r.TypeToServerToDeviceToItems[typ][server] {
+				devices = append(devices, device)
+			}
+			sort.Strings(devices)
+			for _, device := range devices {
+				s += fmt.Sprintln("   ", device)
+				items := r.TypeToServerToDeviceToItems[typ][server][device]
+				sort.Slice(items, func(i, j int) bool {
+					if items[i].NameOnDevice < items[j].NameOnDevice {
 						return true
 					}
+					if items[i].NameOnDevice == items[j].NameOnDevice {
+						if items[i].NameInURL < items[j].NameInURL {
+							return true
+						}
+					}
+					return false
+				})
+				for _, item := range items {
+					s += fmt.Sprintln("     ", item.NameOnDevice, item.NameInURL)
 				}
-				return false
-			})
-			s += fmt.Sprintln(" ", server)
-			for _, item := range items {
-				s += fmt.Sprintln("   ", item.NameOnDevice, item.NameInURL)
 			}
 		}
 	}
@@ -586,10 +594,10 @@ type quarantineDetailItem struct {
 
 func getQuarantineDetailReport(client http.Client, servers []*ipPort) *quarantineDetailReport {
 	report := &quarantineDetailReport{
-		Name:                "Quarantine Detail Report",
-		Time:                time.Now().UTC(),
-		Servers:             len(servers),
-		TypeToServerToItems: map[string]map[string][]*quarantineDetailItem{},
+		Name:                        "Quarantine Detail Report",
+		Time:                        time.Now().UTC(),
+		Servers:                     len(servers),
+		TypeToServerToDeviceToItems: map[string]map[string]map[string][]*quarantineDetailItem{},
 	}
 	for _, server := range servers {
 		jsonBytes, err := queryHostRecon(client, server, "quarantineddetail")
@@ -597,16 +605,24 @@ func getQuarantineDetailReport(client http.Client, servers []*ipPort) *quarantin
 			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
 			continue
 		}
-		var serverReport map[string][]*quarantineDetailItem
+		var serverReport map[string]map[string][]*quarantineDetailItem
 		if err := json.Unmarshal(jsonBytes, &serverReport); err != nil {
 			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s - %q", server, err, string(jsonBytes)))
 			continue
 		}
-		for typ, items := range serverReport {
-			if report.TypeToServerToItems[typ] == nil {
-				report.TypeToServerToItems[typ] = map[string][]*quarantineDetailItem{}
+		serverFmt := fmt.Sprintf("%s:%d", server.ip, server.port)
+		for typ, deviceToItems := range serverReport {
+			for device, items := range deviceToItems {
+				if len(items) > 0 {
+					if report.TypeToServerToDeviceToItems[typ] == nil {
+						report.TypeToServerToDeviceToItems[typ] = map[string]map[string][]*quarantineDetailItem{}
+					}
+					if report.TypeToServerToDeviceToItems[typ][serverFmt] == nil {
+						report.TypeToServerToDeviceToItems[typ][serverFmt] = map[string][]*quarantineDetailItem{}
+					}
+					report.TypeToServerToDeviceToItems[typ][serverFmt][device] = items
+				}
 			}
-			report.TypeToServerToItems[typ][fmt.Sprintf("%s:%d", server.ip, server.port)] = items
 		}
 		report.Successes++
 	}
