@@ -74,7 +74,10 @@ script:
         --exclude-test=test.functional.test_versioned_writes.TestCrossPolicyObjectVersioning.test_overwriting_symlink \
         --exclude-test=test.functional.test_versioned_writes.TestObjectVersioning.test_overwriting_symlink \
         --exclude-test=test.functional.test_versioned_writes.TestObjectVersioningUTF8.test_overwriting_symlink \
-        --exclude-test=test.functional.test_versioned_writes.TestObjectVersioningHistoryMode.test_overwriting_symlink
+        --exclude-test=test.functional.test_versioned_writes.TestObjectVersioningHistoryMode.test_overwriting_symlink \
+        --exclude-test=test.functional.test_tempurl.TestTempurlAlgorithms.test_sha1 `# temporary` \
+        --exclude-test=test.functional.test_slo.TestSlo `# temporary` \
+        --exclude-test=test.functional.test_slo.TestSloUTF8 `# temporary`
     fi
 
 deploy:
