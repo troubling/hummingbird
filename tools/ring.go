@@ -58,27 +58,27 @@ func RingBuildCmd(flags *flag.FlagSet) {
 	case "create":
 		if len(args) < 5 {
 			flags.Usage()
-			return
+			os.Exit(1)
 		}
 		partPower, err := strconv.Atoi(args[2])
 		if err != nil {
 			fmt.Println(err)
-			return
+			os.Exit(1)
 		}
 		replicas, err := strconv.ParseFloat(args[3], 64)
 		if err != nil {
 			fmt.Println(err)
-			return
+			os.Exit(1)
 		}
 		minPartHours, err := strconv.Atoi(args[4])
 		if err != nil {
 			fmt.Println(err)
-			return
+			os.Exit(1)
 		}
 		err = ring.CreateRing(pth, partPower, replicas, minPartHours, debug)
 		if err != nil {
 			fmt.Println(err)
-			return
+			os.Exit(1)
 		}
 
 	case "rebalance":
@@ -86,10 +86,12 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		dryrun := rebalanceFlags.Bool("dryrun", false, "A dry run will rebalance but not save the results.")
 		if err := rebalanceFlags.Parse(args[2:]); err != nil {
 			fmt.Println(err)
+			os.Exit(1)
 		}
 		err := ring.Rebalance(pth, debug, *dryrun)
 		if err != nil {
 			fmt.Println(err)
+			os.Exit(1)
 		}
 		return
 
@@ -111,11 +113,12 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		scheme := searchFlags.String("scheme", "", "URI scheme(http/https).")
 		if err := searchFlags.Parse(args[2:]); err != nil {
 			fmt.Println(err)
+			os.Exit(1)
 		}
 		devs, err := ring.Search(pth, *region, *zone, *ip, *port, *repIp, *repPort, *device, *weight, *meta, *scheme)
 		if err != nil {
 			fmt.Println(err)
-			return
+			os.Exit(1)
 		}
 		if len(devs) == 0 {
 			fmt.Println("No matching devices found.")
@@ -146,12 +149,12 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		newMeta := changeFlags.String("change-meta", "", "New meta data.")
 		if err := changeFlags.Parse(args[2:]); err != nil {
 			fmt.Println(err)
-			return
+			os.Exit(1)
 		}
 		devs, err := ring.Search(pth, *region, *zone, *ip, *port, *repIp, *repPort, *device, *weight, *meta, *scheme)
 		if err != nil {
 			fmt.Println(err)
-			return
+			os.Exit(1)
 		}
 		if len(devs) == 0 {
 			fmt.Println("No matching devices found.")
@@ -165,7 +168,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 				resp, err := reader.ReadString('\n')
 				if err != nil {
 					fmt.Println(err)
-					return
+					os.Exit(1)
 				}
 				if resp[0] != 'y' && resp[0] != 'Y' {
 					fmt.Println("No devices updated.")
@@ -195,22 +198,22 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		yes := weightFlags.Bool("yes", false, "Force yes.")
 		if err := weightFlags.Parse(args[2:]); err != nil {
 			fmt.Println(err)
-			return
+			os.Exit(1)
 		}
 		args := weightFlags.Args()
 		if len(args) < 1 {
 			weightFlags.Usage()
-			return
+			os.Exit(1)
 		}
 		newWeight, err := strconv.ParseFloat(args[0], 64)
 		if err != nil {
 			fmt.Println(err)
-			return
+			os.Exit(1)
 		}
 		devs, err := ring.Search(pth, *region, *zone, *ip, *port, *repIp, *repPort, *device, *weight, *meta, *scheme)
 		if err != nil {
 			fmt.Println(err)
-			return
+			os.Exit(1)
 		}
 		if len(devs) == 0 {
 			fmt.Println("No matching devices found.")
@@ -224,7 +227,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 				resp, err := reader.ReadString('\n')
 				if err != nil {
 					fmt.Println(err)
-					return
+					os.Exit(1)
 				}
 				if resp[0] != 'y' && resp[0] != 'Y' {
 					fmt.Println("No devices updated.")
@@ -234,6 +237,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 			err := ring.SetWeight(pth, devs, newWeight)
 			if err != nil {
 				fmt.Println(err)
+				os.Exit(1)
 			} else {
 				fmt.Println("Weight updated successfully.")
 			}
@@ -254,12 +258,12 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		yes := removeFlags.Bool("yes", false, "Force yes.")
 		if err := removeFlags.Parse(args[2:]); err != nil {
 			fmt.Println(err)
-			return
+			os.Exit(1)
 		}
 		devs, err := ring.Search(pth, *region, *zone, *ip, *port, *repIp, *repPort, *device, *weight, *meta, *scheme)
 		if err != nil {
 			fmt.Println(err)
-			return
+			os.Exit(1)
 		}
 		if len(devs) == 0 {
 			fmt.Println("No matching devices found.")
@@ -273,7 +277,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 				resp, err := reader.ReadString('\n')
 				if err != nil {
 					fmt.Println(err)
-					return
+					os.Exit(1)
 				}
 				if resp[0] != 'y' && resp[0] != 'Y' {
 					fmt.Println("No devices removed.")
@@ -283,6 +287,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 			err := ring.RemoveDevs(pth, devs)
 			if err != nil {
 				fmt.Println(err)
+				os.Exit(1)
 			} else {
 				fmt.Println("Devices removed successfully.")
 			}
@@ -290,6 +295,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 	case "write_ring":
 		if err := ring.WriteRing(pth); err != nil {
 			fmt.Println(err)
+			os.Exit(1)
 		}
 	case "add":
 		// TODO: Add config option version of add function
@@ -301,20 +307,20 @@ func RingBuildCmd(flags *flag.FlagSet) {
 
 		if len(args) < 4 {
 			flags.Usage()
-			return
+			os.Exit(1)
 		}
 		deviceStr := args[2]
 		rx := regexp.MustCompile(`^(?:r(?P<region>\d+))?z(?P<zone>\d+)(?:s(?P<scheme>http|https))?-(?P<ip>[\d\.]+):(?P<port>\d+)(?:R(?P<replication_ip>[\d\.]+):(?P<replication_port>\d+))?\/(?P<device>[^_]+)(?:_(?P<metadata>.+))?$`)
 		matches := rx.FindAllStringSubmatch(deviceStr, -1)
 		if len(matches) == 0 {
 			flags.Usage()
-			return
+			os.Exit(1)
 		}
 		if matches[0][1] != "" {
 			region, err = strconv.ParseInt(matches[0][1], 0, 64)
 			if err != nil {
 				fmt.Println(err)
-				return
+				os.Exit(1)
 			}
 		} else {
 			region = 0
@@ -322,7 +328,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		zone, err = strconv.ParseInt(matches[0][2], 0, 64)
 		if err != nil {
 			fmt.Println(err)
-			return
+			os.Exit(1)
 		}
 		if matches[0][3] != "" {
 			scheme = matches[0][3]
@@ -333,7 +339,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		port, err = strconv.ParseInt(matches[0][5], 0, 64)
 		if err != nil {
 			fmt.Println(err)
-			return
+			os.Exit(1)
 		}
 
 		if matches[0][6] != "" {
@@ -341,7 +347,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 			replicationPort, err = strconv.ParseInt(matches[0][7], 0, 64)
 			if err != nil {
 				fmt.Println(err)
-				return
+				os.Exit(1)
 			}
 		} else {
 			replicationIp = ""
@@ -351,12 +357,12 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		weight, err = strconv.ParseFloat(args[3], 64)
 		if err != nil {
 			fmt.Println(err)
-			return
+			os.Exit(1)
 		}
 		id, err := ring.AddDevice(pth, -1, region, zone, scheme, ip, port, replicationIp, replicationPort, device, weight, debug)
 		if err != nil {
 			fmt.Println(err)
-			return
+			os.Exit(1)
 		} else {
 			fmt.Printf("Device %s with %.2f weight added with id %d\n", device, weight, id)
 		}
@@ -365,14 +371,14 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		fmt.Printf("%+v\n", builder)
 		if err != nil {
 			fmt.Println(err)
-			return
+			os.Exit(1)
 		}
 	case "info":
 		// Show info about the ring
 		builder, err := ring.NewRingBuilderFromFile(pth, debug)
 		if err != nil {
 			fmt.Println(err)
-			return
+			os.Exit(1)
 		}
 		regions := 0
 		zones := 0
@@ -413,7 +419,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		builder, err := ring.NewRingBuilderFromFile(pth, debug)
 		if err != nil {
 			fmt.Println(err)
-			return
+			os.Exit(1)
 		}
 		fmt.Printf("Analyzing %s...\n", pth)
 		ring := builder.GetRing()
@@ -538,10 +544,12 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		err := ring.Validate(pth)
 		if err != nil {
 			fmt.Println(err)
+			os.Exit(1)
 		}
 	default:
 		fmt.Printf("Unknown command: %s\n", cmd)
 		flags.Usage()
+		os.Exit(1)
 	}
 
 }
