@@ -682,6 +682,7 @@ func initCommand(args []string) error {
 		print(`fi`)
 		print(`hbrings`)
 		print(`hbreset`)
+		print(`if [ "$1" != "skiptests" ] ; then`)
 		print(`hbmain start`)
 		print(`if [ ! -e ~/swift ] ; then`)
 		print(`    git clone https://github.com/openstack/swift ~/swift`)
@@ -696,6 +697,7 @@ func initCommand(args []string) error {
 		print(`nosetests --exclude-test-file "${gopath}/src/github.com/troubling/hummingbird/.swift_func_excludes"`)
 		print(`popd`)
 		print(`hbmain stop`)
+		print(`fi`)
 		print(``)
 	}
 

@@ -16,7 +16,7 @@ install:
   - sudo apt-get install liberasurecode-dev libjerasure-dev
   - make get all
   - bin/hummingbird init haio
-  - ./hummingbird-init-haio.sh
+  - ./hummingbird-init-haio.sh skiptests
   - sudo apt remove python-nose # since we'll be installing the pip edition
   - go get github.com/haya14busa/goverage
   - mkdir -p /tmp/output
