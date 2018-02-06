@@ -16,7 +16,7 @@ install:
   - sudo apt-get install liberasurecode-dev libjerasure-dev
   - make get all
   - bin/hummingbird init haio
-  - ./hummingbird-init-haio.sh
+  - ./hummingbird-init-haio.sh skiptests
   - sudo apt remove python-nose # since we'll be installing the pip edition
   - go get github.com/haya14busa/goverage
   - mkdir -p /tmp/output
@@ -59,25 +59,7 @@ script:
       goverage -coverprofile=/tmp/coverage.out github.com/troubling/hummingbird/...
       go tool cover -html=/tmp/coverage.out -o "/tmp/output/coverage.html"
       hummingbird start main
-      PATH=$PATH:~/swift-venv/bin nosetests --with-html --html-file=/tmp/output/functional_hbproxy.html ~/swift/test/functional \
-        --exclude-test=test.functional.test_account.TestAccount.test_unicode_metadata `# violates rfc specifying 7-bit clean headers, go server rejects.` \
-        --exclude-test=test.functional.test_container.TestContainer.test_unicode_metadata \
-        --exclude-test=test.functional.tests.TestFile.testBadHeaders `# Go's http server returns 400 not 501 for Transfer-Encoding: gzip,chunked` \
-        --exclude-test=test.functional.tests.TestFileUTF8.testBadHeaders \
-        --exclude-test=test.functional.tests.TestFile.testGetResponseHeaders `# silly checking for Connection: header.  Let the server do its job.` \
-        --exclude-test=test.functional.tests.TestFileUTF8.testGetResponseHeaders \
-        --exclude-test=test.functional.test_slo.TestSlo.test_slo_typo_etag `# these slo fields are optional and we can't easily detect typos.` \
-        --exclude-test=test.functional.test_slo.TestSlo.test_slo_typo_size \
-        --exclude-test=test.functional.test_slo.TestSloUTF8.test_slo_typo_etag \
-        --exclude-test=test.functional.test_slo.TestSloUTF8.test_slo_typo_size \
-        --exclude-test=test.functional.test_symlink \
-        --exclude-test=test.functional.test_versioned_writes.TestCrossPolicyObjectVersioning.test_overwriting_symlink \
-        --exclude-test=test.functional.test_versioned_writes.TestObjectVersioning.test_overwriting_symlink \
-        --exclude-test=test.functional.test_versioned_writes.TestObjectVersioningUTF8.test_overwriting_symlink \
-        --exclude-test=test.functional.test_versioned_writes.TestObjectVersioningHistoryMode.test_overwriting_symlink \
-        --exclude-test=test.functional.test_tempurl.TestTempurlAlgorithms.test_sha1 `# temporary` \
-        --exclude-test=test.functional.test_slo.TestSlo `# temporary` \
-        --exclude-test=test.functional.test_slo.TestSloUTF8 `# temporary`
+      PATH=$PATH:~/swift-venv/bin nosetests --with-html --html-file=/tmp/output/functional_hbproxy.html ~/swift/test/functional --exclude-test-file=$TRAVIS_BUILD_DIR/.swift_func_excludes
     fi
 
 deploy:
