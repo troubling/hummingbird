@@ -1,4 +1,4 @@
-package objectserver
+package indexdb
 
 import (
 	"encoding/json"
@@ -17,17 +17,17 @@ import (
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
-	"github.com/troubling/hummingbird/objectserver/internal"
+	"github.com/troubling/hummingbird/objectserver"
 	"go.uber.org/zap"
 )
 
 func init() {
-	RegisterObjectEngine("index.db", indexDBEngineConstructor)
+	objectserver.RegisterObjectEngine("index.db", indexDBEngineConstructor)
 }
 
-var _ ObjectEngineConstructor = indexDBEngineConstructor
+var _ objectserver.ObjectEngineConstructor = indexDBEngineConstructor
 
-func indexDBEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.FlagSet) (ObjectEngine, error) {
+func indexDBEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.FlagSet) (objectserver.ObjectEngine, error) {
 	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
 	if err != nil {
 		return nil, err
@@ -64,7 +64,7 @@ func indexDBEngineConstructor(config conf.Config, policy *conf.Policy, flags *fl
 	if err != nil {
 		return nil, err
 	}
-	indexDBs := map[string]*internal.IndexDB{}
+	indexDBs := map[string]*IndexDB{}
 	for _, dirname := range dirs {
 		dirpath := path.Join(devicespath, dirname)
 		fi, err := os.Stat(dirpath)
@@ -75,13 +75,13 @@ func indexDBEngineConstructor(config conf.Config, policy *conf.Policy, flags *fl
 			// TODO: IsMount check based on config's mount_check.
 			var dbpath string
 			if dbspath == "" {
-				dbpath = path.Join(dirpath, PolicyDir(policy.Index))
+				dbpath = path.Join(dirpath, objectserver.PolicyDir(policy.Index))
 			} else {
-				dbpath = path.Join(dbspath, dirname, PolicyDir(policy.Index))
+				dbpath = path.Join(dbspath, dirname, objectserver.PolicyDir(policy.Index))
 			}
-			filepath := path.Join(dirpath, PolicyDir(policy.Index))
-			temppath := path.Join(dirpath, PolicyDir(policy.Index), "temp")
-			indexDBs[dirname], err = internal.NewIndexDB(
+			filepath := path.Join(dirpath, objectserver.PolicyDir(policy.Index))
+			temppath := path.Join(dirpath, objectserver.PolicyDir(policy.Index), "temp")
+			indexDBs[dirname], err = NewIndexDB(
 				dbpath,
 				filepath,
 				temppath,
@@ -105,7 +105,7 @@ func indexDBEngineConstructor(config conf.Config, policy *conf.Policy, flags *fl
 	}, nil
 }
 
-var _ ObjectEngine = &indexDBEngine{}
+var _ objectserver.ObjectEngine = &indexDBEngine{}
 
 type indexDBEngine struct {
 	devicespath      string
@@ -113,10 +113,10 @@ type indexDBEngine struct {
 	hashPathSuffix   string
 	fallocateReserve int64
 	reclaimAge       int64
-	indexDBs         map[string]*internal.IndexDB
+	indexDBs         map[string]*IndexDB
 }
 
-func (idbe *indexDBEngine) New(vars map[string]string, needData bool, asyncWG *sync.WaitGroup) (Object, error) {
+func (idbe *indexDBEngine) New(vars map[string]string, needData bool, asyncWG *sync.WaitGroup) (objectserver.Object, error) {
 	indexDB := idbe.indexDBs[vars["device"]]
 	if indexDB == nil {
 		panic(vars["device"])
@@ -126,17 +126,17 @@ func (idbe *indexDBEngine) New(vars map[string]string, needData bool, asyncWG *s
 		reclaimAge:       idbe.reclaimAge,
 		asyncWG:          asyncWG,
 		indexDB:          indexDB,
-		hash:             ObjHash(vars, idbe.hashPathPrefix, idbe.hashPathSuffix),
+		hash:             objectserver.ObjHash(vars, idbe.hashPathPrefix, idbe.hashPathSuffix),
 	}, nil
 }
 
-var _ Object = &indexDBObject{}
+var _ objectserver.Object = &indexDBObject{}
 
 type indexDBObject struct {
 	fallocateReserve int64
 	reclaimAge       int64
 	asyncWG          *sync.WaitGroup
-	indexDB          *internal.IndexDB
+	indexDB          *IndexDB
 	hash             string
 	loaded           bool
 	timestamp        int64
@@ -151,14 +151,18 @@ func (idbo *indexDBObject) load() error {
 		return nil
 	}
 	var metabytes []byte
-	var err error
-	idbo.timestamp, idbo.deletion, _, metabytes, idbo.path, err = idbo.indexDB.Lookup(idbo.hash, 0)
+	//var err error
+	dbItem, err := idbo.indexDB.Lookup(idbo.hash, 0, false)
 	if err != nil {
 		return err
 	}
 	idbo.metadata = map[string]string{}
-	if err = json.Unmarshal(metabytes, &idbo.metadata); err != nil {
-		return err
+	if dbItem != nil {
+		idbo.timestamp, idbo.deletion, metabytes, idbo.path = dbItem.Timestamp, dbItem.Deletion, dbItem.Metabytes, dbItem.Path
+
+		if err = json.Unmarshal(metabytes, &idbo.metadata); err != nil {
+			return err
+		}
 	}
 	idbo.loaded = true
 	return nil
@@ -199,7 +203,10 @@ func (idbo *indexDBObject) Exists() bool {
 		// Maybe we should refactor to be able to return an error.
 		return false
 	}
-	return !idbo.deletion
+	if idbo.deletion {
+		return false
+	}
+	return idbo.path != ""
 }
 
 func (idbo *indexDBObject) Copy(dsts ...io.Writer) (written int64, err error) {
@@ -256,7 +263,7 @@ func (idbo *indexDBObject) SetData(size int64) (io.Writer, error) {
 		idbo.atomicFileWriter.Abandon()
 	}
 	var err error
-	idbo.atomicFileWriter, err = idbo.indexDB.TempFile(idbo.hash, 0, math.MaxInt64, size)
+	idbo.atomicFileWriter, err = idbo.indexDB.TempFile(idbo.hash, 0, math.MaxInt64, size, true)
 	return idbo.atomicFileWriter, err
 }
 
@@ -277,7 +284,7 @@ func (idbo *indexDBObject) commit(metadata map[string]string, deletion bool) err
 	if err != nil {
 		return err
 	}
-	err = idbo.indexDB.Commit(idbo.atomicFileWriter, idbo.hash, 0, timestamp, deletion, internal.MetadataHash(metadata), metabytes)
+	err = idbo.indexDB.Commit(idbo.atomicFileWriter, idbo.hash, 0, timestamp, deletion, MetadataHash(metadata), metabytes, true)
 	idbo.atomicFileWriter = nil
 	return err
 }
