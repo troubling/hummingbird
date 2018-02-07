@@ -230,7 +230,11 @@ func (d *patchableReplicationDevice) cleanTemp() {
 }
 
 func newPatchableReplicationDevice(r *Replicator) *patchableReplicationDevice {
-	rd := newReplicationDevice(&ring.Device{}, 0, r)
+	driveRoot, _ := ioutil.TempDir("", "")
+	defer os.RemoveAll(driveRoot)
+	var se ObjectEngine
+	se = &SwiftEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
+	rd, _ := newReplicationDevice(&ring.Device{}, 0, r, se)
 	prd := &patchableReplicationDevice{replicationDevice: rd}
 	rd.i = prd
 	return prd
@@ -379,7 +383,12 @@ func TestListObjFiles(t *testing.T) {
 	confLoader := srv.NewTestConfigLoader(testRing)
 	repl, _, err := newTestReplicator(confLoader)
 	require.Nil(t, err)
-	rd := newReplicationDevice(&ring.Device{}, 0, repl)
+	driveRoot, _ := ioutil.TempDir("", "")
+	defer os.RemoveAll(driveRoot)
+	var se ObjectEngine
+	se = &SwiftEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
+	rd, err := newReplicationDevice(&ring.Device{}, 0, repl, se)
+	require.Nil(t, err)
 	dir, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(dir)
@@ -431,7 +440,12 @@ func TestCancelListObjFiles(t *testing.T) {
 	confLoader := srv.NewTestConfigLoader(testRing)
 	repl, _, err := newTestReplicator(confLoader)
 	require.Nil(t, err)
-	rd := newReplicationDevice(&ring.Device{}, 0, repl)
+	driveRoot, _ := ioutil.TempDir("", "")
+	defer os.RemoveAll(driveRoot)
+	var se ObjectEngine
+	se = &SwiftEngine{driveRoot: driveRoot, hashPathPrefix: "prefix", hashPathSuffix: "suffix"}
+	rd, err := newReplicationDevice(&ring.Device{}, 0, repl, se)
+	require.Nil(t, err)
 	dir, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(dir)
@@ -890,10 +904,10 @@ func TestVerifyDevices(t *testing.T) {
 		newReplicationDevice = oldNewReplicationDevice
 	}()
 	newrdcalled := false
-	newReplicationDevice = func(dev *ring.Device, policy int, r *Replicator) *replicationDevice {
+	newReplicationDevice = func(dev *ring.Device, policy int, r *Replicator, se ObjectEngine) (*replicationDevice, error) {
 		newrdcalled = true
 		require.Equal(t, "sda", dev.Device)
-		return oldNewReplicationDevice(dev, policy, r)
+		return oldNewReplicationDevice(dev, policy, r, se)
 	}
 	canceled := false
 	replicator, _, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")

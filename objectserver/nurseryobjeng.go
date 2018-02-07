@@ -605,6 +605,10 @@ func (f *nurseryEngine) GetNurseryObjects(device string, c chan ObjectStabilizer
 	}
 }
 
+func (f *nurseryEngine) GetObjFilesForPartitionDir(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool, logger srv.LowLevelLogger) {
+	listObjFilesWithSwiftDirStructure(objChan, cancel, partdir, needSuffix, logger)
+}
+
 // nurseryEngineConstructor creates a nurseryEngine given the object server configs.
 func nurseryEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.FlagSet) (ObjectEngine, error) {
 	driveRoot := config.GetDefault("app:object-server", "devices", "/srv/node")
