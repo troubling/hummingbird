@@ -33,6 +33,7 @@ import (
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/pickle"
+	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/middleware"
 	"github.com/uber-go/tally"
@@ -95,13 +96,8 @@ func (r *Replicator) priorityRepHandler(w http.ResponseWriter, req *http.Request
 			return
 		}
 	}
-	if !fs.Exists(filepath.Join(r.deviceRoot, pri.FromDevice.Device, "objects", strconv.FormatUint(pri.Partition, 10))) {
-		w.WriteHeader(404)
-		return
-	}
-	if r.priorityReplicate(pri, time.Hour) {
-		w.WriteHeader(200)
-	} else {
+	if err = r.priorityReplicate(w, pri); err != nil {
+		r.logger.Error("priorityreplicatet error", zap.Error(err))
 		w.WriteHeader(500)
 	}
 }
@@ -119,6 +115,31 @@ func (r *Replicator) stabilizeHandler(w http.ResponseWriter, req *http.Request) 
 		w.WriteHeader(500)
 		return
 	}
+	oring, ok := r.objectRings[policy]
+	if !ok {
+		r.logger.Error("ring not found for policy")
+		w.WriteHeader(500)
+		return
+	}
+	ringDevices, err := oring.LocalDevices(r.port)
+	if err != nil {
+		r.logger.Error("Error getting local devices from ring", zap.Error(err))
+		w.WriteHeader(500)
+		return
+	}
+	var rdev *ring.Device
+	for _, dev := range ringDevices {
+		if dev.Device == vars["device"] {
+			rdev = dev
+			break
+		}
+	}
+	if rdev == nil {
+		r.logger.Error("could not find device in ring", zap.String("device", vars["device"]))
+		w.WriteHeader(500)
+		return
+	}
+
 	o, err := engine.New(vars, false, &r.asyncWG)
 	if err != nil {
 		r.logger.Error("could not build stabilizeHandler Object", zap.Error(err))
@@ -126,14 +147,16 @@ func (r *Replicator) stabilizeHandler(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 	key := deviceKeyId(vars["device"], policy)
-	if nrd, ok := r.nurseryDevices[key]; ok {
+	if rd, ok := r.runningDevices[key]; ok {
 		if os, ok := o.(ObjectStabilizer); ok {
-			if err = os.Stabilize(nrd.oring, nrd.dev, nrd.policy); err == nil {
-				nrd.updateStat("objectsPeerStabilized", 1)
+			if err = os.Stabilize(oring, rdev, policy); err == nil {
+				rd.UpdateStat("objectsPeerStabilized", 1)
 			}
 		}
+		w.WriteHeader(200)
+		return
 	}
-	w.WriteHeader(200)
+	w.WriteHeader(404)
 }
 
 func (r *Replicator) objReplicateHandler(writer http.ResponseWriter, request *http.Request) {

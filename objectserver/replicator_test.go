@@ -130,7 +130,7 @@ type mockReplicationDevice struct {
 	_ReplicateLoop     func()
 	_Key               func() string
 	_Cancel            func()
-	_PriorityReplicate func(pri PriorityRepJob, timeout time.Duration) bool
+	_PriorityReplicate func(w http.ResponseWriter, pri PriorityRepJob) error
 }
 
 func (d *mockReplicationDevice) Replicate() {
@@ -154,11 +154,14 @@ func (d *mockReplicationDevice) Cancel() {
 		d._Cancel()
 	}
 }
-func (d *mockReplicationDevice) PriorityReplicate(pri PriorityRepJob, timeout time.Duration) bool {
+func (d *mockReplicationDevice) UpdateStat(s string, v int64) {
+}
+
+func (d *mockReplicationDevice) PriorityReplicate(w http.ResponseWriter, pri PriorityRepJob) error {
 	if d._PriorityReplicate != nil {
-		return d._PriorityReplicate(pri, timeout)
+		return d._PriorityReplicate(w, pri)
 	}
-	return true
+	return nil
 }
 
 type patchableReplicationDevice struct {
@@ -229,8 +232,14 @@ func (d *patchableReplicationDevice) cleanTemp() {
 	d.replicationDevice.cleanTemp()
 }
 
-func newPatchableReplicationDevice(r *Replicator) *patchableReplicationDevice {
-	rd := newReplicationDevice(&ring.Device{}, 0, r)
+func newPatchableReplicationDevice(rng ring.Ring, r *Replicator) *patchableReplicationDevice {
+	rd := &replicationDevice{
+		r:      r,
+		dev:    &ring.Device{},
+		policy: 0,
+		cancel: make(chan struct{}),
+		priRep: make(chan PriorityRepJob),
+	}
 	prd := &patchableReplicationDevice{replicationDevice: rd}
 	rd.i = prd
 	return prd
@@ -379,7 +388,14 @@ func TestListObjFiles(t *testing.T) {
 	confLoader := srv.NewTestConfigLoader(testRing)
 	repl, _, err := newTestReplicator(confLoader)
 	require.Nil(t, err)
-	rd := newReplicationDevice(&ring.Device{}, 0, repl)
+	rd := &replicationDevice{
+		r:      repl,
+		dev:    &ring.Device{},
+		policy: 0,
+		cancel: make(chan struct{}),
+		priRep: make(chan PriorityRepJob),
+	}
+	rd.i = rd
 	dir, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(dir)
@@ -431,7 +447,14 @@ func TestCancelListObjFiles(t *testing.T) {
 	confLoader := srv.NewTestConfigLoader(testRing)
 	repl, _, err := newTestReplicator(confLoader)
 	require.Nil(t, err)
-	rd := newReplicationDevice(&ring.Device{}, 0, repl)
+	rd := &replicationDevice{
+		r:      repl,
+		dev:    &ring.Device{},
+		policy: 0,
+		cancel: make(chan struct{}),
+		priRep: make(chan PriorityRepJob),
+	}
+	rd.i = rd
 	dir, err := ioutil.TempDir("", "")
 	require.Nil(t, err)
 	defer os.RemoveAll(dir)
@@ -495,7 +518,7 @@ func TestSyncFile(t *testing.T) {
 		"name":           "/a/c/o",
 	})
 	dataReceived := 0
-	rd := newPatchableReplicationDevice(replicator)
+	rd := newPatchableReplicationDevice(testRing, replicator)
 	rc := &mockRepConn{
 		_RecvMessage: func(v interface{}, sfrq *SyncFileRequest) error {
 			if sfr, ok := v.(*SyncFileResponse); ok {
@@ -541,7 +564,7 @@ func TestSyncFileExists(t *testing.T) {
 		"name":           "/a/c/o",
 	})
 	dataReceived := 0
-	rd := newPatchableReplicationDevice(replicator)
+	rd := newPatchableReplicationDevice(testRing, replicator)
 	rc := &mockRepConn{
 		_RecvMessage: func(v interface{}, sfrq *SyncFileRequest) error {
 			if sfr, ok := v.(*SyncFileResponse); ok {
@@ -584,7 +607,7 @@ func TestSyncFileNewerExists(t *testing.T) {
 		"Content-Length": "9",
 		"name":           "/a/c/o",
 	})
-	rd := newPatchableReplicationDevice(replicator)
+	rd := newPatchableReplicationDevice(testRing, replicator)
 	rc := &mockRepConn{
 		_RecvMessage: func(v interface{}, sfrq *SyncFileRequest) error {
 			if sfr, ok := v.(*SyncFileResponse); ok {
@@ -616,7 +639,7 @@ func TestReplicateUsingHashes(t *testing.T) {
 	remoteDev := &ring.Device{Device: "sda"}
 	filename := filepath.Join(objPath, partition, "aaa", "00000000000000000000000000000000", "1472940619.68559")
 	syncFileCalled := false
-	rd := newPatchableReplicationDevice(replicator)
+	rd := newPatchableReplicationDevice(testRing, replicator)
 	rd._beginReplication = func(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse, headers map[string]string) {
 		fakeHashes := make(map[string]string)
 		fakeHashes["aaa"] = "hey"
@@ -653,7 +676,7 @@ func TestReplicateAll(t *testing.T) {
 	require.Nil(t, err)
 	defer file.Close()
 	syncFileCalled := false
-	rd := newPatchableReplicationDevice(replicator)
+	rd := newPatchableReplicationDevice(testRing, replicator)
 	rd._beginReplication = func(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse, headers map[string]string) {
 		rChan <- beginReplicationResponse{dev: remoteDev, hashes: make(map[string]string), conn: &mockRepConn{}}
 	}
@@ -680,7 +703,7 @@ func TestCleanTemp(t *testing.T) {
 	confLoader := srv.NewTestConfigLoader(testRing)
 	replicator, _, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no", "devices", deviceRoot)
 	require.Nil(t, err)
-	rd := newPatchableReplicationDevice(replicator)
+	rd := newPatchableReplicationDevice(testRing, replicator)
 	rd.dev.Device = "sda"
 	tmpDir := filepath.Join(deviceRoot, "sda", "tmp")
 	require.Nil(t, os.MkdirAll(tmpDir, 0777))
@@ -702,7 +725,7 @@ func TestReplicate(t *testing.T) {
 	confLoader := srv.NewTestConfigLoader(testRing)
 	replicator, _, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
-	rd := newPatchableReplicationDevice(replicator)
+	rd := newPatchableReplicationDevice(testRing, replicator)
 	rd._listPartitions = func() ([]string, []string, error) {
 		return []string{"1", "2", "3"}, []string{"2"}, nil
 	}
@@ -719,7 +742,7 @@ func TestCancelReplicate(t *testing.T) {
 	confLoader := srv.NewTestConfigLoader(testRing)
 	replicator, _, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
-	rd := newPatchableReplicationDevice(replicator)
+	rd := newPatchableReplicationDevice(testRing, replicator)
 	rd._listPartitions = func() ([]string, []string, error) {
 		return []string{"1", "2", "3"}, nil, nil
 	}
@@ -748,7 +771,7 @@ func TestListPartitions(t *testing.T) {
 	require.Nil(t, os.MkdirAll(filepath.Join(objPath, "X"), 0777))
 	require.Nil(t, os.MkdirAll(filepath.Join(objPath, "Y"), 0777))
 	require.Nil(t, os.MkdirAll(filepath.Join(objPath, "Z"), 0777))
-	rd := newPatchableReplicationDevice(replicator)
+	rd := newPatchableReplicationDevice(testRing, replicator)
 	rd.dev = &ring.Device{Device: "sda"}
 	partitions, _, err := rd.listPartitions()
 	require.Nil(t, err)
@@ -770,7 +793,7 @@ func TestReplicatePartition(t *testing.T) {
 	replicator, _, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no", "devices", deviceRoot)
 	require.Nil(t, err)
 	require.Nil(t, err)
-	rd := newPatchableReplicationDevice(replicator)
+	rd := newPatchableReplicationDevice(testRing, replicator)
 	replicateUsingHashesCalled := false
 	replicateAllCalled := false
 	rd._replicateUsingHashes = func(rjob replJob, moreNodes ring.MoreNodes) {
@@ -800,7 +823,7 @@ func TestProcessPriorityJobs(t *testing.T) {
 	confLoader := srv.NewTestConfigLoader(testRing)
 	replicator, _, err := newTestReplicator(confLoader)
 	require.Nil(t, err)
-	rd := newPatchableReplicationDevice(replicator)
+	rd := newPatchableReplicationDevice(testRing, replicator)
 	rd.priRep = make(chan PriorityRepJob, 1)
 	rd.priRep <- PriorityRepJob{
 		Partition:  1,
@@ -885,16 +908,6 @@ func TestVerifyDevices(t *testing.T) {
 	confLoader.GetPoliciesFunc = func() (conf.PolicyList, error) {
 		return conf.PolicyList(map[int]*conf.Policy{0: {Index: 0, Type: "replication", Name: "gold", Aliases: []string{}, Default: true, Deprecated: false, Config: map[string]string{"policy_type": "replication", "default": "yes", "name": "gold"}}}), nil
 	}
-	oldNewReplicationDevice := newReplicationDevice
-	defer func() {
-		newReplicationDevice = oldNewReplicationDevice
-	}()
-	newrdcalled := false
-	newReplicationDevice = func(dev *ring.Device, policy int, r *Replicator) *replicationDevice {
-		newrdcalled = true
-		require.Equal(t, "sda", dev.Device)
-		return oldNewReplicationDevice(dev, policy, r)
-	}
 	canceled := false
 	replicator, _, err := newTestReplicator(confLoader, "bind_port", "1234", "check_mounts", "no")
 	require.Nil(t, err)
@@ -905,8 +918,10 @@ func TestVerifyDevices(t *testing.T) {
 			},
 		},
 	}
+	require.Equal(t, 0, len(replicator.stats["object-replicator"]))
 	replicator.verifyRunningDevices()
-	require.True(t, newrdcalled)
+	_, ok := replicator.stats["object-replicator"]["sda"]
+	require.True(t, ok)
 	require.Equal(t, 1, len(replicator.runningDevices))
 	require.True(t, canceled)
 }
@@ -1006,18 +1021,18 @@ func TestPriorityReplicate(t *testing.T) {
 	priorityReplicateCalled := false
 	replicator.runningDevices = map[string]ReplicationDevice{
 		"sda": &mockReplicationDevice{
-			_PriorityReplicate: func(pri PriorityRepJob, timeout time.Duration) bool {
+			_PriorityReplicate: func(w http.ResponseWriter, pri PriorityRepJob) error {
 				priorityReplicateCalled = true
-				return true
+				return nil
 			},
 		},
 	}
-	replicator.priorityReplicate(PriorityRepJob{
+	replicator.priorityReplicate(&httptest.ResponseRecorder{}, PriorityRepJob{
 		Partition:  1,
 		FromDevice: &ring.Device{Device: "sda"},
 		ToDevices:  []*ring.Device{},
 		Policy:     0,
-	}, time.Minute)
+	})
 	require.True(t, priorityReplicateCalled)
 }
 
@@ -1276,7 +1291,7 @@ func TestAllDifferentRegionsSync(t *testing.T) {
 		"name":           "/a/c/o",
 	})
 	dataReceived := 0
-	rd := newPatchableReplicationDevice(replicator)
+	rd := newPatchableReplicationDevice(testRing, replicator)
 	rc := &mockRepConn{
 		_RecvMessage: func(v interface{}, sfrq *SyncFileRequest) error {
 			if sfr, ok := v.(*SyncFileResponse); ok {
@@ -1325,7 +1340,7 @@ func TestAllSameRegionsSync(t *testing.T) {
 		"name":           "/a/c/o",
 	})
 	dataReceived := 0
-	rd := newPatchableReplicationDevice(replicator)
+	rd := newPatchableReplicationDevice(testRing, replicator)
 	rc := &mockRepConn{
 		_RecvMessage: func(v interface{}, sfrq *SyncFileRequest) error {
 			if sfr, ok := v.(*SyncFileResponse); ok {
@@ -1374,7 +1389,7 @@ func TestHalfSameRegionsSync(t *testing.T) {
 		"name":           "/a/c/o",
 	})
 	dataReceived := 0
-	rd := newPatchableReplicationDevice(replicator)
+	rd := newPatchableReplicationDevice(testRing, replicator)
 	rc := &mockRepConn{
 		_RecvMessage: func(v interface{}, sfrq *SyncFileRequest) error {
 			sfr, ok := v.(*SyncFileResponse)
@@ -1431,7 +1446,7 @@ func TestHalfSameRegionsSyncHandoffNotExists(t *testing.T) {
 	})
 	dataReceived := 0
 	gotACheck := false
-	rd := newPatchableReplicationDevice(replicator)
+	rd := newPatchableReplicationDevice(testRing, replicator)
 	rc := &mockRepConn{
 		_RecvMessage: func(v interface{}, sfrq *SyncFileRequest) error {
 			sfr, ok := v.(*SyncFileResponse)
@@ -1492,7 +1507,7 @@ func TestHalfSameRegionsSyncHandoffYesExists(t *testing.T) {
 	})
 	dataReceived := 0
 	gotACheck := false
-	rd := newPatchableReplicationDevice(replicator)
+	rd := newPatchableReplicationDevice(testRing, replicator)
 	rc := &mockRepConn{
 		_RecvMessage: func(v interface{}, sfrq *SyncFileRequest) error {
 			sfr, ok := v.(*SyncFileResponse)

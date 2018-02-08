@@ -130,6 +130,10 @@ func (idbe *indexDBEngine) New(vars map[string]string, needData bool, asyncWG *s
 	}, nil
 }
 
+func (idbe *indexDBEngine) GetReplicationDevice(oring ring.Ring, dev *ring.Device, policy int, r *objectserver.Replicator) (objectserver.ReplicationDevice, error) {
+	return nil, fmt.Errorf("not running replication here yet")
+}
+
 var _ objectserver.Object = &indexDBObject{}
 
 type indexDBObject struct {
