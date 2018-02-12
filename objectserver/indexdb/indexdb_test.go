@@ -45,13 +45,14 @@ func TestIndexDB_Commit(t *testing.T) {
 	ot := newTestIndexDB(t, pth)
 	defer ot.Close()
 	hsh := md5hash("object1")
+	shardHash := "nonsense"
 	timestamp := time.Now().UnixNano()
 	body := "just testing"
 	// Initial commit.
 	f, err := ot.TempFile(hsh, 0, timestamp, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true))
+	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true, shardHash))
 	pth, err = ot.wholeObjectPath(hsh, 0, timestamp, true)
 	errnil(t, err)
 	fi, err := os.Stat(pth)
@@ -59,6 +60,12 @@ func TestIndexDB_Commit(t *testing.T) {
 	if fi.Size() != int64(len(body)) {
 		t.Fatal(fi.Size(), len(body))
 	}
+	item, err := ot.Lookup(hsh, 0, false)
+	errnil(t, err)
+	if item.ShardHash != shardHash {
+		t.Fatal(item.ShardHash, shardHash)
+	}
+
 	// Same commit should return (nil, nil).
 	f, err = ot.TempFile(hsh, 0, timestamp, int64(len(body)), true)
 	if f != nil || err != nil {
@@ -70,13 +77,19 @@ func TestIndexDB_Commit(t *testing.T) {
 	f, err = ot.TempFile(hsh, 0, timestamp+1, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true))
+	// FIXME? This *WILL* overwrite the shardHash, but not the object data
+	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true, shardHash))
 	pth, err = ot.wholeObjectPath(hsh, 0, timestamp, true)
 	errnil(t, err)
 	fi, err = os.Stat(pth)
 	errnil(t, err)
 	if fi.Size() != int64(len(body)) {
 		t.Fatal(fi.Size(), len(body))
+	}
+	item, err = ot.Lookup(hsh, 0, false)
+	errnil(t, err)
+	if item.ShardHash != shardHash {
+		t.Fatal(item.ShardHash, shardHash)
 	}
 	// Attempting an older commit should return (nil, nil).
 	f, err = ot.TempFile(hsh, 0, timestamp-1, int64(len(body)), true)
@@ -89,7 +102,7 @@ func TestIndexDB_Commit(t *testing.T) {
 	f, err = ot.TempFile(hsh, 0, timestamp+1, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh, 0, timestamp-1, false, "", nil, true))
+	errnil(t, ot.Commit(f, hsh, 0, timestamp-1, false, "", nil, true, ""))
 	pth, err = ot.wholeObjectPath(hsh, 0, timestamp-1, true)
 	fi, err = os.Stat(pth)
 	if !os.IsNotExist(err) {
@@ -103,17 +116,28 @@ func TestIndexDB_Commit(t *testing.T) {
 	if fi.Size() != int64(len(body)) {
 		t.Fatal(fi.Size(), len(body))
 	}
+	item, err = ot.Lookup(hsh, 0, false)
+	errnil(t, err)
+	if item.ShardHash != shardHash {
+		t.Fatal(item.ShardHash, shardHash)
+	}
 	// Doing a newer commit should discard the original.
 	f, err = ot.TempFile(hsh, 0, timestamp+1, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh, 0, timestamp+1, false, "", nil, true))
+	newShardHash := "morenonsense"
+	errnil(t, ot.Commit(f, hsh, 0, timestamp+1, false, "", nil, true, newShardHash))
 	pth, err = ot.wholeObjectPath(hsh, 0, timestamp+1, true)
 	errnil(t, err)
 	fi, err = os.Stat(pth)
 	errnil(t, err)
 	if fi.Size() != int64(len(body)) {
 		t.Fatal(fi.Size(), len(body))
+	}
+	item, err = ot.Lookup(hsh, 0, false)
+	errnil(t, err)
+	if item.ShardHash != newShardHash {
+		t.Fatal(item.ShardHash, newShardHash)
 	}
 	// Original commit should be gone.
 	pth, err = ot.wholeObjectPath(hsh, 0, timestamp, true)
@@ -130,13 +154,14 @@ func TestIndexDB_Lookup(t *testing.T) {
 	ot := newTestIndexDB(t, pth)
 	defer ot.Close()
 	hsh := md5hash("object1")
+	shardHash := "nonsense"
 	timestamp := time.Now().UnixNano()
 	body := "just testing"
 	// Commit file.
 	f, err := ot.TempFile(hsh, 0, timestamp, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true))
+	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true, shardHash))
 	// Do the lookup.
 	//lookedupTimestamp, deletion, metahash, metadata, path, err := ot.Lookup(hsh, 0)
 	i, err := ot.Lookup(hsh, 0, false)
@@ -154,6 +179,9 @@ func TestIndexDB_Lookup(t *testing.T) {
 	}
 	if i.Path == "" {
 		t.Fatal(i.Path)
+	}
+	if i.ShardHash != shardHash {
+		t.Fatal(i.ShardHash, shardHash)
 	}
 	// Check the file.
 	b, err := ioutil.ReadFile(i.Path)
@@ -174,20 +202,22 @@ func TestIndexDB_Lookup_withOverwrite(t *testing.T) {
 	ot := newTestIndexDB(t, pth)
 	defer ot.Close()
 	hsh := md5hash("object1")
+	shardHash := "nonsense"
 	timestamp := time.Now().UnixNano()
 	body := "just testing"
 	// Commit file.
 	f, err := ot.TempFile(hsh, 0, timestamp, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true))
+	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true, shardHash))
 	// Commit newer file.
 	timestamp = time.Now().UnixNano()
 	body = "just testing newer"
+	shardHash = "newer nonsense"
 	f, err = ot.TempFile(hsh, 0, timestamp, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true))
+	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true, shardHash))
 	// Do the lookup.
 	//lookedupTimestamp, deletion, metahash, metadata, path, err := ot.Lookup(hsh, 0)
 	i, err := ot.Lookup(hsh, 0, false)
@@ -205,6 +235,9 @@ func TestIndexDB_Lookup_withOverwrite(t *testing.T) {
 	}
 	if i.Path == "" {
 		t.Fatal(i.Path)
+	}
+	if i.ShardHash != shardHash {
+		t.Fatal(i.ShardHash, shardHash)
 	}
 	// Check the file.
 	b, err := ioutil.ReadFile(i.Path)
@@ -225,21 +258,23 @@ func TestIndexDB_Lookup_withUnderwrite(t *testing.T) {
 	ot := newTestIndexDB(t, pth)
 	defer ot.Close()
 	hsh := md5hash("object1")
+	shardHash := "nonsense"
 	timestamp := time.Now().UnixNano()
 	body := "just testing"
 	// Commit file.
 	f, err := ot.TempFile(hsh, 0, timestamp, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true))
+	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true, shardHash))
 	// Commit older file (should be discarded).
 	timestampOlder := timestamp - 1
 	bodyOlder := "just testing older"
+	shardHashOlder := "older nonsense"
 	// Fake newer commit, but we'll really commit with timestampOlder.
 	f, err = ot.TempFile(hsh, 0, timestamp+1, int64(len(bodyOlder)), true)
 	errnil(t, err)
 	f.Write([]byte(bodyOlder))
-	errnil(t, ot.Commit(f, hsh, 0, timestampOlder, false, "", nil, true))
+	errnil(t, ot.Commit(f, hsh, 0, timestampOlder, false, "", nil, true, shardHashOlder))
 	// Do the lookup.
 	//lookedupTimestamp, deletion, metahash, metadata, path, err := ot.Lookup(hsh, 0)
 	i, err := ot.Lookup(hsh, 0, false)
@@ -257,6 +292,9 @@ func TestIndexDB_Lookup_withUnderwrite(t *testing.T) {
 	}
 	if i.Path == "" {
 		t.Fatal(i.Path)
+	}
+	if i.ShardHash != shardHash {
+		t.Fatal(i.ShardHash, shardHash)
 	}
 	// Check the file.
 	b, err := ioutil.ReadFile(i.Path)
@@ -300,7 +338,7 @@ func TestIndexDB_List(t *testing.T) {
 		f, err := ot.TempFile(hsh, 0, timestamp, int64(len(body)), true)
 		errnil(t, err)
 		f.Write([]byte(body))
-		errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true))
+		errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true, ""))
 	}
 	listing, err := ot.List(0)
 	if err != nil {

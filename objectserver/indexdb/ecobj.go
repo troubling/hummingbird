@@ -164,7 +164,7 @@ func (o *ecObject) commit(metadata map[string]string, deletion bool) error {
 	if err != nil {
 		return err
 	}
-	return o.idb.Commit(o.afw, o.Hash, 0, timestamp, deletion, MetadataHash(metadata), metabytes, true)
+	return o.idb.Commit(o.afw, o.Hash, 0, timestamp, deletion, MetadataHash(metadata), metabytes, true, "")
 }
 
 func (o *ecObject) Commit(metadata map[string]string) error {

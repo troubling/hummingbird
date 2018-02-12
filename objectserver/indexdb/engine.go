@@ -182,13 +182,24 @@ func (f *ecEngine) ecFragPutHandler(writer http.ResponseWriter, request *http.Re
 			}
 		}
 	}
-	io.Copy(atm, request.Body)
+
+	hash := md5.New()
+	_, err = common.Copy(request.Body, atm, hash)
+	if err == io.ErrUnexpectedEOF {
+		srv.StandardResponse(writer, 499)
+		return
+	} else if err != nil {
+		srv.GetLogger(request).Error("Error writing to file", zap.Error(err))
+		srv.StandardResponse(writer, http.StatusInternalServerError)
+		return
+	}
+	shardHash := hex.EncodeToString(hash.Sum(nil))
 	metabytes, err := json.Marshal(metadata)
 	if err != nil {
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
-	if err := idb.Commit(atm, vars["hash"], fragIndex, timestamp, false, MetadataHash(metadata), metabytes, false); err != nil {
+	if err := idb.Commit(atm, vars["hash"], fragIndex, timestamp, false, MetadataHash(metadata), metabytes, false, shardHash); err != nil {
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 	} else {
 		srv.StandardResponse(writer, http.StatusCreated)
