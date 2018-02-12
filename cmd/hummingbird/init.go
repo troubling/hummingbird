@@ -60,6 +60,7 @@ func initCommand(args []string) error {
 	print(`#!/bin/bash`)
 	print(`set -e`)
 	print(`set -x`)
+	print(`sudo apt update`)
 	print(``)
 
 	var prefix string
