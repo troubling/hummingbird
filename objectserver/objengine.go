@@ -58,10 +58,11 @@ type Object interface {
 	Repr() string
 }
 
-type ObjectStabilizer interface {
+type ObjectStabilizer interface { // TODO: change this name
 	Object
 	// Stabilize object- move to stable location / erasure code / do nothing / etc
 	Stabilize(ring.Ring, *ring.Device, int) error
+	Replicate(PriorityRepJob) error
 }
 
 // ObjectEngine is the type you have to give hummingbird to create a new object engine.
@@ -70,9 +71,16 @@ type ObjectEngine interface {
 	New(vars map[string]string, needData bool, asyncWG *sync.WaitGroup) (Object, error)
 }
 
-type NurseryObjectEngine interface {
+type NurseryObjectEngine interface { // TODO change this name- StatefulObjectEngine? (except that makes me want to barf)
 	ObjectEngine
 	GetNurseryObjects(device string, c chan ObjectStabilizer, cancel chan struct{})
+	GetStabilizedObjects(device string, partition uint64, c chan ObjectStabilizer, cancel chan struct{})
+}
+
+type SwiftStyleDirObjectEngine interface {
+	ObjectEngine
+	// used by replication daemon that constantly scans local disk fs to verify all its partitions are properly replicated
+	GetObjFilesForPartitionDir(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool, logger srv.LowLevelLogger)
 }
 
 type PolicyHandlerRegistrator interface {

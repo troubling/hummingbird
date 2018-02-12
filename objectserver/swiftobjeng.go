@@ -20,15 +20,19 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 
+	"go.uber.org/zap"
+
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/fs"
+	"github.com/troubling/hummingbird/common/srv"
 )
 
 // SwiftObject implements an Object that is compatible with Swift's object server.
@@ -176,6 +180,58 @@ func (o *SwiftObject) Close() error {
 	return nil
 }
 
+func listObjFilesWithSwiftDirStructure(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool, logger srv.LowLevelLogger) {
+	defer close(objChan)
+	suffixDirs, err := filepath.Glob(filepath.Join(partdir, "[a-f0-9][a-f0-9][a-f0-9]"))
+	if err != nil {
+		logger.Error("[listObjFiles]", zap.Error(err))
+		return
+	}
+	if len(suffixDirs) == 0 {
+		os.Remove(filepath.Join(partdir, ".lock"))
+		os.Remove(filepath.Join(partdir, "hashes.pkl"))
+		os.Remove(filepath.Join(partdir, "hashes.invalid"))
+		os.Remove(partdir)
+		return
+	}
+	for i := len(suffixDirs) - 1; i > 0; i-- { // shuffle suffixDirs list
+		j := rand.Intn(i + 1)
+		suffixDirs[j], suffixDirs[i] = suffixDirs[i], suffixDirs[j]
+	}
+	for _, suffDir := range suffixDirs {
+		if !needSuffix(filepath.Base(suffDir)) {
+			continue
+		}
+		hashDirs, err := filepath.Glob(filepath.Join(suffDir, "????????????????????????????????"))
+		if err != nil {
+			logger.Error("[listObjFiles]", zap.Error(err))
+			return
+		}
+		if len(hashDirs) == 0 {
+			os.Remove(suffDir)
+			continue
+		}
+		for _, hashDir := range hashDirs {
+			fileList, err := filepath.Glob(filepath.Join(hashDir, "*.[tdm]*"))
+			if len(fileList) == 0 {
+				os.Remove(hashDir)
+				continue
+			}
+			if err != nil {
+				logger.Error("[listObjFiles]", zap.Error(err))
+				return
+			}
+			for _, objFile := range fileList {
+				select {
+				case objChan <- objFile:
+				case <-cancel:
+					return
+				}
+			}
+		}
+	}
+}
+
 type SwiftEngine struct {
 	driveRoot      string
 	hashPathPrefix string
@@ -227,6 +283,10 @@ func (f *SwiftEngine) New(vars map[string]string, needData bool, asyncWG *sync.W
 		sor.metadata, _ = ObjectMetadata(sor.dataFile, sor.metaFile) // ignore errors if deleted
 	}
 	return sor, nil
+}
+
+func (f *SwiftEngine) GetObjFilesForPartitionDir(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool, logger srv.LowLevelLogger) {
+	listObjFilesWithSwiftDirStructure(objChan, cancel, partdir, needSuffix, logger)
 }
 
 var replicationDone = fmt.Errorf("Replication done")

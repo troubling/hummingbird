@@ -226,6 +226,43 @@ func (f *ecEngine) RegisterHandlers(addRoute func(method, path string, handler h
 	addRoute("DELETE", "/ec-frag/:device/:hash/:index", f.ecFragDeleteHandler)
 }
 
+func (f *ecEngine) GetStabilizedObjects(device string, partition uint64, c chan objectserver.ObjectStabilizer, cancel chan struct{}) {
+	defer close(c)
+	idb, err := f.getDB(device)
+	if err != nil {
+		return
+	}
+	items, err := idb.List(int(partition))
+	// TODO: so right now this returns nursery and stable objects. should i weed
+	// out the nursery- we;d want to replicate those too right?
+	if err != nil {
+		return
+	}
+	for _, item := range items {
+		obj := &ecObject{
+			IndexDBItem: *item,
+			idb:         idb,
+			dataFrags:   f.dataFrags,
+			parityFrags: f.parityFrags,
+			chunkSize:   f.chunkSize,
+			reserve:     f.reserve,
+			ring:        f.ring,
+			logger:      f.logger,
+			policy:      f.policy,
+			client:      f.client,
+			metadata:    map[string]string{},
+		}
+		if err = json.Unmarshal(item.Metabytes, &obj.metadata); err != nil {
+			continue
+		}
+		select {
+		case c <- obj:
+		case <-cancel:
+			return
+		}
+	}
+}
+
 func (f *ecEngine) GetNurseryObjects(device string, c chan objectserver.ObjectStabilizer, cancel chan struct{}) {
 	defer close(c)
 	idb, err := f.getDB(device)

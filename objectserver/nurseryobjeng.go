@@ -336,6 +336,11 @@ func (o *nurseryObject) notifyPeers(ring ring.Ring, dev *ring.Device, policy int
 	return nil
 }
 
+func (o *nurseryObject) Replicate(prirep PriorityRepJob) error {
+	fmt.Println("replicate called on nurseryObject: ", prirep)
+	return nil
+}
+
 func (o *nurseryObject) Stabilize(ring ring.Ring, dev *ring.Device, policy int) error {
 	if o.stabilized {
 		return nil
@@ -525,6 +530,82 @@ func (f *nurseryEngine) New(vars map[string]string, needData bool, asyncWG *sync
 	return sor, nil
 }
 
+func (f *nurseryEngine) GetStabilizedObjects(device string, partition uint64, c chan ObjectStabilizer, cancel chan struct{}) {
+	defer close(c)
+	//TODO: i'm going to change nurseryObjects to use Index.db for
+	// stabilized
+	objDirPath := filepath.Join(f.driveRoot, device,
+		fmt.Sprintf("stable-%s", PolicyDir(f.policy)))
+	partitions, err := fs.ReadDirNames(objDirPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			f.logger.Error("Error reading objects dir", zap.String("objDirPath", objDirPath), zap.Error(err))
+		}
+		return
+	}
+	for _, partition := range partitions {
+		partitionDir := filepath.Join(objDirPath, partition)
+		if err != nil {
+			f.logger.Error("Error reading partition dir ", zap.String("worker", "nursery"), zap.String("partitionDir", partitionDir), zap.Error(err))
+			continue
+		}
+		hashes, err := fs.ReadDirNames(partitionDir)
+		if err != nil {
+			f.logger.Error("Error reading partition dir", zap.String("worker", "nursery"), zap.String("partitionDir", partitionDir), zap.Error(err))
+			continue
+		}
+		for _, hash := range hashes {
+			_, hexErr := hex.DecodeString(hash)
+			hashDir := filepath.Join(partitionDir, hash)
+			if len(hash) != 32 || hexErr != nil {
+				f.logger.Error("Skipping invalid file in partition", zap.String("worker", "nursery"), zap.String("hashDir", hashDir))
+				continue
+			}
+			dataFile, metaFile := ObjectFiles(hashDir)
+			if dataFile == "" {
+				if _, err := auditHash(hashDir, true); err != nil {
+					f.logger.Error("Failed getstabilized and is being quarantined", zap.String("worker", "nursery"),
+						zap.String("hashDir", hashDir),
+						zap.Error(err))
+					QuarantineHash(hashDir)
+					InvalidateHash(hashDir)
+				}
+				continue
+			}
+			metadata, err := ObjectMetadata(dataFile, metaFile)
+			ns := strings.SplitN(metadata["name"], "/", 4)
+			if len(ns) != 4 {
+				f.logger.Error("invalid metadata name", zap.String("name", metadata["name"]))
+			}
+			// TODO make vars a struct- this is lame
+			vars := map[string]string{
+				"nurseryHashDir": hashDir,
+				"account":        ns[1], "container": ns[2],
+				"obj": ns[3], "partition": partition,
+				"device": device}
+
+			p, err := f.New(vars, true, nil)
+			//TODO: we need a new "New" the current one tries to figure where the
+			// object is based on the path. but we already know where the object is
+			// because we just listdired it. the "nurseryHashDir" above is hack
+			// to tell it where to look. there should just be a NewFromDisk func
+			// or something that will build an object out of a dirpath.
+			if err != nil {
+				f.logger.Error("could not build object", zap.Error(err))
+			}
+			if os, ok := p.(ObjectStabilizer); ok {
+				select {
+				case c <- os:
+				case <-cancel:
+					return
+				}
+			} else {
+				f.logger.Error("getstablized could not cast to ObjectStabilizer", zap.String("object", p.Repr()))
+			}
+		}
+	}
+}
+
 func (f *nurseryEngine) GetNurseryObjects(device string, c chan ObjectStabilizer, cancel chan struct{}) {
 	defer close(c)
 	objDirPath := filepath.Join(f.driveRoot, device, PolicyDir(f.policy))
@@ -603,6 +684,10 @@ func (f *nurseryEngine) GetNurseryObjects(device string, c chan ObjectStabilizer
 			}
 		}
 	}
+}
+
+func (f *nurseryEngine) GetObjFilesForPartitionDir(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool, logger srv.LowLevelLogger) {
+	listObjFilesWithSwiftDirStructure(objChan, cancel, partdir, needSuffix, logger)
 }
 
 // nurseryEngineConstructor creates a nurseryEngine given the object server configs.

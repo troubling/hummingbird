@@ -59,6 +59,7 @@ type PriorityRepJob struct {
 	FromDevice *ring.Device   `json:"from_device"`
 	ToDevices  []*ring.Device `json:"to_devices"`
 	Policy     int            `json:"policy"`
+	Version    string         `json:"version"`
 }
 
 type quarantineFileError struct {
@@ -174,11 +175,12 @@ type replicationDevice struct {
 		listPartitions() ([]string, []string, error)
 		replicatePartition(partition string)
 	}
-	r      *Replicator
-	dev    *ring.Device
-	policy int
-	cancel chan struct{}
-	priRep chan PriorityRepJob
+	r         *Replicator
+	dev       *ring.Device
+	policy    int
+	cancel    chan struct{}
+	priRep    chan PriorityRepJob
+	objEngine SwiftStyleDirObjectEngine
 }
 
 type statUpdate struct {
@@ -200,55 +202,7 @@ type beginReplicationResponse struct {
 }
 
 func (rd *replicationDevice) listObjFiles(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool) {
-	defer close(objChan)
-	suffixDirs, err := filepath.Glob(filepath.Join(partdir, "[a-f0-9][a-f0-9][a-f0-9]"))
-	if err != nil {
-		rd.r.logger.Error("[listObjFiles]", zap.Error(err))
-		return
-	}
-	if len(suffixDirs) == 0 {
-		os.Remove(filepath.Join(partdir, ".lock"))
-		os.Remove(filepath.Join(partdir, "hashes.pkl"))
-		os.Remove(filepath.Join(partdir, "hashes.invalid"))
-		os.Remove(partdir)
-		return
-	}
-	for i := len(suffixDirs) - 1; i > 0; i-- { // shuffle suffixDirs list
-		j := rand.Intn(i + 1)
-		suffixDirs[j], suffixDirs[i] = suffixDirs[i], suffixDirs[j]
-	}
-	for _, suffDir := range suffixDirs {
-		if !needSuffix(filepath.Base(suffDir)) {
-			continue
-		}
-		hashDirs, err := filepath.Glob(filepath.Join(suffDir, "????????????????????????????????"))
-		if err != nil {
-			rd.r.logger.Error("[listObjFiles]", zap.Error(err))
-			return
-		}
-		if len(hashDirs) == 0 {
-			os.Remove(suffDir)
-			continue
-		}
-		for _, hashDir := range hashDirs {
-			fileList, err := filepath.Glob(filepath.Join(hashDir, "*.[tdm]*"))
-			if len(fileList) == 0 {
-				os.Remove(hashDir)
-				continue
-			}
-			if err != nil {
-				rd.r.logger.Error("[listObjFiles]", zap.Error(err))
-				return
-			}
-			for _, objFile := range fileList {
-				select {
-				case objChan <- objFile:
-				case <-cancel:
-					return
-				}
-			}
-		}
-	}
+	rd.objEngine.GetObjFilesForPartitionDir(objChan, cancel, partdir, needSuffix, rd.r.logger)
 }
 
 type syncFileArg struct {
@@ -598,9 +552,6 @@ func (rd *replicationDevice) listPartitions() ([]string, []string, error) {
 }
 
 func (rd *replicationDevice) Replicate() {
-	if rd.r.policies[rd.policy].Type == "hec" { // TODO yuck
-		return
-	}
 	defer srv.LogPanics(rd.r.logger, fmt.Sprintf("PANIC REPLICATING DEVICE: %s", rd.dev.Device))
 	rd.updateStat("startRun", 1)
 	if mounted, err := fs.IsMount(filepath.Join(rd.r.deviceRoot, rd.dev.Device)); rd.r.checkMounts && (err != nil || mounted != true) {
@@ -751,16 +702,21 @@ func (rd *replicationDevice) processPriorityJobs() {
 	}
 }
 
-var newReplicationDevice = func(dev *ring.Device, policy int, r *Replicator) *replicationDevice {
+var newReplicationDevice = func(dev *ring.Device, policy int, r *Replicator, objEngine ObjectEngine) (*replicationDevice, error) {
+	nroe, ok := objEngine.(SwiftStyleDirObjectEngine)
+	if !ok {
+		return nil, fmt.Errorf("Not a swift style repl object engine")
+	}
 	rd := &replicationDevice{
-		r:      r,
-		dev:    dev,
-		policy: policy,
-		cancel: make(chan struct{}),
-		priRep: make(chan PriorityRepJob),
+		r:         r,
+		dev:       dev,
+		policy:    policy,
+		cancel:    make(chan struct{}),
+		priRep:    make(chan PriorityRepJob),
+		objEngine: nroe,
 	}
 	rd.i = rd
-	return rd
+	return rd, nil
 }
 
 // Object replicator daemon object
@@ -788,6 +744,7 @@ type Replicator struct {
 	updatingDevices         map[string]*updateDevice
 	nurseryDevices          map[string]*nurseryDevice
 	runningDevicesLock      sync.Mutex
+	nurseryDevicesLock      sync.Mutex
 	logger                  srv.LowLevelLogger
 	objectRings             map[int]ring.Ring
 	objEngines              map[int]ObjectEngine
@@ -894,12 +851,14 @@ func (r *Replicator) verifyRunningDevices() {
 				continue
 			}
 			if _, ok := r.runningDevices[key]; !ok {
-				r.runningDevices[key] = newReplicationDevice(dev, policy, r)
-				r.stats["object-replicator"][key] = &DeviceStats{
-					LastCheckin: time.Now(), DeviceStarted: time.Now(),
-					Stats: map[string]int64{},
+				if rd, err := newReplicationDevice(dev, policy, r, objEngine); err == nil {
+					r.runningDevices[key] = rd
+					r.stats["object-replicator"][key] = &DeviceStats{
+						LastCheckin: time.Now(), DeviceStarted: time.Now(),
+						Stats: map[string]int64{},
+					}
+					go r.runningDevices[key].ReplicateLoop()
 				}
-				go r.runningDevices[key].ReplicateLoop()
 			}
 			if _, ok := r.updatingDevices[key]; !ok {
 				r.updatingDevices[key] = newUpdateDevice(dev, policy, r)
@@ -1006,6 +965,18 @@ func (r *Replicator) priorityReplicate(pri PriorityRepJob, timeout time.Duration
 	return false
 }
 
+func (r *Replicator) priorityReplicateIndexDB(w http.ResponseWriter, pri PriorityRepJob) {
+	r.nurseryDevicesLock.Lock()
+	nrd, ok := r.nurseryDevices[deviceKeyId(pri.FromDevice.Device, pri.Policy)]
+	r.nurseryDevicesLock.Unlock()
+	if ok {
+		nrd.priorityReplicate(w, pri)
+		return
+	}
+	w.WriteHeader(404)
+	return
+}
+
 func (r *Replicator) getDeviceProgress() map[string]*DeviceStats {
 	r.runningDevicesLock.Lock()
 	defer r.runningDevicesLock.Unlock()
@@ -1102,7 +1073,10 @@ func (r *Replicator) Run() {
 			return
 		}
 		for _, dev := range devices {
-			rd := newReplicationDevice(dev, policy, r)
+			rd, err := newReplicationDevice(dev, policy, r, objEngine)
+			if err != nil {
+				continue
+			}
 			key := rd.Key()
 			r.runningDevices[key] = rd
 			go func(rd *replicationDevice) {

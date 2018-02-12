@@ -187,6 +187,11 @@ func (o *ecObject) Close() error {
 	return nil
 }
 
+func (o *ecObject) Replicate(prirep objectserver.PriorityRepJob) error {
+	fmt.Println("replicate call on ecObject: ", prirep)
+	return nil
+}
+
 func (o *ecObject) Stabilize(ring ring.Ring, dev *ring.Device, policy int) error {
 	wg := sync.WaitGroup{}
 	success := true
