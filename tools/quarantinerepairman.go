@@ -33,6 +33,7 @@ func (qr *quarantineRepairman) runForever() {
 func (qr *quarantineRepairman) runOnce() {
 	start := time.Now()
 	logger := qr.aa.logger.With(zap.String("process", "quarantine repairman"))
+	logger.Debug("starting pass")
 	delays := 0
 	for url, ipp := range qr.quarantineDetailURLs() {
 		getLogger := logger.With(zap.String("method", "GET"), zap.String("url", url))
@@ -67,8 +68,8 @@ func (qr *quarantineRepairman) runOnce() {
 				}
 				deviceLogger := logger.With(zap.String("type", typ), zap.Int("policy", policy), zap.String("ip", ipp.ip), zap.Int("port", ipp.port), zap.String("device", device), zap.Int("deviceID", deviceID))
 				for _, entry := range entries {
-					if entry.NameInURL != "" {
-						if !qr.repairItem(deviceLogger, typ, policy, ringg, entry.NameInURL) {
+					if typ == "object" && entry.NameInURL != "" {
+						if !qr.repairObject(deviceLogger, typ, policy, ringg, entry.NameInURL) {
 							continue
 						}
 					} else { // entry.NameOnDevice
@@ -83,6 +84,7 @@ func (qr *quarantineRepairman) runOnce() {
 		delays++
 		time.Sleep(qr.delay)
 	}
+	logger.Debug("pass complete")
 	sleepTo := time.Until(start.Add(time.Hour))
 	if sleepTo > 0 {
 		time.Sleep(sleepTo)
@@ -146,10 +148,10 @@ func (qr *quarantineRepairman) retrieveTypeToDeviceToEntries(logger *zap.Logger,
 	return typeToDeviceToEntries
 }
 
-// repairItem tries to ensure all replicas are in place for the quarantined
+// repairObject tries to ensure all replicas are in place for the quarantined
 // entry and returns true if the entry should be deleted as it has been handled
 // as best as is possible.
-func (qr *quarantineRepairman) repairItem(logger *zap.Logger, typ string, policy int, ringg ring.Ring, entryNameInURL string) bool {
+func (qr *quarantineRepairman) repairObject(logger *zap.Logger, typ string, policy int, ringg ring.Ring, entryNameInURL string) bool {
 	logger = logger.With(zap.String("name in URL", entryNameInURL))
 	parts := strings.SplitN(entryNameInURL, "/", 4)
 	var account, container, object string
@@ -296,6 +298,10 @@ func (qr *quarantineRepairman) repairItem(logger *zap.Logger, typ string, policy
 // the entry should be deleted as it has been handled as best as is possible.
 func (qr *quarantineRepairman) queuePartitionReplication(logger *zap.Logger, typ string, policy int, ringg ring.Ring, deviceID int, entryNameOnDevice string) bool {
 	logger = logger.With(zap.String("name on device", entryNameOnDevice))
+	if typ == "account" || typ == "container" {
+		logger.Debug("skipping accounts and containers since they do not have priority replication, for now. There hasn't been a need for it yet because their replication passes have been so quick.")
+		return true
+	}
 	if deviceID < 0 {
 		logger.Debug("skipping since deviceID could not be resolved; likely the service we got the report from isn't actually in charge of the device and it's instead another service on the same server using the same device root")
 		return false
