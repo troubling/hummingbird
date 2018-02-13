@@ -649,6 +649,7 @@ func (a *AutoAdmin) RunForever() {
 
 func (a *AutoAdmin) getDB() (*sql.DB, error) {
 	a.dbl.Lock()
+	defer a.dbl.Unlock()
 	db := a.db
 	if db == nil {
 		sqlDir, ok := a.serverconf.Get("andrewd", "sql_dir")
@@ -657,34 +658,31 @@ func (a *AutoAdmin) getDB() (*sql.DB, error) {
 		}
 		err := os.MkdirAll(sqlDir, 0755)
 		if err != nil {
-			a.dbl.Unlock()
 			a.logger.Error("getDB MkdirAll", zap.String("sqlDir", sqlDir), zap.Error(err))
 			return nil, err
 		}
 		db, err = sql.Open("sqlite3", filepath.Join(sqlDir, DB_NAME))
 		if err != nil {
-			a.dbl.Unlock()
 			a.logger.Error("getDB sql.Open", zap.String("dbPath", filepath.Join(sqlDir, DB_NAME)), zap.Error(err))
 			return nil, err
 		}
 		_, err = db.Exec(`
             CREATE TABLE IF NOT EXISTS replication_queue (
+                create_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 rtype TEXT NOT NULL,        -- account, container, object
                 policy INTEGER NOT NULL,    -- only used with object
                 partition INTEGER NOT NULL, -- the partition number to replicate
                 reason TEXT NOT NULL,       -- ring, dispersion, quarantine
-                fromDevice INTEGER,         -- the device to replicate from, NULL = any
-                toDevice INTEGER            -- the device to replicate to, NULL = all
+                from_device INTEGER,        -- the device to replicate from, NULL = any
+                to_device INTEGER           -- the device to replicate to, NULL = all
             );
         `)
 		if err != nil {
-			a.dbl.Unlock()
 			a.logger.Error("getDB db.Exec", zap.Error(err))
 			return nil, err
 		}
 		a.db = db
 	}
-	a.dbl.Unlock()
 	return db, nil
 }
 

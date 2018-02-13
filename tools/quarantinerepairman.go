@@ -332,7 +332,7 @@ func (qr *quarantineRepairman) queuePartitionReplication(logger *zap.Logger, typ
           AND policy = ?
           AND partition = ?
           AND reason = "quarantine"
-          AND toDevice = ?
+          AND to_device = ?
     `, typ, policy, partition, deviceID)
 	if err != nil {
 		tx.Rollback()
@@ -346,7 +346,7 @@ func (qr *quarantineRepairman) queuePartitionReplication(logger *zap.Logger, typ
 	}
 	_, err = tx.Exec(`
         INSERT INTO replication_queue
-        (rtype, policy, partition, reason, toDevice)
+        (rtype, policy, partition, reason, to_device)
         VALUES (?, ?, ?, "quarantine", ?)
     `, typ, policy, partition, deviceID)
 	if err != nil {
