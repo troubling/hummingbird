@@ -203,12 +203,16 @@ func TestQuarantineDetail(t *testing.T) {
 		t.Fatal(len(jsonMap))
 	}
 
-	accounts := jsonMap["accounts"].([]interface{})
-	if len(accounts) != 2 {
+	accounts := jsonMap["accounts"].(map[string]interface{})
+	if len(accounts) != 1 {
 		t.Fatal(len(accounts))
 	}
+	devAccounts := accounts["sdb4"].([]interface{})
+	if len(devAccounts) != 2 {
+		t.Fatal(len(devAccounts))
+	}
 	pathToItem := map[string]string{}
-	for _, account := range accounts {
+	for _, account := range devAccounts {
 		accountMap := account.(map[string]interface{})
 		pathToItem[accountMap["NameOnDevice"].(string)] = accountMap["NameInURL"].(string)
 	}
@@ -219,12 +223,16 @@ func TestQuarantineDetail(t *testing.T) {
 		t.Fatal(ok, v)
 	}
 
-	containers := jsonMap["containers"].([]interface{})
-	if len(containers) != 2 {
+	containers := jsonMap["containers"].(map[string]interface{})
+	if len(containers) != 1 {
 		t.Fatal(len(containers))
 	}
+	devContainers := containers["sdb4"].([]interface{})
+	if len(devContainers) != 2 {
+		t.Fatal(len(devContainers))
+	}
 	pathToItem = map[string]string{}
-	for _, container := range containers {
+	for _, container := range devContainers {
 		containerMap := container.(map[string]interface{})
 		pathToItem[containerMap["NameOnDevice"].(string)] = containerMap["NameInURL"].(string)
 	}
@@ -235,12 +243,16 @@ func TestQuarantineDetail(t *testing.T) {
 		t.Fatal(ok, v)
 	}
 
-	objects := jsonMap["objects"].([]interface{})
-	if len(objects) != 2 {
+	objects := jsonMap["objects"].(map[string]interface{})
+	if len(objects) != 1 {
 		t.Fatal(len(objects))
 	}
+	devObjects := objects["sdb4"].([]interface{})
+	if len(devObjects) != 2 {
+		t.Fatal(len(devObjects))
+	}
 	pathToItem = map[string]string{}
-	for _, object := range objects {
+	for _, object := range devObjects {
 		objectMap := object.(map[string]interface{})
 		pathToItem[objectMap["NameOnDevice"].(string)] = objectMap["NameInURL"].(string)
 	}

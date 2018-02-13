@@ -43,6 +43,7 @@ type Ring interface {
 	GetMoreNodes(partition uint64) MoreNodes
 	ReplicaCount() (cnt uint64)
 	PartitionCount() (cnt uint64)
+	PartitionForHash(hsh uint64) uint64
 }
 
 type MoreNodes interface {
@@ -149,6 +150,10 @@ func (r *hashRing) GetPartition(account string, container string, object string)
 	// treat as big endian unsigned int
 	val := uint64(digest[0])<<24 | uint64(digest[1])<<16 | uint64(digest[2])<<8 | uint64(digest[3])
 	return val >> d.PartShift
+}
+
+func (r *hashRing) PartitionForHash(hsh uint64) uint64 {
+	return hsh >> r.getData().PartShift
 }
 
 func (r *hashRing) LocalDevices(localPort int) (devs []*Device, err error) {
