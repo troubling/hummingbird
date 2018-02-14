@@ -394,7 +394,7 @@ func quarantineHistoryDelete(driveRoot, deviceName, reconType, trailingPath stri
 	}
 	historyPath := path.Join(driveRoot, deviceName, "quarantined-history", reconType)
 	items, err := ioutil.ReadDir(historyPath)
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
 	checkTime := time.Now().Add(-time.Hour * time.Duration(24*days))

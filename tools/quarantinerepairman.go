@@ -1,5 +1,10 @@
 package tools
 
+// In /etc/hummingbird/andrewd-server.conf:
+// [quarantine-repairman]
+// initial-delay = 1       # seconds to wait between requests for the first pass
+// pass-time-target = 3600 # seconds to try to make subsequent passes take
+
 import (
 	"encoding/json"
 	"fmt"
@@ -16,12 +21,24 @@ import (
 
 type quarantineRepairman struct {
 	aa *AutoAdmin
-	// delay between each request; adjusted each pass to try to make passes an hour
-	delay time.Duration
+	// delay between each request; adjusted each pass to try to make passes last passTimeTarget
+	delay          time.Duration
+	passTimeTarget time.Duration
 }
 
 func newQuarantineRepairman(aa *AutoAdmin) *quarantineRepairman {
-	return &quarantineRepairman{aa: aa, delay: time.Second}
+	qr := &quarantineRepairman{
+		aa:             aa,
+		delay:          time.Duration(aa.serverconf.GetInt("quarantine-garbageman", "initial-delay", 1)) * time.Second,
+		passTimeTarget: time.Duration(aa.serverconf.GetInt("quarantine-garbageman", "pass-time-target", 60*60)) * time.Second,
+	}
+	if qr.delay < 0 {
+		qr.delay = time.Second
+	}
+	if qr.passTimeTarget < 0 {
+		qr.passTimeTarget = time.Second
+	}
+	return qr
 }
 
 func (qr *quarantineRepairman) runForever() {
@@ -36,6 +53,8 @@ func (qr *quarantineRepairman) runOnce() {
 	logger.Debug("starting pass")
 	delays := 0
 	for url, ipp := range qr.quarantineDetailURLs() {
+		delays++
+		time.Sleep(qr.delay)
 		getLogger := logger.With(zap.String("method", "GET"), zap.String("url", url))
 		for typ, deviceToEntries := range qr.retrieveTypeToDeviceToEntries(getLogger, url) {
 			for device, entries := range deviceToEntries {
@@ -81,15 +100,13 @@ func (qr *quarantineRepairman) runOnce() {
 				}
 			}
 		}
-		delays++
-		time.Sleep(qr.delay)
 	}
-	logger.Debug("pass complete")
-	sleepTo := time.Until(start.Add(time.Hour))
+	qr.delay = qr.passTimeTarget / time.Duration(delays)
+	logger.Debug("pass complete", zap.String("next-delay", qr.delay.String()))
+	sleepTo := time.Until(start.Add(qr.passTimeTarget))
 	if sleepTo > 0 {
 		time.Sleep(sleepTo)
 	}
-	qr.delay = time.Hour / time.Duration(delays)
 }
 
 // quarantineDetailURLs returns a map of urls to ip-port structures based on
