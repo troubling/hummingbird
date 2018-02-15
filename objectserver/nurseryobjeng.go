@@ -690,6 +690,19 @@ func (f *nurseryEngine) GetObjectsToReplicate(device string, partition uint64, c
 	}
 }
 
+/*
+TODO: add support for this later
+func (f *nurseryEngine) listPartitionHandler(writer http.ResponseWriter, request *http.Request) {
+	vars := srv.GetVars(request)
+	srv.StandardResponse(writer, http.StatusInternalServerError)
+	return
+}
+
+func (f *nurseryEngine) RegisterHandlers(addRoute func(method, path string, handler http.HandlerFunc)) {
+	addRoute("GET", "/partition/:partition", f.listPartitionHandler)
+}
+*/
+
 // nurseryEngineConstructor creates a nurseryEngine given the object server configs.
 func nurseryEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.FlagSet) (ObjectEngine, error) {
 	driveRoot := config.GetDefault("app:object-server", "devices", "/srv/node")

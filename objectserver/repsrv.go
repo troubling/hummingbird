@@ -345,5 +345,12 @@ func (r *Replicator) GetHandler(config conf.Config, metricsPrefix string) http.H
 		router.HandlePolicy("REPLICATE", "/:device/:partition", policy.Index, commonHandlers.ThenFunc(r.objReplicateHandler))
 	}
 	router.Get("/debug/*_", http.DefaultServeMux)
+	for policy, objEngine := range r.objEngines {
+		if rhoe, ok := objEngine.(PolicyHandlerRegistrator); ok {
+			rhoe.RegisterHandlers(func(method, path string, handler http.HandlerFunc) {
+				router.HandlePolicy(method, path, policy, commonHandlers.ThenFunc(handler))
+			})
+		}
+	}
 	return alice.New(middleware.Metrics(metricsScope)).Then(router)
 }

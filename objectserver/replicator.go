@@ -63,6 +63,18 @@ type PriorityRepJob struct {
 	Version    string         `json:"version"`
 }
 
+// IndexDBItem is a single item returned by List.
+type IndexDBItem struct {
+	Hash      string
+	Shard     int
+	Timestamp int64
+	Metahash  string `json:"-"`
+	Nursery   bool
+	Metabytes []byte `json:"-"`
+	Deletion  bool
+	Path      string
+}
+
 type quarantineFileError struct {
 	msg string
 }

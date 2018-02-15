@@ -37,7 +37,7 @@ import (
 )
 
 type ecObject struct {
-	IndexDBItem
+	objectserver.IndexDBItem
 	afw         fs.AtomicFileWriter
 	idb         *IndexDB
 	policy      int

@@ -70,7 +70,7 @@ func (f *ecEngine) getDB(device string) (*IndexDB, error) {
 	dbpath := filepath.Join(f.driveRoot, device, objectserver.PolicyDir(f.policy), "hec.db")
 	path := filepath.Join(f.driveRoot, device, objectserver.PolicyDir(f.policy), "hec")
 	temppath := filepath.Join(f.driveRoot, device, "tmp")
-	ringPartPower := bits.Len64(f.ring.PartitionCount())
+	ringPartPower := bits.Len64(f.ring.PartitionCount() - 1)
 	f.idbs[device], err = NewIndexDB(dbpath, path, temppath, ringPartPower, 1, 32, f.logger)
 	if err != nil {
 		return nil, err
@@ -86,7 +86,7 @@ func (f *ecEngine) New(vars map[string]string, needData bool, asyncWG *sync.Wait
 	hash := hex.EncodeToString(digest)
 
 	obj := &ecObject{
-		IndexDBItem: IndexDBItem{
+		IndexDBItem: objectserver.IndexDBItem{
 			Hash:    hash,
 			Nursery: true,
 		},
@@ -274,10 +274,40 @@ func (f *ecEngine) GetObjectsToReplicate(device string, partition uint64, c chan
 	}
 }
 
+func (f *ecEngine) listPartitionHandler(writer http.ResponseWriter, request *http.Request) {
+	vars := srv.GetVars(request)
+	idb, err := f.getDB(vars["device"])
+	if err != nil {
+		srv.StandardResponse(writer, http.StatusBadRequest)
+		return
+	}
+	part, err := strconv.Atoi(vars["partition"])
+	if err != nil {
+		srv.StandardResponse(writer, http.StatusBadRequest)
+		return
+	}
+	items, err := idb.List(part)
+	if err != nil {
+		f.logger.Error("error listing idb", zap.Error(err))
+		srv.StandardResponse(writer, http.StatusInternalServerError)
+		return
+	}
+	if data, err := json.Marshal(items); err == nil {
+		writer.WriteHeader(http.StatusOK)
+		writer.Write(data)
+		return
+	} else {
+		f.logger.Error("error marshaling listing idb", zap.Error(err))
+	}
+	srv.StandardResponse(writer, http.StatusInternalServerError)
+	return
+}
+
 func (f *ecEngine) RegisterHandlers(addRoute func(method, path string, handler http.HandlerFunc)) {
 	addRoute("GET", "/ec-frag/:device/:hash/:index", f.ecFragGetHandler)
 	addRoute("PUT", "/ec-frag/:device/:hash/:index", f.ecFragPutHandler)
 	addRoute("DELETE", "/ec-frag/:device/:hash/:index", f.ecFragDeleteHandler)
+	addRoute("GET", "/partition/:device/:partition", f.listPartitionHandler)
 }
 
 func (f *ecEngine) GetNurseryObjects(device string, c chan objectserver.ObjectStabilizer, cancel chan struct{}) {

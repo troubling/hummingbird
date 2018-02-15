@@ -11,6 +11,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/troubling/hummingbird/common/fs"
+	"github.com/troubling/hummingbird/objectserver"
 	"go.uber.org/zap"
 )
 
@@ -393,7 +394,7 @@ func (ot *IndexDB) Remove(hsh string, shard int, timestamp int64, nursery bool) 
 
 // Lookup returns the stored information for the hsh and shard.
 // Will return (nil, error) if there is an error. (nil, nil) if not found
-func (ot *IndexDB) Lookup(hsh string, shard int, justStable bool) (*IndexDBItem, error) {
+func (ot *IndexDB) Lookup(hsh string, shard int, justStable bool) (*objectserver.IndexDBItem, error) {
 	var err error
 	hsh, _, dbPart, _, err := ot.validateHash(hsh)
 	if err != nil {
@@ -429,7 +430,7 @@ func (ot *IndexDB) Lookup(hsh string, shard int, justStable bool) (*IndexDBItem,
 	if !rows.Next() {
 		return nil, rows.Err()
 	}
-	item := &IndexDBItem{Hash: hsh}
+	item := &objectserver.IndexDBItem{Hash: hsh}
 	if err = rows.Scan(&item.Timestamp, &item.Deletion, &item.Metahash,
 		&item.Metabytes, &item.Nursery, &item.Shard, &item.ShardHash); err != nil {
 		return nil, err
@@ -439,8 +440,8 @@ func (ot *IndexDB) Lookup(hsh string, shard int, justStable bool) (*IndexDBItem,
 }
 
 // ListNursery lists all objects that are in the nursery.
-func (ot *IndexDB) ListNursery() ([]*IndexDBItem, error) {
-	listing := []*IndexDBItem{}
+func (ot *IndexDB) ListNursery() ([]*objectserver.IndexDBItem, error) {
+	listing := []*objectserver.IndexDBItem{}
 	for _, db := range ot.dbs {
 		if err := func() error {
 			rows, err := db.Query(`
@@ -452,7 +453,7 @@ func (ot *IndexDB) ListNursery() ([]*IndexDBItem, error) {
 			}
 			defer rows.Close()
 			for rows.Next() {
-				item := &IndexDBItem{}
+				item := &objectserver.IndexDBItem{}
 				if err = rows.Scan(&item.Hash, &item.Shard, &item.Timestamp, &item.Deletion,
 					&item.Metahash, &item.Metabytes, &item.Nursery); err != nil {
 					return err
@@ -474,7 +475,7 @@ func (ot *IndexDB) ListNursery() ([]*IndexDBItem, error) {
 // List returns the items for the ringPart given.
 //
 // This is for replication, auditing, that sort of thing.
-func (ot *IndexDB) List(ringPart int) ([]*IndexDBItem, error) {
+func (ot *IndexDB) List(ringPart int) ([]*objectserver.IndexDBItem, error) {
 	startHash, stopHash := ot.ringPartRange(ringPart)
 	_, _, startDBPart, _, err := ot.validateHash(startHash)
 	if err != nil {
@@ -484,7 +485,7 @@ func (ot *IndexDB) List(ringPart int) ([]*IndexDBItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	listing := []*IndexDBItem{}
+	listing := []*objectserver.IndexDBItem{}
 	for dbPart := startDBPart; dbPart <= stopDBPart; dbPart++ {
 		db := ot.dbs[dbPart]
 		rows, err := db.Query(`
@@ -496,7 +497,7 @@ func (ot *IndexDB) List(ringPart int) ([]*IndexDBItem, error) {
 			return nil, err
 		}
 		for rows.Next() {
-			item := &IndexDBItem{}
+			item := &objectserver.IndexDBItem{}
 			if err = rows.Scan(&item.Hash, &item.Shard, &item.Timestamp, &item.Deletion,
 				&item.Metahash, &item.Metabytes, &item.Nursery, &item.ShardHash); err != nil {
 				return listing, err
