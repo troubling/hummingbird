@@ -284,7 +284,7 @@ func (idbo *indexDBObject) commit(metadata map[string]string, deletion bool) err
 	if err != nil {
 		return err
 	}
-	err = idbo.indexDB.Commit(idbo.atomicFileWriter, idbo.hash, 0, timestamp, deletion, MetadataHash(metadata), metabytes, true)
+	err = idbo.indexDB.Commit(idbo.atomicFileWriter, idbo.hash, 0, timestamp, deletion, MetadataHash(metadata), metabytes, true, "")
 	idbo.atomicFileWriter = nil
 	return err
 }
