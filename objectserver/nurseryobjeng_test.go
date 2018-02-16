@@ -45,13 +45,8 @@ func TestGetStabilizer(t *testing.T) {
 	neng, err := nurseryEngineConstructor(
 		config, &pol, &flag.FlagSet{})
 	require.Nil(t, err)
-	_, err = newNurseryDevice(&dev, testRing, 0, &Replicator{}, neng)
+	_, err = neng.GetReplicationDevice(testRing, &dev, 0, &Replicator{})
 	require.Nil(t, err)
-
-	seng, err := SwiftEngineConstructor(
-		config, &pol, &flag.FlagSet{})
-	_, err = newNurseryDevice(&dev, testRing, 0, &Replicator{}, seng)
-	require.NotNil(t, err)
 }
 
 func TestCanStabilize(t *testing.T) {

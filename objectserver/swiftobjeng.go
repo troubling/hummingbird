@@ -29,6 +29,7 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/fs"
+	"github.com/troubling/hummingbird/common/ring"
 )
 
 // SwiftObject implements an Object that is compatible with Swift's object server.
@@ -227,6 +228,18 @@ func (f *SwiftEngine) New(vars map[string]string, needData bool, asyncWG *sync.W
 		sor.metadata, _ = ObjectMetadata(sor.dataFile, sor.metaFile) // ignore errors if deleted
 	}
 	return sor, nil
+}
+
+func (f *SwiftEngine) GetReplicationDevice(oring ring.Ring, dev *ring.Device, policy int, r *Replicator) (ReplicationDevice, error) {
+	rd := &replicationDevice{
+		r:      r,
+		dev:    dev,
+		policy: policy,
+		cancel: make(chan struct{}),
+		priRep: make(chan PriorityRepJob),
+	}
+	rd.i = rd
+	return rd, nil
 }
 
 var replicationDone = fmt.Errorf("Replication done")

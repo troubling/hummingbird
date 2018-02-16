@@ -62,17 +62,30 @@ type ObjectStabilizer interface {
 	Object
 	// Stabilize object- move to stable location / erasure code / do nothing / etc
 	Stabilize(ring.Ring, *ring.Device, int) error
+	Replicate(PriorityRepJob) error
+}
+
+type ReplicationDevice interface {
+	Replicate()
+	ReplicateLoop()
+	Key() string
+	Cancel()
+	PriorityReplicate(w http.ResponseWriter, pri PriorityRepJob) error
+	UpdateStat(string, int64)
 }
 
 // ObjectEngine is the type you have to give hummingbird to create a new object engine.
 type ObjectEngine interface {
 	// New creates a new instance of the Object, for interacting with a single object.
 	New(vars map[string]string, needData bool, asyncWG *sync.WaitGroup) (Object, error)
+	GetReplicationDevice(oring ring.Ring, dev *ring.Device, policy int, r *Replicator) (ReplicationDevice, error)
+	// Replicator here needs to be something else- it mostly needs logger, updateStat thing, and certs. not whole object- maybe an interface that gives those things
 }
 
 type NurseryObjectEngine interface {
 	ObjectEngine
 	GetNurseryObjects(device string, c chan ObjectStabilizer, cancel chan struct{})
+	GetObjectsToReplicate(device string, partition uint64, c chan ObjectStabilizer, cancel chan struct{})
 }
 
 type PolicyHandlerRegistrator interface {

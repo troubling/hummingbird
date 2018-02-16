@@ -112,6 +112,9 @@ func (f *ecEngine) New(vars map[string]string, needData bool, asyncWG *sync.Wait
 	}
 	return nil, errors.New("Unable to open database")
 }
+func (f *ecEngine) GetReplicationDevice(oring ring.Ring, dev *ring.Device, policy int, r *objectserver.Replicator) (objectserver.ReplicationDevice, error) {
+	return objectserver.GetNurseryDevice(oring, dev, policy, r, f)
+}
 
 func (f *ecEngine) ecFragGetHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
@@ -228,6 +231,46 @@ func (f *ecEngine) ecFragDeleteHandler(writer http.ResponseWriter, request *http
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 	} else {
 		srv.StandardResponse(writer, http.StatusCreated)
+	}
+}
+
+func (f *ecEngine) GetObjectsToReplicate(device string, partition uint64, c chan objectserver.ObjectStabilizer, cancel chan struct{}) {
+	defer close(c)
+	idb, err := f.getDB(device)
+	if err != nil {
+		return
+	}
+	items, err := idb.List(int(partition))
+	// TODO: so right now this returns nursery and stable objects. should i weed
+	// out the nursery- we;d want to replicate those too right?
+	// Also- right now this just returns everything. depending on what's going on
+	// this will need to query the other servers and compare lists to see
+	// what is missing that we need to send
+	if err != nil {
+		return
+	}
+	for _, item := range items {
+		obj := &ecObject{
+			IndexDBItem: *item,
+			idb:         idb,
+			dataFrags:   f.dataFrags,
+			parityFrags: f.parityFrags,
+			chunkSize:   f.chunkSize,
+			reserve:     f.reserve,
+			ring:        f.ring,
+			logger:      f.logger,
+			policy:      f.policy,
+			client:      f.client,
+			metadata:    map[string]string{},
+		}
+		if err = json.Unmarshal(item.Metabytes, &obj.metadata); err != nil {
+			continue
+		}
+		select {
+		case c <- obj:
+		case <-cancel:
+			return
+		}
 	}
 }
 

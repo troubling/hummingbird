@@ -52,6 +52,7 @@ const (
 	replicatePartSleepTime       = time.Millisecond * 10
 	handoffListDirFreq           = time.Minute * 10
 	handoffToAllMod              = 5
+	priorityReplicateTimeout     = time.Hour
 )
 
 type PriorityRepJob struct {
@@ -59,6 +60,7 @@ type PriorityRepJob struct {
 	FromDevice *ring.Device   `json:"from_device"`
 	ToDevices  []*ring.Device `json:"to_devices"`
 	Policy     int            `json:"policy"`
+	Version    string         `json:"version"`
 }
 
 type quarantineFileError struct {
@@ -148,21 +150,13 @@ type DeviceStats struct {
 	PriorityRepsDone   int64
 }
 
-type ReplicationDevice interface {
-	Replicate()
-	ReplicateLoop()
-	Key() string
-	Cancel()
-	PriorityReplicate(pri PriorityRepJob, timeout time.Duration) bool
-}
-
 type replJob struct {
 	partition string
 	nodes     []*ring.Device
 	headers   map[string]string
 }
 
-type replicationDevice struct {
+type replicationDevice struct { //TODO: move all replicationDevice stuff into swiftobjeng.go
 	// If you have a better way to make struct methods that are overridable for tests, please call my house.
 	i interface {
 		beginReplication(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse, headers map[string]string)
@@ -188,7 +182,7 @@ type statUpdate struct {
 	value     int64
 }
 
-func (rd *replicationDevice) updateStat(stat string, amount int64) {
+func (rd *replicationDevice) UpdateStat(stat string, amount int64) {
 	rd.r.updateStat <- statUpdate{"object-replicator", rd.Key(), stat, amount}
 }
 
@@ -340,8 +334,8 @@ func (rd *replicationDevice) syncFile(objFile string, dst []*syncFileArg, handof
 			if fur.Success {
 				syncs++
 				insync++
-				rd.updateStat("FilesSent", 1)
-				rd.updateStat("BytesSent", fileSize)
+				rd.UpdateStat("FilesSent", 1)
+				rd.UpdateStat("BytesSent", fileSize)
 			}
 		}
 	}
@@ -562,7 +556,7 @@ func (rd *replicationDevice) replicatePartition(partition string) {
 	} else {
 		rd.i.replicateUsingHashes(rjob, rd.r.objectRings[rd.policy].GetMoreNodes(partitioni))
 	}
-	rd.updateStat("PartitionsDone", 1)
+	rd.UpdateStat("PartitionsDone", 1)
 }
 
 func (rd *replicationDevice) listPartitions() ([]string, []string, error) {
@@ -602,7 +596,7 @@ func (rd *replicationDevice) Replicate() {
 		return
 	}
 	defer srv.LogPanics(rd.r.logger, fmt.Sprintf("PANIC REPLICATING DEVICE: %s", rd.dev.Device))
-	rd.updateStat("startRun", 1)
+	rd.UpdateStat("startRun", 1)
 	if mounted, err := fs.IsMount(filepath.Join(rd.r.deviceRoot, rd.dev.Device)); rd.r.checkMounts && (err != nil || mounted != true) {
 		rd.r.logger.Error("[replicateDevice] Drive not mounted", zap.String("Device", rd.dev.Device), zap.Error(err))
 		return
@@ -624,12 +618,12 @@ func (rd *replicationDevice) Replicate() {
 			zap.String("filepath", filepath.Join(rd.r.deviceRoot, rd.dev.Device, PolicyDir(rd.policy))))
 		return
 	}
-	rd.updateStat("PartitionsTotal", int64(len(allPartitionList)))
+	rd.UpdateStat("PartitionsTotal", int64(len(allPartitionList)))
 
 	lastListing := time.Now()
 	handoffsForLog := len(handoffPartitions)
 	for i, partition := range allPartitionList {
-		rd.updateStat("checkin", 1)
+		rd.UpdateStat("checkin", 1)
 		select {
 		case <-rd.cancel:
 			{
@@ -667,11 +661,11 @@ func (rd *replicationDevice) Replicate() {
 			}
 		}
 	}
-	rd.updateStat("FullReplicateCount", 1)
+	rd.UpdateStat("FullReplicateCount", 1)
 }
 
 func (rd *replicationDevice) Cancel() {
-	rd.updateStat("cancel", 1)
+	rd.UpdateStat("cancel", 1)
 	close(rd.cancel)
 }
 
@@ -693,14 +687,19 @@ func (n *NoMoreNodes) Next() *ring.Device {
 	return nil
 }
 
-func (rd *replicationDevice) PriorityReplicate(pri PriorityRepJob, timeout time.Duration) bool {
-	timer := time.NewTimer(timeout)
+func (rd *replicationDevice) PriorityReplicate(w http.ResponseWriter, pri PriorityRepJob) error {
+	if !fs.Exists(filepath.Join(rd.r.deviceRoot, pri.FromDevice.Device, PolicyDir(rd.policy), strconv.FormatUint(pri.Partition, 10))) {
+		w.WriteHeader(404)
+		return nil
+	}
+	timer := time.NewTimer(priorityReplicateTimeout)
 	defer timer.Stop()
 	select {
 	case rd.priRep <- pri:
-		return true
+		w.WriteHeader(200)
+		return nil
 	case <-timer.C:
-		return false
+		return fmt.Errorf("timed out waiting for chan")
 	}
 }
 
@@ -744,23 +743,11 @@ func (rd *replicationDevice) processPriorityJobs() {
 					rd.i.replicateUsingHashes(rjob, &NoMoreNodes{})
 				}
 			}()
-			rd.updateStat("PriorityRepsDone", 1)
+			rd.UpdateStat("PriorityRepsDone", 1)
 		default:
 			return
 		}
 	}
-}
-
-var newReplicationDevice = func(dev *ring.Device, policy int, r *Replicator) *replicationDevice {
-	rd := &replicationDevice{
-		r:      r,
-		dev:    dev,
-		policy: policy,
-		cancel: make(chan struct{}),
-		priRep: make(chan PriorityRepJob),
-	}
-	rd.i = rd
-	return rd
 }
 
 // Object replicator daemon object
@@ -786,7 +773,6 @@ type Replicator struct {
 	stats                   map[string]map[string]*DeviceStats
 	runningDevices          map[string]ReplicationDevice
 	updatingDevices         map[string]*updateDevice
-	nurseryDevices          map[string]*nurseryDevice
 	runningDevicesLock      sync.Mutex
 	logger                  srv.LowLevelLogger
 	objectRings             map[int]ring.Ring
@@ -860,15 +846,6 @@ func (r *Replicator) cancelStalledDevices() {
 			delete(r.stats["object-updater"], key)
 		}
 	}
-
-	for key, nrd := range r.nurseryDevices {
-		stats, ok := r.stats["object-nursery"][key]
-		if ok && time.Since(stats.LastCheckin) > replicateDeviceTimeout {
-			nrd.cancel()
-			delete(r.nurseryDevices, key)
-			delete(r.stats["object-nursery"], key)
-		}
-	}
 }
 
 func (r *Replicator) verifyRunningDevices() {
@@ -894,12 +871,16 @@ func (r *Replicator) verifyRunningDevices() {
 				continue
 			}
 			if _, ok := r.runningDevices[key]; !ok {
-				r.runningDevices[key] = newReplicationDevice(dev, policy, r)
-				r.stats["object-replicator"][key] = &DeviceStats{
-					LastCheckin: time.Now(), DeviceStarted: time.Now(),
-					Stats: map[string]int64{},
+				if rd, err := objEngine.GetReplicationDevice(oring, dev, policy, r); err == nil {
+					r.runningDevices[key] = rd
+					r.stats["object-replicator"][key] = &DeviceStats{
+						LastCheckin: time.Now(), DeviceStarted: time.Now(),
+						Stats: map[string]int64{},
+					}
+					go r.runningDevices[key].ReplicateLoop()
+				} else {
+					r.logger.Error("building replication device", zap.String("device", key), zap.Int("policy", policy), zap.Error(err))
 				}
-				go r.runningDevices[key].ReplicateLoop()
 			}
 			if _, ok := r.updatingDevices[key]; !ok {
 				r.updatingDevices[key] = newUpdateDevice(dev, policy, r)
@@ -908,16 +889,6 @@ func (r *Replicator) verifyRunningDevices() {
 					Stats: map[string]int64{"Success": 0, "Failure": 0},
 				}
 				go r.updatingDevices[key].updateLoop()
-			}
-			if _, ok := r.nurseryDevices[key]; !ok {
-				if nd, err := newNurseryDevice(dev, oring.(ring.Ring), policy, r, objEngine); err == nil {
-					r.nurseryDevices[key] = nd
-					r.stats["object-nursery"][key] = &DeviceStats{
-						LastCheckin: time.Now(), DeviceStarted: time.Now(),
-						Stats: map[string]int64{"Success": 0, "Failure": 0},
-					}
-					go r.nurseryDevices[key].stabilizeLoop()
-				}
 			}
 		}
 	}
@@ -932,12 +903,6 @@ func (r *Replicator) verifyRunningDevices() {
 		if _, found := expectedDevices[key]; !found {
 			ud.cancel()
 			delete(r.updatingDevices, key)
-		}
-	}
-	for key, nrd := range r.nurseryDevices {
-		if _, found := expectedDevices[key]; !found {
-			nrd.cancel()
-			delete(r.nurseryDevices, key)
 		}
 	}
 }
@@ -996,14 +961,15 @@ func (r *Replicator) reportStats() {
 	}
 }
 
-func (r *Replicator) priorityReplicate(pri PriorityRepJob, timeout time.Duration) bool {
+func (r *Replicator) priorityReplicate(w http.ResponseWriter, pri PriorityRepJob) error {
 	r.runningDevicesLock.Lock()
 	rd, ok := r.runningDevices[deviceKeyId(pri.FromDevice.Device, pri.Policy)]
 	r.runningDevicesLock.Unlock()
 	if ok {
-		return rd.PriorityReplicate(pri, timeout)
+		return rd.PriorityReplicate(w, pri)
 	}
-	return false
+	w.WriteHeader(404)
+	return nil
 }
 
 func (r *Replicator) getDeviceProgress() map[string]*DeviceStats {
@@ -1102,10 +1068,14 @@ func (r *Replicator) Run() {
 			return
 		}
 		for _, dev := range devices {
-			rd := newReplicationDevice(dev, policy, r)
+			rd, err := objEngine.GetReplicationDevice(theRing, dev, policy, r)
+			if err != nil {
+				r.logger.Error("building replication device", zap.String("device", dev.Device), zap.Int("policy", policy), zap.Error(err))
+				continue
+			}
 			key := rd.Key()
 			r.runningDevices[key] = rd
-			go func(rd *replicationDevice) {
+			go func(rd ReplicationDevice) {
 				rd.Replicate()
 				r.onceDone <- struct{}{}
 			}(rd)
@@ -1117,15 +1087,6 @@ func (r *Replicator) Run() {
 			}(r.updatingDevices[key])
 
 			r.onceWaiting += 2
-
-			if nd, err := newNurseryDevice(dev, theRing, policy, r, objEngine); err == nil {
-				r.nurseryDevices[key] = nd
-				go func(nrd *nurseryDevice) {
-					nrd.stabilizeDevice()
-					r.onceDone <- struct{}{}
-				}(r.nurseryDevices[key])
-				r.onceWaiting += 1
-			}
 		}
 	}
 	for r.onceWaiting > 0 {
@@ -1177,7 +1138,6 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 
 		runningDevices:          make(map[string]ReplicationDevice),
 		updatingDevices:         make(map[string]*updateDevice),
-		nurseryDevices:          make(map[string]*nurseryDevice),
 		objectRings:             make(map[int]ring.Ring),
 		replicateConcurrencySem: make(chan struct{}, concurrency),
 		updateConcurrencySem:    make(chan struct{}, updaterConcurrency),
