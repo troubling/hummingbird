@@ -23,9 +23,9 @@ type IndexDBItem struct {
 	Hash      string
 	Shard     int
 	Timestamp int64
-	Metahash  string
+	Metahash  string `json:"-"`
 	Nursery   bool
-	Metabytes []byte
+	Metabytes []byte `json:"-"`
 	Deletion  bool
 	Path      string
 	ShardHash string
