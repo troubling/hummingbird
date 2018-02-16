@@ -641,6 +641,7 @@ func (a *AutoAdmin) Run() {
 func (a *AutoAdmin) RunForever() {
 	go a.di.runDispersionForever()
 	go newQuarantineRepairman(a).runForever()
+	go newQuarantineGarbageman(a).runForever()
 	a.runningForever = true
 	for {
 		a.Run()
