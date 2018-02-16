@@ -86,7 +86,7 @@ func (f *ecEngine) New(vars map[string]string, needData bool, asyncWG *sync.Wait
 	hash := hex.EncodeToString(digest)
 
 	obj := &ecObject{
-		IndexDBItem: objectserver.IndexDBItem{
+		IndexDBItem: IndexDBItem{
 			Hash:    hash,
 			Nursery: true,
 		},
