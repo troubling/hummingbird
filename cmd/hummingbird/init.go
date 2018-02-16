@@ -584,7 +584,7 @@ func initCommand(args []string) error {
 		print(`else`)
 		print(`    sudo service memcached restart`)
 		print(`fi`)
-		print('if [ -e /var/log/syslog ] ; then')
+		print(`if [ -e /var/log/syslog ] ; then`)
 		print(`    if hash systemctl 2>/dev/null ; then`)
 		print(`        sudo systemctl restart syslog`)
 		print(`    else`)
