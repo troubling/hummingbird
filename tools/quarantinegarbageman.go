@@ -2,9 +2,9 @@ package tools
 
 // In /etc/hummingbird/andrewd-server.conf:
 // [quarantine-garbageman]
-// initial-delay = 10       # seconds to wait between requests for the first pass
-// pass-time-target = 86400 # seconds to try to make subsequent passes take
-// keep-history = 2592000   # seconds to keep quarantined items
+// initial_delay = 10       # seconds to wait between requests for the first pass
+// pass_time_target = 86400 # seconds to try to make subsequent passes take
+// keep_history = 2592000   # seconds to keep quarantined items
 
 import (
 	"encoding/json"
@@ -29,9 +29,9 @@ const secondsInADay = 60 * 60 * 24
 func newQuarantineGarbageman(aa *AutoAdmin) *quarantineGarbageman {
 	qg := &quarantineGarbageman{
 		aa:              aa,
-		delay:           time.Duration(aa.serverconf.GetInt("quarantine-garbageman", "initial-delay", 10)) * time.Second,
-		passTimeTarget:  time.Duration(aa.serverconf.GetInt("quarantine-garbageman", "pass-time-target", secondsInADay)) * time.Second,
-		keepHistoryDays: int(aa.serverconf.GetInt("quarantine-garbageman", "keep-history", secondsInADay*30) / secondsInADay),
+		delay:           time.Duration(aa.serverconf.GetInt("quarantine-garbageman", "initial_delay", 10)) * time.Second,
+		passTimeTarget:  time.Duration(aa.serverconf.GetInt("quarantine-garbageman", "pass_time_target", secondsInADay)) * time.Second,
+		keepHistoryDays: int(aa.serverconf.GetInt("quarantine-garbageman", "keep_history", secondsInADay*30) / secondsInADay),
 	}
 	if qg.delay < 0 {
 		qg.delay = time.Second

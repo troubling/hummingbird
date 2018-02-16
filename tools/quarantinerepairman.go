@@ -2,8 +2,8 @@ package tools
 
 // In /etc/hummingbird/andrewd-server.conf:
 // [quarantine-repairman]
-// initial-delay = 1       # seconds to wait between requests for the first pass
-// pass-time-target = 3600 # seconds to try to make subsequent passes take
+// initial_delay = 1       # seconds to wait between requests for the first pass
+// pass_time_target = 3600 # seconds to try to make subsequent passes take
 
 import (
 	"encoding/json"
@@ -29,8 +29,8 @@ type quarantineRepairman struct {
 func newQuarantineRepairman(aa *AutoAdmin) *quarantineRepairman {
 	qr := &quarantineRepairman{
 		aa:             aa,
-		delay:          time.Duration(aa.serverconf.GetInt("quarantine-garbageman", "initial-delay", 1)) * time.Second,
-		passTimeTarget: time.Duration(aa.serverconf.GetInt("quarantine-garbageman", "pass-time-target", 60*60)) * time.Second,
+		delay:          time.Duration(aa.serverconf.GetInt("quarantine-garbageman", "initial_delay", 1)) * time.Second,
+		passTimeTarget: time.Duration(aa.serverconf.GetInt("quarantine-garbageman", "pass_time_target", 60*60)) * time.Second,
 	}
 	if qr.delay < 0 {
 		qr.delay = time.Second
