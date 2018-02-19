@@ -17,6 +17,7 @@ package tools
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -28,7 +29,7 @@ import (
 	"github.com/troubling/hummingbird/common/ring"
 )
 
-func PrintDevs(devs []*ring.RingBuilderDevice) {
+func PrintDevs(devs []*ring.RingBuilderDevice) error {
 	data := make([][]string, 0)
 	data = append(data, []string{"ID", "REGION", "ZONE", "SCHEME", "IP ADDRESS", "PORT", "REPLICATION IP", "REPLICATION PORT", "NAME", "WEIGHT", "PARTITIONS", "META"})
 	data = append(data, nil)
@@ -38,6 +39,7 @@ func PrintDevs(devs []*ring.RingBuilderDevice) {
 		}
 	}
 	fmt.Println(brimtext.Align(data, brimtext.NewSimpleAlignOptions()))
+	return nil
 }
 
 func RingBuildCmd(flags *flag.FlagSet) {
@@ -47,6 +49,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		return
 	}
 	debug := flags.Lookup("debug").Value.String() == "true"
+	jsonOut := flags.Lookup("json").Value.String() == "true"
 	pth := args[0]
 	cmd := ""
 	if len(args) == 1 {
@@ -120,11 +123,24 @@ func RingBuildCmd(flags *flag.FlagSet) {
 			fmt.Println(err)
 			os.Exit(1)
 		}
-		if len(devs) == 0 {
-			fmt.Println("No matching devices found.")
-			return
+		if jsonOut {
+			b, err := json.Marshal(devs)
+			if err != nil {
+				fmt.Println(err)
+				os.Exit(1)
+			}
+			os.Stdout.Write(b)
+		} else {
+			if len(devs) == 0 && !jsonOut {
+				fmt.Println("No matching devices found.")
+				return
+			}
+			err = PrintDevs(devs)
+			if err != nil {
+				fmt.Println(err)
+				os.Exit(1)
+			}
 		}
-		PrintDevs(devs)
 		return
 
 	case "set_info":
@@ -398,14 +414,27 @@ func RingBuildCmd(flags *flag.FlagSet) {
 			zones = len(zoneSet)
 			balance = builder.GetBalance()
 		}
-		fmt.Printf("%s, build version %d, %d partitions, %.6f replicas, %d regions, %d zones, %d devices, %.02f balance\n", pth, builder.Version, builder.Parts, builder.Replicas, regions, zones, devCount, balance)
-		fmt.Printf("The minimum number of hours before a partition can be reassigned is %v (%v remaining)\n", builder.MinPartHours, time.Duration(builder.MinPartSecondsLeft())*time.Second)
-		fmt.Printf("The overload factor is %0.2f%% (%.6f)\n", builder.Overload*100, builder.Overload)
+		if jsonOut {
+			b, err := json.Marshal(builder)
+			if err != nil {
+				fmt.Println(err)
+				os.Exit(1)
+			}
+			os.Stdout.Write(b)
+		} else {
+			fmt.Printf("%s, build version %d, %d partitions, %.6f replicas, %d regions, %d zones, %d devices, %.02f balance\n", pth, builder.Version, builder.Parts, builder.Replicas, regions, zones, devCount, balance)
+			fmt.Printf("The minimum number of hours before a partition can be reassigned is %v (%v remaining)\n", builder.MinPartHours, time.Duration(builder.MinPartSecondsLeft())*time.Second)
+			fmt.Printf("The overload factor is %0.2f%% (%.6f)\n", builder.Overload*100, builder.Overload)
 
-		// Compare ring file against builder file
-		// TODO: Figure out how to do ring comparisons
+			// Compare ring file against builder file
+			// TODO: Figure out how to do ring comparisons
 
-		PrintDevs(builder.Devs)
+			err = PrintDevs(builder.Devs)
+			if err != nil {
+				fmt.Println(err)
+				os.Exit(1)
+			}
+		}
 
 	case "analyze":
 		epsilon := func(a, b float64) float64 {
