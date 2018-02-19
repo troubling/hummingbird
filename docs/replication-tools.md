@@ -125,22 +125,3 @@ If you are using storage policies, use *-p policy_id* so it can find the correct
 current ring.
 
 This can be run after every device replacement to heal your cluster asap.
-
-## rescueparts
-
-If, for whatever reason, you notice that there is a partition that is in need of
-replication (say it is the only copy left) you can run **rescueparts** to send
-a priority replication call to all devices in the cluster to replicate the
-partition if they have it. Most of the calls will 404 but this will make copies
-of the partition and clean up handoffs for the partition on any nodes that have
-them. You run it like:
-
-```
-hummingbird rescueparts 18,12
-```
-
-the current ring must be in the *normal* spot. (i.e. */etc/hummingbird/object.ring.gz*)
-and it is important that that is the deployed ring in the cluster.
-
-If you are using storage policies, use *-p policy_id* so it can find the correct
-current ring.
