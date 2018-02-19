@@ -296,25 +296,27 @@ func rescueLonelyPartition(policy int64, partition uint64, goodNode *ring.Device
 		toNodes = append(toNodes, moreNodes.Next())
 	}
 	tries := 1
-	for {
-		res, success := objectserver.SendPriRepJob(&objectserver.PriorityRepJob{
-			Partition:  partition,
-			FromDevice: goodNode,
-			ToDevices:  toNodes,
-			Policy:     int(policy)}, c)
-		if success {
-			resultChan <- res
-			return
-		} else {
-			nextNode := moreNodes.Next()
-			if nextNode == nil {
-				resultChan <- fmt.Sprintf("Rescue partition %d failed after %d tries. %s", partition, tries, res)
-				return
+	for _, toNode := range toNodes {
+		for {
+			res, success := objectserver.SendPriRepJob(&objectserver.PriorityRepJob{
+				Partition:  partition,
+				FromDevice: goodNode,
+				ToDevice:   toNode,
+				Policy:     int(policy)}, c)
+			if success {
+				resultChan <- res
+				break
+			} else {
+				nextNode := moreNodes.Next()
+				if nextNode == nil {
+					resultChan <- fmt.Sprintf("Rescue partition %d failed after %d tries. %s", partition, tries, res)
+					break
+				}
+				toNodes = []*ring.Device{nextNode}
 			}
-			toNodes = []*ring.Device{nextNode}
+			tries += 1
+			time.Sleep(time.Second)
 		}
-		tries += 1
-		time.Sleep(time.Second)
 	}
 }
 

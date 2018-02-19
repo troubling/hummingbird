@@ -424,9 +424,6 @@ func main() {
 		fmt.Fprintln(os.Stderr, "hummingbird restoredevice [ip] [device-name]")
 		fmt.Fprintln(os.Stderr, "  Reconstruct a device from its peers")
 		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "hummingbird rescueparts [partnum1,partnum2,...]")
-		fmt.Fprintln(os.Stderr, "  Will send requests to all the object nodes to try to fully replicate given partitions if they have them.")
-		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, "hummingbird bench CONFIG")
 		fmt.Fprintln(os.Stderr, "  Run bench tool")
 		fmt.Fprintln(os.Stderr)
@@ -515,8 +512,6 @@ func main() {
 		objectserver.MoveParts(flag.Args()[1:], srv.DefaultConfigLoader{})
 	case "restoredevice":
 		objectserver.RestoreDevice(flag.Args()[1:], srv.DefaultConfigLoader{})
-	case "rescueparts":
-		objectserver.RescueParts(flag.Args()[1:], srv.DefaultConfigLoader{})
 	case "ring":
 		ringBuilderFlags.Parse(flag.Args()[1:])
 		tools.RingBuildCmd(ringBuilderFlags)

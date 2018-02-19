@@ -110,10 +110,10 @@ func TestGetPartMoveJobs(t *testing.T) {
 	require.EqualValues(t, 2, len(jobs))
 	require.EqualValues(t, 0, jobs[0].Partition)
 	require.EqualValues(t, 1, jobs[0].FromDevice.Id)
-	require.EqualValues(t, 6, jobs[0].ToDevices[0].Id)
+	require.EqualValues(t, 6, jobs[0].ToDevice.Id)
 	require.EqualValues(t, 1, jobs[1].Partition)
 	require.EqualValues(t, 10, jobs[1].FromDevice.Id)
-	require.EqualValues(t, 11, jobs[1].ToDevices[0].Id)
+	require.EqualValues(t, 11, jobs[1].ToDevice.Id)
 }
 
 func TestGetRestoreDeviceJobs(t *testing.T) {
@@ -128,10 +128,10 @@ func TestGetRestoreDeviceJobs(t *testing.T) {
 	require.EqualValues(t, 2, len(jobs))
 	require.EqualValues(t, 0, jobs[0].Partition)
 	require.EqualValues(t, 2, jobs[0].FromDevice.Id)
-	require.EqualValues(t, 1, jobs[0].ToDevices[0].Id)
+	require.EqualValues(t, 1, jobs[0].ToDevice.Id)
 	require.EqualValues(t, 1, jobs[1].Partition)
 	require.EqualValues(t, 3, jobs[1].FromDevice.Id)
-	require.EqualValues(t, 1, jobs[1].ToDevices[0].Id)
+	require.EqualValues(t, 1, jobs[1].ToDevice.Id)
 }
 
 func TestGetRestoreDeviceJobsSameRegion(t *testing.T) {
@@ -144,7 +144,7 @@ func TestGetRestoreDeviceJobsSameRegion(t *testing.T) {
 	}
 	jobs := getRestoreDeviceJobs(ring, "127.0.0.1", "drive1", 1, false, []uint64{})
 	require.EqualValues(t, 1, len(jobs))
-	require.EqualValues(t, jobs[0].FromDevice.Region, jobs[0].ToDevices[0].Region)
+	require.EqualValues(t, jobs[0].FromDevice.Region, jobs[0].ToDevice.Region)
 }
 
 func TestGetRestoreDeviceJobsAllPeers(t *testing.T) {
@@ -179,8 +179,7 @@ func TestPriRepJobs(t *testing.T) {
 		}
 		require.EqualValues(t, 0, pri.Partition)
 		require.EqualValues(t, "sda", pri.FromDevice.Device)
-		require.EqualValues(t, 1, len(pri.ToDevices))
-		require.EqualValues(t, "sdb", pri.ToDevices[0].Device)
+		require.EqualValues(t, "sdb", pri.ToDevice.Device)
 	}))
 
 	defer ts.Close()
@@ -191,9 +190,7 @@ func TestPriRepJobs(t *testing.T) {
 		{
 			Partition:  0,
 			FromDevice: &ring.Device{Device: "sda", Ip: host, Port: port, ReplicationIp: host, ReplicationPort: port, Scheme: "http"},
-			ToDevices: []*ring.Device{
-				{Device: "sdb"},
-			},
+			ToDevice:   &ring.Device{Device: "sdb"},
 		},
 	}
 	doPriRepJobs(jobs, 2, http.DefaultClient)
@@ -204,15 +201,15 @@ func TestDevLimiter(t *testing.T) {
 	t.Parallel()
 	job1 := &PriorityRepJob{
 		FromDevice: &ring.Device{Id: 0},
-		ToDevices:  []*ring.Device{{Id: 1, Device: "sdb"}},
+		ToDevice:   &ring.Device{Id: 1, Device: "sdb"},
 	}
 	job2 := &PriorityRepJob{
 		FromDevice: &ring.Device{Id: 1},
-		ToDevices:  []*ring.Device{{Id: 2, Device: "sdb"}},
+		ToDevice:   &ring.Device{Id: 2, Device: "sdb"},
 	}
 	job3 := &PriorityRepJob{
 		FromDevice: &ring.Device{Id: 1},
-		ToDevices:  []*ring.Device{{Id: 0, Device: "sdb"}},
+		ToDevice:   &ring.Device{Id: 0, Device: "sdb"},
 	}
 	limiter := &devLimiter{inUse: make(map[int]int), max: 2, somethingFinished: make(chan struct{}, 1)}
 	require.True(t, limiter.start(job1))
@@ -220,33 +217,6 @@ func TestDevLimiter(t *testing.T) {
 	require.False(t, limiter.start(job3))
 	limiter.finished(job1)
 	require.True(t, limiter.start(job3))
-}
-
-func TestGetRescuePartsJobs(t *testing.T) {
-	t.Parallel()
-	objRing := &priFakeRing{
-		mapping: map[uint64][]int{
-			0: {1, 2, 3},
-			1: {6, 7, 8},
-		},
-	}
-	jobs := getRescuePartsJobs(objRing, []uint64{1})
-	require.EqualValues(t, 3, len(jobs))
-
-	require.EqualValues(t, 0, jobs[0].FromDevice.Id)
-	require.EqualValues(t, 1, jobs[0].ToDevices[0].Id)
-	require.EqualValues(t, 2, jobs[0].ToDevices[1].Id)
-	require.EqualValues(t, 1, jobs[0].Partition)
-
-	require.EqualValues(t, 1, len(jobs[1].ToDevices))
-	require.EqualValues(t, 1, jobs[1].FromDevice.Id)
-	require.EqualValues(t, 2, jobs[1].ToDevices[0].Id)
-	require.EqualValues(t, 1, jobs[1].Partition)
-
-	require.EqualValues(t, 1, len(jobs[2].ToDevices))
-	require.EqualValues(t, 2, jobs[2].FromDevice.Id)
-	require.EqualValues(t, 1, jobs[2].ToDevices[0].Id)
-	require.EqualValues(t, 1, jobs[2].Partition)
 }
 
 func TestMovePartsPolicy(t *testing.T) {

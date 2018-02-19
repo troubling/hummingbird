@@ -46,14 +46,10 @@ type devLimiter struct {
 func (d *devLimiter) start(j *PriorityRepJob) bool {
 	d.m.Lock()
 	doable := d.inUse[j.FromDevice.Id] < d.max
-	for _, dev := range j.ToDevices {
-		doable = doable && d.inUse[dev.Id] < d.max
-	}
+	doable = doable && d.inUse[j.ToDevice.Id] < d.max
 	if doable {
 		d.inUse[j.FromDevice.Id] += 1
-		for _, dev := range j.ToDevices {
-			d.inUse[dev.Id] += 1
-		}
+		d.inUse[j.ToDevice.Id] += 1
 	}
 	d.m.Unlock()
 	return doable
@@ -62,9 +58,7 @@ func (d *devLimiter) start(j *PriorityRepJob) bool {
 func (d *devLimiter) finished(j *PriorityRepJob) {
 	d.m.Lock()
 	d.inUse[j.FromDevice.Id] -= 1
-	for _, dev := range j.ToDevices {
-		d.inUse[dev.Id] -= 1
-	}
+	d.inUse[j.ToDevice.Id] -= 1
 	d.m.Unlock()
 	select {
 	case d.somethingFinished <- struct{}{}:
@@ -190,7 +184,7 @@ func getPartMoveJobs(oldRing, newRing ring.Ring, overrideParts []uint64) []*Prio
 				jobs = append(jobs, &PriorityRepJob{
 					Partition:  partition,
 					FromDevice: fromDev,
-					ToDevices:  []*ring.Device{newdevs[i]},
+					ToDevice:   newdevs[i],
 				})
 			}
 		}
@@ -351,7 +345,7 @@ func getRestoreDeviceJobs(theRing ring.Ring, ip string, devName string, srcRegio
 				jobs = append(jobs, &PriorityRepJob{
 					Partition:  partition,
 					FromDevice: src,
-					ToDevices:  []*ring.Device{toDev},
+					ToDevice:   toDev,
 				})
 				foundJob = true
 				if !allPeers {
@@ -454,82 +448,5 @@ func RestoreDevice(args []string, cnf srv.ConfigLoader) {
 			}
 		}
 	}
-	fmt.Println("Done sending jobs.")
-}
-
-func getRescuePartsJobs(objRing ring.Ring, partitions []uint64) []*PriorityRepJob {
-	jobs := make([]*PriorityRepJob, 0)
-	allDevices := objRing.AllDevices()
-	for d := range allDevices {
-		if allDevices[d] != nil {
-			for _, p := range partitions {
-				nodes, _ := objRing.GetJobNodes(p, allDevices[d].Id)
-				jobs = append(jobs, &PriorityRepJob{
-					Partition:  p,
-					FromDevice: allDevices[d],
-					ToDevices:  nodes,
-				})
-			}
-		}
-	}
-	return jobs
-}
-
-func RescueParts(args []string, cnf srv.ConfigLoader) {
-	flags := flag.NewFlagSet("rescueparts", flag.ExitOnError)
-	policy := flags.Int("p", 0, "policy index to use")
-	certFile := flags.String("certfile", "", "Cert file to use for setting up https client")
-	keyFile := flags.String("keyfile", "", "Key file to use for setting up https client")
-	flags.Usage = func() {
-		fmt.Fprintf(os.Stderr, "USAGE: hummingbird rescueparts partnum1,partnum2,...\n")
-		flags.PrintDefaults()
-	}
-	flags.Parse(args)
-	if len(flags.Args()) != 1 {
-		flags.Usage()
-		return
-	}
-
-	hashPathPrefix, hashPathSuffix, err := cnf.GetHashPrefixAndSuffix()
-	if err != nil {
-		fmt.Println("Unable to load hash path prefix and suffix:", err)
-		return
-	}
-	objRing, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, *policy)
-	if err != nil {
-		fmt.Println("Unable to load ring:", err)
-		return
-	}
-	partsStr := strings.Split(flags.Arg(0), ",")
-	partsInt := make([]uint64, len(partsStr))
-	for i, p := range partsStr {
-		partsInt[i], err = strconv.ParseUint(p, 10, 64)
-		if err != nil {
-			fmt.Println("Invalid Partition:", p)
-			return
-		}
-	}
-	transport := &http.Transport{
-		MaxIdleConnsPerHost: 100,
-		MaxIdleConns:        0,
-	}
-	if *certFile != "" && *keyFile != "" {
-		tlsConf, err := common.NewClientTLSConfig(*certFile, *keyFile)
-		if err != nil {
-			fmt.Println("Error getting TLS config:", err)
-			return
-		}
-		transport.TLSClientConfig = tlsConf
-		if err = http2.ConfigureTransport(transport); err != nil {
-			fmt.Println("Error setting up http2:", err)
-		}
-	}
-	client := &http.Client{
-		Timeout:   time.Hour,
-		Transport: transport,
-	}
-	jobs := getRescuePartsJobs(objRing, partsInt)
-	fmt.Println("Job count:", len(jobs))
-	doPriRepJobs(jobs, 1, client)
 	fmt.Println("Done sending jobs.")
 }

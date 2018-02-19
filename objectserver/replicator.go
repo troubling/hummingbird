@@ -56,11 +56,11 @@ const (
 )
 
 type PriorityRepJob struct {
-	Partition  uint64         `json:"partition"`
-	FromDevice *ring.Device   `json:"from_device"`
-	ToDevices  []*ring.Device `json:"to_devices"`
-	Policy     int            `json:"policy"`
-	Version    string         `json:"version"`
+	Partition  uint64       `json:"partition"`
+	FromDevice *ring.Device `json:"from_device"`
+	ToDevice   *ring.Device `json:"to_device"`
+	Policy     int          `json:"policy"`
+	Version    string       `json:"version"`
 }
 
 type quarantineFileError struct {
@@ -716,10 +716,6 @@ func (rd *replicationDevice) processPriorityJobs() {
 				}()
 				partition := strconv.FormatUint(pri.Partition, 10)
 				_, handoff := rd.r.objectRings[rd.policy].GetJobNodes(pri.Partition, pri.FromDevice.Id)
-				toDevicesArr := make([]string, len(pri.ToDevices))
-				for i, s := range pri.ToDevices {
-					toDevicesArr[i] = fmt.Sprintf("%s:%d/%s", s.Ip, s.Port, s.Device)
-				}
 				jobType := "local"
 				if handoff {
 					jobType = "handoff"
@@ -732,9 +728,9 @@ func (rd *replicationDevice) processPriorityJobs() {
 					zap.Uint64("partition", pri.Partition),
 					zap.String("jobType", jobType),
 					zap.String("From Device", pri.FromDevice.Device),
-					zap.String("To Device", strings.Join(toDevicesArr, ",")))
+					zap.String("To Device", pri.ToDevice.Device))
 				rjob := replJob{
-					partition: partition, nodes: pri.ToDevices,
+					partition: partition, nodes: []*ring.Device{pri.ToDevice},
 					headers: map[string]string{"X-Force-Acquire": "true"}}
 				if handoff || (policy.Type == "replication-nursery" &&
 					!common.LooksTrue(policy.Config["cache_hash_dirs"])) {

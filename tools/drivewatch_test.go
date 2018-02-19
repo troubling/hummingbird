@@ -562,8 +562,7 @@ func TestCheckMissingDispersionObjects(t *testing.T) {
 			require.Nil(t, err)
 			require.Equal(t, uint64(100), prj.Partition)
 			require.Equal(t, "sdb", prj.FromDevice.Device)
-			require.Equal(t, 1, len(prj.ToDevices))
-			require.Equal(t, "sda", prj.ToDevices[0].Device)
+			require.Equal(t, "sda", prj.ToDevice.Device)
 		}
 		srv.SimpleErrorResponse(w, 200, "")
 	}))
