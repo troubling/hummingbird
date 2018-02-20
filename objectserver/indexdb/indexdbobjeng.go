@@ -36,7 +36,7 @@ func indexDBEngineConstructor(config conf.Config, policy *conf.Policy, flags *fl
 	if err != nil {
 		return nil, err
 	}
-	ringPartPower := bits.Len64(ringg.PartitionCount())
+	ringPartPower := bits.Len64(ringg.PartitionCount() - 1)
 	dbPartPower := 0
 	if policy.Config["db_part_power"] != "" {
 		dbPartPowerInt64, err := strconv.ParseInt(policy.Config["db_part_power"], 10, 64)
