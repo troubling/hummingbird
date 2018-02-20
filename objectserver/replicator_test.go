@@ -487,9 +487,7 @@ func TestPriorityRepHandler404(t *testing.T) {
 	job := &PriorityRepJob{
 		Partition:  0,
 		FromDevice: &ring.Device{Id: 1, Device: "sda", Ip: "127.0.0.1", Port: 5000, ReplicationIp: "127.0.0.1", ReplicationPort: 5000},
-		ToDevices: []*ring.Device{
-			{Id: 2, Device: "sdb"},
-		},
+		ToDevice:   &ring.Device{Id: 2, Device: "sdb"},
 	}
 	jsonned, _ := json.Marshal(job)
 	req, _ := http.NewRequest("POST", "/priorityrep", bytes.NewBuffer(jsonned))
@@ -828,7 +826,7 @@ func TestProcessPriorityJobs(t *testing.T) {
 	rd.priRep <- PriorityRepJob{
 		Partition:  1,
 		FromDevice: &ring.Device{},
-		ToDevices:  []*ring.Device{{}},
+		ToDevice:   &ring.Device{},
 		Policy:     0,
 	}
 	replicateUsingHashesCalled := false
@@ -847,7 +845,7 @@ func TestProcessPriorityJobs(t *testing.T) {
 	rd.priRep <- PriorityRepJob{
 		Partition:  1,
 		FromDevice: &ring.Device{},
-		ToDevices:  []*ring.Device{{}},
+		ToDevice:   &ring.Device{},
 		Policy:     0,
 	}
 	testRing.MockGetJobNodesHandoff = true
@@ -1030,7 +1028,7 @@ func TestPriorityReplicate(t *testing.T) {
 	replicator.priorityReplicate(&httptest.ResponseRecorder{}, PriorityRepJob{
 		Partition:  1,
 		FromDevice: &ring.Device{Device: "sda"},
-		ToDevices:  []*ring.Device{},
+		ToDevice:   nil,
 		Policy:     0,
 	})
 	require.True(t, priorityReplicateCalled)
