@@ -85,7 +85,7 @@ type ObjectEngine interface {
 type NurseryObjectEngine interface {
 	ObjectEngine
 	GetNurseryObjects(device string, c chan ObjectStabilizer, cancel chan struct{})
-	GetObjectsToReplicate(device string, partition uint64, c chan ObjectStabilizer, cancel chan struct{})
+	GetObjectsToReplicate(prirep PriorityRepJob, c chan ObjectStabilizer, cancel chan struct{})
 }
 
 type PolicyHandlerRegistrator interface {

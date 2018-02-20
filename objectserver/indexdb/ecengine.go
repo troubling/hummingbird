@@ -23,6 +23,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math/bits"
 	"net"
 	"net/http"
@@ -234,43 +235,83 @@ func (f *ecEngine) ecFragDeleteHandler(writer http.ResponseWriter, request *http
 	}
 }
 
-func (f *ecEngine) GetObjectsToReplicate(device string, partition uint64, c chan objectserver.ObjectStabilizer, cancel chan struct{}) {
+func (f *ecEngine) GetObjectsToReplicate(prirep objectserver.PriorityRepJob, c chan objectserver.ObjectStabilizer, cancel chan struct{}) {
 	defer close(c)
-	idb, err := f.getDB(device)
+	idb, err := f.getDB(prirep.FromDevice.Device)
 	if err != nil {
+		f.logger.Error("error getting local db", zap.Error(err))
 		return
 	}
-	startHash, stopHash := idb.RingPartRange(int(partition))
+	startHash, stopHash := idb.RingPartRange(int(prirep.Partition))
 	items, err := idb.List(startHash, stopHash, 0)
-	// TODO: so right now this returns nursery and stable objects. should i weed
-	// out the nursery- we;d want to replicate those too right?
-	// Also- right now this just returns everything. depending on what's going on
-	// this will need to query the other servers and compare lists to see
-	// what is missing that we need to send
-	if err != nil {
+	if len(items) == 0 {
 		return
 	}
+	url := fmt.Sprintf("%s://%s:%d/partition/%s/%d", prirep.ToDevice.Scheme, prirep.ToDevice.Ip, prirep.ToDevice.Port, prirep.ToDevice.Device, prirep.Partition)
+	req, err := http.NewRequest("GET", url, nil)
+	req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(prirep.Policy))
+	req.Header.Set("User-Agent", "nursery-stabilizer")
+	resp, err := f.client.Do(req)
+
+	var remoteItems []*IndexDBItem
+	if err == nil && (resp.StatusCode/100 == 2 || resp.StatusCode == 404) {
+		if data, err := ioutil.ReadAll(resp.Body); err == nil {
+			if err = json.Unmarshal(data, &remoteItems); err != nil {
+				f.logger.Error("error unmarshaling partition list", zap.Error(err))
+			}
+		} else {
+			f.logger.Error("error reading partition list", zap.Error(err))
+		}
+	}
+	// TODO: so right now this returns nursery and stable objects. should i weed
+	// out the nursery- we;d want to replicate those too right? but- stuff in
+	// nursery will be looked at by stabilzer- sooo..
+	if err != nil {
+		f.logger.Error("error getting local partition list", zap.Error(err))
+		return
+	}
+	rii := 0
 	for _, item := range items {
-		obj := &ecObject{
-			IndexDBItem: *item,
-			idb:         idb,
-			dataFrags:   f.dataFrags,
-			parityFrags: f.parityFrags,
-			chunkSize:   f.chunkSize,
-			reserve:     f.reserve,
-			ring:        f.ring,
-			logger:      f.logger,
-			policy:      f.policy,
-			client:      f.client,
-			metadata:    map[string]string{},
+		sendItem := true
+		for rii < len(remoteItems) {
+			if remoteItems[rii].Hash > item.Hash {
+				break
+			}
+			if remoteItems[rii].Hash < item.Hash {
+				rii++
+				continue
+			}
+			if remoteItems[rii].Hash == item.Hash &&
+				remoteItems[rii].Timestamp == item.Timestamp &&
+				remoteItems[rii].Nursery == item.Nursery &&
+				remoteItems[rii].Deletion == item.Deletion {
+				sendItem = false
+			}
+			rii++
+			break
 		}
-		if err = json.Unmarshal(item.Metabytes, &obj.metadata); err != nil {
-			continue
-		}
-		select {
-		case c <- obj:
-		case <-cancel:
-			return
+		if sendItem {
+			obj := &ecObject{
+				IndexDBItem: *item,
+				idb:         idb,
+				dataFrags:   f.dataFrags,
+				parityFrags: f.parityFrags,
+				chunkSize:   f.chunkSize,
+				reserve:     f.reserve,
+				ring:        f.ring,
+				logger:      f.logger,
+				policy:      f.policy,
+				client:      f.client,
+				metadata:    map[string]string{},
+			}
+			if err = json.Unmarshal(item.Metabytes, &obj.metadata); err != nil {
+				continue
+			}
+			select {
+			case c <- obj:
+			case <-cancel:
+				return
+			}
 		}
 	}
 }

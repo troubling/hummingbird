@@ -613,11 +613,11 @@ func (f *nurseryEngine) GetNurseryObjects(device string, c chan ObjectStabilizer
 	}
 }
 
-func (f *nurseryEngine) GetObjectsToReplicate(device string, partition uint64, c chan ObjectStabilizer, cancel chan struct{}) {
+func (f *nurseryEngine) GetObjectsToReplicate(prirep PriorityRepJob, c chan ObjectStabilizer, cancel chan struct{}) {
 	defer close(c)
 	//TODO: i'm going to change nurseryObjects to use Index.db for
 	// stabilized
-	objDirPath := filepath.Join(f.driveRoot, device,
+	objDirPath := filepath.Join(f.driveRoot, prirep.FromDevice.Device,
 		fmt.Sprintf("stable-%s", PolicyDir(f.policy)))
 	partitions, err := fs.ReadDirNames(objDirPath)
 	if err != nil {
@@ -665,7 +665,7 @@ func (f *nurseryEngine) GetObjectsToReplicate(device string, partition uint64, c
 				"nurseryHashDir": hashDir,
 				"account":        ns[1], "container": ns[2],
 				"obj": ns[3], "partition": partition,
-				"device": device}
+				"device": prirep.FromDevice.Device}
 
 			p, err := f.New(vars, true, nil)
 			//TODO: we need a new "New" the current one tries to figure where the
