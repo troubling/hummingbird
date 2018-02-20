@@ -313,6 +313,7 @@ func main() {
 
 	ringBuilderFlags := flag.NewFlagSet("ring builder", flag.ExitOnError)
 	ringBuilderFlags.Bool("debug", false, "Run in debug mode")
+	ringBuilderFlags.Bool("json", false, "Ouput in JSON format")
 	ringBuilderFlags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "hummingbird ring <builder_file> command\n")
 		fmt.Fprintf(os.Stderr, "  Builds a swift style ring.  Commands are:\n")
@@ -331,7 +332,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  <device> is of the form: [r<region>]z<zone>[s<scheme>]-<ip>:<port>[R<r_ip>:<r_port>]/<device_name>_<meta>\n")
 		fmt.Fprintf(os.Stderr, "  <scheme> can be either http or https\n")
 		fmt.Fprintf(os.Stderr, "  <search_flags> is at least one of: -region, -zone, -scheme, -ip, -port, -replication-ip, replication-port, -device, -meta, -weight\n")
-		fmt.Fprintf(os.Stderr, "  <change_flags> is at least one of: -change-ip, -change-port, -change-replication-ip, -change-replication-port, -change-device, -change-meta, -change-scheme")
+		fmt.Fprintf(os.Stderr, "  <change_flags> is at least one of: -change-ip, -change-port, -change-replication-ip, -change-replication-port, -change-device, -change-meta, -change-scheme\n")
 		ringBuilderFlags.PrintDefaults()
 	}
 
