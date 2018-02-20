@@ -130,8 +130,9 @@ func RingBuildCmd(flags *flag.FlagSet) {
 				os.Exit(1)
 			}
 			os.Stdout.Write(b)
+			os.Stdout.Write([]byte("\n"))
 		} else {
-			if len(devs) == 0 && !jsonOut {
+			if len(devs) == 0 {
 				fmt.Println("No matching devices found.")
 				return
 			}
@@ -421,6 +422,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 				os.Exit(1)
 			}
 			os.Stdout.Write(b)
+			os.Stdout.Write([]byte("\n"))
 		} else {
 			fmt.Printf("%s, build version %d, %d partitions, %.6f replicas, %d regions, %d zones, %d devices, %.02f balance\n", pth, builder.Version, builder.Parts, builder.Replicas, regions, zones, devCount, balance)
 			fmt.Printf("The minimum number of hours before a partition can be reassigned is %v (%v remaining)\n", builder.MinPartHours, time.Duration(builder.MinPartSecondsLeft())*time.Second)
