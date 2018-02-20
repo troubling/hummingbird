@@ -29,7 +29,7 @@ import (
 	"github.com/troubling/hummingbird/common/ring"
 )
 
-func PrintDevs(devs []*ring.RingBuilderDevice) error {
+func PrintDevs(devs []*ring.RingBuilderDevice) {
 	data := make([][]string, 0)
 	data = append(data, []string{"ID", "REGION", "ZONE", "SCHEME", "IP ADDRESS", "PORT", "REPLICATION IP", "REPLICATION PORT", "NAME", "WEIGHT", "PARTITIONS", "META"})
 	data = append(data, nil)
@@ -39,7 +39,6 @@ func PrintDevs(devs []*ring.RingBuilderDevice) error {
 		}
 	}
 	fmt.Println(brimtext.Align(data, brimtext.NewSimpleAlignOptions()))
-	return nil
 }
 
 func RingBuildCmd(flags *flag.FlagSet) {
@@ -136,11 +135,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 				fmt.Println("No matching devices found.")
 				return
 			}
-			err = PrintDevs(devs)
-			if err != nil {
-				fmt.Println(err)
-				os.Exit(1)
-			}
+			PrintDevs(devs)
 		}
 		return
 
@@ -431,11 +426,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 			// Compare ring file against builder file
 			// TODO: Figure out how to do ring comparisons
 
-			err = PrintDevs(builder.Devs)
-			if err != nil {
-				fmt.Println(err)
-				os.Exit(1)
-			}
+			PrintDevs(builder.Devs)
 		}
 
 	case "analyze":
