@@ -38,6 +38,7 @@ import (
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/objectserver"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
@@ -1164,5 +1165,34 @@ func NewDriveWatch(logger srv.LowLevelLogger,
 		maxWeightChange:      serverconf.GetFloat("drive_watch", "max_weight_change", 0.01),
 		updateRing:           serverconf.GetBool("drive_watch", "update_ring", false),
 		sqlDir:               sqlDir,
+	}
+}
+
+func rescueLonelyPartition(policy int64, partition uint64, goodNode *ring.Device, toNodes []*ring.Device, moreNodes ring.MoreNodes, resultChan chan<- string, c *http.Client) {
+	if len(toNodes) == 0 {
+		toNodes = append(toNodes, moreNodes.Next())
+	}
+	tries := 1
+	for _, toNode := range toNodes {
+		for {
+			res, success := objectserver.SendPriRepJob(&objectserver.PriorityRepJob{
+				Partition:  partition,
+				FromDevice: goodNode,
+				ToDevice:   toNode,
+				Policy:     int(policy)}, c)
+			if success {
+				resultChan <- res
+				break
+			} else {
+				nextNode := moreNodes.Next()
+				if nextNode == nil {
+					resultChan <- fmt.Sprintf("Rescue partition %d failed after %d tries. %s", partition, tries, res)
+					break
+				}
+				toNodes = []*ring.Device{nextNode}
+			}
+			tries += 1
+			time.Sleep(time.Second)
+		}
 	}
 }

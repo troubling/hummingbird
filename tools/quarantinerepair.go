@@ -1,9 +1,10 @@
 package tools
 
 // In /etc/hummingbird/andrewd-server.conf:
-// [quarantine-repairman]
+// [quarantine-repair]
 // initial_delay = 1       # seconds to wait between requests for the first pass
 // pass_time_target = 3600 # seconds to try to make subsequent passes take
+// report_interval = 600    # seconds between progress reports
 
 import (
 	"encoding/json"
@@ -13,24 +14,27 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/troubling/hummingbird/common/ring"
 	"go.uber.org/zap"
 )
 
-type quarantineRepairman struct {
+type quarantineRepair struct {
 	aa *AutoAdmin
 	// delay between each request; adjusted each pass to try to make passes last passTimeTarget
 	delay          time.Duration
 	passTimeTarget time.Duration
+	reportInterval time.Duration
 }
 
-func newQuarantineRepairman(aa *AutoAdmin) *quarantineRepairman {
-	qr := &quarantineRepairman{
+func newQuarantineRepair(aa *AutoAdmin) *quarantineRepair {
+	qr := &quarantineRepair{
 		aa:             aa,
-		delay:          time.Duration(aa.serverconf.GetInt("quarantine-garbageman", "initial_delay", 1)) * time.Second,
-		passTimeTarget: time.Duration(aa.serverconf.GetInt("quarantine-garbageman", "pass_time_target", 60*60)) * time.Second,
+		delay:          time.Duration(aa.serverconf.GetInt("quarantine-repair", "initial_delay", 1)) * time.Second,
+		passTimeTarget: time.Duration(aa.serverconf.GetInt("quarantine-repair", "pass_time_target", 60*60)) * time.Second,
+		reportInterval: time.Duration(aa.serverconf.GetInt("quarantine-repair", "report_interval", 600)) * time.Second,
 	}
 	if qr.delay < 0 {
 		qr.delay = time.Second
@@ -41,19 +45,49 @@ func newQuarantineRepairman(aa *AutoAdmin) *quarantineRepairman {
 	return qr
 }
 
-func (qr *quarantineRepairman) runForever() {
+func (qr *quarantineRepair) runForever() {
 	for {
-		qr.runOnce()
+		sleepFor := qr.runOnce()
+		if sleepFor < 0 {
+			break
+		}
+		time.Sleep(sleepFor)
 	}
 }
 
-func (qr *quarantineRepairman) runOnce() {
+func (qr *quarantineRepair) runOnce() time.Duration {
 	start := time.Now()
-	logger := qr.aa.logger.With(zap.String("process", "quarantine repairman"))
+	logger := qr.aa.logger.With(zap.String("process", "quarantine repair"))
 	logger.Debug("starting pass")
-	delays := 0
-	for url, ipp := range qr.quarantineDetailURLs() {
-		delays++
+	if err := qr.aa.db.startProcessPass("quarantine repair", "", 0); err != nil {
+		logger.Error("startProcessPass", zap.Error(err))
+	}
+	var delays int64
+	var repairsMade int64
+	var partitionReplicationsQueued int64
+	urls := qr.quarantineDetailURLs()
+	cancel := make(chan struct{})
+	progressDone := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-cancel:
+				close(progressDone)
+				return
+			case <-time.After(qr.reportInterval):
+				d := atomic.LoadInt64(&delays)
+				r := atomic.LoadInt64(&repairsMade)
+				p := atomic.LoadInt64(&partitionReplicationsQueued)
+				eta := time.Duration(int64(time.Since(start)) / d * (int64(len(urls)) - d))
+				logger.Debug("progress", zap.Int64("urls so far", d), zap.Int("total urls", len(urls)), zap.String("eta", eta.String()))
+				if err := qr.aa.db.progressProcessPass("quarantine repair", "", 0, fmt.Sprintf("%d of %d urls, %d repairs made, %d partition replications queued, eta %s", d, len(urls), r, p, eta)); err != nil {
+					logger.Error("progressProcessPass", zap.Error(err))
+				}
+			}
+		}
+	}()
+	for url, ipp := range urls {
+		atomic.AddInt64(&delays, 1)
 		time.Sleep(qr.delay)
 		getLogger := logger.With(zap.String("method", "GET"), zap.String("url", url))
 		for typ, deviceToEntries := range qr.retrieveTypeToDeviceToEntries(getLogger, url) {
@@ -69,12 +103,12 @@ func (qr *quarantineRepairman) runOnce() {
 					var err error
 					policy, err = strconv.Atoi(typ[len("objects-"):])
 					if err != nil {
-						getLogger.Debug("Weird type in entries", zap.String("type", typ), zap.Error(err))
+						getLogger.Debug("weird type in entries", zap.String("type", typ), zap.Error(err))
 						continue
 					}
 					typ = "object"
 				} else {
-					getLogger.Debug("Weird type in entries", zap.String("type", typ))
+					getLogger.Debug("weird type in entries", zap.String("type", typ))
 					continue
 				}
 				ringg, _ := getRing("", typ, policy)
@@ -101,17 +135,26 @@ func (qr *quarantineRepairman) runOnce() {
 			}
 		}
 	}
+	close(cancel)
+	<-progressDone
 	qr.delay = qr.passTimeTarget / time.Duration(delays)
-	logger.Debug("pass complete", zap.String("next-delay", qr.delay.String()))
-	sleepTo := time.Until(start.Add(qr.passTimeTarget))
-	if sleepTo > 0 {
-		time.Sleep(sleepTo)
+	sleepFor := time.Until(start.Add(qr.passTimeTarget))
+	if sleepFor < 0 {
+		sleepFor = 0
 	}
+	logger.Debug("pass complete", zap.String("next delay", qr.delay.String()), zap.String("sleep for", sleepFor.String()))
+	if err := qr.aa.db.progressProcessPass("quarantine repair", "", 0, fmt.Sprintf("%d of %d urls, %d repairs made, %d partition replications queued", delays, len(urls), repairsMade, partitionReplicationsQueued)); err != nil {
+		logger.Error("progressProcessPass", zap.Error(err))
+	}
+	if err := qr.aa.db.completeProcessPass("quarantine repair", "", 0); err != nil {
+		logger.Error("completeProcessPass", zap.Error(err))
+	}
+	return sleepFor
 }
 
 // quarantineDetailURLs returns a map of urls to ip-port structures based on
 // all the servers in all the rings for the hummingbird configuration.
-func (qr *quarantineRepairman) quarantineDetailURLs() map[string]*ippInstance {
+func (qr *quarantineRepair) quarantineDetailURLs() map[string]*ippInstance {
 	urls := map[string]*ippInstance{}
 	for _, typ := range []string{"account", "container", "object"} {
 		if typ == "object" {
@@ -135,7 +178,7 @@ func (qr *quarantineRepairman) quarantineDetailURLs() map[string]*ippInstance {
 // translates the response into a map[string]map[string][]*entryInstance giving
 // the types-to-devices-to-entries of quarantined items that server has; any
 // errors will be logged and an empty map returned.
-func (qr *quarantineRepairman) retrieveTypeToDeviceToEntries(logger *zap.Logger, url string) map[string]map[string][]*entryInstance {
+func (qr *quarantineRepair) retrieveTypeToDeviceToEntries(logger *zap.Logger, url string) map[string]map[string][]*entryInstance {
 	// type is accounts, containers, objects, objects-1, etc.
 	typeToDeviceToEntries := map[string]map[string][]*entryInstance{}
 	req, err := http.NewRequest("GET", url, nil)
@@ -168,7 +211,7 @@ func (qr *quarantineRepairman) retrieveTypeToDeviceToEntries(logger *zap.Logger,
 // repairObject tries to ensure all replicas are in place for the quarantined
 // entry and returns true if the entry should be deleted as it has been handled
 // as best as is possible.
-func (qr *quarantineRepairman) repairObject(logger *zap.Logger, typ string, policy int, ringg ring.Ring, entryNameInURL string) bool {
+func (qr *quarantineRepair) repairObject(logger *zap.Logger, typ string, policy int, ringg ring.Ring, entryNameInURL string) bool {
 	logger = logger.With(zap.String("name in URL", entryNameInURL))
 	parts := strings.SplitN(entryNameInURL, "/", 4)
 	var account, container, object string
@@ -313,7 +356,7 @@ func (qr *quarantineRepairman) repairObject(logger *zap.Logger, typ string, poli
 // queuePartitionReplication tries to figure out the partition for the
 // quarantined entry and queue replication of that partition; returns true if
 // the entry should be deleted as it has been handled as best as is possible.
-func (qr *quarantineRepairman) queuePartitionReplication(logger *zap.Logger, typ string, policy int, ringg ring.Ring, deviceID int, entryNameOnDevice string) bool {
+func (qr *quarantineRepair) queuePartitionReplication(logger *zap.Logger, typ string, policy int, ringg ring.Ring, deviceID int, entryNameOnDevice string) bool {
 	logger = logger.With(zap.String("name on device", entryNameOnDevice))
 	if typ == "account" || typ == "container" {
 		logger.Debug("skipping accounts and containers since they do not have priority replication, for now. There hasn't been a need for it yet because their replication passes have been so quick.")
@@ -333,47 +376,8 @@ func (qr *quarantineRepairman) queuePartitionReplication(logger *zap.Logger, typ
 		return true
 	}
 	partition := ringg.PartitionForHash(hsh)
-	db, err := qr.aa.getDB()
-	if err != nil {
-		logger.Error("cannot get database", zap.Error(err))
-		return false
-	}
-	tx, err := db.Begin()
-	if err != nil {
-		logger.Error("db.Begin", zap.Error(err))
-		return false
-	}
-	rows, err := tx.Query(`
-        SELECT rtype FROM replication_queue
-        WHERE rtype = ?
-          AND policy = ?
-          AND partition = ?
-          AND reason = "quarantine"
-          AND to_device = ?
-    `, typ, policy, partition, deviceID)
-	if err != nil {
-		tx.Rollback()
-		logger.Error("tx.Query", zap.Error(err))
-		return false
-	}
-	if rows.Next() { // entry already
-		rows.Close()
-		tx.Rollback()
-		return true
-	}
-	_, err = tx.Exec(`
-        INSERT INTO replication_queue
-        (rtype, policy, partition, reason, to_device)
-        VALUES (?, ?, ?, "quarantine", ?)
-    `, typ, policy, partition, deviceID)
-	if err != nil {
-		tx.Rollback()
-		logger.Error("tx.Exec", zap.Error(err))
-		return false
-	}
-	err = tx.Commit()
-	if err != nil {
-		logger.Error("tx.Commit", zap.Error(err))
+	if err = qr.aa.db.queuePartitionReplication(typ, policy, partition, "quarantine", -1, deviceID); err != nil {
+		logger.Error("could not queue partition for replication", zap.Uint64("partition", partition), zap.Error(err))
 		return false
 	}
 	return true
@@ -390,7 +394,7 @@ type entryInstance struct {
 	NameInURL    string
 }
 
-func (qr *quarantineRepairman) clearQuarantine(logger *zap.Logger, ipp *ippInstance, device, typ string, policy int, nameOnDevice string) error {
+func (qr *quarantineRepair) clearQuarantine(logger *zap.Logger, ipp *ippInstance, device, typ string, policy int, nameOnDevice string) error {
 	reconType := typ + "s"
 	if policy != 0 {
 		reconType += fmt.Sprintf("-%d", policy)
