@@ -27,12 +27,13 @@ func systemdCommand(args []string) error {
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
 			cmd.Start()
+			sigchan := make(chan os.Signal, 1)
 			go func() {
 				if err := cmd.Wait(); err != nil {
 					fmt.Printf("systemd got error from subcommand: %s", err)
+					sigchan <- os.Kill
 				}
 			}()
-			sigchan := make(chan os.Signal, 1)
 			signal.Notify(sigchan, syscall.SIGHUP, syscall.SIGTERM)
 			sig := <-sigchan
 			cmd.Process.Signal(sig)
