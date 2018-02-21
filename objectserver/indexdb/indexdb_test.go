@@ -340,7 +340,8 @@ func TestIndexDB_List(t *testing.T) {
 		f.Write([]byte(body))
 		errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true, ""))
 	}
-	listing, err := ot.List(0)
+	startHash, stopHash := ot.RingPartRange(0)
+	listing, err := ot.List(startHash, stopHash, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,7 +354,7 @@ func TestIndexDB_List(t *testing.T) {
 	if len(matchHashes0_0) != 0 {
 		t.Error(matchHashes0_0)
 	}
-	listing, err = ot.List(0)
+	listing, err = ot.List(startHash, stopHash, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,7 +367,8 @@ func TestIndexDB_List(t *testing.T) {
 	if len(matchHashes0_1) != 0 {
 		t.Error(matchHashes0_1)
 	}
-	listing, err = ot.List(1)
+	startHash, stopHash = ot.RingPartRange(1)
+	listing, err = ot.List(startHash, stopHash, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -381,27 +383,115 @@ func TestIndexDB_List(t *testing.T) {
 	}
 }
 
-func TestIndexDB_ringPartRange(t *testing.T) {
+func TestIndexDB_ListRange(t *testing.T) {
+	pth := "testdata/tmp/TestIndexDB_List"
+	defer os.RemoveAll(pth)
+	ot := newTestIndexDB(t, pth)
+	defer ot.Close()
+
+	hsh0 := md5hash("object0")
+	// FYI hsh0: 18cb296143950052124d6241bd35128a
+	hsh1 := md5hash("object1")
+	// FYI hsh: 5b78f9689b9aab1ebc0f3c1df916dd97
+
+	timestamp := time.Now().UnixNano()
+	body := "just testing"
+	f, err := ot.TempFile(hsh0, 0, timestamp, int64(len(body)), true)
+	errnil(t, err)
+	f.Write([]byte(body))
+	errnil(t, ot.Commit(f, hsh0, 0, timestamp, false, "", nil, true, ""))
+
+	f, err = ot.TempFile(hsh1, 0, timestamp, int64(len(body)), true)
+	errnil(t, err)
+	f.Write([]byte(body))
+	errnil(t, ot.Commit(f, hsh1, 0, timestamp, false, "", nil, true, ""))
+
+	startHash := "00000000000000000000000000000000"
+	stopHash := "11111111111111111111111111111111"
+	listing, err := ot.List(startHash, stopHash, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listing) != 0 {
+		t.Fatalf("Should be empty: %v", listing)
+	}
+
+	startHash = "11111111111111111111111111111111"
+	stopHash = "51111111111111111111111111111111"
+	listing, err = ot.List(startHash, stopHash, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listing) != 1 {
+		t.Fatalf("Should be len 1: %v", listing)
+	}
+	if listing[0].Hash != hsh0 {
+		t.Fatal(listing[0].Hash, hsh0)
+	}
+
+	startHash = "51111111111111111111111111111111"
+	stopHash = "91111111111111111111111111111111"
+	listing, err = ot.List(startHash, stopHash, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listing) != 1 {
+		t.Fatalf("Should be len 1: %v", listing)
+	}
+	if listing[0].Hash != hsh1 {
+		t.Fatal(listing[0].Hash, hsh0)
+	}
+
+	startHash = "11111111111111111111111111111111"
+	stopHash = "91111111111111111111111111111111"
+	listing, err = ot.List(startHash, stopHash, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listing) != 2 {
+		t.Fatalf("Should be len 2: %v", listing)
+	}
+	if listing[0].Hash != hsh0 {
+		t.Fatal(listing[0].Hash, hsh0)
+	}
+	if listing[1].Hash != hsh1 {
+		t.Fatal(listing[1].Hash, hsh1)
+	}
+
+	// Test limit while we're here.
+	listing, err = ot.List(startHash, stopHash, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listing) != 1 {
+		t.Fatalf("Should be len 1: %v", listing)
+	}
+	if listing[0].Hash != hsh0 {
+		t.Fatal(listing[0].Hash, hsh0)
+	}
+}
+
+func TestIndexDB_RingPartRange(t *testing.T) {
 	pth := "testdata/tmp/TestIndexDB_partitionRange"
 	defer os.RemoveAll(pth)
 	ot, err := NewIndexDB(pth, pth, pth, 4, 1, 1, zap.L())
 	errnil(t, err)
 	defer ot.Close()
-	startHash, stopHash := ot.ringPartRange(0)
+	startHash, stopHash := ot.RingPartRange(0)
 	if startHash != "00000000000000000000000000000000" {
 		t.Fatal(startHash)
 	}
 	if stopHash != "0fffffffffffffffffffffffffffffff" {
 		t.Fatal(stopHash)
 	}
-	startHash, stopHash = ot.ringPartRange(7)
+	startHash, stopHash = ot.RingPartRange(7)
 	if startHash != "70000000000000000000000000000000" {
 		t.Fatal(startHash)
 	}
 	if stopHash != "7fffffffffffffffffffffffffffffff" {
 		t.Fatal(stopHash)
 	}
-	startHash, stopHash = ot.ringPartRange(15)
+	startHash, stopHash = ot.RingPartRange(15)
 	if startHash != "f0000000000000000000000000000000" {
 		t.Fatal(startHash)
 	}
@@ -411,21 +501,21 @@ func TestIndexDB_ringPartRange(t *testing.T) {
 	ot, err = NewIndexDB(pth, pth, pth, 8, 1, 1, zap.L())
 	errnil(t, err)
 	defer ot.Close()
-	startHash, stopHash = ot.ringPartRange(0)
+	startHash, stopHash = ot.RingPartRange(0)
 	if startHash != "00000000000000000000000000000000" {
 		t.Fatal(startHash)
 	}
 	if stopHash != "00ffffffffffffffffffffffffffffff" {
 		t.Fatal(stopHash)
 	}
-	startHash, stopHash = ot.ringPartRange(127)
+	startHash, stopHash = ot.RingPartRange(127)
 	if startHash != "7f000000000000000000000000000000" {
 		t.Fatal(startHash)
 	}
 	if stopHash != "7fffffffffffffffffffffffffffffff" {
 		t.Fatal(stopHash)
 	}
-	startHash, stopHash = ot.ringPartRange(255)
+	startHash, stopHash = ot.RingPartRange(255)
 	if startHash != "ff000000000000000000000000000000" {
 		t.Fatal(startHash)
 	}
