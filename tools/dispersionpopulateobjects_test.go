@@ -12,7 +12,7 @@ import (
 func TestPutDispersionObjects(t *testing.T) {
 	p := &conf.Policy{Name: "hat"}
 	c := &testDispersionClient{objRing: &FakeRing{Devs: []*ring.Device{{Device: "sda"}, {Device: "sdb"}, {Device: "sdc"}}, nodeCalls: 3}}
-	db, err := newDB(nil, "TestPutDispersionObjects")
+	db, err := newDB(nil, dbTestName("TestPutDispersionObjects"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -32,7 +32,7 @@ func newDB(serverconf *conf.Config, memoryDBID string) (*dbInstance, error) {
 		if err != nil {
 			return nil, err
 		}
-		db.db, err = sql.Open("sqlite3", filepath.Join(sqlDir, DB_NAME)+"??psow=1&_txlock=immediate&mode=rw")
+		db.db, err = sql.Open("sqlite3", filepath.Join(sqlDir, DB_NAME)+"?psow=1&_txlock=immediate&mode=rw")
 		if err != nil {
 			return nil, err
 		}
@@ -237,7 +237,7 @@ func (db *dbInstance) incrementServiceErrorCount(typ string, policy int, service
 		} else {
 			count++
 		}
-		updateDate = time.Now()
+		updateDate = createDate
 		if _, err = tx.Exec(`
             UPDATE service_error
             SET create_date = ?,
@@ -260,7 +260,7 @@ func (db *dbInstance) incrementServiceErrorCount(typ string, policy int, service
 	if _, err = tx.Exec(`
         INSERT INTO service_error
         (rtype, policy, service, count)
-        VALUES (?, ?, ?, ?, 1)
+        VALUES (?, ?, ?, 1)
     `, typ, policy, service); err != nil {
 		return err
 	}
@@ -336,7 +336,7 @@ func (db *dbInstance) incrementDeviceErrorCount(typ string, policy int, deviceID
 		} else {
 			count++
 		}
-		updateDate = time.Now()
+		updateDate = createDate
 		if _, err = tx.Exec(`
             UPDATE device_error
             SET create_date = ?,
@@ -359,7 +359,7 @@ func (db *dbInstance) incrementDeviceErrorCount(typ string, policy int, deviceID
 	if _, err = tx.Exec(`
         INSERT INTO device_error
         (rtype, policy, device, count)
-        VALUES (?, ?, ?, ?, 1)
+        VALUES (?, ?, ?, 1)
     `, typ, policy, deviceID); err != nil {
 		return err
 	}
