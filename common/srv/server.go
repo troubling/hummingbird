@@ -425,6 +425,15 @@ func NewTestConfigLoader(testRing ring.Ring) *TestConfigLoader {
 					Default:    false,
 					Deprecated: false,
 				},
+				2: {
+					Index:      2,
+					Type:       "hec",
+					Name:       "HecPolicy-2",
+					Aliases:    nil,
+					Default:    false,
+					Deprecated: false,
+					Config:     map[string]string{"data_frags": "2", "parity_frags": "1", "nursery_replicas": "1"},
+				},
 			}), nil
 		},
 		GetHashPrefixAndSuffixFunc: func() (string, string, error) {

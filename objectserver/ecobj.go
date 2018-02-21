@@ -13,7 +13,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-package indexdb
+package objectserver
 
 import (
 	"encoding/json"
@@ -34,7 +34,6 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
-	"github.com/troubling/hummingbird/objectserver"
 )
 
 type ecObject struct {
@@ -221,7 +220,7 @@ func (o *ecObject) SetData(size int64) (io.Writer, error) {
 	}
 	if err := o.afw.Preallocate(size, o.reserve); err != nil {
 		o.afw.Abandon()
-		return nil, objectserver.DriveFullError
+		return nil, DriveFullError
 	}
 	return o.afw, nil
 }
@@ -267,7 +266,7 @@ func (o *ecObject) Close() error {
 	return nil
 }
 
-func (o *ecObject) Replicate(prirep objectserver.PriorityRepJob) error {
+func (o *ecObject) Replicate(prirep PriorityRepJob) error {
 	// If we are handoff, just replicate the shard and delete local shard
 	if _, handoff := o.ring.GetJobNodes(prirep.Partition, prirep.FromDevice.Id); handoff {
 		fp, err := os.Open(o.Path)
@@ -580,5 +579,5 @@ func (r *rangeBytesWriter) Write(b []byte) (written int, err error) {
 }
 
 // make sure these things satisfy interfaces at compile time
-var _ objectserver.Object = &ecObject{}
-var _ objectserver.ObjectStabilizer = &ecObject{}
+var _ Object = &ecObject{}
+var _ ObjectStabilizer = &ecObject{}
