@@ -81,12 +81,12 @@ func ecGlue(dataChunks, parityChunks int, bodies []io.Reader, chunkSize int, con
 		for i := range bodies {
 			if bodies[i] != nil && !failed[i] {
 				if _, err := io.ReadFull(bodies[i], data[i]); err != nil {
-					data[i] = nil
+					data[i] = data[i][:0]
 					failed[i] = true
 				}
 			}
 		}
-		if err := enc.Reconstruct(data); err != nil {
+		if err := enc.ReconstructData(data); err != nil {
 			return err
 		}
 		for i := 0; i < dataChunks; i++ {
