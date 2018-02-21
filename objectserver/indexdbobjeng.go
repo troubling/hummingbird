@@ -1,4 +1,4 @@
-package indexdb
+package objectserver
 
 import (
 	"encoding/json"
@@ -17,17 +17,16 @@ import (
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
-	"github.com/troubling/hummingbird/objectserver"
 	"go.uber.org/zap"
 )
 
 func init() {
-	objectserver.RegisterObjectEngine("index.db", indexDBEngineConstructor)
+	RegisterObjectEngine("index.db", indexDBEngineConstructor)
 }
 
-var _ objectserver.ObjectEngineConstructor = indexDBEngineConstructor
+var _ ObjectEngineConstructor = indexDBEngineConstructor
 
-func indexDBEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.FlagSet) (objectserver.ObjectEngine, error) {
+func indexDBEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.FlagSet) (ObjectEngine, error) {
 	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
 	if err != nil {
 		return nil, err
@@ -75,12 +74,12 @@ func indexDBEngineConstructor(config conf.Config, policy *conf.Policy, flags *fl
 			// TODO: IsMount check based on config's mount_check.
 			var dbpath string
 			if dbspath == "" {
-				dbpath = path.Join(dirpath, objectserver.PolicyDir(policy.Index))
+				dbpath = path.Join(dirpath, PolicyDir(policy.Index))
 			} else {
-				dbpath = path.Join(dbspath, dirname, objectserver.PolicyDir(policy.Index))
+				dbpath = path.Join(dbspath, dirname, PolicyDir(policy.Index))
 			}
-			filepath := path.Join(dirpath, objectserver.PolicyDir(policy.Index))
-			temppath := path.Join(dirpath, objectserver.PolicyDir(policy.Index), "temp")
+			filepath := path.Join(dirpath, PolicyDir(policy.Index))
+			temppath := path.Join(dirpath, PolicyDir(policy.Index), "temp")
 			indexDBs[dirname], err = NewIndexDB(
 				dbpath,
 				filepath,
@@ -105,7 +104,7 @@ func indexDBEngineConstructor(config conf.Config, policy *conf.Policy, flags *fl
 	}, nil
 }
 
-var _ objectserver.ObjectEngine = &indexDBEngine{}
+var _ ObjectEngine = &indexDBEngine{}
 
 type indexDBEngine struct {
 	devicespath      string
@@ -116,7 +115,7 @@ type indexDBEngine struct {
 	indexDBs         map[string]*IndexDB
 }
 
-func (idbe *indexDBEngine) New(vars map[string]string, needData bool, asyncWG *sync.WaitGroup) (objectserver.Object, error) {
+func (idbe *indexDBEngine) New(vars map[string]string, needData bool, asyncWG *sync.WaitGroup) (Object, error) {
 	indexDB := idbe.indexDBs[vars["device"]]
 	if indexDB == nil {
 		panic(vars["device"])
@@ -126,15 +125,15 @@ func (idbe *indexDBEngine) New(vars map[string]string, needData bool, asyncWG *s
 		reclaimAge:       idbe.reclaimAge,
 		asyncWG:          asyncWG,
 		indexDB:          indexDB,
-		hash:             objectserver.ObjHash(vars, idbe.hashPathPrefix, idbe.hashPathSuffix),
+		hash:             ObjHash(vars, idbe.hashPathPrefix, idbe.hashPathSuffix),
 	}, nil
 }
 
-func (idbe *indexDBEngine) GetReplicationDevice(oring ring.Ring, dev *ring.Device, policy int, r *objectserver.Replicator) (objectserver.ReplicationDevice, error) {
+func (idbe *indexDBEngine) GetReplicationDevice(oring ring.Ring, dev *ring.Device, policy int, r *Replicator) (ReplicationDevice, error) {
 	return nil, fmt.Errorf("not running replication here yet")
 }
 
-var _ objectserver.Object = &indexDBObject{}
+var _ Object = &indexDBObject{}
 
 type indexDBObject struct {
 	fallocateReserve int64
