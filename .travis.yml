@@ -62,8 +62,8 @@ script:
       PATH=$PATH:~/swift-venv/bin nosetests --with-html --html-file=/tmp/output/functional_hbproxy.html ~/swift/test/functional --exclude-test-file=$TRAVIS_BUILD_DIR/.swift_func_excludes
     fi
   - echo "<html><body><h1>Files</h1><ul>$(for file in `find /tmp/output -type f -printf "%f\n" | sort`; do echo "<li><a href='$file'>$file</a></li>"; done)</ul></body></html>" > /tmp/output/index.html
-  - mkdir -p output
-  - cp -r /tmp/output/* output
+  - mkdir -p $TRAVIS_BUILD_DIR/output
+  - cp -r /tmp/output/* $TRAVIS_BUILD_DIR/output
 
 deploy:
   provider: releases
