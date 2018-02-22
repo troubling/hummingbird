@@ -71,3 +71,11 @@ deploy:
   on:
     branch: master
     tags: true
+
+deploy:
+  provider: pages
+  github-token: $GITHUB_TOKEN
+  skip-cleanup: true
+  local-dir: bin
+  on:
+    branch: master
