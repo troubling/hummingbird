@@ -523,7 +523,7 @@ func ObjectInfo(flags *flag.FlagSet, cnf srv.ConfigLoader) {
 		if int64(l) == stat.Size() {
 			fmt.Printf("Content-Length: %v (valid)\n", length)
 		} else {
-			print("Content-Length: %v doesn't match file length of %v\n", length, stat.Size())
+			fmt.Printf("Content-Length: %v doesn't match file length of %v\n", length, stat.Size())
 		}
 	} else {
 		fmt.Printf("Content-Length: Not found in metadata\n")
