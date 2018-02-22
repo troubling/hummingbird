@@ -19,15 +19,15 @@ install:
   - ./hummingbird-init-haio.sh skiptests
   - sudo apt remove python-nose # since we'll be installing the pip edition
   - go get github.com/haya14busa/goverage
-  - mkdir -p ./tmp/output
+  - mkdir -p /tmp/output
   - |
     set -e
     if [ "$HYBRID" = "YES" ] ; then
       cd ~/swift
       git checkout stable/pike
     else
-      mkdir -p ./tmp/output/bin
-      cp /usr/bin/hummingbird ./tmp/output/bin
+      mkdir -p /tmp/output/bin
+      cp /usr/bin/hummingbird /tmp/output/bin
     fi
   - virtualenv ~/swift-venv
   - ~/swift-venv/bin/pip install -U pip setuptools python-subunit nose-htmloutput nose-exclude
@@ -52,16 +52,18 @@ script:
       hummingbird start container
       hummingbird start account
       PATH=$PATH:~/swift-venv/bin swift-init start proxy
-      PATH=$PATH:~/swift-venv/bin nosetests -e test_unicode_metadata --with-html --html-file=./tmp/output/functional_swiftproxy.html ~/swift/test/functional
+      PATH=$PATH:~/swift-venv/bin nosetests -e test_unicode_metadata --with-html --html-file=/tmp/output/functional_swiftproxy.html ~/swift/test/functional
     else
       test -z "$(find . -name '*.go' | xargs gofmt -l -s)" || (echo "You need to run 'make fmt'"; exit 1)
       go vet github.com/troubling/hummingbird/...
       goverage -coverprofile=/tmp/coverage.out github.com/troubling/hummingbird/...
-      go tool cover -html=/tmp/coverage.out -o "./tmp/output/coverage.html"
+      go tool cover -html=/tmp/coverage.out -o "/tmp/output/coverage.html"
       hummingbird start main
-      PATH=$PATH:~/swift-venv/bin nosetests --with-html --html-file=./tmp/output/functional_hbproxy.html ~/swift/test/functional --exclude-test-file=$TRAVIS_BUILD_DIR/.swift_func_excludes
+      PATH=$PATH:~/swift-venv/bin nosetests --with-html --html-file=/tmp/output/functional_hbproxy.html ~/swift/test/functional --exclude-test-file=$TRAVIS_BUILD_DIR/.swift_func_excludes
     fi
-  - echo "<html><body><h1>Files</h1><ul>$(for file in `find ./tmp/output -type f -printf "%f\n" | sort`; do echo "<li><a href='$file'>$file</a></li>"; done)</ul></body></html>" > ./tmp/output/index.html
+  - echo "<html><body><h1>Files</h1><ul>$(for file in `find /tmp/output -type f -printf "%f\n" | sort`; do echo "<li><a href='$file'>$file</a></li>"; done)</ul></body></html>" > /tmp/output/index.html
+  - mkdir -p output
+  - cp -r /tmp/output/* output
 
 deploy:
   provider: releases
@@ -77,6 +79,6 @@ deploy:
   provider: pages
   github-token: $GITHUB_TOKEN
   skip-cleanup: true
-  local-dir: tmp/output
+  local-dir: output
   on:
     branch: master
