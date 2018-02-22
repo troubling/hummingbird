@@ -475,6 +475,12 @@ func (ot *IndexDB) ListNursery() ([]*IndexDBItem, error) {
 //
 // This is for replication, auditing, that sort of thing.
 func (ot *IndexDB) List(startHash, stopHash string, limit int) ([]*IndexDBItem, error) {
+	if startHash == "" {
+		startHash = "00000000000000000000000000000000"
+	}
+	if stopHash == "" {
+		stopHash = "ffffffffffffffffffffffffffffffff"
+	}
 	_, _, startDBPart, _, err := ot.validateHash(startHash)
 	if err != nil {
 		return nil, err

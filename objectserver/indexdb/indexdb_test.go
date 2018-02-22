@@ -471,6 +471,41 @@ func TestIndexDB_ListRange(t *testing.T) {
 	}
 }
 
+func TestIndexDB_ListDefaults(t *testing.T) {
+	pth := "testdata/tmp/TestIndexDB_ListDefaults"
+	defer os.RemoveAll(pth)
+	ot := newTestIndexDB(t, pth)
+	defer ot.Close()
+
+	hsh0 := "00000000000000000000000000000000"
+	hsh1 := "ffffffffffffffffffffffffffffffff"
+	timestamp := time.Now().UnixNano()
+	body := "just testing"
+	f, err := ot.TempFile(hsh0, 0, timestamp, int64(len(body)), true)
+	errnil(t, err)
+	f.Write([]byte(body))
+	errnil(t, ot.Commit(f, hsh0, 0, timestamp, false, "", nil, true, ""))
+
+	f, err = ot.TempFile(hsh1, 0, timestamp, int64(len(body)), true)
+	errnil(t, err)
+	f.Write([]byte(body))
+	errnil(t, ot.Commit(f, hsh1, 0, timestamp, false, "", nil, true, ""))
+
+	listing, err := ot.List("", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listing) != 2 {
+		t.Fatalf("Should be len 2: %v", listing)
+	}
+	if listing[0].Hash != hsh0 {
+		t.Fatal(listing[0].Hash, hsh0)
+	}
+	if listing[1].Hash != hsh1 {
+		t.Fatal(listing[1].Hash, hsh1)
+	}
+}
+
 func TestIndexDB_RingPartRange(t *testing.T) {
 	pth := "testdata/tmp/TestIndexDB_partitionRange"
 	defer os.RemoveAll(pth)
