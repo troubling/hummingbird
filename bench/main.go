@@ -139,7 +139,7 @@ func DoJobs(name string, work []func() bool, concurrency int) {
 
 func RunBench(args []string) {
 	if len(args) < 1 {
-		fmt.Println(`Usage: [configuration file]
+		fmt.Print(`Usage: [configuration file]
 The configuration file should look something like:
     [bench]
     auth = http://localhost:8080/auth/v1.0

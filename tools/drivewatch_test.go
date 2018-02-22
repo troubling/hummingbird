@@ -67,13 +67,11 @@ func closeDw(dw *driveWatch) {
 
 func TestGatherReconData(t *testing.T) {
 	t.Parallel()
-	handlerRan := false
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,
 		r *http.Request) {
 
 		require.Equal(t, "/recon/unmounted", r.URL.Path)
-		handlerRan = true
 		if _, err := ioutil.ReadAll(r.Body); err != nil {
 			w.WriteHeader(500)
 			return
@@ -129,12 +127,10 @@ func TestGetRingData(t *testing.T) {
 
 func TestPopulateDbWithRing(t *testing.T) {
 	t.Parallel()
-	handlerRan := false
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,
 		r *http.Request) {
 
 		require.Equal(t, "/recon/unmounted", r.URL.Path)
-		handlerRan = true
 		if _, err := ioutil.ReadAll(r.Body); err != nil {
 			w.WriteHeader(500)
 			return
@@ -199,12 +195,10 @@ func TestPopulateDbWithRing(t *testing.T) {
 
 func TestUpdateDb(t *testing.T) {
 	t.Parallel()
-	handlerRan := false
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,
 		r *http.Request) {
 
 		require.Equal(t, "/recon/unmounted", r.URL.Path)
-		handlerRan = true
 		if _, err := ioutil.ReadAll(r.Body); err != nil {
 			w.WriteHeader(500)
 			return
@@ -361,12 +355,10 @@ func TestUpdateDbUnreachable(t *testing.T) {
 func TestUpdateRing(t *testing.T) {
 	t.Parallel()
 
-	handlerRan := false
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,
 		r *http.Request) {
 
 		require.Equal(t, "/recon/unmounted", r.URL.Path)
-		handlerRan = true
 		if _, err := ioutil.ReadAll(r.Body); err != nil {
 			w.WriteHeader(500)
 			return

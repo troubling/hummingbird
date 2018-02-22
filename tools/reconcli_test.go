@@ -34,13 +34,11 @@ import (
 
 func TestReconReportTimeFail(t *testing.T) {
 	t.Parallel()
-	handlerRan := false
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,
 		r *http.Request) {
 
 		require.Equal(t, "/recon/hummingbirdtime", r.URL.Path)
-		handlerRan = true
 		if _, err := ioutil.ReadAll(r.Body); err != nil {
 			w.WriteHeader(500)
 			return
@@ -61,13 +59,11 @@ func TestReconReportTimeFail(t *testing.T) {
 
 func TestReconReportTimePass(t *testing.T) {
 	t.Parallel()
-	handlerRan := false
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,
 		r *http.Request) {
 
 		require.Equal(t, "/recon/hummingbirdtime", r.URL.Path)
-		handlerRan = true
 		if _, err := ioutil.ReadAll(r.Body); err != nil {
 			w.WriteHeader(500)
 			return
@@ -90,13 +86,11 @@ func TestReconReportTimePass(t *testing.T) {
 
 func TestReconReportRingMd5Fail(t *testing.T) {
 	t.Parallel()
-	handlerRan := false
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,
 		r *http.Request) {
 
 		require.Equal(t, "/recon/ringmd5", r.URL.Path)
-		handlerRan = true
 		if _, err := ioutil.ReadAll(r.Body); err != nil {
 			w.WriteHeader(500)
 			return
@@ -120,13 +114,11 @@ func TestReconReportRingMd5Fail(t *testing.T) {
 
 func TestReconReportRingMd5Pass(t *testing.T) {
 	t.Parallel()
-	handlerRan := false
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,
 		r *http.Request) {
 
 		require.Equal(t, "/recon/ringmd5", r.URL.Path)
-		handlerRan = true
 		if _, err := ioutil.ReadAll(r.Body); err != nil {
 			w.WriteHeader(500)
 			return
@@ -150,13 +142,11 @@ func TestReconReportRingMd5Pass(t *testing.T) {
 
 func TestReconReportQuarantine(t *testing.T) {
 	t.Parallel()
-	handlerRan := false
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,
 		r *http.Request) {
 
 		require.Equal(t, "/recon/quarantined", r.URL.Path)
-		handlerRan = true
 		if _, err := ioutil.ReadAll(r.Body); err != nil {
 			w.WriteHeader(500)
 			return
@@ -172,7 +162,6 @@ func TestReconReportQuarantine(t *testing.T) {
 		r *http.Request) {
 
 		require.Equal(t, "/recon/quarantined", r.URL.Path)
-		handlerRan = true
 		if _, err := ioutil.ReadAll(r.Body); err != nil {
 			w.WriteHeader(500)
 			return
@@ -331,13 +320,11 @@ objects-1
 
 func TestReconReportAsync(t *testing.T) {
 	t.Parallel()
-	handlerRan := false
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,
 		r *http.Request) {
 
 		require.Equal(t, "/recon/async", r.URL.Path)
-		handlerRan = true
 		if _, err := ioutil.ReadAll(r.Body); err != nil {
 			w.WriteHeader(500)
 			return
@@ -353,7 +340,6 @@ func TestReconReportAsync(t *testing.T) {
 		r *http.Request) {
 
 		require.Equal(t, "/recon/async", r.URL.Path)
-		handlerRan = true
 		if _, err := ioutil.ReadAll(r.Body); err != nil {
 			w.WriteHeader(500)
 			return
