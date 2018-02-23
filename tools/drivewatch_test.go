@@ -36,6 +36,7 @@ import (
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/objectserver"
 	"github.com/uber-go/tally"
+	"go.uber.org/zap"
 )
 
 func getDw(testRing ring.Ring, settings ...string) (*driveWatch, error) {
@@ -56,7 +57,7 @@ func getDw(testRing ring.Ring, settings ...string) (*driveWatch, error) {
 	}
 
 	metricsScope := tally.NewTestScope("hb_andrewd", map[string]string{})
-	dw := NewDriveWatch(&FakeLowLevelLogger{}, metricsScope, confStr, confLoader, "", "")
+	dw := NewDriveWatch(zap.NewNop(), metricsScope, confStr, confLoader, "", "")
 	return dw, nil
 
 }

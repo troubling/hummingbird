@@ -377,6 +377,7 @@ func main() {
 	}
 
 	reconFlags := flag.NewFlagSet("", flag.ExitOnError)
+	reconFlags.Bool("progress", false, "Show andrewd progress report; state of internal processes")
 	reconFlags.Bool("md5", false, "Get md5sum of servers ring and compare to local copy")
 	reconFlags.Bool("time", false, "Check time synchronization")
 	reconFlags.Bool("q", false, "Get cluster quarantine stats")
@@ -388,7 +389,7 @@ func main() {
 	reconFlags.Bool("d", false, "Show last dispersion report")
 	reconFlags.Bool("ds", false, "Show drive status report")
 	reconFlags.Bool("rar", false, "Show andrewd ring action report")
-	reconFlags.String("c", findConfig("andrewd"), "Andrewd Config file to use (for dispersion)")
+	reconFlags.String("c", findConfig("andrewd"), "Andrewd Config file to use (e.g. for dispersion)")
 	reconFlags.Bool("json", false, "Output in json. {\"ok\": true|false, \"msg\": \"text-output\"}")
 	reconFlags.String("certfile", "", "Cert file to use for setting up https client")
 	reconFlags.String("keyfile", "", "Key file to use for setting up https client")

@@ -941,6 +941,9 @@ func ReconClient(flags *flag.FlagSet, cnf srv.ConfigLoader) bool {
 	client := http.Client{Timeout: 10 * time.Second, Transport: transport}
 	_, allWeightedServers := getRingData(oring, false)
 	var reports []passable
+	if flags.Lookup("progress").Value.(flag.Getter).Get().(bool) {
+		reports = append(reports, getProgressReport(flags))
+	}
 	if flags.Lookup("md5").Value.(flag.Getter).Get().(bool) {
 		reports = append(reports, getRingMD5Report(client, allWeightedServers, nil))
 		reports = append(reports, getMainConfMD5Report(client, allWeightedServers))

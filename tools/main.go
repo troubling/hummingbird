@@ -13,15 +13,25 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
+// In /etc/hummingbird/andrewd-server.conf:
+// [andrewd]
+// sql_dir = /var/local/hummingbird # path to directory for andrewd data files
+// bind_ip = 0.0.0.0                # ip to listen on for http requests
+// bind_port = 6003                 # port to listen on for http requests
+// cert_file =                      # path to tls certificate, if tls is desired
+// key_file =                       # path to tls key, if tls is desired
+// service_error_expiration = 3600  # seconds of no errors before error count is cleared
+// device_error_expiration = 3600   # seconds of no errors before error count is cleared
+
 package tools
 
 import (
 	"crypto/md5"
-	"database/sql"
 	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -30,7 +40,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/justinas/alice"
@@ -47,6 +56,8 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/net/http2"
 )
+
+const AdminAccount = ".admin"
 
 func getAffixes() (string, string) {
 	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
@@ -539,17 +550,14 @@ type AutoAdmin struct {
 	logLevel       zap.AtomicLevel
 	port           int
 	bindIp         string
-	workDir        string
 	client         *http.Client
 	hClient        client.ProxyClient
 	policies       conf.PolicyList
 	metricsScope   tally.Scope
 	metricsCloser  io.Closer
-	di             *Dispersion
 	dw             *driveWatch
 	runningForever bool
-	db             *sql.DB
-	dbl            sync.Mutex
+	db             *dbInstance
 }
 
 func (server *AutoAdmin) Type() string {
@@ -614,77 +622,17 @@ func (server *AutoAdmin) LogRequest(next http.Handler) http.Handler {
 	return srv.LogRequest(server.logger, next)
 }
 
-func (a *AutoAdmin) populateDispersion() {
-	if !putDispersionAccount(a.hClient, a.logger) {
-		return
-	}
-	if !putDispersionContainers(a.hClient, a.logger) {
-		return
-	}
-	for _, pol := range a.policies {
-		if !pol.Deprecated {
-			if !putDispersionObjects(a.hClient, pol, a.logger) {
-				return
-			}
-		}
-	}
-}
-
 func (a *AutoAdmin) Run() {
-	a.populateDispersion()
-	if !a.runningForever {
-		a.di.runDispersionOnce()
-	}
-	a.dw.Run()
+	// TODO: Reimplement run once.
 }
 
 func (a *AutoAdmin) RunForever() {
-	go a.di.runDispersionForever()
-	go newQuarantineRepairman(a).runForever()
-	go newQuarantineGarbageman(a).runForever()
-	a.runningForever = true
-	for {
-		a.Run()
-	}
-}
-
-func (a *AutoAdmin) getDB() (*sql.DB, error) {
-	a.dbl.Lock()
-	defer a.dbl.Unlock()
-	db := a.db
-	if db == nil {
-		sqlDir, ok := a.serverconf.Get("andrewd", "sql_dir")
-		if !ok {
-			sqlDir = a.serverconf.GetDefault("drive_watch", "sql_dir", "/var/local/hummingbird")
-		}
-		err := os.MkdirAll(sqlDir, 0755)
-		if err != nil {
-			a.logger.Error("getDB MkdirAll", zap.String("sqlDir", sqlDir), zap.Error(err))
-			return nil, err
-		}
-		db, err = sql.Open("sqlite3", filepath.Join(sqlDir, DB_NAME))
-		if err != nil {
-			a.logger.Error("getDB sql.Open", zap.String("dbPath", filepath.Join(sqlDir, DB_NAME)), zap.Error(err))
-			return nil, err
-		}
-		_, err = db.Exec(`
-            CREATE TABLE IF NOT EXISTS replication_queue (
-                create_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                rtype TEXT NOT NULL,        -- account, container, object
-                policy INTEGER NOT NULL,    -- only used with object
-                partition INTEGER NOT NULL, -- the partition number to replicate
-                reason TEXT NOT NULL,       -- ring, dispersion, quarantine
-                from_device INTEGER,        -- the device to replicate from, NULL = any
-                to_device INTEGER           -- the device to replicate to, NULL = all
-            );
-        `)
-		if err != nil {
-			a.logger.Error("getDB db.Exec", zap.Error(err))
-			return nil, err
-		}
-		a.db = db
-	}
-	return db, nil
+	go newDispersionPopulateContainers(a).runForever()
+	go newDispersionPopulateObjects(a).runForever()
+	go newDispersionScanContainers(a).runForever()
+	go newDispersionScanObjects(a).runForever()
+	go newQuarantineRepair(a).runForever()
+	go newQuarantineHistory(a).runForever()
 }
 
 func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (ipPort *srv.IpPort, server srv.Server, logger srv.LowLevelLogger, err error) {
@@ -734,12 +682,15 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 		hClient:        client.NewProxyClient(pdc, nil, nil, logger),
 		port:           port,
 		bindIp:         ip,
-		workDir:        serverconf.GetDefault("andrewd", "work_dir", "/var/cache/swift"),
 		policies:       pl,
 		runningForever: false,
 		//containerDispersionGauge: []tally.Gauge{}, TODO- add container disp
 		logger:   logger,
 		logLevel: logLevel,
+	}
+	a.db, err = newDB(&serverconf, "")
+	if err != nil {
+		return ipPort, nil, nil, err
 	}
 
 	a.metricsScope, a.metricsCloser = tally.NewRootScope(tally.ScopeOptions{
@@ -750,12 +701,20 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 	}, time.Second)
 
 	a.dw = NewDriveWatch(a.logger, a.metricsScope, serverconf, cnf, certFile, keyFile)
-	a.di, err = NewDispersion(
-		a.logger, client.NewProxyClient(pdc, nil, nil, logger), a.metricsScope, a.dw, certFile, keyFile)
-	if err != nil {
-		return ipPort, nil, nil, err
-	}
 
 	ipPort = &srv.IpPort{Ip: ip, Port: port, CertFile: certFile, KeyFile: keyFile}
+	resp := a.hClient.PutAccount(
+		AdminAccount,
+		common.Map2Headers(map[string]string{
+			"Content-Length": "0",
+			"Content-Type":   "text",
+			"X-Timestamp":    fmt.Sprintf("%d", time.Now().Unix()),
+		}),
+	)
+	io.Copy(ioutil.Discard, resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return ipPort, nil, nil, fmt.Errorf("could not establish admin account: PUT %s gave status code %d", AdminAccount, resp.StatusCode)
+	}
 	return ipPort, a, a.logger, nil
 }
