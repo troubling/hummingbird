@@ -474,8 +474,13 @@ func (ot *IndexDB) ListNursery() ([]*IndexDBItem, error) {
 // List returns the items for the ringPart given.
 //
 // This is for replication, auditing, that sort of thing.
-func (ot *IndexDB) List(ringPart int) ([]*IndexDBItem, error) {
-	startHash, stopHash := ot.ringPartRange(ringPart)
+func (ot *IndexDB) List(startHash, stopHash string, limit int) ([]*IndexDBItem, error) {
+	if startHash == "" {
+		startHash = "00000000000000000000000000000000"
+	}
+	if stopHash == "" {
+		stopHash = "ffffffffffffffffffffffffffffffff"
+	}
 	_, _, startDBPart, _, err := ot.validateHash(startHash)
 	if err != nil {
 		return nil, err
@@ -487,11 +492,21 @@ func (ot *IndexDB) List(ringPart int) ([]*IndexDBItem, error) {
 	listing := []*IndexDBItem{}
 	for dbPart := startDBPart; dbPart <= stopDBPart; dbPart++ {
 		db := ot.dbs[dbPart]
-		rows, err := db.Query(`
-			SELECT hash, shard, timestamp, deletion, metahash, metadata, nursery, shardhash
-	        FROM objects
-	        WHERE hash BETWEEN ? AND ?
-	    `, startHash, stopHash)
+		var rows *sql.Rows
+		if limit > 0 {
+			rows, err = db.Query(`
+				SELECT hash, shard, timestamp, deletion, metahash, metadata, nursery, shardhash
+			FROM objects
+			WHERE hash BETWEEN ? AND ?
+			LIMIT ?
+		    `, startHash, stopHash, limit)
+		} else {
+			rows, err = db.Query(`
+				SELECT hash, shard, timestamp, deletion, metahash, metadata, nursery, shardhash
+			FROM objects
+			WHERE hash BETWEEN ? AND ?
+		    `, startHash, stopHash)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -523,7 +538,7 @@ func (ot *IndexDB) validateHash(hsh string) (hshOut string, ringPart, dbPart, di
 	return hsh, int(upper >> (32 - ot.RingPartPower)), int(hashBytes[0] >> (8 - ot.dbPartPower)), int(hashBytes[15]) % ot.subdirs, nil
 }
 
-func (ot *IndexDB) ringPartRange(ringPart int) (string, string) {
+func (ot *IndexDB) RingPartRange(ringPart int) (string, string) {
 	start := uint64(ringPart << (64 - ot.RingPartPower))
 	stop := uint64((ringPart+1)<<(64-ot.RingPartPower)) - 1
 	return fmt.Sprintf("%016x0000000000000000", start), fmt.Sprintf("%016xffffffffffffffff", stop)

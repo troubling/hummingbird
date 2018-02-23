@@ -240,7 +240,8 @@ func (f *ecEngine) GetObjectsToReplicate(device string, partition uint64, c chan
 	if err != nil {
 		return
 	}
-	items, err := idb.List(int(partition))
+	startHash, stopHash := idb.RingPartRange(int(partition))
+	items, err := idb.List(startHash, stopHash, 0)
 	// TODO: so right now this returns nursery and stable objects. should i weed
 	// out the nursery- we;d want to replicate those too right?
 	// Also- right now this just returns everything. depending on what's going on
@@ -286,7 +287,8 @@ func (f *ecEngine) listPartitionHandler(writer http.ResponseWriter, request *htt
 		srv.StandardResponse(writer, http.StatusBadRequest)
 		return
 	}
-	items, err := idb.List(part)
+	startHash, stopHash := idb.RingPartRange(part)
+	items, err := idb.List(startHash, stopHash, 0)
 	if err != nil {
 		f.logger.Error("error listing idb", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
