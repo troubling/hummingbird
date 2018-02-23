@@ -1,6 +1,6 @@
 # Hummingbird All In One (HAIO)
 
-To get started developing Hummingbird you need to have Ubuntu 16.04 and then download the hummingbird executable from the [latest release](https://github.com/troubling/hummingbird/releases/latest) to the system, run `./hummingbird init haio`, and finally run the resulting `./hummingbird-init-haio.sh`. This will install, download, and configure everything needed to start writing and testing Hummingbird code.
+To get started developing Hummingbird you need to have Ubuntu 16.04 and then download the hummingbird executable from the [latest build](https://troubling.github.io/hummingbird/bin/hummingbird) to the system, run `./hummingbird init haio`, and finally run the resulting `./hummingbird-init-haio.sh`. This will install, download, and configure everything needed to start writing and testing Hummingbird code.
 
 You may want to setup sudo to allow you to switch without entering a password; less secure, but maybe fine for a privately contained virtual machine:
 
