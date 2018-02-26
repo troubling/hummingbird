@@ -141,6 +141,7 @@ func (c *ProxyDirectClient) quorumResponse(r ring.Ring, partition uint64, devToR
 	for i := 0; i < int(r.ReplicaCount()); i++ {
 		go func(index int) {
 			var resp *http.Response
+			var firstResp *http.Response
 			for dev := devs[index]; dev != nil; dev = more.Next() {
 				if req, err := devToRequest(index, dev); err != nil {
 					c.Logger.Error("unable to get response", zap.Error(err))
@@ -150,10 +151,20 @@ func (c *ProxyDirectClient) quorumResponse(r ring.Ring, partition uint64, devToR
 					resp = nectarutil.ResponseStub(http.StatusInternalServerError, err.Error())
 				} else {
 					resp = nectarutil.StubResponse(r)
-					if r.StatusCode >= 200 && r.StatusCode < 500 {
-						break
-					}
 				}
+				if firstResp == nil {
+					firstResp = resp
+				}
+				if resp.StatusCode >= 200 && resp.StatusCode < 500 {
+					break
+				}
+			}
+			// In the case where we're about to respond with Not Found, ensure
+			// it's a response from the primary node. This corrects for the
+			// case where the primary node 5xx errored and subsequent nodes
+			// don't know about the item requested.
+			if resp.StatusCode == 404 {
+				resp = firstResp
 			}
 			select {
 			case responsec <- resp:
