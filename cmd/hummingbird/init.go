@@ -595,6 +595,14 @@ func initCommand(args []string) error {
 		print(`sudo chmod 0755 %s/usr/bin/hbreset`, prefix)
 		print(``)
 
+		print(`sudo tee %s/usr/bin/hbmount >/dev/null << EOF`, prefix)
+		print(`#!/bin/bash`)
+		print(``)
+		print(`sudo mount -o loop /srv/hb-disk /srv/hb`)
+		print(`EOF`)
+		print(`sudo chmod 0755 %s/usr/bin/hbmount`, prefix)
+		print(``)
+
 		print(`sudo tee %s/usr/bin/hblog >/dev/null << EOF`, prefix)
 		print(`#!/bin/bash`)
 		print(``)
@@ -606,6 +614,15 @@ func initCommand(args []string) error {
 		print(`fi`)
 		print(`EOF`)
 		print(`sudo chmod 0755 %s/usr/bin/hblog`, prefix)
+		print(``)
+
+		print(`sudo tee %s/usr/bin/hbswifttests >/dev/null << EOF`, prefix)
+		print(`#!/bin/bash`)
+		print(``)
+		print(`cd ~/swift/test/functional`)
+		print("nosetests --exclude-test-file=`go env GOPATH`/src/github.com/troubling/hummingbird/.swift_func_excludes")
+		print(`EOF`)
+		print(`sudo chmod 0755 %s/usr/bin/hbswifttests`, prefix)
 		print(``)
 	}
 
