@@ -272,6 +272,9 @@ func (f *ecEngine) GetObjectsToReplicate(prirep objectserver.PriorityRepJob, c c
 	}
 	rii := 0
 	for _, item := range items {
+		if item.Nursery {
+			continue
+		}
 		sendItem := true
 		for rii < len(remoteItems) {
 			if remoteItems[rii].Hash > item.Hash {
