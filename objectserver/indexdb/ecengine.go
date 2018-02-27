@@ -263,9 +263,6 @@ func (f *ecEngine) GetObjectsToReplicate(prirep objectserver.PriorityRepJob, c c
 			f.logger.Error("error reading partition list", zap.Error(err))
 		}
 	}
-	// TODO: so right now this returns nursery and stable objects. should i weed
-	// out the nursery- we;d want to replicate those too right? but- stuff in
-	// nursery will be looked at by stabilzer- sooo..
 	if err != nil {
 		f.logger.Error("error getting local partition list", zap.Error(err))
 		return
@@ -309,6 +306,7 @@ func (f *ecEngine) GetObjectsToReplicate(prirep objectserver.PriorityRepJob, c c
 			}
 			if err = json.Unmarshal(item.Metabytes, &obj.metadata); err != nil {
 				continue
+				//TODO: this should quarantine right?
 			}
 			select {
 			case c <- obj:
