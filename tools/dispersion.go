@@ -13,6 +13,8 @@ import (
 	"github.com/troubling/hummingbird/common/ring"
 )
 
+var partitionListCap = 4
+
 type dispersionReport struct {
 	Name            string
 	Time            time.Time
@@ -52,32 +54,54 @@ func (r *dispersionReport) String() string {
 }
 
 type innerDispersionReport struct {
-	PolicyName                string
-	Start                     time.Time
-	Complete                  time.Time
-	TotalPartitions           int
-	ReplicaCount              int
-	Partitions                map[int][]*dispersionMissing
-	CountOfServicesWithErrors int
-	CountOfDevicesWithErrors  int
+	PolicyName      string
+	Start           time.Time
+	Complete        time.Time
+	TotalPartitions int
+	ReplicaCount    int
+	Partitions      map[int][]*dispersionMissing
+	ScanFailures    map[int][]*scanFailure
+}
+
+type scanFailure struct {
+	Time     time.Time
+	Service  string
+	DeviceID int
 }
 
 func (r *innerDispersionReport) String() string {
+	addPartitionListCap := func(s []string, p int) []string {
+		if len(s) < partitionListCap {
+			return append(s, fmt.Sprintf("%d", p))
+		}
+		if len(s) == partitionListCap {
+			s[partitionListCap-1] = "..."
+		}
+		return s
+	}
 	var s string
 	if r.Start.IsZero() {
-		s += "No known dispersion scan has been run.\n"
+		s += "    No known dispersion scan has been run.\n"
 	} else if r.Complete.IsZero() {
-		s += fmt.Sprintf("Last dispersion scan started %s and has yet to complete after %s.\n", r.Start.Format("2006-01-02 15:04"), time.Since(r.Start).Truncate(time.Second))
+		s += fmt.Sprintf("    Last dispersion scan started %s and has yet to complete after %s.\n", r.Start.Format("2006-01-02 15:04"), time.Since(r.Start).Truncate(time.Second))
 	} else {
-		s += fmt.Sprintf("Last dispersion scan ran from %s to %s (%s ago for %s).\n", r.Start.Format("2006-01-02 15:04"), r.Complete.Format("2006-01-02 15:04"), time.Since(r.Complete).Truncate(time.Second), r.Complete.Sub(r.Start).Truncate(time.Second))
+		s += fmt.Sprintf("    Last dispersion scan ran from %s to %s (%s ago for %s).\n", r.Start.Format("2006-01-02 15:04"), r.Complete.Format("2006-01-02 15:04"), time.Since(r.Complete).Truncate(time.Second), r.Complete.Sub(r.Start).Truncate(time.Second))
 	}
-	s += fmt.Sprintf("There are %d partitions configured for %d copies.\n", r.TotalPartitions, r.ReplicaCount)
+	s += fmt.Sprintf("    There are %d partitions configured for %d copies.\n", r.TotalPartitions, r.ReplicaCount)
 	if !r.Start.IsZero() && len(r.Partitions) == 0 {
-		s += "All partition copies were in place when last checked.\n"
+		s += "    All partition copies were in place when last checked.\n"
 	} else {
+		var noCopies []string
+		var oneCopies []string
 		counts := map[int]int{}
-		for _, partitions := range r.Partitions {
-			counts[len(partitions)]++
+		for partition, missings := range r.Partitions {
+			switch r.ReplicaCount - len(missings) {
+			case 0:
+				noCopies = addPartitionListCap(noCopies, partition)
+			case 1:
+				oneCopies = addPartitionListCap(oneCopies, partition)
+			}
+			counts[len(missings)]++
 		}
 		var keys []int
 		for key := range counts {
@@ -86,26 +110,95 @@ func (r *innerDispersionReport) String() string {
 		sort.Ints(keys)
 		for _, key := range keys {
 			if counts[key] == 1 {
-				s += "! 1 partition was missing "
+				s += "    ! 1 partition was missing "
 			} else {
-				s += fmt.Sprintf("! %d partitions were missing ", counts[key])
+				s += fmt.Sprintf("    ! %d partitions were missing ", counts[key])
 			}
 			if key == 1 {
-				s += "1 copy.\n"
+				s += "1 copy"
 			} else {
-				s += fmt.Sprintf("%d copies.\n", key)
+				s += fmt.Sprintf("%d copies", key)
+			}
+			if r.ReplicaCount-key == 0 {
+				s += fmt.Sprintf("; NO COPIES AVAILABLE! %v\n", noCopies)
+			} else if r.ReplicaCount-key == 1 {
+				s += fmt.Sprintf("; DOWN TO ONE COPY! %v\n", oneCopies)
+			} else {
+				s += fmt.Sprintf("; %d copies found.\n", r.ReplicaCount-key)
 			}
 		}
 	}
-	if r.CountOfServicesWithErrors == 1 {
-		s += "!! 1 service has been giving errors which may skew the report.\n"
-	} else if r.CountOfServicesWithErrors > 1 {
-		s += fmt.Sprintf("!! %d services have been giving errors which may skew the report.\n", r.CountOfServicesWithErrors)
+	failureCount := 0
+	for _, sfs := range r.ScanFailures {
+		failureCount += len(sfs)
 	}
-	if r.CountOfDevicesWithErrors == 1 {
-		s += "!! 1 device has been giving errors which may skew the report.\n"
-	} else if r.CountOfDevicesWithErrors > 1 {
-		s += fmt.Sprintf("!! %d devices have been giving errors which may skew the report.\n", r.CountOfDevicesWithErrors)
+	if failureCount == 1 {
+		s += "    !! 1 scan failure which may skew the report.\n"
+	} else if failureCount > 1 {
+		s += fmt.Sprintf("    !! %d scan failures which may skew the report.\n", failureCount)
+	}
+	if failureCount > 0 {
+		s += fmt.Sprintf("    Assuming any scan failure is equivalent to a missing copy:\n")
+		var noCopies []string
+		var oneCopies []string
+		counts := map[int]int{}
+		for partition, missings := range r.Partitions {
+			c := len(missings) + len(r.ScanFailures[partition])
+			if c > r.ReplicaCount {
+				c = r.ReplicaCount
+			}
+			switch r.ReplicaCount - c {
+			case 0:
+				if len(noCopies) <= partitionListCap {
+					noCopies = append(noCopies, fmt.Sprintf("%d", partition))
+				}
+			case 1:
+				if len(oneCopies) <= partitionListCap {
+					oneCopies = append(oneCopies, fmt.Sprintf("%d", partition))
+				}
+			}
+			counts[c]++
+		}
+		for partition, sfs := range r.ScanFailures {
+			// Did we already count this in loop above?
+			if r.Partitions[partition] == nil {
+				c := len(sfs)
+				if c > r.ReplicaCount {
+					c = r.ReplicaCount
+				}
+				switch r.ReplicaCount - c {
+				case 0:
+					noCopies = addPartitionListCap(noCopies, partition)
+				case 1:
+					oneCopies = addPartitionListCap(oneCopies, partition)
+				}
+				counts[c]++
+			}
+		}
+		var keys []int
+		for key := range counts {
+			keys = append(keys, key)
+		}
+		sort.Ints(keys)
+		for _, key := range keys {
+			if counts[key] == 1 {
+				s += "        ! 1 partition was missing "
+			} else {
+				s += fmt.Sprintf("        ! %d partitions were missing ", counts[key])
+			}
+			if key == 1 {
+				s += "1 copy"
+			} else {
+				s += fmt.Sprintf("%d copies", key)
+			}
+			if r.ReplicaCount-key == 0 {
+				s += fmt.Sprintf("; NO COPIES AVAILABLE! %v\n", noCopies)
+			} else if r.ReplicaCount-key == 1 {
+				s += fmt.Sprintf("; DOWN TO ONE COPY! %v\n", oneCopies)
+			} else {
+				s += fmt.Sprintf("; %d copies found.\n", r.ReplicaCount-key)
+			}
+		}
 	}
 	return s
 }
@@ -134,7 +227,7 @@ func getDispersionReport(flags *flag.FlagSet) *dispersionReport {
 		return report
 	}
 	ring, _ := getRing("", "container", 0)
-	report.ContainerReport = &innerDispersionReport{TotalPartitions: int(ring.PartitionCount()), ReplicaCount: int(ring.ReplicaCount()), Partitions: map[int][]*dispersionMissing{}}
+	report.ContainerReport = &innerDispersionReport{TotalPartitions: int(ring.PartitionCount()), ReplicaCount: int(ring.ReplicaCount()), Partitions: map[int][]*dispersionMissing{}, ScanFailures: map[int][]*scanFailure{}}
 	var progress string
 	report.ContainerReport.Start, _, progress, report.ContainerReport.Complete, err = db.processPass("dispersion scan", "container", 0)
 	if err != nil {
@@ -144,16 +237,14 @@ func getDispersionReport(flags *flag.FlagSet) *dispersionReport {
 		report.ContainerReport.Start = time.Time{}
 		report.ContainerReport.Complete = time.Time{}
 	}
-	report.ContainerReport.CountOfServicesWithErrors, err = db.countOfServicesWithErrors("container", 0)
-	if err != nil {
+	if dsfs, err := db.dispersionScanFailures("container", 0); err != nil {
 		report.Errors = append(report.Errors, err.Error())
+	} else {
+		for _, dsf := range dsfs {
+			report.ContainerReport.ScanFailures[dsf.partition] = append(report.ContainerReport.ScanFailures[dsf.partition], &scanFailure{Time: dsf.time, Service: dsf.service, DeviceID: dsf.deviceID})
+		}
 	}
-	report.ContainerReport.CountOfDevicesWithErrors, err = db.countOfDevicesWithErrors("container", 0)
-	if err != nil {
-		report.Errors = append(report.Errors, err.Error())
-	}
-	qrs, err := db.queuedReplications("container", 0, "dispersion")
-	if err != nil {
+	if qrs, err := db.queuedReplications("container", 0, "dispersion"); err != nil {
 		report.Errors = append(report.Errors, err.Error())
 	} else {
 		for _, qr := range qrs {
@@ -166,13 +257,12 @@ func getDispersionReport(flags *flag.FlagSet) *dispersionReport {
 			report.Pass = false
 		}
 	}
-	policies, err := conf.GetPolicies()
-	if err != nil {
+	if policies, err := conf.GetPolicies(); err != nil {
 		report.Errors = append(report.Errors, err.Error())
 	} else {
 		for _, policy := range policies {
 			ring, _ := getRing("", "object", policy.Index)
-			objectReport := &innerDispersionReport{TotalPartitions: int(ring.PartitionCount()), ReplicaCount: int(ring.ReplicaCount()), Partitions: map[int][]*dispersionMissing{}}
+			objectReport := &innerDispersionReport{TotalPartitions: int(ring.PartitionCount()), ReplicaCount: int(ring.ReplicaCount()), Partitions: map[int][]*dispersionMissing{}, ScanFailures: map[int][]*scanFailure{}}
 			var progress string
 			objectReport.Start, _, progress, objectReport.Complete, err = db.processPass("dispersion scan", "object", policy.Index)
 			if err != nil {
@@ -183,13 +273,12 @@ func getDispersionReport(flags *flag.FlagSet) *dispersionReport {
 				objectReport.Start = time.Time{}
 				objectReport.Complete = time.Time{}
 			}
-			objectReport.CountOfServicesWithErrors, err = db.countOfServicesWithErrors("object", policy.Index)
-			if err != nil {
+			if dsfs, err := db.dispersionScanFailures("object", policy.Index); err != nil {
 				report.Errors = append(report.Errors, err.Error())
-			}
-			objectReport.CountOfDevicesWithErrors, err = db.countOfDevicesWithErrors("object", policy.Index)
-			if err != nil {
-				report.Errors = append(report.Errors, err.Error())
+			} else {
+				for _, dsf := range dsfs {
+					objectReport.ScanFailures[dsf.partition] = append(objectReport.ScanFailures[dsf.partition], &scanFailure{Time: dsf.time, Service: dsf.service, DeviceID: dsf.deviceID})
+				}
 			}
 			objectReport.PolicyName = policy.Name
 			report.ObjectReports[policy.Index] = objectReport

@@ -83,6 +83,9 @@ func (dsc *dispersionScanContainers) runOnce() time.Duration {
 	if err := dsc.aa.db.startProcessPass("dispersion scan", "container", 0); err != nil {
 		logger.Error("startProcessPass", zap.Error(err))
 	}
+	if err := dsc.aa.db.clearDispersionScanFailures("container", 0); err != nil {
+		logger.Error("clearDispersionScanFailures", zap.Error(err))
+	}
 	resp := dsc.aa.hClient.HeadContainer(AdminAccount, "container-init", nil)
 	io.Copy(ioutil.Discard, resp.Body)
 	resp.Body.Close()
@@ -196,16 +199,19 @@ func (dsc *dispersionScanContainers) handleChecks(ctx *dispersionScanContainersC
 		url := fmt.Sprintf("%s/%s/%d/%s/%s", service, check.device, check.partition, common.Urlencode(AdminAccount), common.Urlencode(check.name))
 		req, err := http.NewRequest("HEAD", url, nil)
 		if err != nil {
-			ctx.logger.Error("http.NewRequest(HEAD, url, nil) // likely programming error", zap.String("url", url), zap.Error(err))
 			atomic.AddInt64(&ctx.errored, 1)
+			ctx.logger.Error("http.NewRequest(HEAD, url, nil) // likely programming error", zap.String("url", url), zap.Error(err))
+			if err = dsc.aa.db.recordDispersionScanFailure("container", 0, check.partition, service, check.deviceID); err != nil {
+				ctx.logger.Error("recordDispersionScanFailure", zap.Uint64("partition", check.partition), zap.String("service", service), zap.Int("deviceID", check.deviceID), zap.Error(err))
+			}
 			continue
 		}
 		resp, err := dsc.aa.client.Do(req)
 		if err != nil {
-			if err = dsc.aa.db.incrementServiceErrorCount("container", 0, service); err != nil {
-				ctx.logger.Error("countServiceError", zap.Error(err))
-			}
 			atomic.AddInt64(&ctx.errored, 1)
+			if err = dsc.aa.db.recordDispersionScanFailure("container", 0, check.partition, service, -1); err != nil {
+				ctx.logger.Error("recordDispersionScanFailure", zap.Uint64("partition", check.partition), zap.String("service", service), zap.Error(err))
+			}
 			continue
 		}
 		io.Copy(ioutil.Discard, resp.Body)
@@ -218,10 +224,10 @@ func (dsc *dispersionScanContainers) handleChecks(ctx *dispersionScanContainersC
 			continue
 		}
 		if resp.StatusCode/100 != 2 {
-			if err = dsc.aa.db.incrementDeviceErrorCount("container", 0, check.deviceID); err != nil {
-				ctx.logger.Error("countDeviceError", zap.Error(err))
-			}
 			atomic.AddInt64(&ctx.errored, 1)
+			if err = dsc.aa.db.recordDispersionScanFailure("container", 0, check.partition, "", check.deviceID); err != nil {
+				ctx.logger.Error("recordDispersionScanFailure", zap.Uint64("partition", check.partition), zap.Int("deviceID", check.deviceID), zap.Error(err))
+			}
 			continue
 		}
 		atomic.AddInt64(&ctx.found, 1)
