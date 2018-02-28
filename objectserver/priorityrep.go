@@ -87,10 +87,9 @@ func SendPriRepJob(job *PriorityRepJob, client *http.Client) (string, bool) {
 		return fmt.Sprintf("Error moving partition %d: %v",
 			job.Partition, err), false
 	}
-	if job.Version == "INDEXDB" {
-		if resp.StatusCode/100 == 2 {
-			var err error
-			if data, err := ioutil.ReadAll(resp.Body); err == nil {
+	if resp.StatusCode/100 == 2 {
+		if data, err := ioutil.ReadAll(resp.Body); err == nil {
+			if len(data) > 0 {
 				prp := PriorityReplicationResult{}
 				if err = json.Unmarshal(data, &prp); err == nil {
 					return fmt.Sprintf("Replicating partition %d from %s/%s replicated %d objects with %d errors",
@@ -101,8 +100,9 @@ func SendPriRepJob(job *PriorityRepJob, client *http.Client) (string, bool) {
 						job.Partition, err), false
 				}
 			}
-			return fmt.Sprintf("Invalid response moving partition %d: %d. %v",
-				job.Partition, resp.StatusCode, err), false
+		} else {
+			return fmt.Sprintf("could not  read body forpartition %d: %v",
+				job.Partition, err), false
 		}
 	}
 	resp.Body.Close()
@@ -212,7 +212,6 @@ func objectRingPolicyIndex(s string) (int, error) {
 func doMoveParts(args []string, cnf srv.ConfigLoader) int {
 	flags := flag.NewFlagSet("moveparts", flag.ExitOnError)
 	policy := flags.Int("p", 0, "policy index to use")
-	version := flags.String("v", "repl", "for testing INDEXDB")
 	certFile := flags.String("certfile", "", "Cert file to use for setting up https client")
 	keyFile := flags.String("keyfile", "", "Key file to use for setting up https client")
 	flags.Usage = func() {
@@ -277,11 +276,6 @@ func doMoveParts(args []string, cnf srv.ConfigLoader) int {
 		for i := len(jobs) - 1; i > 0; i-- { // shuffle jobs list
 			j := rand.Intn(i + 1)
 			jobs[j], jobs[i] = jobs[i], jobs[j]
-		}
-		if *version == "INDEXDB" {
-			for i := range jobs {
-				jobs[i].Version = "INDEXDB"
-			}
 		}
 		fmt.Println("Job count:", len(jobs))
 		badParts = doPriRepJobs(jobs, 2, client)
@@ -364,7 +358,6 @@ func getRestoreDeviceJobs(theRing ring.Ring, ip string, devName string, srcRegio
 func RestoreDevice(args []string, cnf srv.ConfigLoader) {
 	flags := flag.NewFlagSet("restoredevice", flag.ExitOnError)
 	policy := flags.Int("p", 0, "policy index to use")
-	version := flags.String("v", "repl", "for testing INDEXDB")
 	region := flags.Int("region", -1, "restore device only from peers in specified region")
 	ringLoc := flags.String("r", "", "Specify which ring file to use")
 	conc := flags.Int("c", 2, "limit of per device concurrency priority repl calls")
@@ -429,11 +422,6 @@ func RestoreDevice(args []string, cnf srv.ConfigLoader) {
 		for i := len(jobs) - 1; i > 0; i-- { // shuffle jobs list
 			j := rand.Intn(i + 1)
 			jobs[j], jobs[i] = jobs[i], jobs[j]
-		}
-		if *version == "INDEXDB" {
-			for i := range jobs {
-				jobs[i].Version = "INDEXDB"
-			}
 		}
 		badParts = doPriRepJobs(jobs, *conc, client)
 		if len(badParts) == 0 {

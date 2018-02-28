@@ -498,6 +498,7 @@ func (ot *IndexDB) List(startHash, stopHash string, limit int) ([]*IndexDBItem, 
 				SELECT hash, shard, timestamp, deletion, metahash, metadata, nursery, shardhash
 			FROM objects
 			WHERE hash BETWEEN ? AND ?
+			ORDER BY hash
 			LIMIT ?
 		    `, startHash, stopHash, limit)
 		} else {
@@ -505,6 +506,7 @@ func (ot *IndexDB) List(startHash, stopHash string, limit int) ([]*IndexDBItem, 
 				SELECT hash, shard, timestamp, deletion, metahash, metadata, nursery, shardhash
 			FROM objects
 			WHERE hash BETWEEN ? AND ?
+			ORDER BY hash
 		    `, startHash, stopHash)
 		}
 		if err != nil {

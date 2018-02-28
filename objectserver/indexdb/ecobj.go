@@ -188,7 +188,7 @@ func (o *ecObject) Close() error {
 }
 
 func (o *ecObject) Replicate(prirep objectserver.PriorityRepJob) error {
-	fmt.Println("replicate call on ecObject: ", prirep)
+	fmt.Println("replicate call on ecObject: ", o.metadata["name"])
 	return nil
 }
 

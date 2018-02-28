@@ -142,7 +142,7 @@ func (nrd *nurseryDevice) PriorityReplicate(w http.ResponseWriter, pri PriorityR
 	objc := make(chan ObjectStabilizer)
 	canchan := make(chan struct{})
 
-	go nrd.objEngine.GetObjectsToReplicate(pri.FromDevice.Device, pri.Partition, objc, canchan)
+	go nrd.objEngine.GetObjectsToReplicate(pri, objc, canchan)
 	//TODO: add concurrency to this
 	w.WriteHeader(http.StatusOK)
 	t := time.Now()
