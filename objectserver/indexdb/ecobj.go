@@ -16,6 +16,7 @@
 package indexdb
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -188,7 +189,96 @@ func (o *ecObject) Close() error {
 }
 
 func (o *ecObject) Replicate(prirep objectserver.PriorityRepJob) error {
-	fmt.Println("replicate call on ecObject: ", o.metadata["name"])
+	// If we are handoff, just replicate the shard and delete local shard
+	if _, handoff := o.ring.GetJobNodes(prirep.Partition, prirep.FromDevice.Id); handoff {
+		fp, err := os.Open(o.Path)
+		if err != nil {
+			return err
+		}
+		defer fp.Close()
+		req, err := http.NewRequest("PUT", fmt.Sprintf("%s://%s:%d/ec-frag/%s/%s/%d", prirep.ToDevice.Scheme, prirep.ToDevice.Ip, prirep.ToDevice.Port, prirep.ToDevice.Device, o.Hash, o.Shard), fp)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(prirep.Policy))
+		req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("%d/%d/%d", o.dataFrags, o.parityFrags, o.chunkSize))
+		for k, v := range o.metadata {
+			req.Header.Set("Meta-"+k, v)
+		}
+		resp, err := o.client.Do(req)
+		if err != nil {
+			return fmt.Errorf("error syncing shard %s/%d: %v", o.Hash, o.Shard, err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode/100 != 2 {
+			return fmt.Errorf("bad status code %d syncing shard with  %s/%d", resp.StatusCode, o.Hash, o.Shard)
+		}
+		return o.idb.Remove(o.Hash, o.Shard, o.Timestamp, true)
+	}
+	// Else reconstruct the shard and copy over that
+	var dataFrags, parityFrags, chunkSize int
+	if n, err := fmt.Sscanf(o.metadata["Ec-Scheme"], "%d/%d/%d", &dataFrags, &parityFrags, &chunkSize); err != nil || n != 3 {
+		return errors.New("Invalid scheme")
+	}
+	contentLength := o.ContentLength()
+	ns := strings.SplitN(o.metadata["name"], "/", 4)
+	if len(ns) != 4 {
+		return fmt.Errorf("invalid metadata name: %s", o.metadata["name"])
+	}
+	nodes := o.ring.GetNodes(o.ring.GetPartition(ns[1], ns[2], ns[3]))
+	if len(nodes) < dataFrags+parityFrags {
+		return errors.New("Not enough nodes for scheme")
+	}
+	bodies := make([]io.Reader, len(nodes))
+	toDeviceShard := -1
+	for i, node := range nodes {
+		if node.Id == prirep.ToDevice.Id {
+			toDeviceShard = i
+			continue
+		}
+		url := fmt.Sprintf("%s://%s:%d/ec-frag/%s/%s/%d", node.Scheme, node.Ip, node.Port, node.Device, o.Hash, i)
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			continue
+		}
+		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
+		resp, err := o.client.Do(req)
+		if err != nil {
+			continue
+		}
+		defer func() {
+			io.Copy(ioutil.Discard, resp.Body)
+			resp.Body.Close()
+		}()
+		if resp.StatusCode != http.StatusOK {
+			continue
+		}
+		bodies[i] = resp.Body
+	}
+	if toDeviceShard == -1 {
+		return fmt.Errorf("ToDevice %s:%d  %s is not in list of nodes for this object", prirep.ToDevice.Ip, prirep.ToDevice.Port, prirep.ToDevice.Device)
+	}
+	data, err := ecReconstruct(dataFrags, parityFrags, bodies, chunkSize, contentLength)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest("PUT", fmt.Sprintf("%s://%s:%d/ec-frag/%s/%s/%d", prirep.ToDevice.Scheme, prirep.ToDevice.Ip, prirep.ToDevice.Port, prirep.ToDevice.Device, o.Hash, toDeviceShard), bytes.NewReader(data[toDeviceShard]))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(prirep.Policy))
+	req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("%d/%d/%d", o.dataFrags, o.parityFrags, o.chunkSize))
+	for k, v := range o.metadata {
+		req.Header.Set("Meta-"+k, v)
+	}
+	resp, err := o.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("error syncing shard %s/%d: %v", o.Hash, o.Shard, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("bad status code %d syncing shard with  %s/%d", resp.StatusCode, o.Hash, o.Shard)
+	}
 	return nil
 }
 

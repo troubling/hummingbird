@@ -56,6 +56,38 @@ func ecSplit(dataChunks, parityChunks int, fp io.Reader, chunkSize int, contentL
 	return nil
 }
 
+func ecReconstruct(dataChunks, parityChunks int, bodies []io.Reader, chunkSize int, contentLength int64) ([][]byte, error) {
+	enc, err := reedsolomon.New(dataChunks, parityChunks)
+	if err != nil {
+		return nil, err
+	}
+	data := make([][]byte, dataChunks+parityChunks)
+	databuf := make([]byte, (dataChunks+parityChunks)*chunkSize)
+	expectedChunkSize := chunkSize
+	if contentLength < int64(chunkSize*dataChunks) {
+		expectedChunkSize = int((contentLength) / int64(dataChunks))
+		if (contentLength)%int64(dataChunks) != 0 {
+			expectedChunkSize++
+		}
+	}
+	for i := range data {
+		if bodies[i] != nil {
+			data[i] = databuf[i*expectedChunkSize : (i+1)*expectedChunkSize]
+		}
+	}
+	for i := range bodies {
+		if bodies[i] != nil {
+			if _, err := io.ReadFull(bodies[i], data[i]); err != nil {
+				data[i] = data[i][:0]
+			}
+		}
+	}
+	if err := enc.Reconstruct(data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
 func ecGlue(dataChunks, parityChunks int, bodies []io.Reader, chunkSize int, contentLength int64, dsts ...io.Writer) error {
 	enc, err := reedsolomon.New(dataChunks, parityChunks)
 	if err != nil {

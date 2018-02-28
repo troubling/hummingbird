@@ -60,7 +60,6 @@ type PriorityRepJob struct {
 	FromDevice *ring.Device `json:"from_device"`
 	ToDevice   *ring.Device `json:"to_device"`
 	Policy     int          `json:"policy"`
-	Version    string       `json:"version"`
 }
 
 type quarantineFileError struct {
