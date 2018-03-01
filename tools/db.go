@@ -60,22 +60,13 @@ func newDB(serverconf *conf.Config, memoryDBID string) (*dbInstance, error) {
             to_device INTEGER           -- device id in ring to replicate to, NULL or < 0 = all
         );
 
-        CREATE TABLE IF NOT EXISTS service_error (
+        CREATE TABLE IF NOT EXISTS dispersion_scan_failure (
             create_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            update_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             rtype TEXT NOT NULL,        -- account, container, object
             policy INTEGER NOT NULL,    -- only used with object
-            service TEXT NOT NULL,      -- ip:port of service erroring
-            count INTEGER NOT NULL      -- count of errors since last success
-        );
-
-        CREATE TABLE IF NOT EXISTS device_error (
-            create_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            update_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            rtype TEXT NOT NULL,        -- account, container, object
-            policy INTEGER NOT NULL,    -- only used with object
-            device INTEGER NOT NULL,    -- device id in ring of device erroring
-            count INTEGER NOT NULL      -- count of errors since last success
+            partition INTEGER NOT NULL, -- the partition number to replicate
+            service TEXT NOT NULL,      -- ip:port of service erroring, or...
+            device INTEGER NOT NULL     -- ...device id in ring of device erroring
         );
 
         CREATE TABLE IF NOT EXISTS process_pass (
@@ -197,202 +188,57 @@ func (db *dbInstance) queuedReplications(typ string, policy int, reason string) 
 	return qrs, nil
 }
 
-func (db *dbInstance) incrementServiceErrorCount(typ string, policy int, service string) error {
-	var tx *sql.Tx
-	var rows *sql.Rows
-	var err error
-	defer func() {
-		if rows != nil {
-			rows.Close()
-		}
-		if tx != nil {
-			tx.Rollback()
-		}
-	}()
-	tx, err = db.db.Begin()
-	if err != nil {
-		return err
-	}
-	rows, err = tx.Query(`
-        SELECT create_date, update_date, count FROM service_error
-        WHERE rtype = ?
-          AND policy = ?
-          AND service = ?
-    `, typ, policy, service)
-	if err != nil {
-		return err
-	}
-	if rows.Next() { // entry already
-		var createDate time.Time
-		var updateDate time.Time
-		var count int
-		if err = rows.Scan(&createDate, &updateDate, &count); err != nil {
-			return err
-		}
-		rows.Close()
-		rows = nil
-		if time.Since(updateDate) > db.serviceErrorExpiration {
-			createDate = time.Now()
-			count = 1
-		} else {
-			count++
-		}
-		updateDate = createDate
-		if _, err = tx.Exec(`
-            UPDATE service_error
-            SET create_date = ?,
-                update_date = ?,
-                count = ?
-            WHERE rtype = ?
-              AND policy = ?
-              AND service = ?
-        `, createDate, updateDate, count, typ, policy, service); err != nil {
-			return err
-		}
-		if err = tx.Commit(); err != nil {
-			return err
-		}
-		tx = nil
-		return nil
-	}
-	rows.Close()
-	rows = nil
-	if _, err = tx.Exec(`
-        INSERT INTO service_error
-        (rtype, policy, service, count)
-        VALUES (?, ?, ?, 1)
-    `, typ, policy, service); err != nil {
-		return err
-	}
-	if err = tx.Commit(); err != nil {
-		return err
-	}
-	tx = nil
-	return nil
+func (db *dbInstance) clearDispersionScanFailures(typ string, policy int) error {
+	_, err := db.db.Exec(`
+        DELETE FROM dispersion_scan_failure
+        WHERE rtype = ? AND policy = ?
+    `, typ, policy)
+	return err
 }
 
-func (db *dbInstance) countOfServicesWithErrors(typ string, policy int) (int, error) {
+func (db *dbInstance) recordDispersionScanFailure(typ string, policy int, partition uint64, service string, deviceID int) error {
+	_, err := db.db.Exec(`
+        INSERT INTO dispersion_scan_failure
+        (rtype, policy, partition, service, device)
+        VALUES (?, ?, ?, ?, ?)
+    `, typ, policy, partition, service, deviceID)
+	return err
+}
+
+type dispersionScanFailure struct {
+	time      time.Time
+	partition int
+	service   string
+	deviceID  int
+}
+
+func (db *dbInstance) dispersionScanFailures(typ string, policy int) ([]*dispersionScanFailure, error) {
+	var dsfs []*dispersionScanFailure
 	var rows *sql.Rows
 	var err error
-	var count int
 	defer func() {
 		if rows != nil {
 			rows.Close()
 		}
 	}()
 	rows, err = db.db.Query(`
-        SELECT count(*) FROM service_error
+        SELECT create_date, partition, service, device
+        FROM dispersion_scan_failure
         WHERE rtype = ?
           AND policy = ?
+        ORDER BY create_date
     `, typ, policy)
 	if err != nil {
-		return count, err
+		return dsfs, err
 	}
-	if rows.Next() {
-		if err = rows.Scan(&count); err != nil {
-			return count, err
+	for rows.Next() {
+		dsf := &dispersionScanFailure{}
+		if err = rows.Scan(&dsf.time, &dsf.partition, &dsf.service, &dsf.deviceID); err != nil {
+			return dsfs, err
 		}
+		dsfs = append(dsfs, dsf)
 	}
-	return count, nil
-}
-
-func (db *dbInstance) incrementDeviceErrorCount(typ string, policy int, deviceID int) error {
-	var tx *sql.Tx
-	var rows *sql.Rows
-	var err error
-	defer func() {
-		if rows != nil {
-			rows.Close()
-		}
-		if tx != nil {
-			tx.Rollback()
-		}
-	}()
-	tx, err = db.db.Begin()
-	if err != nil {
-		return err
-	}
-	rows, err = tx.Query(`
-        SELECT create_date, update_date, count FROM device_error
-        WHERE rtype = ?
-          AND policy = ?
-          AND device = ?
-    `, typ, policy, deviceID)
-	if err != nil {
-		return err
-	}
-	if rows.Next() { // entry already
-		var createDate time.Time
-		var updateDate time.Time
-		var count int
-		if err = rows.Scan(&createDate, &updateDate, &count); err != nil {
-			return err
-		}
-		rows.Close()
-		rows = nil
-		if time.Since(updateDate) > db.deviceErrorExpiration {
-			createDate = time.Now()
-			count = 1
-		} else {
-			count++
-		}
-		updateDate = createDate
-		if _, err = tx.Exec(`
-            UPDATE device_error
-            SET create_date = ?,
-                update_date = ?,
-                count = ?
-            WHERE rtype = ?
-              AND policy = ?
-              AND device = ?
-        `, createDate, updateDate, count, typ, policy, deviceID); err != nil {
-			return err
-		}
-		if err = tx.Commit(); err != nil {
-			return err
-		}
-		tx = nil
-		return nil
-	}
-	rows.Close()
-	rows = nil
-	if _, err = tx.Exec(`
-        INSERT INTO device_error
-        (rtype, policy, device, count)
-        VALUES (?, ?, ?, 1)
-    `, typ, policy, deviceID); err != nil {
-		return err
-	}
-	if err = tx.Commit(); err != nil {
-		return err
-	}
-	tx = nil
-	return nil
-}
-
-func (db *dbInstance) countOfDevicesWithErrors(typ string, policy int) (int, error) {
-	var rows *sql.Rows
-	var err error
-	var count int
-	defer func() {
-		if rows != nil {
-			rows.Close()
-		}
-	}()
-	rows, err = db.db.Query(`
-        SELECT count(*) FROM device_error
-        WHERE rtype = ?
-          AND policy = ?
-    `, typ, policy)
-	if err != nil {
-		return count, err
-	}
-	if rows.Next() {
-		if err = rows.Scan(&count); err != nil {
-			return count, err
-		}
-	}
-	return count, nil
+	return dsfs, nil
 }
 
 func (db *dbInstance) startProcessPass(process, typ string, policy int) error {
