@@ -52,12 +52,13 @@ func newDB(serverconf *conf.Config, memoryDBID string) (*dbInstance, error) {
 	_, err = db.db.Exec(`
         CREATE TABLE IF NOT EXISTS replication_queue (
             create_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            rtype TEXT NOT NULL,        -- account, container, object
-            policy INTEGER NOT NULL,    -- only used with object
-            partition INTEGER NOT NULL, -- the partition number to replicate
-            reason TEXT NOT NULL,       -- ring, dispersion, quarantine
-            from_device INTEGER,        -- device id in ring to replicate from, NULL or < 0 = any
-            to_device INTEGER           -- device id in ring to replicate to, NULL or < 0 = all
+            update_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            rtype TEXT NOT NULL,          -- account, container, object
+            policy INTEGER NOT NULL,      -- only used with object
+            partition INTEGER NOT NULL,   -- the partition number to replicate
+            reason TEXT NOT NULL,         -- ring, dispersion, quarantine
+            from_device INTEGER NOT NULL, -- device id in ring to replicate from, < 0 = any
+            to_device INTEGER NOT NULL    -- device id in ring to replicate to, must be valid device
         );
 
         CREATE TABLE IF NOT EXISTS dispersion_scan_failure (
@@ -135,7 +136,8 @@ func (db *dbInstance) queuePartitionReplication(typ string, policy int, partitio
 }
 
 type queuedReplication struct {
-	time         time.Time
+	created      time.Time
+	updated      time.Time
 	typ          string
 	policy       int
 	partition    int
@@ -145,9 +147,9 @@ type queuedReplication struct {
 }
 
 // queuedReplications returns the queued replications for the ring type
-// (account, container, object) and policy index, filtered optionally by the
-// reason. Use an empty string for the reason if you want all entries. Entries
-// will be sorted by oldest queued to newest.
+// (account, container, object), policy index, and reason. Entries will be
+// sorted by oldest queued to newest. You can set typ == "" for all types,
+// policy < 0 for all policies, and reason == "" for all reasons.
 func (db *dbInstance) queuedReplications(typ string, policy int, reason string) ([]*queuedReplication, error) {
 	var qrs []*queuedReplication
 	var rows *sql.Rows
@@ -157,35 +159,79 @@ func (db *dbInstance) queuedReplications(typ string, policy int, reason string) 
 			rows.Close()
 		}
 	}()
-	if reason == "" {
-		rows, err = db.db.Query(`
-            SELECT create_date, partition, reason, from_device, to_device
-            FROM replication_queue
-            WHERE rtype = ?
-              AND policy = ?
-            ORDER BY create_date
-        `, typ, policy)
-	} else {
-		rows, err = db.db.Query(`
-            SELECT create_date, partition, reason, from_device, to_device
-            FROM replication_queue
-            WHERE rtype = ?
-              AND policy = ?
-              AND reason = ?
-            ORDER BY create_date
-        `, typ, policy, reason)
+	query := `
+        SELECT create_date, update_date, rtype, policy, partition, reason, from_device, to_device
+        FROM replication_queue
+    `
+	var wheres []string
+	var args []interface{}
+	if typ != "" {
+		wheres = append(wheres, "rtype = ?")
+		args = append(args, typ)
 	}
+	if policy >= 0 {
+		wheres = append(wheres, "policy = ?")
+		args = append(args, policy)
+	}
+	if reason != "" {
+		wheres = append(wheres, "reason = ?")
+		args = append(args, reason)
+	}
+	if len(wheres) > 0 {
+		query += " WHERE " + wheres[0]
+		wheres = wheres[1:]
+	}
+	for _, where := range wheres {
+		query += " AND " + where
+	}
+	query += " ORDER BY update_date"
+	rows, err = db.db.Query(query, args...)
 	if err != nil {
 		return qrs, err
 	}
 	for rows.Next() {
-		qr := &queuedReplication{typ: typ, policy: policy}
-		if err = rows.Scan(&qr.time, &qr.partition, &qr.reason, &qr.fromDeviceID, &qr.toDeviceID); err != nil {
+		qr := &queuedReplication{}
+		if err = rows.Scan(&qr.created, &qr.updated, &qr.typ, &qr.policy, &qr.partition, &qr.reason, &qr.fromDeviceID, &qr.toDeviceID); err != nil {
 			return qrs, err
 		}
 		qrs = append(qrs, qr)
 	}
 	return qrs, nil
+}
+
+// updateQueuedReplication will update the qr.updated field for this queue
+// replication, so that it will be placed at the back of the queue for future
+// retries.
+func (db *dbInstance) updateQueuedReplication(qr *queuedReplication) error {
+	now := time.Now()
+	_, err := db.db.Exec(`
+        UPDATE replication_queue
+        SET update_date = ?
+        WHERE rtype = ?
+          AND policy = ?
+          AND partition = ?
+          AND reason = ?
+          AND from_device = ?
+          AND to_device = ?
+    `, now, qr.typ, qr.policy, qr.partition, qr.reason, qr.fromDeviceID, qr.toDeviceID)
+    if err != nil {
+        return err
+    }
+	qr.updated = now
+	return err
+}
+
+func (db *dbInstance) clearQueuedReplication(qr *queuedReplication) error {
+	_, err := db.db.Exec(`
+        DELETE FROM replication_queue
+        WHERE rtype = ?
+          AND policy = ?
+          AND partition = ?
+          AND reason = ?
+          AND from_device = ?
+          AND to_device = ?
+    `, qr.typ, qr.policy, qr.partition, qr.reason, qr.fromDeviceID, qr.toDeviceID)
+	return err
 }
 
 func (db *dbInstance) clearDispersionScanFailures(typ string, policy int) error {

@@ -250,7 +250,7 @@ func getDispersionReport(flags *flag.FlagSet) *dispersionReport {
 		for _, qr := range qrs {
 			dev := ring.AllDevices()[qr.toDeviceID]
 			report.ContainerReport.Partitions[qr.partition] = append(report.ContainerReport.Partitions[qr.partition], &dispersionMissing{
-				Time:    qr.time,
+				Time:    qr.created,
 				Service: fmt.Sprintf("%s:%d", dev.Ip, dev.Port),
 				Device:  dev.Device,
 			})
@@ -290,7 +290,7 @@ func getDispersionReport(flags *flag.FlagSet) *dispersionReport {
 			for _, qr := range qrs {
 				dev := ring.AllDevices()[qr.toDeviceID]
 				objectReport.Partitions[qr.partition] = append(objectReport.Partitions[qr.partition], &dispersionMissing{
-					Time:    qr.time,
+					Time:    qr.created,
 					Service: fmt.Sprintf("%s:%d", dev.Ip, dev.Port),
 					Device:  dev.Device,
 				})
