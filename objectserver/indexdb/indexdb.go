@@ -474,7 +474,7 @@ func (ot *IndexDB) ListNursery() ([]*IndexDBItem, error) {
 // List returns the items for the ringPart given.
 //
 // This is for replication, auditing, that sort of thing.
-func (ot *IndexDB) List(startHash, stopHash string, limit int) ([]*IndexDBItem, error) {
+func (ot *IndexDB) List(startHash, stopHash, marker string, limit int) ([]*IndexDBItem, error) {
 	if startHash == "" {
 		startHash = "00000000000000000000000000000000"
 	}
@@ -497,17 +497,17 @@ func (ot *IndexDB) List(startHash, stopHash string, limit int) ([]*IndexDBItem, 
 			rows, err = db.Query(`
 				SELECT hash, shard, timestamp, deletion, metahash, metadata, nursery, shardhash
 			FROM objects
-			WHERE hash BETWEEN ? AND ?
+			WHERE hash BETWEEN ? AND ? AND hash > ?
 			ORDER BY hash
 			LIMIT ?
-		    `, startHash, stopHash, limit)
+		    `, startHash, stopHash, marker, limit)
 		} else {
 			rows, err = db.Query(`
 				SELECT hash, shard, timestamp, deletion, metahash, metadata, nursery, shardhash
 			FROM objects
-			WHERE hash BETWEEN ? AND ?
+			WHERE hash BETWEEN ? AND ? AND hash > ?
 			ORDER BY hash
-		    `, startHash, stopHash)
+		    `, startHash, stopHash, marker)
 		}
 		if err != nil {
 			return nil, err
