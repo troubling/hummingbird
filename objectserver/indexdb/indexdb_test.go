@@ -341,7 +341,7 @@ func TestIndexDB_List(t *testing.T) {
 		errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true, ""))
 	}
 	startHash, stopHash := ot.RingPartRange(0)
-	listing, err := ot.List(startHash, stopHash, 0)
+	listing, err := ot.List(startHash, stopHash, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,7 +354,7 @@ func TestIndexDB_List(t *testing.T) {
 	if len(matchHashes0_0) != 0 {
 		t.Error(matchHashes0_0)
 	}
-	listing, err = ot.List(startHash, stopHash, 0)
+	listing, err = ot.List(startHash, stopHash, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,7 +368,7 @@ func TestIndexDB_List(t *testing.T) {
 		t.Error(matchHashes0_1)
 	}
 	startHash, stopHash = ot.RingPartRange(1)
-	listing, err = ot.List(startHash, stopHash, 0)
+	listing, err = ot.List(startHash, stopHash, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,7 +408,7 @@ func TestIndexDB_ListRange(t *testing.T) {
 
 	startHash := "00000000000000000000000000000000"
 	stopHash := "11111111111111111111111111111111"
-	listing, err := ot.List(startHash, stopHash, 0)
+	listing, err := ot.List(startHash, stopHash, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -418,7 +418,7 @@ func TestIndexDB_ListRange(t *testing.T) {
 
 	startHash = "11111111111111111111111111111111"
 	stopHash = "51111111111111111111111111111111"
-	listing, err = ot.List(startHash, stopHash, 0)
+	listing, err = ot.List(startHash, stopHash, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -431,7 +431,7 @@ func TestIndexDB_ListRange(t *testing.T) {
 
 	startHash = "51111111111111111111111111111111"
 	stopHash = "91111111111111111111111111111111"
-	listing, err = ot.List(startHash, stopHash, 0)
+	listing, err = ot.List(startHash, stopHash, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -444,7 +444,7 @@ func TestIndexDB_ListRange(t *testing.T) {
 
 	startHash = "11111111111111111111111111111111"
 	stopHash = "91111111111111111111111111111111"
-	listing, err = ot.List(startHash, stopHash, 0)
+	listing, err = ot.List(startHash, stopHash, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -459,7 +459,7 @@ func TestIndexDB_ListRange(t *testing.T) {
 	}
 
 	// Test limit while we're here.
-	listing, err = ot.List(startHash, stopHash, 1)
+	listing, err = ot.List(startHash, stopHash, "", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -468,6 +468,65 @@ func TestIndexDB_ListRange(t *testing.T) {
 	}
 	if listing[0].Hash != hsh0 {
 		t.Fatal(listing[0].Hash, hsh0)
+	}
+}
+
+func TestIndexDB_ListMarker(t *testing.T) {
+	pth := "testdata/tmp/TestIndexDB_ListMarker"
+	defer os.RemoveAll(pth)
+	ot := newTestIndexDB(t, pth)
+	defer ot.Close()
+
+	timestamp := time.Now().UnixNano()
+	for i := 0; i < 16; i++ {
+		hsh := fmt.Sprintf("%x0000000000000000000000000000000", i)
+		body := "just testing"
+		f, err := ot.TempFile(hsh, 0, timestamp, int64(len(body)), true)
+		errnil(t, err)
+		f.Write([]byte(body))
+		errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true, ""))
+		fmt.Printf("HASH: %s\n", hsh)
+	}
+
+	listing, err := ot.List("", "", "e0000000000000000000000000000000", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listing) != 1 {
+		t.Fatalf("Should be len 1: %v", listing)
+	}
+	if listing[0].Hash != "f0000000000000000000000000000000" {
+		t.Fatal(listing[0].Hash, "f0000000000000000000000000000000")
+	}
+
+	listing, err = ot.List("", "", "30000000000000000000000000000000", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listing) != 12 { // 4 through f is 12
+		t.Fatalf("Should be len 12: %v", listing)
+	}
+	if listing[0].Hash != "40000000000000000000000000000000" {
+		t.Fatal(listing[0].Hash, "40000000000000000000000000000000")
+	}
+
+	listing, err = ot.List("30000000000000000000000000000000", "40000000000000000000000000000000", "30000000000000000000000000000000", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listing) != 1 {
+		t.Fatalf("Should be len 1: %v", listing)
+	}
+	if listing[0].Hash != "40000000000000000000000000000000" {
+		t.Fatal(listing[0].Hash, "40000000000000000000000000000000")
+	}
+
+	listing, err = ot.List("30000000000000000000000000000000", "40000000000000000000000000000000", "40000000000000000000000000000000", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listing) != 0 {
+		t.Fatalf("Should be len 0: %v", listing)
 	}
 }
 
@@ -491,7 +550,7 @@ func TestIndexDB_ListDefaults(t *testing.T) {
 	f.Write([]byte(body))
 	errnil(t, ot.Commit(f, hsh1, 0, timestamp, false, "", nil, true, ""))
 
-	listing, err := ot.List("", "", 0)
+	listing, err := ot.List("", "", "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}

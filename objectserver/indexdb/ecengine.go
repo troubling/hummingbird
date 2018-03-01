@@ -243,7 +243,7 @@ func (f *ecEngine) GetObjectsToReplicate(prirep objectserver.PriorityRepJob, c c
 		return
 	}
 	startHash, stopHash := idb.RingPartRange(int(prirep.Partition))
-	items, err := idb.List(startHash, stopHash, 0)
+	items, err := idb.List(startHash, stopHash, "", 0)
 	if len(items) == 0 {
 		return
 	}
@@ -330,7 +330,7 @@ func (f *ecEngine) listPartitionHandler(writer http.ResponseWriter, request *htt
 		return
 	}
 	startHash, stopHash := idb.RingPartRange(part)
-	items, err := idb.List(startHash, stopHash, 0)
+	items, err := idb.List(startHash, stopHash, "", 0)
 	if err != nil {
 		f.logger.Error("error listing idb", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
