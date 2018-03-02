@@ -76,6 +76,9 @@ func ecGlue(dataChunks, parityChunks int, bodies []io.Reader, chunkSize int, con
 		for i := range data {
 			if bodies[i] != nil && !failed[i] {
 				data[i] = databuf[i*expectedChunkSize : (i+1)*expectedChunkSize]
+                       } else {
+                               data[i] = databuf[i*expectedChunkSize : (i+1)*expectedChunkSize]
+                               data[i] = data[i][:0]
 			}
 		}
 		for i := range bodies {
