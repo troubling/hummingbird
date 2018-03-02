@@ -76,9 +76,10 @@ func ecGlue(dataChunks, parityChunks int, bodies []io.Reader, chunkSize int, con
 		for i := range data {
 			if bodies[i] != nil && !failed[i] {
 				data[i] = databuf[i*expectedChunkSize : (i+1)*expectedChunkSize]
-                       } else {
-                               data[i] = databuf[i*expectedChunkSize : (i+1)*expectedChunkSize]
-                               data[i] = data[i][:0]
+			} else {
+				// assign a slice with the proper offset and cap with 0 length
+				shardOffset := i * expectedChunkSize
+				data[i] = databuf[shardOffset:shardOffset]
 			}
 		}
 		for i := range bodies {
