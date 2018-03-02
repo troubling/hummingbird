@@ -56,36 +56,57 @@ func ecSplit(dataChunks, parityChunks int, fp io.Reader, chunkSize int, contentL
 	return nil
 }
 
-func ecReconstruct(dataChunks, parityChunks int, bodies []io.Reader, chunkSize int, contentLength int64) ([][]byte, error) {
+func ecReconstruct(dataChunks, parityChunks int, bodies []io.Reader, chunkSize int, contentLength int64, dst io.Writer, dstChunkNum int) error {
 	enc, err := reedsolomon.New(dataChunks, parityChunks)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	data := make([][]byte, dataChunks+parityChunks)
 	databuf := make([]byte, (dataChunks+parityChunks)*chunkSize)
-	expectedChunkSize := chunkSize
-	if contentLength < int64(chunkSize*dataChunks) {
-		expectedChunkSize = int((contentLength) / int64(dataChunks))
-		if (contentLength)%int64(dataChunks) != 0 {
-			expectedChunkSize++
+	totalDatabytes := int64(0)
+	failed := make([]bool, len(bodies))
+	for totalDatabytes < contentLength {
+		expectedChunkSize := chunkSize
+		if contentLength-totalDatabytes < int64(chunkSize*dataChunks) {
+			expectedChunkSize = int((contentLength - totalDatabytes) / int64(dataChunks))
+			if (contentLength-totalDatabytes)%int64(dataChunks) != 0 {
+				expectedChunkSize++
+			}
 		}
-	}
-	for i := range data {
-		if bodies[i] != nil {
-			data[i] = databuf[i*expectedChunkSize : (i+1)*expectedChunkSize]
-		}
-	}
-	for i := range bodies {
-		if bodies[i] != nil {
-			if _, err := io.ReadFull(bodies[i], data[i]); err != nil {
+
+		for i := range data {
+			if bodies[i] != nil && !failed[i] {
+				data[i] = databuf[i*expectedChunkSize : (i+1)*expectedChunkSize]
+			} else {
+				data[i] = databuf[i*expectedChunkSize : (i+1)*expectedChunkSize]
 				data[i] = data[i][:0]
 			}
 		}
+		for i := range bodies {
+			if bodies[i] != nil && !failed[i] {
+				if _, err := io.ReadFull(bodies[i], data[i]); err != nil {
+					data[i] = data[i][:0]
+				}
+			}
+		}
+
+		if err := enc.Reconstruct(data); err != nil {
+			return err
+		}
+
+		if _, err := dst.Write(data[dstChunkNum]); err != nil {
+			return err
+		}
+
+		for i := 0; i < dataChunks; i++ {
+			datalen := int64(len(data[i]))
+			if contentLength-totalDatabytes < datalen {
+				datalen = contentLength - totalDatabytes
+			}
+			totalDatabytes += datalen
+		}
 	}
-	if err := enc.Reconstruct(data); err != nil {
-		return nil, err
-	}
-	return data, nil
+	return nil
 }
 
 func ecGlue(dataChunks, parityChunks int, bodies []io.Reader, chunkSize int, contentLength int64, dsts ...io.Writer) error {

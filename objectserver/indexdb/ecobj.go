@@ -16,7 +16,6 @@
 package indexdb
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -217,6 +216,7 @@ func (o *ecObject) Replicate(prirep objectserver.PriorityRepJob) error {
 	}
 	// Else reconstruct the shard and copy over that
 	var dataFrags, parityFrags, chunkSize int
+	success := true
 	if n, err := fmt.Sscanf(o.metadata["Ec-Scheme"], "%d/%d/%d", &dataFrags, &parityFrags, &chunkSize); err != nil || n != 3 {
 		return errors.New("Invalid scheme")
 	}
@@ -258,11 +258,10 @@ func (o *ecObject) Replicate(prirep objectserver.PriorityRepJob) error {
 	if toDeviceShard == -1 {
 		return fmt.Errorf("ToDevice %s:%d  %s is not in list of nodes for this object", prirep.ToDevice.Ip, prirep.ToDevice.Port, prirep.ToDevice.Device)
 	}
-	data, err := ecReconstruct(dataFrags, parityFrags, bodies, chunkSize, contentLength)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequest("PUT", fmt.Sprintf("%s://%s:%d/ec-frag/%s/%s/%d", prirep.ToDevice.Scheme, prirep.ToDevice.Ip, prirep.ToDevice.Port, prirep.ToDevice.Device, o.Hash, toDeviceShard), bytes.NewReader(data[toDeviceShard]))
+	rp, wp := io.Pipe()
+	defer wp.Close()
+	defer rp.Close()
+	req, err := http.NewRequest("PUT", fmt.Sprintf("%s://%s:%d/ec-frag/%s/%s/%d", prirep.ToDevice.Scheme, prirep.ToDevice.Ip, prirep.ToDevice.Port, prirep.ToDevice.Device, o.Hash, toDeviceShard), rp)
 	if err != nil {
 		return err
 	}
@@ -271,15 +270,30 @@ func (o *ecObject) Replicate(prirep objectserver.PriorityRepJob) error {
 	for k, v := range o.metadata {
 		req.Header.Set("Meta-"+k, v)
 	}
-	resp, err := o.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("error syncing shard %s/%d: %v", o.Hash, o.Shard, err)
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func(req *http.Request) {
+		defer wg.Done()
+		if resp, err := o.client.Do(req); err != nil {
+			success = false
+			return
+		} else {
+			io.Copy(ioutil.Discard, resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode/100 != 2 {
+				success = false
+				return
+			}
+		}
+	}(req)
+	var writer io.WriteCloser = wp
+	err = ecReconstruct(dataFrags, parityFrags, bodies, chunkSize, contentLength, writer, toDeviceShard)
+	writer.Close()
+	wg.Wait()
+	if !success {
+		return fmt.Errorf("Failed to replicate")
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("bad status code %d syncing shard with  %s/%d", resp.StatusCode, o.Hash, o.Shard)
-	}
-	return nil
+	return err
 }
 
 func (o *ecObject) Stabilize(ring ring.Ring, dev *ring.Device, policy int) error {
