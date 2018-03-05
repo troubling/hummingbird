@@ -106,14 +106,16 @@ func TestGetPartMoveJobs(t *testing.T) {
 	devs = append(devs, &ring.Device{Id: 10, Device: "drive10", Ip: "127.0.0.1", Port: 10})
 	newRing.fakeDevs = devs
 
-	jobs := getPartMoveJobs(oldRing, newRing, []uint64{})
+	jobs := getPartMoveJobs(oldRing, newRing, []uint64{}, 3)
 	require.EqualValues(t, 2, len(jobs))
 	require.EqualValues(t, 0, jobs[0].Partition)
 	require.EqualValues(t, 1, jobs[0].FromDevice.Id)
 	require.EqualValues(t, 6, jobs[0].ToDevice.Id)
+	require.EqualValues(t, 3, jobs[0].Policy)
 	require.EqualValues(t, 1, jobs[1].Partition)
 	require.EqualValues(t, 10, jobs[1].FromDevice.Id)
 	require.EqualValues(t, 11, jobs[1].ToDevice.Id)
+	require.EqualValues(t, 3, jobs[1].Policy)
 }
 
 func TestGetRestoreDeviceJobs(t *testing.T) {
@@ -124,14 +126,16 @@ func TestGetRestoreDeviceJobs(t *testing.T) {
 			1: {1, 3},
 		},
 	}
-	jobs := getRestoreDeviceJobs(ring, "127.0.0.1", "drive1", -1, false, []uint64{})
+	jobs := getRestoreDeviceJobs(ring, "127.0.0.1", "drive1", -1, false, []uint64{}, 2)
 	require.EqualValues(t, 2, len(jobs))
 	require.EqualValues(t, 0, jobs[0].Partition)
 	require.EqualValues(t, 2, jobs[0].FromDevice.Id)
 	require.EqualValues(t, 1, jobs[0].ToDevice.Id)
+	require.EqualValues(t, 2, jobs[0].Policy)
 	require.EqualValues(t, 1, jobs[1].Partition)
 	require.EqualValues(t, 3, jobs[1].FromDevice.Id)
 	require.EqualValues(t, 1, jobs[1].ToDevice.Id)
+	require.EqualValues(t, 2, jobs[1].Policy)
 }
 
 func TestGetRestoreDeviceJobsSameRegion(t *testing.T) {
@@ -142,7 +146,7 @@ func TestGetRestoreDeviceJobsSameRegion(t *testing.T) {
 			1: {1, 3},
 		},
 	}
-	jobs := getRestoreDeviceJobs(ring, "127.0.0.1", "drive1", 1, false, []uint64{})
+	jobs := getRestoreDeviceJobs(ring, "127.0.0.1", "drive1", 1, false, []uint64{}, 0)
 	require.EqualValues(t, 1, len(jobs))
 	require.EqualValues(t, jobs[0].FromDevice.Region, jobs[0].ToDevice.Region)
 }
@@ -155,9 +159,9 @@ func TestGetRestoreDeviceJobsAllPeers(t *testing.T) {
 			1: {1, 3, 4},
 		},
 	}
-	jobs := getRestoreDeviceJobs(ring, "127.0.0.1", "drive1", -1, false, []uint64{})
+	jobs := getRestoreDeviceJobs(ring, "127.0.0.1", "drive1", -1, false, []uint64{}, 0)
 	require.EqualValues(t, 2, len(jobs))
-	jobs = getRestoreDeviceJobs(ring, "127.0.0.1", "drive1", -1, true, []uint64{})
+	jobs = getRestoreDeviceJobs(ring, "127.0.0.1", "drive1", -1, true, []uint64{}, 0)
 	require.EqualValues(t, 4, len(jobs))
 }
 

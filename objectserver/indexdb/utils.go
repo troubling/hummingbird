@@ -56,6 +56,60 @@ func ecSplit(dataChunks, parityChunks int, fp io.Reader, chunkSize int, contentL
 	return nil
 }
 
+func ecReconstruct(dataChunks, parityChunks int, bodies []io.Reader, chunkSize int, contentLength int64, dst io.Writer, dstChunkNum int) error {
+	enc, err := reedsolomon.New(dataChunks, parityChunks)
+	if err != nil {
+		return err
+	}
+	data := make([][]byte, dataChunks+parityChunks)
+	databuf := make([]byte, (dataChunks+parityChunks)*chunkSize)
+	totalDatabytes := int64(0)
+	failed := make([]bool, len(bodies))
+	for totalDatabytes < contentLength {
+		expectedChunkSize := chunkSize
+		if contentLength-totalDatabytes < int64(chunkSize*dataChunks) {
+			expectedChunkSize = int((contentLength - totalDatabytes) / int64(dataChunks))
+			if (contentLength-totalDatabytes)%int64(dataChunks) != 0 {
+				expectedChunkSize++
+			}
+		}
+
+		for i := range data {
+			if bodies[i] != nil && !failed[i] {
+				data[i] = databuf[i*expectedChunkSize : (i+1)*expectedChunkSize]
+			} else {
+				// assign a slice with the proper offset and cap with 0 length
+				shardOffset := i * expectedChunkSize
+				data[i] = databuf[shardOffset:shardOffset]
+			}
+		}
+		for i := range bodies {
+			if bodies[i] != nil && !failed[i] {
+				if _, err := io.ReadFull(bodies[i], data[i]); err != nil {
+					data[i] = data[i][:0]
+				}
+			}
+		}
+
+		if err := enc.Reconstruct(data); err != nil {
+			return err
+		}
+
+		if _, err := dst.Write(data[dstChunkNum]); err != nil {
+			return err
+		}
+
+		for i := 0; i < dataChunks; i++ {
+			datalen := int64(len(data[i]))
+			if contentLength-totalDatabytes < datalen {
+				datalen = contentLength - totalDatabytes
+			}
+			totalDatabytes += datalen
+		}
+	}
+	return nil
+}
+
 func ecGlue(dataChunks, parityChunks int, bodies []io.Reader, chunkSize int, contentLength int64, dsts ...io.Writer) error {
 	enc, err := reedsolomon.New(dataChunks, parityChunks)
 	if err != nil {
