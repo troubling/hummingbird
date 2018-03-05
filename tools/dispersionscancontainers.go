@@ -206,6 +206,7 @@ func (dsc *dispersionScanContainers) handleChecks(ctx *dispersionScanContainersC
 			}
 			continue
 		}
+		req.Header.Set("X-Backend-Suppress-2xx-Logging", "t")
 		resp, err := dsc.aa.client.Do(req)
 		if err != nil {
 			atomic.AddInt64(&ctx.errored, 1)
