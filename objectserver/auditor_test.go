@@ -44,17 +44,17 @@ type FakeECAuditFuncs struct {
 }
 
 // AuditNurseryObject of indexdb shard, does nothing
-func (f *FakeECAuditFuncs) AuditNurseryObject(path string, metabytes []byte, skipMd5 bool) error {
-	return nil
+func (f *FakeECAuditFuncs) AuditNurseryObject(path string, metabytes []byte, skipMd5 bool) (int64, error) {
+	return 0, nil
 }
 
 // AuditShardHash of indexdb shard
-func (f *FakeECAuditFuncs) AuditShard(path string, hash string, skipMd5 bool) error {
+func (f *FakeECAuditFuncs) AuditShard(path string, hash string, skipMd5 bool) (int64, error) {
 	fmt.Printf("HELLO? f: %p\n", f)
 	f.paths = append(f.paths, path)
 	f.shards = append(f.shards, hash)
 	fmt.Printf("paths: %p %+v\n", f.paths, f.paths)
-	return nil
+	return 0, nil
 }
 
 func TestAuditHashPasses(t *testing.T) {
@@ -561,8 +561,9 @@ func TestAuditShardPasses(t *testing.T) {
 	hash := "d3ac5112fe464b81184352ccba743001"
 	f.Write([]byte("testcontents"))
 	f.Close()
-	err := auditFuncs.AuditShard(fName, hash, false)
+	bytes, err := auditFuncs.AuditShard(fName, hash, false)
 	assert.Nil(t, err)
+	assert.Equal(t, int64(12), bytes)
 }
 
 func TestAuditShardFails(t *testing.T) {
@@ -574,8 +575,9 @@ func TestAuditShardFails(t *testing.T) {
 	hash := "d3ac5112fe464b81184352ccba743001"
 	f.Write([]byte("asdftestcontents"))
 	f.Close()
-	err := auditFuncs.AuditShard(fName, hash, false)
+	bytes, err := auditFuncs.AuditShard(fName, hash, false)
 	assert.NotNil(t, err)
+	assert.Equal(t, int64(0), bytes)
 }
 
 func TestQuarantineShard(t *testing.T) {
