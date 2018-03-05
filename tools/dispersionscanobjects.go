@@ -238,6 +238,7 @@ func (dso *dispersionScanObjects) handleChecks(ctx *dispersionScanObjectsContext
 			}
 			continue
 		}
+		req.Header.Set("X-Backend-Suppress-2xx-Logging", "t")
 		req.Header.Set("X-Backend-Storage-Policy-Index", fmt.Sprintf("%d", ctx.policy))
 		resp, err := dso.aa.client.Do(req)
 		if err != nil {
