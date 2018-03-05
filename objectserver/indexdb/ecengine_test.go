@@ -161,7 +161,7 @@ func TestGetObjectsToReplicateRemoteHasAll(t *testing.T) {
 	require.Nil(t, err)
 	f.Write([]byte(body))
 	require.Nil(t, idb.Commit(f, hsh1, 0, timestamp, false, "", metadata, false, ""))
-	remoteItems, err := idb.List("", "", 0)
+	remoteItems, err := idb.List("", "", "", 0)
 	require.Nil(t, err)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		d, err := json.Marshal(remoteItems)
@@ -208,7 +208,7 @@ func TestGetObjectsToReplicateRemoteHasSome(t *testing.T) {
 	require.Nil(t, err)
 	f.Write([]byte(body))
 	require.Nil(t, idb.Commit(f, hsh1, 0, timestamp, false, "", metadata, false, ""))
-	remoteItems, err := idb.List("", "", 0)
+	remoteItems, err := idb.List("", "", "", 0)
 	require.Nil(t, err)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		newRemoteItems := []*IndexDBItem{remoteItems[0]}
