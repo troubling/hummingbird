@@ -181,6 +181,8 @@ func (f *ecEngine) ecFragPutHandler(writer http.ResponseWriter, request *http.Re
 		if strings.HasPrefix(key, "Meta-") {
 			if key == "Meta-Name" {
 				metadata["name"] = request.Header.Get(key)
+			} else if key == "Meta-Etag" {
+				metadata["ETag"] = request.Header.Get(key)
 			} else {
 				metadata[http.CanonicalHeaderKey(key[5:])] = request.Header.Get(key)
 			}
