@@ -214,9 +214,9 @@ func (db *dbInstance) updateQueuedReplication(qr *queuedReplication) error {
           AND from_device = ?
           AND to_device = ?
     `, now, qr.typ, qr.policy, qr.partition, qr.reason, qr.fromDeviceID, qr.toDeviceID)
-    if err != nil {
-        return err
-    }
+	if err != nil {
+		return err
+	}
 	qr.updated = now
 	return err
 }
