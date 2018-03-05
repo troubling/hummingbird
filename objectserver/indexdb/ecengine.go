@@ -305,8 +305,9 @@ func (f *ecEngine) GetObjectsToReplicate(prirep objectserver.PriorityRepJob, c c
 				metadata:    map[string]string{},
 			}
 			if err = json.Unmarshal(item.Metabytes, &obj.metadata); err != nil {
-				continue
 				//TODO: this should quarantine right?
+				f.logger.Error("error unmarshal metabytes", zap.Error(err))
+				continue
 			}
 			select {
 			case c <- obj:
