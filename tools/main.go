@@ -34,6 +34,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"path"
 	"path/filepath"
@@ -634,6 +635,7 @@ func (a *AutoAdmin) RunForever() {
 	go newQuarantineRepair(a).runForever()
 	go newQuarantineHistory(a).runForever()
 	go newReplication(a).runForever()
+	go newRingMonitor(a).runForever()
 }
 
 func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (ipPort *srv.IpPort, server srv.Server, logger srv.LowLevelLogger, err error) {

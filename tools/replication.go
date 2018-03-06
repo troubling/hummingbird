@@ -162,6 +162,9 @@ func (r *replication) handleQueuedReplication(ctx *replicationContext, qr *queue
 	var fromDev *ring.Device
 	if qr.fromDeviceID >= 0 {
 		fromDev = ryng.AllDevices()[qr.fromDeviceID]
+		if fromDev != nil && fromDev.Weight < 0 {
+			fromDev = nil
+		}
 	}
 	ctx.wg.Add(1)
 	go func() {

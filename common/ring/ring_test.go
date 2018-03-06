@@ -161,7 +161,7 @@ func TestRingReload(t *testing.T) {
 	require.Nil(t, writeARing(fp, 5, 3, 30, -1))
 	// make sure the mtime has changed
 	os.Chtimes(fp.Name(), time.Now(), time.Now().Add(time.Second))
-	ring.reload()
+	ring.Reload()
 	require.Equal(t, 5, len(ring.getData().Devs))
 	require.Equal(t, 3, ring.getData().ReplicaCount)
 	require.Equal(t, uint64(30), ring.getData().PartShift)

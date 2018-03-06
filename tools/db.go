@@ -79,6 +79,14 @@ func newDB(serverconf *conf.Config, memoryDBID string) (*dbInstance, error) {
             progress TEXT,                      -- depends on the process
             complete_date TIMESTAMP DEFAULT 0   -- when the scan list completed, 0 = is running or never ran
         );
+
+        CREATE TABLE IF NOT EXISTS ring_hash (
+            create_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            update_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            rtype TEXT NOT NULL,                -- account, container, object
+            policy INTEGER NOT NULL,            -- only used with object
+            hash TEXT NOT NULL                  -- MD5 of on-disk file
+        );
     `)
 	if err != nil {
 		return nil, err
@@ -448,4 +456,84 @@ func (db *dbInstance) processPasses() ([]*processPassData, error) {
 		data = append(data, ppd)
 	}
 	return data, nil
+}
+
+func (db *dbInstance) setRingHash(typ string, policy int, hsh string) error {
+	var tx *sql.Tx
+	var rows *sql.Rows
+	var err error
+	defer func() {
+		if rows != nil {
+			rows.Close()
+		}
+		if tx != nil {
+			tx.Rollback()
+		}
+	}()
+	tx, err = db.db.Begin()
+	if err != nil {
+		return err
+	}
+	rows, err = tx.Query(`
+        SELECT 1 FROM ring_hash
+        WHERE rtype = ?
+          AND policy = ?
+    `, typ, policy)
+	if err != nil {
+		return err
+	}
+	if rows.Next() { // entry already
+		rows.Close()
+		rows = nil
+		if _, err = tx.Exec(`
+            UPDATE ring_hash
+            SET update_date = ?, hash = ?
+            WHERE rtype = ?
+              AND policy = ?
+        `, time.Now(), hsh, typ, policy); err != nil {
+			return err
+		}
+		if err = tx.Commit(); err != nil {
+			return err
+		}
+		tx = nil
+		return nil
+	}
+	rows.Close()
+	rows = nil
+	if _, err = tx.Exec(`
+        INSERT INTO ring_hash
+        (update_date, rtype, policy, hash)
+        VALUES (?, ?, ?, ?)
+    `, time.Now(), typ, policy, hsh); err != nil {
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	tx = nil
+	return nil
+}
+
+func (db *dbInstance) ringHash(typ string, policy int) (string, error) {
+	var rows *sql.Rows
+	var err error
+	var hsh string
+	defer func() {
+		if rows != nil {
+			rows.Close()
+		}
+	}()
+	if rows, err = db.db.Query(`
+        SELECT hash
+        FROM ring_hash
+        WHERE rtype = ?
+          AND policy = ?
+    `, typ, policy); err != nil {
+		return hsh, err
+	}
+	if rows.Next() {
+		err = rows.Scan(&hsh)
+	}
+	return hsh, err
 }
