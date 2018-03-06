@@ -33,7 +33,9 @@ func TestNurseryReplicate(t *testing.T) {
 	fp, err := ioutil.TempFile("", "")
 	fp.Write([]byte("TESTING"))
 	require.Nil(t, err)
+	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
 		io.Copy(ioutil.Discard, r.Body)
 	}))
 	defer srv.Close()
@@ -55,15 +57,18 @@ func TestNurseryReplicate(t *testing.T) {
 		metadata: map[string]string{
 			"Content-Length": "7",
 		},
+		nurseryReplicas: 3,
 	}
-	nodes := []*ring.Device{
-		{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sda"},
-		{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdb"},
-		{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdc"},
-		{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdd"},
+	node := &ring.Device{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port - 1, Device: "sda"}
+	rng := &test.FakeRing{
+		MockGetJobNodes: []*ring.Device{
+			{Id: 2, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdc"},
+			{Id: 3, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdd"},
+		},
+		MockGetJobNodesHandoff: false,
 	}
-	rng := &test.FakeRing{}
-	to.nurseryReplicate(rng, 1, nodes)
+	require.Nil(t, to.nurseryReplicate(rng, 1, node))
+	require.Equal(t, 2, calls)
 }
 
 func TestNurseryReplicateWithFailure(t *testing.T) {
@@ -99,16 +104,19 @@ func TestNurseryReplicateWithFailure(t *testing.T) {
 		metadata: map[string]string{
 			"Content-Length": "7",
 		},
+		nurseryReplicas: 3,
 	}
-	nodes := []*ring.Device{
-		{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sda"},
-		{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdb"},
-		{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdc"},
-		{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdd"},
+	node := &ring.Device{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port - 1, Device: "sda"}
+	rng := &test.FakeRing{
+		MockGetJobNodes: []*ring.Device{
+			{Id: 1, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdb"},
+			{Id: 2, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdc"},
+			{Id: 3, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdd"},
+		},
+		MockGetJobNodesHandoff: false,
 	}
-	rng := &test.FakeRing{}
-	to.nurseryReplicate(rng, 1, nodes)
-	require.True(t, used["sda"])
+	require.Nil(t, to.nurseryReplicate(rng, 1, node))
+	require.False(t, used["sdb"])
 	require.True(t, used["sdc"])
 	require.True(t, used["sdd"])
 }
@@ -151,6 +159,7 @@ func TestStabilize(t *testing.T) {
 			"name":           "/a/c/o",
 			"Content-Length": "7",
 		},
+		nurseryReplicas: 3,
 	}
 	rng := &CustomFakeRing{
 		FakeRing: test.FakeRing{
@@ -196,24 +205,25 @@ func TestDontStabilizeWithFailure(t *testing.T) {
 			Path:     fp.Name(),
 		},
 		client:      http.DefaultClient,
-		dataFrags:   3,
-		parityFrags: 2,
+		dataFrags:   2,
+		parityFrags: 1,
 		chunkSize:   100,
 		metadata: map[string]string{
 			"name":           "/a/c/o",
 			"Content-Length": "7",
 		},
+		nurseryReplicas: 3,
 	}
-	rng := &CustomFakeRing{
-		FakeRing: test.FakeRing{
-			MockDevices: []*ring.Device{
-				{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sda"},
-				{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdb"},
-				{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdc"},
-				{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdd"},
-				{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sde"},
-			},
+
+	node := &ring.Device{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port - 1, Device: "sda"}
+	rng := &test.FakeRing{
+		MockDevices: []*ring.Device{
+			{Id: 2, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdb"},
+			{Id: 3, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdc"},
+			{Id: 4, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdd"},
 		},
 	}
-	require.NotNil(t, to.Stabilize(rng, nil, 0))
+	err = to.Stabilize(rng, node, 0)
+	require.NotNil(t, err)
+	require.Equal(t, "Failed to stabilize object", err.Error())
 }

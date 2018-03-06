@@ -47,19 +47,20 @@ import (
 
 // ContentLength parses and returns the Content-Length for the object.
 type ecEngine struct {
-	driveRoot      string
-	hashPathPrefix string
-	hashPathSuffix string
-	reserve        int64
-	policy         int
-	ring           ring.Ring
-	idbs           map[string]*IndexDB
-	idbm           sync.Mutex
-	logger         *zap.Logger
-	dataFrags      int
-	parityFrags    int
-	chunkSize      int
-	client         *http.Client
+	driveRoot       string
+	hashPathPrefix  string
+	hashPathSuffix  string
+	reserve         int64
+	policy          int
+	ring            ring.Ring
+	idbs            map[string]*IndexDB
+	idbm            sync.Mutex
+	logger          *zap.Logger
+	dataFrags       int
+	parityFrags     int
+	chunkSize       int
+	client          *http.Client
+	nurseryReplicas int
 }
 
 func (f *ecEngine) getDB(device string) (*IndexDB, error) {
@@ -92,15 +93,16 @@ func (f *ecEngine) New(vars map[string]string, needData bool, asyncWG *sync.Wait
 			Hash:    hash,
 			Nursery: true,
 		},
-		dataFrags:   f.dataFrags, /* TODO: consider just putting a reference to the engine in the object */
-		parityFrags: f.parityFrags,
-		chunkSize:   f.chunkSize,
-		reserve:     f.reserve,
-		ring:        f.ring,
-		logger:      f.logger,
-		policy:      f.policy,
-		client:      f.client,
-		metadata:    map[string]string{},
+		dataFrags:       f.dataFrags, /* TODO: consider just putting a reference to the engine in the object */
+		parityFrags:     f.parityFrags,
+		chunkSize:       f.chunkSize,
+		reserve:         f.reserve,
+		ring:            f.ring,
+		logger:          f.logger,
+		policy:          f.policy,
+		client:          f.client,
+		metadata:        map[string]string{},
+		nurseryReplicas: f.nurseryReplicas,
 	}
 	if idb, err := f.getDB(vars["device"]); err == nil {
 		obj.idb = idb
@@ -246,6 +248,7 @@ func (f *ecEngine) ecNurseryPutHandler(writer http.ResponseWriter, request *http
 	if !deletion {
 		atm, err = idb.TempFile(vars["hash"], 0, timestamp, 0, true)
 		if err != nil {
+			srv.GetLogger(request).Error("Error opening file for writing", zap.Error(err))
 			srv.StandardResponse(writer, http.StatusInternalServerError)
 			return
 		}
@@ -267,11 +270,13 @@ func (f *ecEngine) ecNurseryPutHandler(writer http.ResponseWriter, request *http
 	}
 	metabytes, err := json.Marshal(metadata)
 	if err != nil {
+		srv.GetLogger(request).Error("Error marshalling metadata", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
 
 	if err := idb.Commit(atm, vars["hash"], 0, timestamp, deletion, MetadataHash(metadata), metabytes, true, ""); err != nil {
+		srv.GetLogger(request).Error("Error committing object to index", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 	} else {
 		srv.StandardResponse(writer, http.StatusCreated)
@@ -519,6 +524,9 @@ func ecEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.Fl
 	}
 	if engine.chunkSize, err = strconv.Atoi(policy.Config["chunk_size"]); err != nil {
 		engine.chunkSize = 1 << 20
+	}
+	if engine.nurseryReplicas, err = strconv.Atoi(policy.Config["nursery_replicas"]); err != nil {
+		engine.nurseryReplicas = 3
 	}
 	return engine, nil
 }

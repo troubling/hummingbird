@@ -37,21 +37,20 @@ import (
 	"github.com/troubling/hummingbird/objectserver"
 )
 
-const nurseryReplicaCount = 3 // TODO: does this need to be configurable?
-
 type ecObject struct {
 	IndexDBItem
-	afw         fs.AtomicFileWriter
-	idb         *IndexDB
-	policy      int
-	metadata    map[string]string
-	ring        ring.Ring
-	logger      *zap.Logger
-	reserve     int64
-	dataFrags   int
-	parityFrags int
-	chunkSize   int
-	client      *http.Client
+	afw             fs.AtomicFileWriter
+	idb             *IndexDB
+	policy          int
+	metadata        map[string]string
+	ring            ring.Ring
+	logger          *zap.Logger
+	reserve         int64
+	dataFrags       int
+	parityFrags     int
+	chunkSize       int
+	client          *http.Client
+	nurseryReplicas int
 }
 
 func (o *ecObject) Metadata() map[string]string {
@@ -299,7 +298,8 @@ func (o *ecObject) Replicate(prirep objectserver.PriorityRepJob) error {
 	return err
 }
 
-func (o *ecObject) nurseryReplicate(rng ring.Ring, partition uint64, nodes []*ring.Device) error {
+func (o *ecObject) nurseryReplicate(rng ring.Ring, partition uint64, dev *ring.Device) error {
+	nodes, handoff := rng.GetJobNodes(partition, dev.Id)
 	more := rng.GetMoreNodes(partition)
 	var node *ring.Device
 	e := common.NewExpector(o.client)
@@ -308,6 +308,10 @@ func (o *ecObject) nurseryReplicate(rng ring.Ring, partition uint64, nodes []*ri
 	successReadyCount := 0
 	var responses []*http.Response
 	var ready []bool
+	nurseryReplicaCount := o.nurseryReplicas
+	if !handoff { // we don't need to replicate to ourselves.
+		nurseryReplicaCount -= 1
+	}
 	for i := 0; successReadyCount < nurseryReplicaCount; i++ {
 		if i < len(nodes) {
 			node = nodes[i]
@@ -326,7 +330,6 @@ func (o *ecObject) nurseryReplicate(rng ring.Ring, partition uint64, nodes []*ri
 		}
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
 		req.Header.Set("Deletion", strconv.FormatBool(o.Deletion))
-		req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("%d/%d/%d", o.dataFrags, o.parityFrags, o.chunkSize))
 		req.Header.Set("Content-Length", o.metadata["Content-Length"])
 		for k, v := range o.metadata {
 			req.Header.Set("Meta-"+k, v)
@@ -364,8 +367,11 @@ func (o *ecObject) nurseryReplicate(rng ring.Ring, partition uint64, nodes []*ri
 		}
 	}
 
-	if e.Successes(time.Second*15) < nurseryReplicaCount {
-		return errors.New("Unable to fully nursery replicate object.")
+	successes := e.Successes(time.Second * 15)
+	if handoff && successes >= nurseryReplicaCount {
+		return o.idb.Remove(o.Hash, o.Shard, o.Timestamp, true)
+	} else if successes < nurseryReplicaCount {
+		return errors.New("Unable to fully nursery-replicate object.")
 	}
 	return nil
 }
@@ -445,7 +451,7 @@ func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error 
 	}
 
 	if !success {
-		o.nurseryReplicate(rng, partition, nodes)
+		o.nurseryReplicate(rng, partition, dev)
 		return fmt.Errorf("Failed to stabilize object")
 	} else if o.idb != nil {
 		return o.idb.Remove(o.Hash, o.Shard, o.Timestamp, true)
