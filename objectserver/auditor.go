@@ -218,6 +218,8 @@ func (a *Auditor) auditDB(dbpath string, objRing ring.Ring) {
 	}
 	db, err := NewIndexDB(dbpath, path, temppath, ringPartPower, 1, 32, zapLogger)
 	if err != nil {
+		a.errors++
+		a.totalErrors++
 		a.logger.Error("Couldn't open indexdb", zap.String("dbpath", dbpath), zap.Error(err))
 		return
 	}
