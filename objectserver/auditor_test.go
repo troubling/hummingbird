@@ -21,6 +21,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -37,6 +38,25 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type FakeECAuditFuncs struct {
+	paths  []string
+	shards []string
+}
+
+// AuditNurseryObject of indexdb shard, does nothing
+func (f *FakeECAuditFuncs) AuditNurseryObject(path string, metabytes []byte, skipMd5 bool) (int64, error) {
+	return 0, nil
+}
+
+// AuditShardHash of indexdb shard
+func (f *FakeECAuditFuncs) AuditShard(path string, hash string, skipMd5 bool) (int64, error) {
+	fmt.Printf("HELLO? f: %p\n", f)
+	f.paths = append(f.paths, path)
+	f.shards = append(f.shards, hash)
+	fmt.Printf("paths: %p %+v\n", f.paths, f.paths)
+	return 0, nil
+}
 
 func TestAuditHashPasses(t *testing.T) {
 	dir, _ := ioutil.TempDir("", "")
@@ -211,7 +231,7 @@ func makeAuditor(t *testing.T, confLoader *srv.TestConfigLoader, settings ...str
 	require.Nil(t, err)
 	obs, logs = observer.New(zap.InfoLevel)
 	auditorDaemon.logger = zap.New(obs)
-	return &Auditor{AuditorDaemon: auditorDaemon, filesPerSecond: 1}
+	return &Auditor{AuditorDaemon: auditorDaemon, filesPerSecond: 1, ecfuncs: RealECAuditFuncs{}}
 }
 
 func TestFailsWithoutSection(t *testing.T) {
@@ -267,7 +287,7 @@ func TestAuditSuffixQuarantine(t *testing.T) {
 	totalQuarantines := auditor.totalQuarantines
 	auditor.auditSuffix(filepath.Join(dir, "objects", "1", "abc"))
 	assert.Equal(t, totalQuarantines+1, auditor.totalQuarantines)
-	quarfiles, err := ioutil.ReadDir(filepath.Join(dir, "quarantined"))
+	quarfiles, err := ioutil.ReadDir(filepath.Join(dir, "quarantined", "objects"))
 	assert.Nil(t, err)
 	assert.Equal(t, 1, len(quarfiles))
 }
@@ -344,8 +364,14 @@ func TestAuditDeviceNotDir(t *testing.T) {
 	defer os.RemoveAll(file.Name())
 	errors := auditor.errors
 	auditor.auditDevice(file.Name())
-	assert.Equal(t, logs.TakeAll()[0].Message, "Error reading objects dir")
-	assert.True(t, auditor.errors > errors)
+	// Two replication policies, 1 HEC policy. All fail.
+	assert.Equal(t, errors+3, auditor.errors)
+	var logmsgs []string
+	for _, log := range logs.TakeAll() {
+		logmsgs = append(logmsgs, log.Message)
+	}
+	sort.Strings(logmsgs)
+	assert.Equal(t, []string{"Couldn't open indexdb", "Error reading objects dir", "Error reading objects dir"}, logmsgs)
 }
 
 func TestAuditDevicePasses(t *testing.T) {
@@ -487,4 +513,109 @@ func TestStatReport(t *testing.T) {
 	//require.Equal(t, want[0].Context[7], obslog.Context[7])
 	require.Equal(t, want[0].Context[8], obslog.Context[8])
 	require.Equal(t, want[0].Context[9], obslog.Context[9])
+}
+
+func TestAuditDB(t *testing.T) {
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	auditor := makeAuditor(t, confLoader)
+	fakes := &FakeECAuditFuncs{}
+	auditor.ecfuncs = fakes
+	dir, _ := ioutil.TempDir("", "")
+	defer os.RemoveAll(dir)
+	policydir := filepath.Join(dir, "objects")
+	dbdir := filepath.Join(policydir, "hec.db")
+	hecdir := filepath.Join(policydir, "hec")
+	db, err := NewIndexDB(dbdir, hecdir, dir, 2, 1, 32, zap.L())
+	assert.Nil(t, err)
+	body := "some shard content nonsense"
+	shardHash := "d3ac5112fe464b81184352ccba743001"
+	hash := "00000000000000000000000000000000"
+	timestamp := time.Now().UnixNano()
+	f, err := db.TempFile(hash, 0, timestamp, int64(len(body)), false)
+	assert.Nil(t, err)
+	f.Write([]byte(body))
+	err = db.Commit(f, hash, 0, timestamp, false, "", nil, false, shardHash)
+	assert.Nil(t, err)
+	hash1 := "00000000000000000000000000000001"
+	f, err = db.TempFile(hash1, 0, timestamp, int64(len(body)), false)
+	assert.Nil(t, err)
+	f.Write([]byte(body))
+	err = db.Commit(f, hash1, 0, timestamp, false, "", nil, false, shardHash)
+	assert.Nil(t, err)
+	hash2 := "00000000000000000000000000000002"
+	f, err = db.TempFile(hash2, 0, timestamp, int64(len(body)), false)
+	assert.Nil(t, err)
+	f.Write([]byte(body))
+	err = db.Commit(f, hash2, 0, timestamp, false, "", nil, false, shardHash)
+	assert.Nil(t, err)
+
+	shardPath, err := db.WholeObjectPath(hash, 0, timestamp, false)
+
+	auditor.auditDB(db.dbpath, testRing)
+
+	assert.Equal(t, 3, len(fakes.paths))
+	assert.Equal(t, shardPath, fakes.paths[0])
+	assert.Equal(t, shardHash, fakes.shards[0])
+}
+
+func TestAuditShardPasses(t *testing.T) {
+	auditFuncs := RealECAuditFuncs{}
+	dir, _ := ioutil.TempDir("", "")
+	defer os.RemoveAll(dir)
+	fName := filepath.Join(dir, "12345")
+	f, _ := os.Create(fName)
+	hash := "d3ac5112fe464b81184352ccba743001"
+	f.Write([]byte("testcontents"))
+	f.Close()
+	bytes, err := auditFuncs.AuditShard(fName, hash, false)
+	assert.Nil(t, err)
+	assert.Equal(t, int64(12), bytes)
+}
+
+func TestAuditShardFails(t *testing.T) {
+	auditFuncs := RealECAuditFuncs{}
+	dir, _ := ioutil.TempDir("", "")
+	defer os.RemoveAll(dir)
+	fName := filepath.Join(dir, "12345")
+	f, _ := os.Create(filepath.Join(dir, "12345"))
+	hash := "d3ac5112fe464b81184352ccba743001"
+	f.Write([]byte("asdftestcontents"))
+	f.Close()
+	bytes, err := auditFuncs.AuditShard(fName, hash, false)
+	assert.NotNil(t, err)
+	assert.Equal(t, int64(0), bytes)
+}
+
+func TestQuarantineShard(t *testing.T) {
+	dir, _ := ioutil.TempDir("", "")
+	defer os.RemoveAll(dir)
+	policydir := filepath.Join(dir, "objects")
+	dbdir := filepath.Join(policydir, "hec.db")
+	hecdir := filepath.Join(policydir, "hec")
+	db, err := NewIndexDB(dbdir, hecdir, dir, 2, 1, 32, zap.L())
+	timestamp := time.Now().UnixNano()
+	hash := "00000000000000000000000000000000"
+	body := "nonsense"
+	f, err := db.TempFile(hash, 0, timestamp, int64(len(body)), false)
+	assert.Nil(t, err)
+	f.Write([]byte(body))
+	err = db.Commit(f, hash, 0, timestamp, false, "", nil, false, "unused")
+	assert.Nil(t, err)
+
+	err = quarantineShard(db, hash, 0, timestamp, false)
+	assert.Nil(t, err)
+
+	shardPath, err := db.WholeObjectPath(hash, 0, timestamp, false)
+	assert.Nil(t, err)
+	shard := filepath.Base(shardPath)
+	quarfiles, err := ioutil.ReadDir(filepath.Join(dir, "quarantined", "objects"))
+	assert.Nil(t, err)
+	if len(quarfiles) != 1 {
+		t.Fatal(1, len(quarfiles))
+	}
+	assert.Equal(t, shard, quarfiles[0].Name())
+	dbitem, err := db.Lookup(hash, 0, false)
+	assert.Nil(t, err)
+	assert.Nil(t, dbitem)
 }
