@@ -21,6 +21,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -363,8 +364,14 @@ func TestAuditDeviceNotDir(t *testing.T) {
 	defer os.RemoveAll(file.Name())
 	errors := auditor.errors
 	auditor.auditDevice(file.Name())
-	assert.Equal(t, "Error reading objects dir", logs.TakeAll()[0].Message)
-	assert.True(t, auditor.errors > errors)
+	// Two replication policies, 1 HEC policy. All fail.
+	assert.Equal(t, errors+3, auditor.errors)
+	var logmsgs []string
+	for _, log := range logs.TakeAll() {
+		logmsgs = append(logmsgs, log.Message)
+	}
+	sort.Strings(logmsgs)
+	assert.Equal(t, []string{"Couldn't open indexdb", "Error reading objects dir", "Error reading objects dir"}, logmsgs)
 }
 
 func TestAuditDevicePasses(t *testing.T) {
