@@ -162,12 +162,18 @@ func (qh *quarantineHistory) quarantineHistoryDeleteURLs() []string {
 			for _, policy := range qh.aa.policies {
 				ringg, _ := getRing("", typ, policy.Index)
 				for _, dev := range ringg.AllDevices() {
+					if dev == nil {
+						continue
+					}
 					urlMap[fmt.Sprintf("%s://%s:%d/recon/%s/quarantinedhistory/%ss/%d", dev.Scheme, dev.Ip, dev.Port, dev.Device, typ, qh.keepHistoryDays)] = struct{}{}
 				}
 			}
 		} else {
 			ringg, _ := getRing("", typ, 0)
 			for _, dev := range ringg.AllDevices() {
+				if dev == nil {
+					continue
+				}
 				urlMap[fmt.Sprintf("%s://%s:%d/recon/%s/quarantinedhistory/%ss/%d", dev.Scheme, dev.Ip, dev.Port, dev.Device, typ, qh.keepHistoryDays)] = struct{}{}
 			}
 		}
