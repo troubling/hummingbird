@@ -18,6 +18,7 @@ package objectserver
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"math/bits"
@@ -78,7 +79,36 @@ type RealECAuditFuncs struct{}
 
 // AuditNurseryObject of indexdb shard, does nothing
 func (RealECAuditFuncs) AuditNurseryObject(path string, metabytes []byte, skipMd5 bool) (int64, error) {
-	return int64(0), nil
+	finfo, err := os.Stat(path)
+	if err != nil || !finfo.Mode().IsRegular() {
+		return 0, fmt.Errorf("Object file isn't a normal file: %s", err)
+	}
+
+	bytes := int64(0)
+	if !skipMd5 {
+		metadata := map[string]string{}
+		if err = json.Unmarshal(metabytes, &metadata); err != nil {
+			return bytes, fmt.Errorf("Error decding metadata: %s", err)
+		}
+		hash, ok := metadata["ETag"]
+		if !ok {
+			return bytes, fmt.Errorf("Metadata missing ETag: %s", string(metabytes))
+		}
+
+		file, err := os.Open(path)
+		if err != nil {
+			return bytes, fmt.Errorf("Error opening file: %s", err)
+		}
+		h := md5.New()
+		bytes, err = common.Copy(file, h)
+		if err != nil {
+			return bytes, fmt.Errorf("Error reading file: %s", err)
+		}
+		if hex.EncodeToString(h.Sum(nil)) != hash {
+			return bytes, fmt.Errorf("File contents don't match object hash")
+		}
+	}
+	return bytes, nil
 }
 
 // AuditShardHash of indexdb shard
@@ -92,15 +122,15 @@ func (RealECAuditFuncs) AuditShard(path string, hash string, skipMd5 bool) (int6
 	if !skipMd5 {
 		file, err := os.Open(path)
 		if err != nil {
-			return 0, fmt.Errorf("Error opening file: %s", err)
+			return bytes, fmt.Errorf("Error opening file: %s", err)
 		}
 		h := md5.New()
 		bytes, err = common.Copy(file, h)
 		if err != nil {
-			return 0, fmt.Errorf("Error reading file: %s", err)
+			return bytes, fmt.Errorf("Error reading file: %s", err)
 		}
 		if hex.EncodeToString(h.Sum(nil)) != hash {
-			return 0, fmt.Errorf("File contents don't match shard hash")
+			return bytes, fmt.Errorf("File contents don't match shard hash")
 		}
 	}
 	return bytes, nil
@@ -240,28 +270,29 @@ func (a *Auditor) auditDB(dbpath string, objRing ring.Ring) {
 			}
 			a.passes++
 			a.totalPasses++
+			var bytes int64
 			if item.Nursery {
-				a.ecfuncs.AuditNurseryObject(shardPath, item.Metabytes, a.auditorType == "ZBF")
+				bytes, err = a.ecfuncs.AuditNurseryObject(shardPath, item.Metabytes, a.auditorType == "ZBF")
 			} else {
-				bytes, err := a.ecfuncs.AuditShard(shardPath, item.ShardHash, a.auditorType == "ZBF")
+				bytes, err = a.ecfuncs.AuditShard(shardPath, item.ShardHash, a.auditorType == "ZBF")
+			}
+			if err != nil {
+				a.logger.Error("Failed audit and is being quarantined",
+					zap.String("shardPath", shardPath), zap.Error(err))
+				err = quarantineShard(db, item.Hash, item.Shard, item.Timestamp, item.Nursery)
 				if err != nil {
-					a.logger.Error("Failed audit and is being quarantined",
-						zap.String("shardPath", shardPath), zap.Error(err))
-					err = quarantineShard(db, item.Hash, item.Shard, item.Timestamp, item.Nursery)
-					if err != nil {
-						a.logger.Error("Failed to quarantine shard", zap.String("shardPath", shardPath), zap.Error(err))
-						continue
-					}
-					a.quarantines++
-					a.totalQuarantines++
+					a.logger.Error("Failed to quarantine shard", zap.String("shardPath", shardPath), zap.Error(err))
+					continue
 				}
-				a.bytesProcessed += bytes
-				rateLimitSleep(a.passStart, a.totalPasses, a.filesPerSecond)
-				rateLimitSleep(a.passStart, a.totalBytes, a.bytesPerSecond)
+				a.quarantines++
+				a.totalQuarantines++
+			}
+			a.bytesProcessed += bytes
+			rateLimitSleep(a.passStart, a.totalPasses, a.filesPerSecond)
+			rateLimitSleep(a.passStart, a.totalBytes, a.bytesPerSecond)
 
-				if time.Since(a.lastLog) > (time.Duration(a.logTime) * time.Second) {
-					a.statsReport()
-				}
+			if time.Since(a.lastLog) > (time.Duration(a.logTime) * time.Second) {
+				a.statsReport()
 			}
 		}
 		if len(items) == 0 {
