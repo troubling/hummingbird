@@ -76,6 +76,24 @@ func (o *ecObject) Exists() bool {
 	return o.Path != ""
 }
 
+func parseECScheme(scheme string) (algo string, dataFrags, parityFrags, chunkSize int, err error) {
+	sections := strings.Split(scheme, "/")
+	if len(sections) != 4 {
+		return "", 0, 0, 0, fmt.Errorf("%d scheme sections", len(sections))
+	}
+	algo = sections[0]
+	if dataFrags, err = strconv.Atoi(sections[1]); err != nil {
+		return "", 0, 0, 0, errors.New("Invalid data frag count")
+	}
+	if parityFrags, err = strconv.Atoi(sections[2]); err != nil {
+		return "", 0, 0, 0, errors.New("Invalid parity frag count")
+	}
+	if chunkSize, err = strconv.Atoi(sections[3]); err != nil {
+		return "", 0, 0, 0, errors.New("Invalid chunk size")
+	}
+	return algo, dataFrags, parityFrags, chunkSize, nil
+}
+
 func (o *ecObject) Copy(dsts ...io.Writer) (written int64, err error) {
 	if !o.Exists() {
 		return 0, errors.New("Doesn't exist")
@@ -90,9 +108,12 @@ func (o *ecObject) Copy(dsts ...io.Writer) (written int64, err error) {
 		return common.Copy(file, dsts...)
 	}
 
-	var dataFrags, parityFrags, chunkSize int
-	if n, err := fmt.Sscanf(o.metadata["Ec-Scheme"], "%d/%d/%d", &dataFrags, &parityFrags, &chunkSize); err != nil || n != 3 {
-		return 0, errors.New("Invalid scheme")
+	algo, dataFrags, parityFrags, chunkSize, err := parseECScheme(o.metadata["Ec-Scheme"])
+	if err != nil {
+		return 0, fmt.Errorf("Invalid scheme: %v", err)
+	}
+	if algo != "reedsolomon" {
+		return 0, fmt.Errorf("Attempt to read EC object with unknown algorithm '%s'", algo)
 	}
 	contentLength := o.ContentLength()
 	ns := strings.SplitN(o.metadata["name"], "/", 4)
@@ -101,7 +122,7 @@ func (o *ecObject) Copy(dsts ...io.Writer) (written int64, err error) {
 	}
 	nodes := o.ring.GetNodes(o.ring.GetPartition(ns[1], ns[2], ns[3]))
 	if len(nodes) < dataFrags+parityFrags {
-		return 0, errors.New("Not enough nodes for scheme")
+		return 0, fmt.Errorf("Not enough nodes (%d) for scheme (%d)", len(nodes), dataFrags+parityFrags)
 	}
 	bodies := make([]io.Reader, len(nodes))
 	for i, node := range nodes {
@@ -202,7 +223,7 @@ func (o *ecObject) Replicate(prirep objectserver.PriorityRepJob) error {
 			return err
 		}
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(prirep.Policy))
-		req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("%d/%d/%d", o.dataFrags, o.parityFrags, o.chunkSize))
+		req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("reedsolomon/%d/%d/%d", o.dataFrags, o.parityFrags, o.chunkSize))
 		for k, v := range o.metadata {
 			req.Header.Set("Meta-"+k, v)
 		}
@@ -217,10 +238,13 @@ func (o *ecObject) Replicate(prirep objectserver.PriorityRepJob) error {
 		return o.idb.Remove(o.Hash, o.Shard, o.Timestamp, true)
 	}
 	// Else reconstruct the shard and copy over that
-	var dataFrags, parityFrags, chunkSize int
 	success := true
-	if n, err := fmt.Sscanf(o.metadata["Ec-Scheme"], "%d/%d/%d", &dataFrags, &parityFrags, &chunkSize); err != nil || n != 3 {
-		return errors.New("Invalid scheme")
+	algo, dataFrags, parityFrags, chunkSize, err := parseECScheme(o.metadata["Ec-Scheme"])
+	if err != nil {
+		return fmt.Errorf("Invalid scheme: %v", err)
+	}
+	if algo != "reedsolomon" {
+		return fmt.Errorf("Attempt to read EC object with unknown algorithm '%s'", algo)
 	}
 	contentLength := o.ContentLength()
 	ns := strings.SplitN(o.metadata["name"], "/", 4)
@@ -229,7 +253,7 @@ func (o *ecObject) Replicate(prirep objectserver.PriorityRepJob) error {
 	}
 	nodes := o.ring.GetNodes(o.ring.GetPartition(ns[1], ns[2], ns[3]))
 	if len(nodes) < dataFrags+parityFrags {
-		return errors.New("Not enough nodes for scheme")
+		return fmt.Errorf("Not enough nodes (%d) for scheme (%d)", len(nodes), dataFrags+parityFrags)
 	}
 	bodies := make([]io.Reader, len(nodes))
 	toDeviceShard := -1
@@ -268,7 +292,7 @@ func (o *ecObject) Replicate(prirep objectserver.PriorityRepJob) error {
 		return err
 	}
 	req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(prirep.Policy))
-	req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("%d/%d/%d", o.dataFrags, o.parityFrags, o.chunkSize))
+	req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("reedsolomon/%d/%d/%d", o.dataFrags, o.parityFrags, o.chunkSize))
 	for k, v := range o.metadata {
 		req.Header.Set("Meta-"+k, v)
 	}
@@ -403,7 +427,7 @@ func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error 
 		req.Header.Set("X-Timestamp", o.metadata["X-Timestamp"])
 		req.Header.Set("Deletion", strconv.FormatBool(o.Deletion))
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(policy))
-		req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("%d/%d/%d", o.dataFrags, o.parityFrags, o.chunkSize))
+		req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("reedsolomon/%d/%d/%d", o.dataFrags, o.parityFrags, o.chunkSize))
 		for k, v := range o.metadata {
 			req.Header.Set("Meta-"+k, v)
 		}
