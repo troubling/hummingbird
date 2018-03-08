@@ -32,10 +32,9 @@ func (r *progressReport) String() string {
 	}
 	data := [][]string{{
 		"Process",
-		"Started",
-		"Progress Update",
-		"Progress",
-		"Completed",
+		"Ago",
+		"Status",
+		"Detail",
 	}}
 	var processes []string
 	for process := range r.Processes {
@@ -44,35 +43,51 @@ func (r *progressReport) String() string {
 	sort.Strings(processes)
 	for _, process := range processes {
 		report := r.Processes[process]
-		data = append(data, []string{
-			process,
-			fmt.Sprintf("%s %s ago", report.Started.Format("2006-01-02 15:04:05"), time.Since(report.Started).Truncate(time.Second)),
-			fmt.Sprintf("%s %s ago", report.ProgressUpdated.Format("2006-01-02 15:04:05"), time.Since(report.ProgressUpdated).Truncate(time.Second)),
-			report.Progress,
-			fmt.Sprintf("%s took %s", report.Completed.Format("2006-01-02 15:04:05"), report.Completed.Sub(report.Started).Truncate(time.Second)),
-		})
+		var ago string
+		var status string
+		var detail string
 		if report.Started.IsZero() {
-			data[len(data)-1][1] = ""
+			status = "Never Run"
+		} else if report.Completed.IsZero() {
+			ago = time.Since(report.Started).Truncate(time.Second).String()
+			status = "Running"
+			if report.Progress != "" {
+				detail = fmt.Sprintf("%s ago: %s", time.Since(report.ProgressUpdated).Truncate(time.Second), report.Progress)
+			}
+		} else {
+			ago = time.Since(report.Completed).Truncate(time.Second).String()
+			status = "Completed"
+			detail = report.Progress
 		}
-		if report.ProgressUpdated.IsZero() {
-			data[len(data)-1][2] = ""
-		}
-		if report.Completed.IsZero() {
-			data[len(data)-1][4] = ""
+		data = append(data, nil)
+		data = append(data, []string{process, ago, status, detail})
+		if report.PreviousProgress != "" {
+			data = append(data, []string{"", "", "", fmt.Sprintf("Previous pass completed %s ago: %s", time.Since(report.PreviousCompleted).Truncate(time.Second), report.PreviousProgress)})
 		}
 	}
 	opts := brimtext.NewUnicodeBoxedAlignOptions()
-	opts.Widths = []int{10, 10, 10, 23, 10}
-	opts.Alignments = []brimtext.Alignment{brimtext.Right, brimtext.Right, brimtext.Right, brimtext.Left, brimtext.Right}
+	opts.NilBetweenEveryRow = false
+	opts.Alignments = []brimtext.Alignment{brimtext.Right, brimtext.Center, brimtext.Left, brimtext.Left}
+	opts.Widths = []int{30, 7, 10}
+	w := brimtext.GetTTYWidth() - 2
+	for _, x := range opts.Widths {
+		w -= x + 3
+	}
+	if w < 0 {
+		w = 0
+	}
+	opts.Widths = append(opts.Widths, w)
 	s += brimtext.Align(data, opts)
 	return s
 }
 
 type processReport struct {
-	Started         time.Time
-	ProgressUpdated time.Time
-	Progress        string
-	Completed       time.Time
+	Started           time.Time
+	ProgressUpdated   time.Time
+	Progress          string
+	Completed         time.Time
+	PreviousProgress  string
+	PreviousCompleted time.Time
 }
 
 func getProgressReport(flags *flag.FlagSet) *progressReport {
@@ -110,10 +125,12 @@ func getProgressReport(flags *flag.FlagSet) *progressReport {
 			process += fmt.Sprintf("-%d", ppd.policy)
 		}
 		report.Processes[process] = &processReport{
-			Started:         ppd.startDate,
-			ProgressUpdated: ppd.progressDate,
-			Progress:        ppd.progress,
-			Completed:       ppd.completeDate,
+			Started:           ppd.startDate,
+			ProgressUpdated:   ppd.progressDate,
+			Progress:          ppd.progress,
+			Completed:         ppd.completeDate,
+			PreviousProgress:  ppd.previousProgress,
+			PreviousCompleted: ppd.previousCompleteDate,
 		}
 	}
 	return report

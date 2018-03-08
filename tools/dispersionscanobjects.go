@@ -80,6 +80,9 @@ func (dso *dispersionScanObjects) runOnce() time.Duration {
 		sleepFor = 0
 	}
 	logger.Debug("pass complete", zap.String("next delay", dso.delay.String()), zap.String("sleep for", sleepFor.String()))
+	if err := dso.aa.db.progressProcessPass("dispersion scan", "object-overall", 0, fmt.Sprintf("%d policies", len(dso.aa.policies))); err != nil {
+		logger.Error("progressProcessPass", zap.Error(err))
+	}
 	if err := dso.aa.db.completeProcessPass("dispersion scan", "object-overall", 0); err != nil {
 		logger.Error("completeProcessPass", zap.Error(err))
 	}
