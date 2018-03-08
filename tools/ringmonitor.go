@@ -128,6 +128,8 @@ func (rm *ringMonitor) runOnce() time.Duration {
 		}
 	}()
 	for _, ringTask := range ringTasks {
+		atomic.AddInt64(&delays, 1)
+		time.Sleep(rm.delay)
 		taskLogger := logger.With(zap.String("type", ringTask.typ), zap.Int("policy", ringTask.policy), zap.String("previous md5", ringTask.previousMD5))
 		if err := ringTask.ring.Reload(); err != nil {
 			atomic.AddInt64(&errors, 1)
@@ -215,8 +217,6 @@ func (rm *ringMonitor) runOnce() time.Duration {
 				}
 			}
 		}
-		atomic.AddInt64(&delays, 1)
-		time.Sleep(rm.delay)
 	}
 	close(cancel)
 	<-progressDone
