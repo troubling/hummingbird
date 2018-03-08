@@ -40,12 +40,16 @@ import (
 )
 
 type FakeECAuditFuncs struct {
-	paths  []string
-	shards []string
+	paths        []string
+	shards       []string
+	nurseryPaths []string
+	nurseryBytes [][]byte
 }
 
 // AuditNurseryObject of indexdb shard, does nothing
 func (f *FakeECAuditFuncs) AuditNurseryObject(path string, metabytes []byte, skipMd5 bool) (int64, error) {
+	f.nurseryPaths = append(f.nurseryPaths, path)
+	f.nurseryBytes = append(f.nurseryBytes, metabytes)
 	return 0, nil
 }
 
@@ -537,6 +541,8 @@ func TestAuditDB(t *testing.T) {
 	f.Write([]byte(body))
 	err = db.Commit(f, hash, 0, timestamp, false, "", nil, false, shardHash)
 	assert.Nil(t, err)
+	shardPath, err := db.WholeObjectPath(hash, 0, timestamp, false)
+	assert.Nil(t, err)
 	hash1 := "00000000000000000000000000000001"
 	f, err = db.TempFile(hash1, 0, timestamp, int64(len(body)), false)
 	assert.Nil(t, err)
@@ -549,14 +555,23 @@ func TestAuditDB(t *testing.T) {
 	f.Write([]byte(body))
 	err = db.Commit(f, hash2, 0, timestamp, false, "", nil, false, shardHash)
 	assert.Nil(t, err)
-
-	shardPath, err := db.WholeObjectPath(hash, 0, timestamp, false)
+	// Add a nursery object too
+	hash3 := "00000000000000000000000000000003"
+	f, err = db.TempFile(hash3, 0, timestamp, int64(len(body)), true)
+	assert.Nil(t, err)
+	f.Write([]byte(body))
+	err = db.Commit(f, hash3, 0, timestamp, false, "", nil, true, shardHash)
+	assert.Nil(t, err)
+	nurseryPath, err := db.WholeObjectPath(hash3, 0, timestamp, true)
+	assert.Nil(t, err)
 
 	auditor.auditDB(db.dbpath, testRing)
 
 	assert.Equal(t, 3, len(fakes.paths))
 	assert.Equal(t, shardPath, fakes.paths[0])
 	assert.Equal(t, shardHash, fakes.shards[0])
+	assert.Equal(t, 1, len(fakes.nurseryPaths))
+	assert.Equal(t, nurseryPath, fakes.nurseryPaths[0])
 }
 
 func TestAuditShardPasses(t *testing.T) {
@@ -584,7 +599,35 @@ func TestAuditShardFails(t *testing.T) {
 	f.Close()
 	bytes, err := auditFuncs.AuditShard(fName, hash, false)
 	assert.NotNil(t, err)
-	assert.Equal(t, int64(0), bytes)
+	assert.Equal(t, int64(16), bytes)
+}
+
+func TestAuditNurseryPasses(t *testing.T) {
+	auditFuncs := RealECAuditFuncs{}
+	dir, _ := ioutil.TempDir("", "")
+	defer os.RemoveAll(dir)
+	fName := filepath.Join(dir, "12345")
+	f, _ := os.Create(fName)
+	f.Write([]byte("testcontents"))
+	f.Close()
+	goodmeta := []byte("{\"ETag\": \"d3ac5112fe464b81184352ccba743001\"}")
+	bytes, err := auditFuncs.AuditNurseryObject(fName, goodmeta, false)
+	assert.Nil(t, err)
+	assert.Equal(t, int64(12), bytes)
+}
+
+func TestAuditNurseryFails(t *testing.T) {
+	auditFuncs := RealECAuditFuncs{}
+	dir, _ := ioutil.TempDir("", "")
+	defer os.RemoveAll(dir)
+	fName := filepath.Join(dir, "12345")
+	f, _ := os.Create(filepath.Join(dir, "12345"))
+	f.Write([]byte("asdftestcontents"))
+	f.Close()
+	badmeta := []byte("{\"ETag\": \"d3ac5112fe464b81184352ccba743001\"}")
+	bytes, err := auditFuncs.AuditNurseryObject(fName, badmeta, false)
+	assert.NotNil(t, err)
+	assert.Equal(t, int64(16), bytes)
 }
 
 func TestQuarantineShard(t *testing.T) {
