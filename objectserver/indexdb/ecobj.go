@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -38,17 +39,18 @@ import (
 
 type ecObject struct {
 	IndexDBItem
-	afw         fs.AtomicFileWriter
-	idb         *IndexDB
-	policy      int
-	metadata    map[string]string
-	ring        ring.Ring
-	logger      *zap.Logger
-	reserve     int64
-	dataFrags   int
-	parityFrags int
-	chunkSize   int
-	client      *http.Client
+	afw             fs.AtomicFileWriter
+	idb             *IndexDB
+	policy          int
+	metadata        map[string]string
+	ring            ring.Ring
+	logger          *zap.Logger
+	reserve         int64
+	dataFrags       int
+	parityFrags     int
+	chunkSize       int
+	client          *http.Client
+	nurseryReplicas int
 }
 
 func (o *ecObject) Metadata() map[string]string {
@@ -296,100 +298,165 @@ func (o *ecObject) Replicate(prirep objectserver.PriorityRepJob) error {
 	return err
 }
 
-func (o *ecObject) Stabilize(ring ring.Ring, dev *ring.Device, policy int) error {
-	wg := sync.WaitGroup{}
-	success := true
+func (o *ecObject) nurseryReplicate(rng ring.Ring, partition uint64, dev *ring.Device) error {
+	nodes, handoff := rng.GetJobNodes(partition, dev.Id)
+	more := rng.GetMoreNodes(partition)
+	var node *ring.Device
+	e := common.NewExpector(o.client)
+	defer e.Cancel()
+	wrs := make([]io.WriteCloser, 0)
+	successReadyCount := 0
+	var responses []*http.Response
+	var ready []bool
+	nurseryReplicaCount := o.nurseryReplicas
+	if !handoff { // we don't need to replicate to ourselves.
+		nurseryReplicaCount -= 1
+	}
+	for i := 0; successReadyCount < nurseryReplicaCount; i++ {
+		if i < len(nodes) {
+			node = nodes[i]
+		} else if node = more.Next(); node == nil {
+			break
+		}
+
+		rp, wp := io.Pipe()
+		defer rp.Close()
+		defer wp.Close()
+		wrs = append(wrs, wp)
+		req, err := http.NewRequest("PUT", fmt.Sprintf("%s://%s:%d/nursery/%s/%s",
+			node.Scheme, node.ReplicationIp, node.ReplicationPort, node.Device, o.Hash), rp)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
+		req.Header.Set("Deletion", strconv.FormatBool(o.Deletion))
+		req.Header.Set("Content-Length", o.metadata["Content-Length"])
+		for k, v := range o.metadata {
+			req.Header.Set("Meta-"+k, v)
+		}
+		e.AddRequest(req)
+
+		if i >= nurseryReplicaCount-1 {
+			successReadyCount = 0
+			responses, ready = e.Wait(time.Second * 15)
+			for i := 0; i < len(responses); i++ {
+				if (responses[i] != nil && responses[i].StatusCode/100 == 2) || ready[i] == true {
+					successReadyCount++
+				}
+			}
+		}
+	}
+
+	if o.Path != "" {
+		writers := make([]io.Writer, 0)
+		for i, ready := range ready {
+			if ready {
+				writers = append(writers, wrs[i])
+			}
+		}
+		fp, err := os.Open(o.Path)
+		if err != nil {
+			return err
+		}
+		defer fp.Close()
+		common.Copy(fp, writers...)
+	}
+	for _, wr := range wrs {
+		if wr != nil {
+			wr.Close()
+		}
+	}
+
+	successes := e.Successes(time.Second * 15)
+	if handoff && successes >= nurseryReplicaCount {
+		return o.idb.Remove(o.Hash, o.Shard, o.Timestamp, true)
+	} else if successes < nurseryReplicaCount {
+		return errors.New("Unable to fully nursery-replicate object.")
+	}
+	return nil
+}
+
+func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error {
 	ns := strings.SplitN(o.metadata["name"], "/", 4)
 	if len(ns) != 4 {
 		return fmt.Errorf("invalid metadata name: %s", o.metadata["name"])
 	}
 
-	partition := ring.GetPartition(ns[1], ns[2], ns[3])
-	nodes := ring.GetNodes(partition)
+	partition := rng.GetPartition(ns[1], ns[2], ns[3])
+	nodes := rng.GetNodes(partition)
 	if len(nodes) != o.dataFrags+o.parityFrags {
 		return fmt.Errorf("Ring doesn't match EC scheme (%d != %d).", len(nodes), o.dataFrags+o.parityFrags)
 	}
-	if o.Deletion {
-		for i, node := range nodes {
-			req, err := http.NewRequest("DELETE", fmt.Sprintf("%s://%s:%d/ec-frag/%s/%s/%d", node.Scheme, node.Ip, node.Port, node.Device, o.Hash, i), nil)
-			if err != nil {
-				return err
-			}
-			req.Header.Set("X-Timestamp", o.metadata["X-Timestamp"])
-			req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(policy))
-			wg.Add(1)
-			go func(req *http.Request) {
-				defer wg.Done()
-				if resp, err := o.client.Do(req); err != nil {
-					success = false
-					return
-				} else {
-					io.Copy(ioutil.Discard, resp.Body)
-					resp.Body.Close()
-					if resp.StatusCode/100 != 2 && resp.StatusCode != 404 {
-						success = false
-						return
-					}
-				}
-			}(req)
+	wrs := make([]io.WriteCloser, len(nodes))
+	e := common.NewExpector(o.client)
+	defer e.Cancel()
+	for i, node := range nodes {
+		rp, wp := io.Pipe()
+		defer rp.Close()
+		defer wp.Close()
+		wrs[i] = wp
+		req, err := http.NewRequest("PUT", fmt.Sprintf("%s://%s:%d/ec-frag/%s/%s/%d", node.Scheme, node.ReplicationIp,
+			node.ReplicationPort, node.Device, o.Hash, i), rp)
+		if err != nil {
+			return err
 		}
-	} else {
+		req.Header.Set("X-Timestamp", o.metadata["X-Timestamp"])
+		req.Header.Set("Deletion", strconv.FormatBool(o.Deletion))
+		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(policy))
+		req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("%d/%d/%d", o.dataFrags, o.parityFrags, o.chunkSize))
+		for k, v := range o.metadata {
+			req.Header.Set("Meta-"+k, v)
+		}
+		e.AddRequest(req)
+	}
+
+	responses, ready := e.Wait(time.Second * 15)
+	writers := make([]io.WriteCloser, len(nodes))
+	needUpload := false
+	success := true
+	for i := range responses {
+		if responses[i] != nil {
+			if responses[i].StatusCode/100 == 2 {
+			} else {
+				success = false
+			}
+		} else if ready[i] == true {
+			needUpload = true
+			writers[i] = wrs[i]
+		} else {
+			success = false
+		}
+	}
+	if success && needUpload {
 		fp, err := os.Open(o.Path)
 		if err != nil {
 			return err
 		}
+		defer fp.Close()
 
-		contentLength := int64(0)
+		contentLength := int64(0) // TODO: check this against metadata
 		if fi, err := fp.Stat(); err != nil {
 			return err
 		} else {
 			contentLength = fi.Size()
 		}
 
-		defer fp.Close()
-
-		writers := make([]io.WriteCloser, len(nodes))
-		for i, node := range nodes {
-			rp, wp := io.Pipe()
-			defer rp.Close()
-			defer wp.Close()
-			writers[i] = wp
-			req, err := http.NewRequest("PUT", fmt.Sprintf("%s://%s:%d/ec-frag/%s/%s/%d", node.Scheme, node.Ip, node.Port, node.Device, o.Hash, i), rp)
-			if err != nil {
-				return err
-			}
-			req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(policy))
-			req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("%d/%d/%d", o.dataFrags, o.parityFrags, o.chunkSize))
-			for k, v := range o.metadata {
-				req.Header.Set("Meta-"+k, v)
-			}
-			wg.Add(1)
-			go func(req *http.Request) {
-				defer wg.Done()
-				if resp, err := o.client.Do(req); err != nil {
-					success = false
-					return
-				} else {
-					io.Copy(ioutil.Discard, resp.Body)
-					resp.Body.Close()
-					if resp.StatusCode/100 != 2 {
-						success = false
-						return
-					}
-				}
-			}(req)
-		}
-		// TODO: junk to get expect 100-continue to work asynchronously before ecSplit is called
 		ecSplit(o.dataFrags, o.parityFrags, fp, o.chunkSize, contentLength, writers)
-		for _, w := range writers {
+		for _, w := range wrs {
 			w.Close()
 		}
+		if e.Successes(time.Second*15) < len(nodes) {
+			success = false
+		}
 	}
-	wg.Wait()
+
 	if !success {
+		o.nurseryReplicate(rng, partition, dev)
 		return fmt.Errorf("Failed to stabilize object")
+	} else if o.idb != nil {
+		return o.idb.Remove(o.Hash, o.Shard, o.Timestamp, true)
 	}
-	return o.idb.Remove(o.Hash, o.Shard, o.Timestamp, true)
+	return nil
 }
 
 // make sure these things satisfy interfaces at compile time
