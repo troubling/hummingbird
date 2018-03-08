@@ -242,7 +242,15 @@ func (r *hashRing) RingMatching(md5 string) RingMD5 {
 		if !strings.HasSuffix(fi.Name(), ".ring.gz") {
 			continue
 		}
-		parts = strings.SplitN(strings.SplitN(fi.Name(), ".", 2)[0], "-", 2)
+		// 1520549739234856985.object.ring.gz => ["1520549739234856985", "object.ring.gz"]
+		// 1520549739289612841.object-1.ring.gz => ["1520549739289612841", "object-1.ring.gz"]
+		parts = strings.SplitN(fi.Name(), ".", 2)
+		if len(parts) < 2 {
+			continue
+		}
+		// object.ring.gz => ["object"]
+		// object-1.ring.gz => ["object", "1"]
+		parts = strings.SplitN(strings.SplitN(parts[1], ".", 2)[0], "-", 2)
 		if parts[0] != typ {
 			continue
 		}
