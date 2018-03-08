@@ -220,7 +220,9 @@ func (rm *ringMonitor) runOnce() time.Duration {
 	}
 	close(cancel)
 	<-progressDone
-	rm.delay = rm.passTimeTarget / time.Duration(delays)
+	if delays > 0 {
+		rm.delay = rm.passTimeTarget / time.Duration(delays)
+	}
 	sleepFor := time.Until(start.Add(rm.passTimeTarget))
 	if sleepFor < 0 {
 		sleepFor = 0
