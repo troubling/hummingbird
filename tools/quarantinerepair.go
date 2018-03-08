@@ -114,6 +114,9 @@ func (qr *quarantineRepair) runOnce() time.Duration {
 				ringg, _ := getRing("", typ, policy)
 				deviceID := -1
 				for _, dev := range ringg.AllDevices() {
+					if dev == nil {
+						continue
+					}
 					if dev.Ip == ipp.ip && dev.Port == ipp.port && dev.Device == device {
 						deviceID = dev.Id
 						break
@@ -161,12 +164,18 @@ func (qr *quarantineRepair) quarantineDetailURLs() map[string]*ippInstance {
 			for _, policy := range qr.aa.policies {
 				ringg, _ := getRing("", typ, policy.Index)
 				for _, dev := range ringg.AllDevices() {
+					if dev == nil {
+						continue
+					}
 					urls[fmt.Sprintf("%s://%s:%d/recon/quarantineddetail", dev.Scheme, dev.Ip, dev.Port)] = &ippInstance{scheme: dev.Scheme, ip: dev.Ip, port: dev.Port}
 				}
 			}
 		} else {
 			ringg, _ := getRing("", typ, 0)
 			for _, dev := range ringg.AllDevices() {
+				if dev == nil {
+					continue
+				}
 				urls[fmt.Sprintf("%s://%s:%d/recon/quarantineddetail", dev.Scheme, dev.Ip, dev.Port)] = &ippInstance{scheme: dev.Scheme, ip: dev.Ip, port: dev.Port}
 			}
 		}
