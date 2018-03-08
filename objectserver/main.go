@@ -221,12 +221,17 @@ func (server *ObjectServer) ObjGetHandler(writer http.ResponseWriter, request *h
 	if request.Method == "GET" {
 		if server.checkEtags {
 			hash := md5.New()
-			obj.Copy(writer, hash)
-			if hex.EncodeToString(hash.Sum(nil)) != metadata["ETag"] {
+			_, err := obj.Copy(writer, hash)
+			if err != nil {
+				srv.GetLogger(request).Debug("Error copying body", zap.Error(err))
+			} else if hex.EncodeToString(hash.Sum(nil)) != metadata["ETag"] {
 				obj.Quarantine()
 			}
 		} else {
-			obj.Copy(writer)
+			_, err := obj.Copy(writer)
+			if err != nil {
+				srv.GetLogger(request).Debug("Error copying body", zap.Error(err))
+			}
 		}
 	} else {
 		writer.Write([]byte{})

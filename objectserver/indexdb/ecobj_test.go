@@ -227,3 +227,18 @@ func TestDontStabilizeWithFailure(t *testing.T) {
 	require.NotNil(t, err)
 	require.Equal(t, "Failed to stabilize object", err.Error())
 }
+
+func TestParseECScheme(t *testing.T) {
+	algo, dataFrags, parityFrags, chunkSize, err := parseECScheme("reedsolomon/1/2/16")
+	require.Nil(t, err)
+	require.Equal(t, "reedsolomon", algo)
+	require.Equal(t, 1, dataFrags)
+	require.Equal(t, 2, parityFrags)
+	require.Equal(t, 16, chunkSize)
+
+	algo, dataFrags, parityFrags, chunkSize, err = parseECScheme("1/2/16")
+	require.NotNil(t, err)
+
+	algo, dataFrags, parityFrags, chunkSize, err = parseECScheme("reedsolomon/1/2/X")
+	require.NotNil(t, err)
+}
