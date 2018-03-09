@@ -162,7 +162,6 @@ func TestRouterDisambiguation(t *testing.T) {
 	req.Header.Set("X-Backend-Storage-Policy-Index", "10")
 	router.ServeHTTP(test.MockResponseWriter{}, req)
 	assert.Equal(t, "POLICY_VERB_WORKED", handledBy)
-
 }
 
 func BenchmarkRouteObject(b *testing.B) {

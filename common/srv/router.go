@@ -189,7 +189,8 @@ func (r *router) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		policy = 0
 	}
 	handler, vars := r.route(request.Method, request.URL.Path, policy)
-	if txnId := request.Header.Get("X-Trans-Id"); txnId != "" {
+	txnId := request.Header.Get("X-Trans-Id")
+	if vars != nil && txnId != "" {
 		vars["txnId"] = txnId
 	}
 	request = SetVars(request, vars)
