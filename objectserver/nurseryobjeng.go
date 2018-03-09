@@ -533,7 +533,7 @@ func (f *nurseryEngine) GetReplicationDevice(oring ring.Ring, dev *ring.Device, 
 	return GetNurseryDevice(oring, dev, policy, r, f)
 }
 
-func (f *nurseryEngine) GetNurseryObjects(device string, c chan ObjectStabilizer, cancel chan struct{}) {
+func (f *nurseryEngine) GetObjectsToStabilize(device string, c chan ObjectStabilizer, cancel chan struct{}) {
 	defer close(c)
 	objDirPath := filepath.Join(f.driveRoot, device, PolicyDir(f.policy))
 	partitions, err := fs.ReadDirNames(objDirPath)

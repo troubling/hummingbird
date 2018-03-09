@@ -155,6 +155,59 @@ func (f *ecEngine) ecShardGetHandler(writer http.ResponseWriter, request *http.R
 	http.ServeContent(writer, request, item.Path, time.Unix(item.Timestamp, 0), fl)
 }
 
+func (f *ecEngine) ecShardPostHandler(writer http.ResponseWriter, request *http.Request) {
+	vars := srv.GetVars(request)
+	idb, err := f.getDB(vars["device"])
+	if err != nil {
+		srv.StandardResponse(writer, http.StatusBadRequest)
+		return
+	}
+	shardIndex, err := strconv.Atoi(vars["index"])
+	if err != nil {
+		srv.StandardResponse(writer, http.StatusBadRequest)
+		return
+	}
+	item, err := idb.Lookup(vars["hash"], shardIndex, false)
+	if err != nil || item == nil || item.Deletion {
+		srv.StandardResponse(writer, http.StatusNotFound)
+		return
+	}
+	timestampTime, err := common.ParseDate(request.Header.Get("Meta-X-Timestamp"))
+	if err != nil {
+		srv.StandardResponse(writer, http.StatusBadRequest)
+		return
+	}
+	timestamp := timestampTime.UnixNano()
+	if timestamp <= item.Timestamp {
+		srv.StandardResponse(writer, http.StatusConflict)
+		return
+	}
+	metadata := make(map[string]string)
+	for key := range request.Header {
+		if strings.HasPrefix(key, "Meta-") {
+			if key == "Meta-Name" {
+				metadata["name"] = request.Header.Get(key)
+			} else if key == "Meta-Etag" {
+				metadata["ETag"] = request.Header.Get(key)
+			} else {
+				metadata[http.CanonicalHeaderKey(key[5:])] = request.Header.Get(key)
+			}
+		}
+	}
+	metabytes, err := json.Marshal(metadata)
+	if err != nil {
+		srv.GetLogger(request).Error("Error marshaling meta", zap.Error(err))
+		return
+	}
+	if err = idb.Commit(nil, vars["hash"], shardIndex, timestamp, "POST", MetadataHash(metadata), metabytes, false, ""); err != nil {
+		srv.GetLogger(request).Error("Error saving shard meta file", zap.Error(err))
+		srv.StandardResponse(writer, http.StatusInternalServerError)
+	} else {
+		srv.StandardResponse(writer, http.StatusAccepted)
+	}
+	return
+}
+
 func (f *ecEngine) ecShardPutHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
 	idb, err := f.getDB(vars["device"])
@@ -215,7 +268,7 @@ func (f *ecEngine) ecShardPutHandler(writer http.ResponseWriter, request *http.R
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
-	if err := idb.Commit(atm, vars["hash"], shardIndex, timestamp, false, MetadataHash(metadata), metabytes, false, shardHash); err != nil {
+	if err := idb.Commit(atm, vars["hash"], shardIndex, timestamp, "PUT", MetadataHash(metadata), metabytes, false, shardHash); err != nil {
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 	} else {
 		srv.StandardResponse(writer, http.StatusCreated)
@@ -240,6 +293,10 @@ func (f *ecEngine) ecNurseryPutHandler(writer http.ResponseWriter, request *http
 	if err != nil {
 		srv.StandardResponse(writer, http.StatusBadRequest)
 		return
+	}
+	method := "PUT"
+	if deletion {
+		method = "DELETE"
 	}
 
 	metadata := make(map[string]string)
@@ -287,7 +344,7 @@ func (f *ecEngine) ecNurseryPutHandler(writer http.ResponseWriter, request *http
 		return
 	}
 
-	if err := idb.Commit(atm, vars["hash"], 0, timestamp, deletion, MetadataHash(metadata), metabytes, true, ""); err != nil {
+	if err := idb.Commit(atm, vars["hash"], 0, timestamp, method, MetadataHash(metadata), metabytes, true, ""); err != nil {
 		srv.GetLogger(request).Error("Error committing object to index", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 	} else {
@@ -438,17 +495,18 @@ func (f *ecEngine) RegisterHandlers(addRoute func(method, path string, handler h
 	addRoute("GET", "/ec-shard/:device/:hash/:index", f.ecShardGetHandler)
 	addRoute("PUT", "/ec-shard/:device/:hash/:index", f.ecShardPutHandler)
 	addRoute("DELETE", "/ec-shard/:device/:hash/:index", f.ecShardDeleteHandler)
+	addRoute("POST", "/ec-shard/:device/:hash/:index", f.ecShardPostHandler)
 	addRoute("GET", "/partition/:device/:partition", f.listPartitionHandler)
 }
 
-func (f *ecEngine) GetNurseryObjects(device string, c chan objectserver.ObjectStabilizer, cancel chan struct{}) {
+func (f *ecEngine) GetObjectsToStabilize(device string, c chan objectserver.ObjectStabilizer, cancel chan struct{}) {
 	defer close(c)
 	idb, err := f.getDB(device)
 	if err != nil {
 		return
 	}
 
-	items, err := idb.ListNursery()
+	items, err := idb.ListObjectsToStabilize()
 	if err != nil {
 		return
 	}

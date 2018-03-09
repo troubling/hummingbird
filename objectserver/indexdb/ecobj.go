@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -228,37 +229,38 @@ func (o *ecObject) SetData(size int64) (io.Writer, error) {
 	return o.afw, nil
 }
 
-func (o *ecObject) commit(metadata map[string]string, deletion bool) error {
-	var timestamp int64
+func (o *ecObject) commit(metadata map[string]string, method string, nursery bool) error {
 	defer o.Close()
-	if o.afw != nil || deletion {
-		timestampStr, ok := metadata["X-Timestamp"]
-		if !ok {
-			return errors.New("no timestamp in metadata")
-		}
-		timestampTime, err := common.ParseDate(timestampStr)
-		if err != nil {
-			return err
-		}
-		timestamp = timestampTime.UnixNano()
+	timestampStr, ok := metadata["X-Timestamp"]
+	if !ok {
+		return errors.New("no timestamp in metadata")
 	}
+	timestampTime, err := common.ParseDate(timestampStr)
+	if err != nil {
+		return err
+	}
+	timestamp := timestampTime.UnixNano()
 	metabytes, err := json.Marshal(metadata)
 	if err != nil {
 		return err
 	}
-	return o.idb.Commit(o.afw, o.Hash, 0, timestamp, deletion, MetadataHash(metadata), metabytes, true, "")
+	shard := 0
+	if !nursery {
+		shard = o.Shard
+	}
+	return o.idb.Commit(o.afw, o.Hash, shard, timestamp, method, MetadataHash(metadata), metabytes, nursery, "")
 }
 
 func (o *ecObject) Commit(metadata map[string]string) error {
-	return o.commit(metadata, false)
+	return o.commit(metadata, "PUT", true)
 }
 
 func (o *ecObject) Delete(metadata map[string]string) error {
-	return o.commit(metadata, true)
+	return o.commit(metadata, "DELETE", true)
 }
 
 func (o *ecObject) CommitMetadata(metadata map[string]string) error {
-	return errors.New("Unimplemented")
+	return o.commit(metadata, "POST", o.Nursery)
 }
 
 func (o *ecObject) Close() error {
@@ -459,12 +461,55 @@ func (o *ecObject) nurseryReplicate(rng ring.Ring, partition uint64, dev *ring.D
 	return nil
 }
 
-func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error {
+func (o *ecObject) restabilize(rng ring.Ring, dev *ring.Device, policy int) error {
 	ns := strings.SplitN(o.metadata["name"], "/", 4)
 	if len(ns) != 4 {
 		return fmt.Errorf("invalid metadata name: %s", o.metadata["name"])
 	}
+	wg := sync.WaitGroup{}
+	var successes int64
+	partition := rng.GetPartition(ns[1], ns[2], ns[3])
+	nodes := rng.GetNodes(partition)
+	if len(nodes) != o.dataShards+o.parityShards {
+		return fmt.Errorf("Ring doesn't match EC scheme (%d != %d).", len(nodes), o.dataShards+o.parityShards)
+	}
+	for i, node := range nodes {
+		req, err := http.NewRequest("POST", fmt.Sprintf("%s://%s:%d/ec-shard/%s/%s/%d", node.Scheme, node.Ip, node.Port, node.Device, o.Hash, i), nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("X-Timestamp", o.metadata["X-Timestamp"])
+		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(policy))
+		for k, v := range o.metadata {
+			req.Header.Set("Meta-"+k, v)
+		}
+		wg.Add(1)
+		go func(req *http.Request) {
+			defer wg.Done()
+			if resp, err := o.client.Do(req); err == nil {
+				io.Copy(ioutil.Discard, resp.Body)
+				resp.Body.Close()
+				if resp.StatusCode/100 == 2 || resp.StatusCode == http.StatusConflict {
+					atomic.AddInt64(&successes, 1)
+				}
+			}
+		}(req)
+	}
+	wg.Wait()
+	if successes != int64(len(nodes)) {
+		return fmt.Errorf("could not restabilize all primaries %d/%d", successes, len(nodes))
+	}
+	return o.idb.SetRestablized(o.Hash, o.Shard, o.Timestamp)
+}
 
+func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error {
+	if o.Restabilize {
+		return o.restabilize(rng, dev, policy)
+	}
+	ns := strings.SplitN(o.metadata["name"], "/", 4)
+	if len(ns) != 4 {
+		return fmt.Errorf("invalid metadata name: %s", o.metadata["name"])
+	}
 	partition := rng.GetPartition(ns[1], ns[2], ns[3])
 	nodes := rng.GetNodes(partition)
 	if len(nodes) != o.dataShards+o.parityShards {

@@ -271,38 +271,36 @@ func (idbo *indexDBObject) SetData(size int64) (io.Writer, error) {
 	return idbo.atomicFileWriter, err
 }
 
-func (idbo *indexDBObject) commit(metadata map[string]string, deletion bool) error {
+func (idbo *indexDBObject) commit(metadata map[string]string, method string) error {
 	var timestamp int64
-	if idbo.atomicFileWriter != nil || deletion {
-		timestampStr, ok := metadata["X-Timestamp"]
-		if !ok {
-			return errors.New("no timestamp in metadata")
-		}
-		timestampTime, err := common.ParseDate(timestampStr)
-		if err != nil {
-			return err
-		}
-		timestamp = timestampTime.UnixNano()
+	timestampStr, ok := metadata["X-Timestamp"]
+	if !ok {
+		return errors.New("no timestamp in metadata")
 	}
+	timestampTime, err := common.ParseDate(timestampStr)
+	if err != nil {
+		return err
+	}
+	timestamp = timestampTime.UnixNano()
 	metabytes, err := json.Marshal(metadata)
 	if err != nil {
 		return err
 	}
-	err = idbo.indexDB.Commit(idbo.atomicFileWriter, idbo.hash, 0, timestamp, deletion, MetadataHash(metadata), metabytes, true, "")
+	err = idbo.indexDB.Commit(idbo.atomicFileWriter, idbo.hash, 0, timestamp, method, MetadataHash(metadata), metabytes, true, "")
 	idbo.atomicFileWriter = nil
 	return err
 }
 
 func (idbo *indexDBObject) Commit(metadata map[string]string) error {
-	return idbo.commit(metadata, false)
+	return idbo.commit(metadata, "PUT")
 }
 
 func (idbo *indexDBObject) CommitMetadata(metadata map[string]string) error {
-	return idbo.commit(metadata, false)
+	return idbo.commit(metadata, "POST")
 }
 
 func (idbo *indexDBObject) Delete(metadata map[string]string) error {
-	return idbo.commit(metadata, true)
+	return idbo.commit(metadata, "DELETE")
 }
 
 func (idbo *indexDBObject) Close() error {

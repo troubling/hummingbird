@@ -20,15 +20,16 @@ const (
 
 // IndexDBItem is a single item returned by List.
 type IndexDBItem struct {
-	Hash      string
-	Shard     int
-	Timestamp int64
-	Metahash  string `json:"-"`
-	Nursery   bool
-	Metabytes []byte `json:"-"`
-	Deletion  bool
-	Path      string
-	ShardHash string
+	Hash        string
+	Shard       int
+	Timestamp   int64
+	Metahash    string `json:"-"`
+	Nursery     bool
+	Metabytes   []byte `json:"-"`
+	Deletion    bool
+	Path        string
+	ShardHash   string
+	Restabilize bool
 }
 
 // IndexDB will track a set of objects.
@@ -149,13 +150,18 @@ func (ot *IndexDB) init(dbi int) error {
 			metahash TEXT, -- NULLable because not everyone stores the metadata
 			metadata TEXT, -- NULLable because not everyone stores the metadata
 			shardhash TEXT, -- NULLable because not every object is a shard
+			restabilize BOOLEAN NOT NULL,
 			CONSTRAINT ix_objects_hash_shard_timestamp PRIMARY KEY (hash, shard, timestamp, nursery)
 		) WITHOUT ROWID;
+
 	`)
 	if err != nil {
 		return err
 	}
 	if _, err = tx.Exec("CREATE INDEX IF NOT EXISTS ix_nursery_items ON objects (nursery) WHERE nursery = 1"); err != nil {
+		return err
+	}
+	if _, err = tx.Exec("CREATE INDEX IF NOT EXISTS ix_nursery_restabilize_items ON objects (restabilize) WHERE restabilize = 1"); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -198,7 +204,7 @@ func (ot *IndexDB) TempFile(hsh string, shard int, timestamp int64, sizeHint int
 //
 // Timestamp is the timestamp for the object contents, not necessarily the
 // metadata.
-func (ot *IndexDB) Commit(f fs.AtomicFileWriter, hsh string, shard int, timestamp int64, deletion bool, metahash string, metadata []byte, nursery bool, shardhash string) error {
+func (ot *IndexDB) Commit(f fs.AtomicFileWriter, hsh string, shard int, timestamp int64, method string, metahash string, metadata []byte, nursery bool, shardhash string) error {
 	hsh, _, dbPart, _, err := ot.validateHash(hsh)
 	if err != nil {
 		return err
@@ -224,8 +230,9 @@ func (ot *IndexDB) Commit(f fs.AtomicFileWriter, hsh string, shard int, timestam
 	if err != nil {
 		return err
 	}
+	deletion := method == "DELETE"
 	rows, err = tx.Query(`
-        SELECT timestamp, metahash, metadata
+        SELECT timestamp, metahash, metadata, shardhash
         FROM objects
         WHERE hash = ? AND shard = ? AND nursery = ?
         ORDER BY timestamp DESC
@@ -244,13 +251,13 @@ func (ot *IndexDB) Commit(f fs.AtomicFileWriter, hsh string, shard int, timestam
 			return fmt.Errorf("no existing entry for %s and so refusing to store just a metadata update", hsh)
 		}
 	} else {
-		var dbMetahash string
+		var dbMetahash, dbShardHash string
 		var dbMetadata []byte
-		if err = rows.Scan(&dbTimestamp, &dbMetahash, &dbMetadata); err != nil {
+		if err = rows.Scan(&dbTimestamp, &dbMetahash, &dbMetadata, &dbShardHash); err != nil {
 			return err
 		}
 		if f == nil && !deletion {
-			// We keep the original timestamp if just committing new metadata.
+			// We keep the original file's timestamp if just committing new metadata. (not the x-timestamp header)
 			timestamp = dbTimestamp
 		}
 		dbWholeObjectPath, err = ot.wholeObjectPath(hsh, shard, dbTimestamp, nursery)
@@ -259,6 +266,9 @@ func (ot *IndexDB) Commit(f fs.AtomicFileWriter, hsh string, shard int, timestam
 		}
 		if metahash == dbMetahash && ((f == nil && !deletion) || dbTimestamp > timestamp) {
 			return nil
+		}
+		if shardhash == "" {
+			shardhash = dbShardHash
 		}
 		if metahash != dbMetahash {
 			metadataMap := map[string]string{}
@@ -320,17 +330,24 @@ func (ot *IndexDB) Commit(f fs.AtomicFileWriter, hsh string, shard int, timestam
 			return err
 		}
 	}
+	restabilize := false
 	if dbWholeObjectPath == "" {
 		_, err = tx.Exec(`
-            INSERT INTO objects (hash, shard, timestamp, deletion, metahash, metadata, nursery, shardhash)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `, hsh, shard, timestamp, deletion, metahash, metadata, nursery, shardhash)
+            INSERT INTO objects (hash, shard, timestamp, deletion, metahash, metadata, nursery, shardhash, restabilize)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, hsh, shard, timestamp, deletion, metahash, metadata, nursery, shardhash, restabilize)
 	} else {
+		if !nursery && method == "POST" {
+			restabilize = true
+		}
 		_, err = tx.Exec(`
             UPDATE objects
-            SET timestamp = ?, deletion = ?, metahash = ?, metadata = ?, nursery = ?, shardhash = ?
+            SET timestamp = ?, deletion = ?, metahash = ?, metadata = ?, nursery = ?, shardhash = ?, restabilize = ?
             WHERE hash = ? AND shard = ? AND nursery = ?
-        `, timestamp, deletion, metahash, metadata, nursery, shardhash, hsh, shard, nursery)
+        `, timestamp, deletion, metahash, metadata, nursery, shardhash, restabilize, hsh, shard, nursery)
+		if err != nil {
+			return err
+		}
 	}
 	if err == nil {
 		err = tx.Commit()
@@ -345,6 +362,27 @@ func (ot *IndexDB) Commit(f fs.AtomicFileWriter, hsh string, shard int, timestam
 		}
 	}
 	return err
+}
+
+func (ot *IndexDB) SetRestablized(hsh string, shard int, timestamp int64) error {
+	hsh, _, dbPart, _, err := ot.validateHash(hsh)
+	if err != nil {
+		return err
+	}
+	db := ot.dbs[dbPart]
+	tx, err := db.Begin()
+	defer tx.Rollback()
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(`
+	    UPDATE objects SET restabilize = 0
+		WHERE hash = ? AND shard = ? AND timestamp = ?
+		`, hsh, shard, timestamp)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (ot *IndexDB) wholeObjectDir(hsh string) (string, error) {
@@ -403,20 +441,20 @@ func (ot *IndexDB) Lookup(hsh string, shard int, justStable bool) (*IndexDBItem,
 	var rows *sql.Rows
 	if justStable {
 		rows, err = db.Query(`
-			SELECT timestamp, deletion, metahash, metadata, nursery, shard, shardhash
+			SELECT timestamp, deletion, metahash, metadata, nursery, shard, shardhash, restabilize
 			FROM objects
 			WHERE hash = ? AND shard = ? AND nursery = 0
 		`, hsh, shard)
 	} else if shard == shardAny {
 		rows, err = db.Query(`
-			SELECT timestamp, deletion, metahash, metadata, nursery, shard, shardhash
+			SELECT timestamp, deletion, metahash, metadata, nursery, shard, shardhash, restabilize
 			FROM objects
 			WHERE hash = ? AND metadata IS NOT NULL
 			ORDER BY nursery DESC, shard ASC
 		`, hsh)
 	} else {
 		rows, err = db.Query(`
-			SELECT timestamp, deletion, metahash, metadata, nursery, shard, shardhash
+			SELECT timestamp, deletion, metahash, metadata, nursery, shard, shardhash, restabilize
 			FROM objects
 			WHERE hash = ? AND shard = ?
 			ORDER BY nursery DESC
@@ -431,22 +469,22 @@ func (ot *IndexDB) Lookup(hsh string, shard int, justStable bool) (*IndexDBItem,
 	}
 	item := &IndexDBItem{Hash: hsh}
 	if err = rows.Scan(&item.Timestamp, &item.Deletion, &item.Metahash,
-		&item.Metabytes, &item.Nursery, &item.Shard, &item.ShardHash); err != nil {
+		&item.Metabytes, &item.Nursery, &item.Shard, &item.ShardHash, &item.Restabilize); err != nil {
 		return nil, err
 	}
 	item.Path, err = ot.wholeObjectPath(item.Hash, item.Shard, item.Timestamp, item.Nursery)
 	return item, err
 }
 
-// ListNursery lists all objects that are in the nursery.
-func (ot *IndexDB) ListNursery() ([]*IndexDBItem, error) {
+// ListObjectsToStabilize lists all objects that are in the nursery or set to restabilzed
+func (ot *IndexDB) ListObjectsToStabilize() ([]*IndexDBItem, error) {
 	listing := []*IndexDBItem{}
 	for _, db := range ot.dbs {
 		if err := func() error {
 			rows, err := db.Query(`
-				SELECT hash, shard, timestamp, deletion, metahash, metadata, nursery
+				SELECT hash, shard, timestamp, deletion, metahash, metadata, nursery, restabilize
 				FROM objects
-				WHERE nursery = 1`)
+				WHERE nursery = 1 OR restabilize = 1`)
 			if err != nil {
 				return err
 			}
@@ -454,7 +492,7 @@ func (ot *IndexDB) ListNursery() ([]*IndexDBItem, error) {
 			for rows.Next() {
 				item := &IndexDBItem{}
 				if err = rows.Scan(&item.Hash, &item.Shard, &item.Timestamp, &item.Deletion,
-					&item.Metahash, &item.Metabytes, &item.Nursery); err != nil {
+					&item.Metahash, &item.Metabytes, &item.Nursery, &item.Restabilize); err != nil {
 					return err
 				}
 				item.Path, err = ot.wholeObjectPath(item.Hash, item.Shard, item.Timestamp, item.Nursery)
@@ -495,7 +533,7 @@ func (ot *IndexDB) List(startHash, stopHash, marker string, limit int) ([]*Index
 		var rows *sql.Rows
 		if limit > 0 {
 			rows, err = db.Query(`
-				SELECT hash, shard, timestamp, deletion, metahash, metadata, nursery, shardhash
+				SELECT hash, shard, timestamp, deletion, metahash, metadata, nursery, shardhash, restabilize
 			FROM objects
 			WHERE hash BETWEEN ? AND ? AND hash > ?
 			ORDER BY hash
@@ -503,7 +541,7 @@ func (ot *IndexDB) List(startHash, stopHash, marker string, limit int) ([]*Index
 		    `, startHash, stopHash, marker, limit)
 		} else {
 			rows, err = db.Query(`
-				SELECT hash, shard, timestamp, deletion, metahash, metadata, nursery, shardhash
+				SELECT hash, shard, timestamp, deletion, metahash, metadata, nursery, shardhash, restabilize
 			FROM objects
 			WHERE hash BETWEEN ? AND ? AND hash > ?
 			ORDER BY hash
@@ -515,7 +553,7 @@ func (ot *IndexDB) List(startHash, stopHash, marker string, limit int) ([]*Index
 		for rows.Next() {
 			item := &IndexDBItem{}
 			if err = rows.Scan(&item.Hash, &item.Shard, &item.Timestamp, &item.Deletion,
-				&item.Metahash, &item.Metabytes, &item.Nursery, &item.ShardHash); err != nil {
+				&item.Metahash, &item.Metabytes, &item.Nursery, &item.ShardHash, &item.Restabilize); err != nil {
 				return listing, err
 			}
 			listing = append(listing, item)

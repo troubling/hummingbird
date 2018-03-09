@@ -84,7 +84,7 @@ type ObjectEngine interface {
 
 type NurseryObjectEngine interface {
 	ObjectEngine
-	GetNurseryObjects(device string, c chan ObjectStabilizer, cancel chan struct{})
+	GetObjectsToStabilize(device string, c chan ObjectStabilizer, cancel chan struct{})
 	GetObjectsToReplicate(prirep PriorityRepJob, c chan ObjectStabilizer, cancel chan struct{})
 }
 
