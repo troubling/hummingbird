@@ -77,6 +77,13 @@ func TestRouterDisambiguation(t *testing.T) {
 
 	makeRequest("GET", "/")
 	assert.Equal(t, "ROOT", handledBy)
+	assert.Equal(t, "", vars["txnId"])
+
+	txnReq := newRequest("GET", "/")
+	txnReq.Header.Set("X-Trans-Id", "faketxnid")
+	router.ServeHTTP(test.MockResponseWriter{}, txnReq)
+	assert.Equal(t, "ROOT", handledBy)
+	assert.Equal(t, "faketxnid", vars["txnId"])
 
 	makeRequest("GET", "/healthcheck")
 	assert.Equal(t, "HEALTH_CHECK", handledBy)
@@ -155,6 +162,7 @@ func TestRouterDisambiguation(t *testing.T) {
 	req.Header.Set("X-Backend-Storage-Policy-Index", "10")
 	router.ServeHTTP(test.MockResponseWriter{}, req)
 	assert.Equal(t, "POLICY_VERB_WORKED", handledBy)
+
 }
 
 func BenchmarkRouteObject(b *testing.B) {

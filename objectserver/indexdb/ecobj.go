@@ -51,6 +51,7 @@ type ecObject struct {
 	chunkSize       int
 	client          *http.Client
 	nurseryReplicas int
+	txnId           string
 }
 
 func (o *ecObject) Metadata() map[string]string {
@@ -131,6 +132,7 @@ func (o *ecObject) Copy(dsts ...io.Writer) (written int64, err error) {
 			continue
 		}
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
+		req.Header.Set("X-Trans-Id", o.txnId)
 		resp, err := o.client.Do(req)
 		if err != nil {
 			continue
