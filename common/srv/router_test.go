@@ -77,6 +77,13 @@ func TestRouterDisambiguation(t *testing.T) {
 
 	makeRequest("GET", "/")
 	assert.Equal(t, "ROOT", handledBy)
+	assert.Equal(t, "", vars["txnId"])
+
+	txnReq := newRequest("GET", "/")
+	txnReq.Header.Set("X-Trans-Id", "faketxnid")
+	router.ServeHTTP(test.MockResponseWriter{}, txnReq)
+	assert.Equal(t, "ROOT", handledBy)
+	assert.Equal(t, "faketxnid", vars["txnId"])
 
 	makeRequest("GET", "/healthcheck")
 	assert.Equal(t, "HEALTH_CHECK", handledBy)

@@ -189,9 +189,14 @@ func (r *router) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		policy = 0
 	}
 	handler, vars := r.route(request.Method, request.URL.Path, policy)
+	txnId := request.Header.Get("X-Trans-Id")
+	if vars != nil && txnId != "" {
+		vars["txnId"] = txnId
+	}
 	request = SetVars(request, vars)
 	handler.ServeHTTP(writer, request)
 }
+
 func routerNotFound(w http.ResponseWriter, r *http.Request) {
 	if pm, err := common.ParseProxyPath(r.URL.Path); err == nil && pm["account"] == "" {
 		SimpleErrorResponse(w, http.StatusPreconditionFailed, "Bad URL")

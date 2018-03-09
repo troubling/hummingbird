@@ -103,6 +103,7 @@ func (f *ecEngine) New(vars map[string]string, needData bool, asyncWG *sync.Wait
 		client:          f.client,
 		metadata:        map[string]string{},
 		nurseryReplicas: f.nurseryReplicas,
+		txnId:           vars["txnId"],
 	}
 	if idb, err := f.getDB(vars["device"]); err == nil {
 		obj.idb = idb
