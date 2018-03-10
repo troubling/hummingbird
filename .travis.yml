@@ -84,6 +84,7 @@ deploy:
   github-token: $GITHUB_TOKEN
   skip-cleanup: true
   local-dir: output
+  verbose: true
   on:
     branch: master
     condition: $HYBRID = NO
