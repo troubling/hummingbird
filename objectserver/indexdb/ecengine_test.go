@@ -81,6 +81,8 @@ func getTestEce() (*ecEngine, error) {
 		logger:         logger,
 		ring:           testRing,
 		idbs:           map[string]*IndexDB{},
+		dbPartPower:    1,
+		numSubDirs:     32,
 		client: &http.Client{
 			Timeout:   time.Second,
 			Transport: transport,
