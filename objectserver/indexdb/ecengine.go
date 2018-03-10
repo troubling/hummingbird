@@ -61,6 +61,8 @@ type ecEngine struct {
 	chunkSize       int
 	client          *http.Client
 	nurseryReplicas int
+	dbPartPower     int
+	numSubDirs      int
 }
 
 func (f *ecEngine) getDB(device string) (*IndexDB, error) {
@@ -74,7 +76,7 @@ func (f *ecEngine) getDB(device string) (*IndexDB, error) {
 	path := filepath.Join(f.driveRoot, device, objectserver.PolicyDir(f.policy), "hec")
 	temppath := filepath.Join(f.driveRoot, device, "tmp")
 	ringPartPower := bits.Len64(f.ring.PartitionCount() - 1)
-	f.idbs[device], err = NewIndexDB(dbpath, path, temppath, ringPartPower, 1, 32, f.logger)
+	f.idbs[device], err = NewIndexDB(dbpath, path, temppath, ringPartPower, f.dbPartPower, f.numSubDirs, f.logger)
 	if err != nil {
 		return nil, err
 	}
@@ -481,6 +483,22 @@ func ecEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.Fl
 	if err != nil {
 		return nil, err
 	}
+	dbPartPower := 1
+	if policy.Config["db_part_power"] != "" {
+		dbPartPowerInt64, err := strconv.ParseInt(policy.Config["db_part_power"], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("Could not parse db_part_power value %q: %s", policy.Config["db_part_power"], err)
+		}
+		dbPartPower = int(dbPartPowerInt64)
+	}
+	subdirs := 32
+	if policy.Config["subdirs"] != "" {
+		subdirsInt64, err := strconv.ParseInt(policy.Config["subdirs"], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("Could not parse subdirs value %q: %s", policy.Config["subdirs"], err)
+		}
+		subdirs = int(subdirsInt64)
+	}
 	certFile := config.GetDefault("app:object-server", "cert_file", "")
 	keyFile := config.GetDefault("app:object-server", "key_file", "")
 	transport := &http.Transport{
@@ -514,6 +532,8 @@ func ecEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.Fl
 		logger:         logger,
 		ring:           r,
 		idbs:           map[string]*IndexDB{},
+		dbPartPower:    dbPartPower,
+		numSubDirs:     subdirs,
 		client: &http.Client{
 			Timeout:   120 * time.Minute,
 			Transport: transport,
