@@ -151,7 +151,8 @@ func (f *ecEngine) ecFragGetHandler(writer http.ResponseWriter, request *http.Re
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
-	io.Copy(writer, fl)
+	defer fl.Close()
+	http.ServeContent(writer, request, item.Path, time.Unix(item.Timestamp, 0), fl)
 }
 
 func (f *ecEngine) ecFragPutHandler(writer http.ResponseWriter, request *http.Request) {

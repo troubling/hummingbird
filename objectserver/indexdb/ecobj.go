@@ -126,6 +126,7 @@ func (o *ecObject) Copy(dsts ...io.Writer) (written int64, err error) {
 		return 0, fmt.Errorf("Not enough nodes (%d) for scheme (%d)", len(nodes), dataFrags+parityFrags)
 	}
 	bodies := make([]io.Reader, len(nodes))
+	// TODO: This could be parallelized, and we can probably stop looking once we have dataFrags bodies available.
 	for i, node := range nodes {
 		req, err := http.NewRequest("GET", fmt.Sprintf("%s://%s:%d/ec-frag/%s/%s/%d", node.Scheme, node.Ip, node.Port, node.Device, o.Hash, i), nil)
 		if err != nil {
@@ -137,10 +138,7 @@ func (o *ecObject) Copy(dsts ...io.Writer) (written int64, err error) {
 		if err != nil {
 			continue
 		}
-		defer func() {
-			io.Copy(ioutil.Discard, resp.Body)
-			resp.Body.Close()
-		}()
+		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			continue
 		}
@@ -150,8 +148,65 @@ func (o *ecObject) Copy(dsts ...io.Writer) (written int64, err error) {
 	return contentLength, nil
 }
 
+// CopyRange copies a range of bytes from the object to the writer.
 func (o *ecObject) CopyRange(w io.Writer, start int64, end int64) (int64, error) {
-	return 0, errors.New("Unimplemented")
+	if !o.Exists() {
+		return 0, errors.New("Doesn't exist")
+	}
+
+	if o.Nursery {
+		file, err := os.Open(o.Path)
+		if err != nil {
+			return 0, err
+		}
+		defer file.Close()
+		file.Seek(start, os.SEEK_SET)
+		return common.Copy(io.LimitReader(file, end-start), w)
+	}
+
+	algo, dataFrags, parityFrags, chunkSize, err := parseECScheme(o.metadata["Ec-Scheme"])
+	if err != nil {
+		return 0, fmt.Errorf("Invalid scheme: %v", err)
+	}
+	if algo != "reedsolomon" {
+		return 0, fmt.Errorf("Attempt to read EC object with unknown algorithm '%s'", algo)
+	}
+	contentLength := o.ContentLength()
+	ns := strings.SplitN(o.metadata["name"], "/", 4)
+	if len(ns) != 4 {
+		return 0, fmt.Errorf("invalid metadata name: %s", o.metadata["name"])
+	}
+	nodes := o.ring.GetNodes(o.ring.GetPartition(ns[1], ns[2], ns[3]))
+	if len(nodes) < dataFrags+parityFrags {
+		return 0, fmt.Errorf("Not enough nodes (%d) for scheme (%d)", len(nodes), dataFrags+parityFrags)
+	}
+	// round the range start(down) and end(up) to chunk boundaries
+	fragStart, fragEnd := rangeChunkAlign(start, end, int64(chunkSize), dataFrags)
+	if fragEnd > contentLength {
+		fragEnd = contentLength
+	}
+	bodies := make([]io.Reader, len(nodes))
+	// TODO: This could be parallelized, and we can probably stop looking once we have dataFrags bodies available.
+	for i, node := range nodes {
+		req, err := http.NewRequest("GET", fmt.Sprintf("%s://%s:%d/ec-frag/%s/%s/%d", node.Scheme, node.Ip, node.Port, node.Device, o.Hash, i), nil)
+		if err != nil {
+			continue
+		}
+		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", fragStart, fragEnd))
+		resp, err := o.client.Do(req)
+		if err != nil {
+			continue
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+			continue
+		}
+		bodies[i] = resp.Body
+	}
+	err = ecGlue(dataFrags, parityFrags, bodies, chunkSize, fragEnd-fragStart,
+		&rangeBytesWriter{startOffset: start % int64(chunkSize), length: end - start, writer: w})
+	return end - start, nil
 }
 
 func (o *ecObject) Repr() string {
@@ -483,6 +538,45 @@ func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error 
 		return o.idb.Remove(o.Hash, o.Shard, o.Timestamp, true)
 	}
 	return nil
+}
+
+// rangeChunkAlign calculates the range to request of fragments to get a given range of the final file.
+func rangeChunkAlign(start, end, chunkSize int64, dataFrags int) (int64, int64) {
+	startChunk := start / (chunkSize * int64(dataFrags))
+	endChunk := end / (chunkSize * int64(dataFrags))
+	start = startChunk * chunkSize
+	if end%(chunkSize*int64(dataFrags)) == 0 {
+		end = (endChunk) * chunkSize
+	} else {
+		end = (endChunk + 1) * chunkSize
+	}
+	return start, end
+}
+
+// rangeBytesWriter proxies a range of its received bytes to the underlying writer, discarding anything before `start` or after `length`
+type rangeBytesWriter struct {
+	startOffset int64
+	length      int64
+	writer      io.Writer
+}
+
+func (r *rangeBytesWriter) Write(b []byte) (written int, err error) {
+	written = len(b)
+	if r.startOffset > int64(len(b)) {
+		r.startOffset -= int64(len(b))
+		return written, nil
+	}
+	if r.length <= 0 {
+		return written, nil
+	}
+	b = b[r.startOffset:]
+	r.startOffset = 0
+	if int64(len(b)) > r.length {
+		b = b[:r.length]
+	}
+	r.length -= int64(len(b))
+	_, err = r.writer.Write(b[r.startOffset:])
+	return written, err
 }
 
 // make sure these things satisfy interfaces at compile time
