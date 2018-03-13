@@ -711,12 +711,34 @@ func (p *putReader) Read(b []byte) (int, error) {
 	}
 }
 
+type lessMore struct {
+	mutex sync.Mutex
+	devs  []*ring.Device
+	more  ring.MoreNodes
+	limit int
+}
+
+func (lm *lessMore) Next() *ring.Device {
+	lm.mutex.Lock()
+	defer lm.mutex.Unlock()
+	if lm.limit <= 0 {
+		return nil
+	}
+	lm.limit--
+	if len(lm.devs) > 0 {
+		dev := lm.devs[0]
+		lm.devs = lm.devs[1:]
+		return dev
+	}
+	return lm.more.Next()
+}
+
 func (oc *standardObjectClient) writeNodes(r ring.Ring, partition uint64) ([]*ring.Device, ring.MoreNodes) {
 	devs, more := oc.proxyDirectClient.writeNodes(r, partition)
 	if oc.deviceLimit > 0 && len(devs) > oc.deviceLimit {
-		return devs[0:oc.deviceLimit], more
+		return devs[0:oc.deviceLimit], &lessMore{devs: devs[oc.deviceLimit:], more: more, limit: oc.deviceLimit}
 	}
-	return devs, more
+	return devs, &lessMore{more: more, limit: len(devs)}
 }
 
 func (oc *standardObjectClient) putObject(account, container, obj string, headers http.Header, src io.Reader) *http.Response {
@@ -766,6 +788,16 @@ func (oc *standardObjectClient) putObject(account, container, obj string, header
 						break
 					}
 				}
+				select {
+				case <-cancel:
+					return
+				default:
+				}
+			}
+			if resp == nil {
+				err := fmt.Errorf("no more nodes to try")
+				oc.Logger.Error("unable to PUT object", zap.Error(err))
+				resp = nectarutil.ResponseStub(http.StatusInternalServerError, err.Error())
 			}
 			select {
 			case responsec <- resp:
