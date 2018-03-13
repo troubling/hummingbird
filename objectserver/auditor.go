@@ -81,7 +81,9 @@ type RealECAuditFuncs struct{}
 func (RealECAuditFuncs) AuditNurseryObject(path string, metabytes []byte, skipMd5 bool) (int64, error) {
 	finfo, err := os.Stat(path)
 	if err != nil || !finfo.Mode().IsRegular() {
-		return 0, fmt.Errorf("Object file isn't a normal file: %s", err)
+		// We're not going to do any quarantining here. It's likely the object
+		// simply got stabilized and is gone.
+		return 0, nil
 	}
 
 	bytes := int64(0)
