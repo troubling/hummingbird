@@ -88,7 +88,7 @@ func (RealECAuditFuncs) AuditNurseryObject(path string, metabytes []byte, skipMd
 	if !skipMd5 {
 		metadata := map[string]string{}
 		if err = json.Unmarshal(metabytes, &metadata); err != nil {
-			return bytes, fmt.Errorf("Error decding metadata: %s", err)
+			return bytes, fmt.Errorf("Error decoding metadata: %s", err)
 		}
 		hash, ok := metadata["ETag"]
 		if !ok {
@@ -215,7 +215,7 @@ func auditHash(hashPath string, skipMd5 bool) (bytesProcessed int64, err error) 
 	return bytesProcessed, nil
 }
 
-func quarantineShard(db *IndexDB, hash string, shard int, timestamp int64, nursery bool) error {
+func quarantineShard(db *IndexDB, hash string, shard int, timestamp int64, metabytes []byte, nursery bool) error {
 	shardPath, err := db.WholeObjectPath(hash, shard, timestamp, nursery)
 	if err != nil {
 		return err
@@ -227,11 +227,27 @@ func quarantineShard(db *IndexDB, hash string, shard int, timestamp int64, nurse
 	if err := os.MkdirAll(quarantineDir, 0755); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(filepath.Join(quarantineDir, shardName), os.O_CREATE, 0644)
+	metadata := map[string]string{}
+	if err = json.Unmarshal(metabytes, &metadata); err != nil {
+		return fmt.Errorf("Error decoding metadata: %s", err)
+	}
+	name, ok := metadata["name"]
+	if !ok {
+		return fmt.Errorf("Metadata missing name: %s", string(metabytes))
+	}
+	fName := filepath.Join(quarantineDir, shardName)
+	f, err := os.OpenFile(fName, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return err
 	}
+	_, err = f.WriteString(name)
 	f.Close()
+	if err != nil {
+		if rmErr := os.Remove(fName); rmErr != nil {
+			return rmErr
+		}
+		return err
+	}
 	return db.Remove(hash, shard, timestamp, nursery)
 }
 
@@ -279,7 +295,7 @@ func (a *Auditor) auditDB(dbpath string, objRing ring.Ring) {
 			if err != nil {
 				a.logger.Error("Failed audit and is being quarantined",
 					zap.String("shardPath", shardPath), zap.Error(err))
-				err = quarantineShard(db, item.Hash, item.Shard, item.Timestamp, item.Nursery)
+				err = quarantineShard(db, item.Hash, item.Shard, item.Timestamp, item.Metabytes, item.Nursery)
 				if err != nil {
 					a.logger.Error("Failed to quarantine shard", zap.String("shardPath", shardPath), zap.Error(err))
 					continue

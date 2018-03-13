@@ -55,10 +55,8 @@ func (f *FakeECAuditFuncs) AuditNurseryObject(path string, metabytes []byte, ski
 
 // AuditShardHash of indexdb shard
 func (f *FakeECAuditFuncs) AuditShard(path string, hash string, skipMd5 bool) (int64, error) {
-	fmt.Printf("HELLO? f: %p\n", f)
 	f.paths = append(f.paths, path)
 	f.shards = append(f.shards, hash)
-	fmt.Printf("paths: %p %+v\n", f.paths, f.paths)
 	return 0, nil
 }
 
@@ -646,7 +644,8 @@ func TestQuarantineShard(t *testing.T) {
 	err = db.Commit(f, hash, 0, timestamp, false, "", nil, false, "unused")
 	assert.Nil(t, err)
 
-	err = quarantineShard(db, hash, 0, timestamp, false)
+	meta := "{\"name\": \"objectname\"}"
+	err = quarantineShard(db, hash, 0, timestamp, []byte(meta), false)
 	assert.Nil(t, err)
 
 	shardPath, err := db.WholeObjectPath(hash, 0, timestamp, false)
@@ -658,6 +657,9 @@ func TestQuarantineShard(t *testing.T) {
 		t.Fatal(1, len(quarfiles))
 	}
 	assert.Equal(t, shard, quarfiles[0].Name())
+	contents, err := ioutil.ReadFile(filepath.Join(dir, "quarantined", "objects", shard))
+	assert.Nil(t, err)
+	assert.Equal(t, "objectname", string(contents))
 	dbitem, err := db.Lookup(hash, 0, false)
 	assert.Nil(t, err)
 	assert.Nil(t, dbitem)
