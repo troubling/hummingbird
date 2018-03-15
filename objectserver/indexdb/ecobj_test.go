@@ -16,6 +16,7 @@
 package indexdb
 
 import (
+	"bytes"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -241,4 +242,53 @@ func TestParseECScheme(t *testing.T) {
 
 	algo, dataFrags, parityFrags, chunkSize, err = parseECScheme("reedsolomon/1/2/X")
 	require.NotNil(t, err)
+}
+
+func TestRangeBytesWriter(t *testing.T) {
+	for i := 1; i < 20; i++ {
+		b := &bytes.Buffer{}
+		s := bytes.NewBuffer([]byte("THIS IS A TEST"))
+		w := &rangeBytesWriter{startOffset: 2, length: 12, writer: b}
+		io.CopyBuffer(w, s, make([]byte, i))
+		require.Equal(t, "IS IS A TEST", b.String())
+
+		b = &bytes.Buffer{}
+		s = bytes.NewBuffer([]byte("THIS IS A TEST"))
+		w = &rangeBytesWriter{startOffset: 1, length: 12, writer: b}
+		io.CopyBuffer(w, s, make([]byte, i))
+		require.Equal(t, "HIS IS A TES", b.String())
+
+		b = &bytes.Buffer{}
+		s = bytes.NewBuffer([]byte("THIS IS A TEST"))
+		w = &rangeBytesWriter{startOffset: 0, length: 12, writer: b}
+		io.CopyBuffer(w, s, make([]byte, i))
+		require.Equal(t, "THIS IS A TE", b.String())
+
+		b = &bytes.Buffer{}
+		s = bytes.NewBuffer([]byte("THIS IS A TEST"))
+		w = &rangeBytesWriter{startOffset: 0, length: 14, writer: b}
+		io.CopyBuffer(w, s, make([]byte, i))
+		require.Equal(t, "THIS IS A TEST", b.String())
+	}
+}
+
+func TestRangeChunkAlign(t *testing.T) {
+	testCases := []struct {
+		start         int64
+		end           int64
+		chunkSize     int64
+		dataFrags     int
+		expectedStart int64
+		expectedEnd   int64
+	}{
+		{60, 81, 10, 2, 30, 50},
+		{61, 80, 10, 2, 30, 40},
+		{60, 81, 10, 3, 20, 30},
+		{0, 81, 10, 3, 0, 30},
+	}
+	for _, tc := range testCases {
+		fragStart, fragEnd := rangeChunkAlign(tc.start, tc.end, tc.chunkSize, tc.dataFrags)
+		require.Equal(t, tc.expectedStart, fragStart)
+		require.Equal(t, tc.expectedEnd, fragEnd)
+	}
 }
