@@ -101,6 +101,7 @@ func (RealECAuditFuncs) AuditNurseryObject(path string, metabytes []byte, skipMd
 		if err != nil {
 			return bytes, fmt.Errorf("Error opening file: %s", err)
 		}
+		defer file.Close()
 		h := md5.New()
 		bytes, err = common.Copy(file, h)
 		if err != nil {
@@ -126,6 +127,7 @@ func (RealECAuditFuncs) AuditShard(path string, hash string, skipMd5 bool) (int6
 		if err != nil {
 			return bytes, fmt.Errorf("Error opening file: %s", err)
 		}
+		defer file.Close()
 		h := md5.New()
 		bytes, err = common.Copy(file, h)
 		if err != nil {
@@ -254,7 +256,7 @@ func quarantineShard(db *IndexDB, hash string, shard int, timestamp int64, metab
 }
 
 // auditDB.  Runs auditFunc on all objects in the given DB.
-func (a *Auditor) auditDB(dbpath string, objRing ring.Ring) {
+func (a *Auditor) auditDB(dbpath string, objRing ring.Ring, policy *conf.Policy) {
 	policyDir := filepath.Dir(dbpath)
 	path := filepath.Join(policyDir, "hec")
 	temppath := filepath.Join(filepath.Dir(policyDir), "tmp")
@@ -264,13 +266,37 @@ func (a *Auditor) auditDB(dbpath string, objRing ring.Ring) {
 		a.logger.Error("Logger type assertion failed")
 		zapLogger = zap.L()
 	}
-	db, err := NewIndexDB(dbpath, path, temppath, ringPartPower, 1, 32, zapLogger)
+	// Shamelessly copypasted from ecengine.go.
+	dbPartPower := 1
+	if policy.Config["db_part_power"] != "" {
+		dbPartPowerInt64, err := strconv.ParseInt(policy.Config["db_part_power"], 10, 64)
+		if err != nil {
+			a.errors++
+			a.totalErrors++
+			a.logger.Error("Could not parse db_part_power value", zap.String("db_part_power", policy.Config["db_part_power"]))
+			return
+		}
+		dbPartPower = int(dbPartPowerInt64)
+	}
+	subdirs := 32
+	if policy.Config["subdirs"] != "" {
+		subdirsInt64, err := strconv.ParseInt(policy.Config["subdirs"], 10, 64)
+		if err != nil {
+			a.errors++
+			a.totalErrors++
+			a.logger.Error("Could not parse subdirs value", zap.String("subdirs", policy.Config["subdirs"]))
+			return
+		}
+		subdirs = int(subdirsInt64)
+	}
+	db, err := NewIndexDB(dbpath, path, temppath, ringPartPower, dbPartPower, subdirs, zapLogger)
 	if err != nil {
 		a.errors++
 		a.totalErrors++
 		a.logger.Error("Couldn't open indexdb", zap.String("dbpath", dbpath), zap.Error(err))
 		return
 	}
+	defer db.Close()
 
 	marker := ""
 	for {
@@ -423,7 +449,7 @@ func (a *Auditor) auditDevice(devPath string) {
 			if _, err := os.Stat(hecdbPath); os.IsNotExist(err) {
 				continue
 			}
-			a.auditDB(hecdbPath, r)
+			a.auditDB(hecdbPath, r, policy)
 		default:
 			a.logger.Error("Unknown policy type", zap.String("policytype", policy.Type))
 			continue

@@ -520,6 +520,8 @@ func TestStatReport(t *testing.T) {
 func TestAuditDB(t *testing.T) {
 	testRing := &test.FakeRing{}
 	confLoader := srv.NewTestConfigLoader(testRing)
+	policies, err := confLoader.GetPolicies()
+	assert.Nil(t, err)
 	auditor := makeAuditor(t, confLoader)
 	fakes := &FakeECAuditFuncs{}
 	auditor.ecfuncs = fakes
@@ -563,7 +565,8 @@ func TestAuditDB(t *testing.T) {
 	nurseryPath, err := db.WholeObjectPath(hash3, 0, timestamp, true)
 	assert.Nil(t, err)
 
-	auditor.auditDB(db.dbpath, testRing)
+	// Policy 2 is hec.
+	auditor.auditDB(db.dbpath, testRing, policies[2])
 
 	assert.Equal(t, 3, len(fakes.paths))
 	assert.Equal(t, shardPath, fakes.paths[0])
