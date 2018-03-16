@@ -18,6 +18,7 @@ package common
 import (
 	"errors"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"time"
 
@@ -162,4 +163,14 @@ func (e *Expector) Successes(timeout time.Duration) (count int) {
 		}
 	}
 	return count
+}
+
+// Closes the responses body
+func (e *Expector) Close() {
+	for _, resp := range e.responses {
+		if resp != nil {
+			io.Copy(ioutil.Discard, resp.Body)
+			resp.Body.Close()
+		}
+	}
 }
