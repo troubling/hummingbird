@@ -1,11 +1,13 @@
 //  Copyright (c) 2016 Rackspace
 
-package indexdb
+package objectserver
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/klauspost/reedsolomon"
+	"go.uber.org/zap"
 )
 
 func ecSplit(dataChunks, parityChunks int, fp io.Reader, chunkSize int, contentLength int64, writers []io.WriteCloser) error {
@@ -56,7 +58,9 @@ func ecSplit(dataChunks, parityChunks int, fp io.Reader, chunkSize int, contentL
 	return nil
 }
 
-func ecReconstruct(dataChunks, parityChunks int, bodies []io.Reader, chunkSize int, contentLength int64, dst io.Writer, dstChunkNum int) error {
+func ecReconstruct(dataChunks, parityChunks int, bodies []io.Reader, chunkSize int, contentLength int64, dsts []io.Writer, dstChunkNum []int, logger *zap.Logger) error {
+	logger.Info(fmt.Sprintf("ecReconstruct, dsts: %+v", dsts))
+	logger.Info(fmt.Sprintf("ecReconstruct, dstChunkNum: %+v", dstChunkNum))
 	enc, err := reedsolomon.New(dataChunks, parityChunks)
 	if err != nil {
 		return err
@@ -95,8 +99,11 @@ func ecReconstruct(dataChunks, parityChunks int, bodies []io.Reader, chunkSize i
 			return err
 		}
 
-		if _, err := dst.Write(data[dstChunkNum]); err != nil {
-			return err
+		for i, dst := range dsts {
+			chunkNum := dstChunkNum[i]
+			if _, err := dst.Write(data[chunkNum]); err != nil {
+				return err
+			}
 		}
 
 		for i := 0; i < dataChunks; i++ {
@@ -107,6 +114,7 @@ func ecReconstruct(dataChunks, parityChunks int, bodies []io.Reader, chunkSize i
 			totalDatabytes += datalen
 		}
 	}
+	logger.Info("reconstructed totalDatabytes", zap.Int64("totalDatabytes", totalDatabytes))
 	return nil
 }
 
