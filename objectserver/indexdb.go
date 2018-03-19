@@ -1,4 +1,4 @@
-package indexdb
+package objectserver
 
 import (
 	"database/sql"
@@ -260,7 +260,7 @@ func (ot *IndexDB) Commit(f fs.AtomicFileWriter, hsh string, shard int, timestam
 			// We keep the original file's timestamp if just committing new metadata. (not the x-timestamp header)
 			timestamp = dbTimestamp
 		}
-		dbWholeObjectPath, err = ot.wholeObjectPath(hsh, shard, dbTimestamp, nursery)
+		dbWholeObjectPath, err = ot.WholeObjectPath(hsh, shard, dbTimestamp, nursery)
 		if err != nil {
 			return err
 		}
@@ -321,7 +321,7 @@ func (ot *IndexDB) Commit(f fs.AtomicFileWriter, hsh string, shard int, timestam
 	}
 	rows.Close()
 	var pth string
-	pth, err = ot.wholeObjectPath(hsh, shard, timestamp, nursery)
+	pth, err = ot.WholeObjectPath(hsh, shard, timestamp, nursery)
 	if err != nil {
 		return err
 	}
@@ -393,7 +393,7 @@ func (ot *IndexDB) wholeObjectDir(hsh string) (string, error) {
 	return path.Join(ot.filepath, fmt.Sprintf("index.db.dir.%02x", dirNm)), nil
 }
 
-func (ot *IndexDB) wholeObjectPath(hsh string, shard int, timestamp int64, nursery bool) (string, error) {
+func (ot *IndexDB) WholeObjectPath(hsh string, shard int, timestamp int64, nursery bool) (string, error) {
 	hsh, _, _, dirNm, err := ot.validateHash(hsh)
 	if err != nil {
 		return "", err
@@ -420,7 +420,7 @@ func (ot *IndexDB) Remove(hsh string, shard int, timestamp int64, nursery bool) 
 		return err
 	}
 	if af, err := res.RowsAffected(); err == nil && af > 0 {
-		path, err := ot.wholeObjectPath(hsh, shard, timestamp, nursery)
+		path, err := ot.WholeObjectPath(hsh, shard, timestamp, nursery)
 		if err != nil {
 			return err
 		}
@@ -472,7 +472,7 @@ func (ot *IndexDB) Lookup(hsh string, shard int, justStable bool) (*IndexDBItem,
 		&item.Metabytes, &item.Nursery, &item.Shard, &item.ShardHash, &item.Restabilize); err != nil {
 		return nil, err
 	}
-	item.Path, err = ot.wholeObjectPath(item.Hash, item.Shard, item.Timestamp, item.Nursery)
+	item.Path, err = ot.WholeObjectPath(item.Hash, item.Shard, item.Timestamp, item.Nursery)
 	return item, err
 }
 
@@ -495,7 +495,7 @@ func (ot *IndexDB) ListObjectsToStabilize() ([]*IndexDBItem, error) {
 					&item.Metahash, &item.Metabytes, &item.Nursery, &item.Restabilize); err != nil {
 					return err
 				}
-				item.Path, err = ot.wholeObjectPath(item.Hash, item.Shard, item.Timestamp, item.Nursery)
+				item.Path, err = ot.WholeObjectPath(item.Hash, item.Shard, item.Timestamp, item.Nursery)
 				if err != nil {
 					return err
 				}

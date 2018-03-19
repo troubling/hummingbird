@@ -570,6 +570,7 @@ func (server *AutoAdmin) Background(flags *flag.FlagSet) chan struct{} {
 	if f := flags.Lookup("once"); f != nil {
 		once = f.Value.(flag.Getter).Get() == true
 	}
+	fmt.Printf("BACKGROUND, flags: %+v, once: %+v\n", flags, once)
 	if once {
 		ch := make(chan struct{})
 		go func() {
@@ -625,6 +626,7 @@ func (server *AutoAdmin) LogRequest(next http.Handler) http.Handler {
 
 func (a *AutoAdmin) Run() {
 	// TODO: Reimplement run once.
+	newQuarantineRepair(a).runOnce()
 }
 
 func (a *AutoAdmin) RunForever() {

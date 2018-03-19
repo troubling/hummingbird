@@ -1,4 +1,4 @@
-package indexdb
+package objectserver
 
 import (
 	"crypto/md5"
@@ -109,7 +109,7 @@ func TestIndexDB_Commit(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Original commit should still be there.
-	pth, err = ot.wholeObjectPath(hsh, 0, timestamp, true)
+	pth, err = ot.WholeObjectPath(hsh, 0, timestamp, true)
 	errnil(t, err)
 	fi, err = os.Stat(pth)
 	errnil(t, err)
@@ -140,7 +140,7 @@ func TestIndexDB_Commit(t *testing.T) {
 		t.Fatal(item.ShardHash, newShardHash)
 	}
 	// Original commit should be gone.
-	pth, err = ot.wholeObjectPath(hsh, 0, timestamp, true)
+	pth, err = ot.WholeObjectPath(hsh, 0, timestamp, true)
 	errnil(t, err)
 	fi, err = os.Stat(pth)
 	if !os.IsNotExist(err) {
@@ -485,7 +485,6 @@ func TestIndexDB_ListMarker(t *testing.T) {
 		errnil(t, err)
 		f.Write([]byte(body))
 		errnil(t, ot.Commit(f, hsh, 0, timestamp, "PUT", "", nil, true, ""))
-		fmt.Printf("HASH: %s\n", hsh)
 	}
 
 	listing, err := ot.List("", "", "e0000000000000000000000000000000", 0)
