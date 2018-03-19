@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -21,15 +22,15 @@ type FakeRing struct {
 	Devs      []*ring.Device
 	Ip        string
 	Port      int
-	nodeCalls int
+	nodeCalls int64
 	replicas  uint64
 }
 
 func (r *FakeRing) GetNodes(partition uint64) (response []*ring.Device) {
-	if r.nodeCalls <= 0 {
+	if atomic.LoadInt64(&r.nodeCalls) <= 0 {
 		return nil
 	}
-	r.nodeCalls--
+	atomic.AddInt64(&r.nodeCalls, -1)
 	for i := range r.Devs {
 		response = append(response, r.Devs[i])
 	}
