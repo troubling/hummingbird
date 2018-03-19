@@ -130,7 +130,7 @@ func (rm *ringMonitor) runOnce() time.Duration {
 	for _, ringTask := range ringTasks {
 		atomic.AddInt64(&delays, 1)
 		time.Sleep(rm.delay)
-		taskLogger := logger.With(zap.String("type", ringTask.typ), zap.Int("policy", ringTask.policy), zap.String("previous md5", ringTask.previousMD5))
+		taskLogger := logger.With(zap.String("type", ringTask.typ), zap.Int("policy", ringTask.policy))
 		if err := ringTask.ring.Reload(); err != nil {
 			atomic.AddInt64(&errors, 1)
 			taskLogger.Error("couldn't not reload", zap.Error(err))
@@ -150,18 +150,19 @@ func (rm *ringMonitor) runOnce() time.Duration {
 				rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, ringTask.ring.MD5())
 				continue
 			}
-			taskLogger.Debug("ring md5 changed", zap.String("current md5", ringTask.ring.MD5()))
+			changeTaskLogger := taskLogger.With(zap.String("previous md5", ringTask.previousMD5), zap.String("current md5", ringTask.ring.MD5()))
+			changeTaskLogger.Debug("ring md5 changed")
 			previousRing := ringTask.ring.RingMatching(ringTask.previousMD5)
 			if previousRing == nil {
 				atomic.AddInt64(&errors, 1)
-				taskLogger.Error("can't find previous ring; assuming nothing changed")
+				changeTaskLogger.Error("can't find previous ring; assuming nothing changed")
 				rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, ringTask.ring.MD5())
 				continue
 			}
 			partitionCount := previousRing.PartitionCount()
 			if partitionCount != ringTask.ring.PartitionCount() {
 				atomic.AddInt64(&errors, 1)
-				taskLogger.Error(
+				changeTaskLogger.Error(
 					"cannot handle changing partition counts; assuming new ring as if no previous ring ever existed",
 					zap.Uint64("previous partition count", previousRing.PartitionCount()),
 					zap.Uint64("current partition count", ringTask.ring.PartitionCount()),
@@ -172,7 +173,7 @@ func (rm *ringMonitor) runOnce() time.Duration {
 			replicaCount := previousRing.ReplicaCount()
 			if replicaCount != ringTask.ring.ReplicaCount() {
 				atomic.AddInt64(&errors, 1)
-				taskLogger.Error(
+				changeTaskLogger.Error(
 					"cannot handle changing replica counts; assuming new ring as if no previous ring ever existed",
 					zap.Uint64("previous replica count", previousRing.ReplicaCount()),
 					zap.Uint64("current replica count", ringTask.ring.ReplicaCount()),
@@ -195,7 +196,7 @@ func (rm *ringMonitor) runOnce() time.Duration {
 							currentDev[replica].Id,
 						); err != nil {
 							atomic.AddInt64(&errors, 1)
-							taskLogger.Error(
+							changeTaskLogger.Error(
 								"could not queue ring change; will try again next pass",
 								zap.Uint64("partition", partition),
 								zap.Uint64("replica", replica),
@@ -214,6 +215,10 @@ func (rm *ringMonitor) runOnce() time.Duration {
 			if !failed {
 				if err = rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, ringTask.ring.MD5()); err != nil {
 					atomic.AddInt64(&errors, 1)
+					changeTaskLogger.Error(
+						"could not record the new ring hash; will try again next pass",
+						zap.Error(err),
+					)
 				}
 			}
 		}
