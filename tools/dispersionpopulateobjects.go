@@ -58,6 +58,9 @@ func (dpo *dispersionPopulateObjects) runOnce() time.Duration {
 			}
 		}
 	}
+	if err := dpo.aa.db.progressProcessPass("dispersion populate", "object-overall", 0, fmt.Sprintf("%d policies", len(dpo.aa.policies))); err != nil {
+		logger.Error("progressProcessPass", zap.Error(err))
+	}
 	if err := dpo.aa.db.completeProcessPass("dispersion populate", "object-overall", 0); err != nil {
 		logger.Error("completeProcessPass", zap.Error(err))
 	}

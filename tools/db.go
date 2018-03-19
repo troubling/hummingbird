@@ -71,13 +71,15 @@ func newDB(serverconf *conf.Config, memoryDBID string) (*dbInstance, error) {
         );
 
         CREATE TABLE IF NOT EXISTS process_pass (
-            process TEXT NOT NULL,              -- dispersion populate, dispersion scan, quarantine repair, ...
-            rtype TEXT NOT NULL,                -- account, container, object
-            policy INTEGER NOT NULL,            -- only used with object
-            start_date TIMESTAMP DEFAULT 0,     -- when the scan last started, 0 = never ran
-            progress_date TIMESTAMP DEFAULT 0,  -- when the progress was last updated, 0 = never updated
-            progress TEXT,                      -- depends on the process
-            complete_date TIMESTAMP DEFAULT 0   -- when the scan list completed, 0 = is running or never ran
+            process TEXT NOT NULL,                      -- dispersion populate, dispersion scan, quarantine repair, ...
+            rtype TEXT NOT NULL,                        -- account, container, object
+            policy INTEGER NOT NULL,                    -- only used with object
+            start_date TIMESTAMP DEFAULT 0,             -- when the process last started, 0 = never ran
+            progress_date TIMESTAMP DEFAULT 0,          -- when the progress was last updated, 0 = never updated
+            progress TEXT,                              -- depends on the process
+            complete_date TIMESTAMP DEFAULT 0,          -- when the process completed, 0 = is running or never ran
+            previous_progress TEXT NOT NULL DEFAULT "", -- last progress from previous run, depends on the process
+            previous_complete_date TIMESTAMP DEFAULT 0  -- when the process previously completed, 0 = is running or never ran
         );
 
         CREATE TABLE IF NOT EXISTS ring_hash (
@@ -312,7 +314,7 @@ func (db *dbInstance) startProcessPass(process, typ string, policy int) error {
 		return err
 	}
 	rows, err = tx.Query(`
-        SELECT 1 FROM process_pass
+        SELECT progress, complete_date FROM process_pass
         WHERE process = ?
           AND rtype = ?
           AND policy = ?
@@ -321,18 +323,37 @@ func (db *dbInstance) startProcessPass(process, typ string, policy int) error {
 		return err
 	}
 	if rows.Next() { // entry already
+		var previousProgress string
+		var previousCompleteDate time.Time
+		rows.Scan(&previousProgress, &previousCompleteDate)
 		rows.Close()
 		rows = nil
-		if _, err = tx.Exec(`
-            UPDATE process_pass
-            SET start_date = ?,
-                progress_date = 0,
-                progress = "",
-                complete_date = 0
-            WHERE process = ?
-              AND rtype = ?
-              AND policy = ?
-        `, time.Now(), process, typ, policy); err != nil {
+		if previousProgress != "" {
+			_, err = tx.Exec(`
+                UPDATE process_pass
+                SET start_date = ?,
+                    progress_date = 0,
+                    progress = "",
+                    complete_date = 0,
+                    previous_progress = ?,
+                    previous_complete_date = ?
+                WHERE process = ?
+                  AND rtype = ?
+                  AND policy = ?
+            `, time.Now(), previousProgress, previousCompleteDate, process, typ, policy)
+		} else {
+			_, err = tx.Exec(`
+                UPDATE process_pass
+                SET start_date = ?,
+                    progress_date = 0,
+                    progress = "",
+                    complete_date = 0
+                WHERE process = ?
+                  AND rtype = ?
+                  AND policy = ?
+            `, time.Now(), process, typ, policy)
+		}
+		if err != nil {
 			return err
 		}
 		if err = tx.Commit(); err != nil {
@@ -415,13 +436,15 @@ func (db *dbInstance) processPass(process, typ string, policy int) (time.Time, t
 }
 
 type processPassData struct {
-	process      string
-	rtype        string
-	policy       int
-	startDate    time.Time
-	progressDate time.Time
-	progress     string
-	completeDate time.Time
+	process              string
+	rtype                string
+	policy               int
+	startDate            time.Time
+	progressDate         time.Time
+	progress             string
+	completeDate         time.Time
+	previousProgress     string
+	previousCompleteDate time.Time
 }
 
 func (db *dbInstance) processPasses() ([]*processPassData, error) {
@@ -434,14 +457,14 @@ func (db *dbInstance) processPasses() ([]*processPassData, error) {
 		}
 	}()
 	if rows, err = db.db.Query(`
-        SELECT process, rtype, policy, start_date, progress_date, progress, complete_date
+        SELECT process, rtype, policy, start_date, progress_date, progress, complete_date, previous_progress, previous_complete_date
         FROM process_pass
     `); err != nil {
 		return data, err
 	}
 	for rows.Next() {
 		ppd := &processPassData{}
-		if err = rows.Scan(&ppd.process, &ppd.rtype, &ppd.policy, &ppd.startDate, &ppd.progressDate, &ppd.progress, &ppd.completeDate); err != nil {
+		if err = rows.Scan(&ppd.process, &ppd.rtype, &ppd.policy, &ppd.startDate, &ppd.progressDate, &ppd.progress, &ppd.completeDate, &ppd.previousProgress, &ppd.previousCompleteDate); err != nil {
 			return data, err
 		}
 		if ppd.startDate.UnixNano() == 0 {
@@ -452,6 +475,9 @@ func (db *dbInstance) processPasses() ([]*processPassData, error) {
 		}
 		if ppd.completeDate.UnixNano() == 0 {
 			ppd.completeDate = time.Time{}
+		}
+		if ppd.previousCompleteDate.UnixNano() == 0 {
+			ppd.previousCompleteDate = time.Time{}
 		}
 		data = append(data, ppd)
 	}
