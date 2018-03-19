@@ -75,7 +75,7 @@ func (r *FakeRing) GetMoreNodes(partition uint64) ring.MoreNodes {
 }
 
 func (r *FakeRing) PartitionCount() uint64 {
-	return 1
+	return 4
 }
 
 func (r *FakeRing) ReplicaCount() uint64 {
@@ -154,6 +154,7 @@ func (c *testDispersionClient) DeleteContainer(account string, container string,
 }
 
 func (c *testDispersionClient) PutObject(account string, container string, obj string, headers http.Header, src io.Reader) *http.Response {
+	fmt.Println("PutObject", account, container, obj)
 	c.objPuts++
 	return nectarutil.ResponseStub(200, "")
 }
