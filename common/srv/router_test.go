@@ -59,6 +59,7 @@ func TestRouterDisambiguation(t *testing.T) {
 	addRoute("GET", "/:device/:partition/:account/:container/", "CONTAINER_GET")
 	addRoute("GET", "/:device/:partition/:account", "ACCOUNT_GET")
 	addRoute("GET", "/:device/:partition/:account/", "ACCOUNT_GET")
+	addRoute("GET", "/:device/567/:account/:container", "STATIC_SECOND_ROUTE")
 	addRoute("REPLICATE", "/:device/:partition/:suffixes", "REPLICATE")
 	addRoute("REPLICATE", "/:device/:partition", "REPLICATE")
 	addRoute("SYNC", "/:device/*relpath", "SYNC")
@@ -119,6 +120,12 @@ func TestRouterDisambiguation(t *testing.T) {
 
 	makeRequest("GET", "/sda/456/acc/cont")
 	assert.Equal(t, "STATIC_MIDDLE_ROUTE", handledBy)
+	assert.Equal(t, "sda", vars["device"])
+	assert.Equal(t, "acc", vars["account"])
+	assert.Equal(t, "cont", vars["container"])
+
+	makeRequest("GET", "/sda/567/acc/cont")
+	assert.Equal(t, "STATIC_SECOND_ROUTE", handledBy)
 	assert.Equal(t, "sda", vars["device"])
 	assert.Equal(t, "acc", vars["account"])
 	assert.Equal(t, "cont", vars["container"])

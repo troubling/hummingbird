@@ -42,6 +42,7 @@ type matcher struct {
 
 type router struct {
 	matchers                []*matcher
+	staticMatchers          []*matcher
 	NotFoundHandler         http.Handler
 	MethodNotAllowedHandler http.Handler
 }
@@ -63,57 +64,63 @@ func (r *router) route(method, path string, policy int) (http.Handler, map[strin
 	path = path[1:]
 	slashCount := strings.Count(path, "/")
 	// This code is slightly gnarly because it avoids allocating anything until it's sure of a match.
-NEXTMATCH:
-	for _, m := range r.matchers {
-		if m.policy != anyPolicy && m.policy != policy {
-			continue
+	for i := 0; i < 2; i++ {
+		matchers := r.staticMatchers
+		if i == 1 {
+			matchers = r.matchers
 		}
-		if m.method != method {
-			continue
-		}
-		methodFound = true
-		if !m.hasCatchall && len(path) != 0 && m.endSlash != (path[len(path)-1] == '/') {
-			continue
-		}
-		if slashCount+1 == m.length || (m.hasCatchall && slashCount+1 > m.length) {
-			var vars map[string]string
-
-			// make sure all static parts of the route match the pattern
-			j := 0
-			part, tmppath := Split2(path, "/")
-			for _, s := range m.static {
-				for ; j < s.pos; j++ {
-					part, tmppath = Split2(tmppath, "/")
-				}
-				if s.name != part {
-					continue NEXTMATCH
-				}
+	NEXTMATCH:
+		for _, m := range matchers {
+			if m.policy != anyPolicy && m.policy != policy {
+				continue
 			}
-
-			// if there's a catchall, grab it from the end of the path.
-			if m.hasCatchall {
-				tmppath = path
-				for i := 0; i < m.length-1; i++ {
-					_, tmppath = Split2(tmppath, "/")
-				}
-				if tmppath == "" {
-					continue NEXTMATCH
-				}
-				vars = map[string]string{m.catchallName: tmppath}
-			} else {
-				vars = make(map[string]string, len(m.vars))
+			if m.method != method {
+				continue
 			}
-
-			// extract any vars
-			j = 0
-			part, tmppath = Split2(path, "/")
-			for _, s := range m.vars {
-				for ; j < s.pos; j++ {
-					part, tmppath = Split2(tmppath, "/")
-				}
-				vars[s.name] = part
+			methodFound = true
+			if !m.hasCatchall && len(path) != 0 && m.endSlash != (path[len(path)-1] == '/') {
+				continue
 			}
-			return m.handler, vars
+			if slashCount+1 == m.length || (m.hasCatchall && slashCount+1 > m.length) {
+				var vars map[string]string
+
+				// make sure all static parts of the route match the pattern
+				j := 0
+				part, tmppath := Split2(path, "/")
+				for _, s := range m.static {
+					for ; j < s.pos; j++ {
+						part, tmppath = Split2(tmppath, "/")
+					}
+					if s.name != part {
+						continue NEXTMATCH
+					}
+				}
+
+				// if there's a catchall, grab it from the end of the path.
+				if m.hasCatchall {
+					tmppath = path
+					for i := 0; i < m.length-1; i++ {
+						_, tmppath = Split2(tmppath, "/")
+					}
+					if tmppath == "" {
+						continue NEXTMATCH
+					}
+					vars = map[string]string{m.catchallName: tmppath}
+				} else {
+					vars = make(map[string]string, len(m.vars))
+				}
+
+				// extract any vars
+				j = 0
+				part, tmppath = Split2(path, "/")
+				for _, s := range m.vars {
+					for ; j < s.pos; j++ {
+						part, tmppath = Split2(tmppath, "/")
+					}
+					vars[s.name] = part
+				}
+				return m.handler, vars
+			}
 		}
 	}
 	if !methodFound {
@@ -142,7 +149,11 @@ func (r *router) HandlePolicy(method, pattern string, policy int, handler http.H
 		}
 	}
 	m.handler = handler
-	r.matchers = append(r.matchers, m)
+	if len(m.static) > 0 {
+		r.staticMatchers = append(r.staticMatchers, m)
+	} else {
+		r.matchers = append(r.matchers, m)
+	}
 }
 
 // Handle registers a handler for the given method and pattern.
