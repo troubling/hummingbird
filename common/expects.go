@@ -65,6 +65,7 @@ type Expector struct {
 	cancel        chan struct{}
 	readyRequests []bool
 	responses     []*http.Response
+	closed        bool
 }
 
 // NewExpector returns an Expector object that uses the given http client.
@@ -90,16 +91,12 @@ func (e *Expector) AddRequest(req *http.Request) {
 		if err != nil {
 			resp = nectarutil.ResponseStub(http.StatusServiceUnavailable, err.Error())
 		}
-		e.responded <- expectResponder{i, resp}
+		select {
+		case <-e.cancel:
+			resp.Body.Close()
+		case e.responded <- expectResponder{i, resp}:
+		}
 	}(len(e.responses)-1, req)
-}
-
-// Cancel attempts to end any outstanding requests, by instructing their request.Body to return an error on read.
-func (e *Expector) Cancel() {
-	if e.cancel != nil {
-		close(e.cancel)
-		e.cancel = nil
-	}
 }
 
 // Wait waits up to timeout time for all of the Expector's requests to either be ready or have a response.
@@ -165,12 +162,16 @@ func (e *Expector) Successes(timeout time.Duration) (count int) {
 	return count
 }
 
-// Closes the responses body
+// Closes responses bodies and attempts to cancel any outstanding requests by returning an error on read from their Body.
 func (e *Expector) Close() {
-	for _, resp := range e.responses {
-		if resp != nil {
-			io.Copy(ioutil.Discard, resp.Body)
-			resp.Body.Close()
+	if !e.closed {
+		for _, resp := range e.responses {
+			if resp != nil {
+				io.Copy(ioutil.Discard, resp.Body)
+				resp.Body.Close()
+			}
 		}
+		close(e.cancel)
+		e.closed = true
 	}
 }

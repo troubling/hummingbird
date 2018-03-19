@@ -384,7 +384,6 @@ func (o *ecObject) nurseryReplicate(rng ring.Ring, partition uint64, dev *ring.D
 	more := rng.GetMoreNodes(partition)
 	var node *ring.Device
 	e := common.NewExpector(o.client)
-	defer e.Cancel()
 	defer e.Close()
 	wrs := make([]io.WriteCloser, 0)
 	successReadyCount := 0
@@ -471,7 +470,6 @@ func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error 
 	}
 	wrs := make([]io.WriteCloser, len(nodes))
 	e := common.NewExpector(o.client)
-	defer e.Cancel()
 	defer e.Close()
 	for i, node := range nodes {
 		rp, wp := io.Pipe()

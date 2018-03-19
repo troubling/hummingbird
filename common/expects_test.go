@@ -49,7 +49,7 @@ func TestExpectorSuccesses(t *testing.T) {
 	}))
 	defer srv.Close()
 	e := NewExpector(xpectClient)
-	defer e.Cancel()
+	defer e.Close()
 	for i := 0; i < 3; i++ {
 		req, err := http.NewRequest("PUT", srv.URL+"/"+strconv.Itoa(i), strings.NewReader("STUFF"))
 		require.Nil(t, err)
@@ -64,7 +64,7 @@ func TestExpectorReady(t *testing.T) {
 	}))
 	defer srv.Close()
 	e := NewExpector(xpectClient)
-	defer e.Cancel()
+	defer e.Close()
 	for i := 0; i < 3; i++ {
 		req, err := http.NewRequest("PUT", srv.URL+"/"+strconv.Itoa(i), strings.NewReader("STUFF"))
 		require.Nil(t, err)
@@ -87,7 +87,7 @@ func TestExpectorErrorRetry(t *testing.T) {
 	}))
 	defer srv.Close()
 	e := NewExpector(xpectClient)
-	defer e.Cancel()
+	defer e.Close()
 	for i := 0; i < 3; i++ {
 		req, err := http.NewRequest("PUT", srv.URL+"/"+strconv.Itoa(i), strings.NewReader("STUFF"))
 		req.Header.Set("Content-Length", "5")
