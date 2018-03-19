@@ -329,7 +329,7 @@ func (b *RingBuilder) SetDevWeight(devId int64, weight float64) error {
 
 // Remove a device from the ring.
 func (b *RingBuilder) RemoveDev(devId int64) {
-	b.Devs[devId].Weight = 0
+	b.Devs[devId].Weight = -1.0
 	b.removedDevs = append(b.removedDevs, b.Devs[devId])
 	b.DevsChanged = true
 	b.Version += 1
@@ -880,6 +880,7 @@ func (b *RingBuilder) gatherPartsFromFailedDevices(assignParts map[uint][]uint) 
 		for _, dev := range b.removedDevs {
 			if dev.Parts > 0 {
 				devsWithParts = append(devsWithParts, uint(dev.Id))
+				b.Devs[dev.Id].Parts = 0
 			}
 		}
 		if len(devsWithParts) > 0 {
@@ -898,10 +899,7 @@ func (b *RingBuilder) gatherPartsFromFailedDevices(assignParts map[uint][]uint) 
 			}
 
 		}
-		for _, dev := range b.removedDevs {
-			b.debug(fmt.Sprintf("Removing dev %d", dev.Id))
-			b.Devs[dev.Id] = nil
-		}
+		// NOTE: At one time, we used to remove the device from the ring, but now we keep it with a weight of -1 so that tools can know that it has been removed
 		removedDevs := len(b.removedDevs)
 		b.removedDevs = b.removedDevs[:0]
 		return removedDevs
