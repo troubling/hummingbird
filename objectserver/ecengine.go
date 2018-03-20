@@ -13,7 +13,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-package indexdb
+package objectserver
 
 import (
 	"crypto/md5"
@@ -41,7 +41,6 @@ import (
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
-	"github.com/troubling/hummingbird/objectserver"
 	"golang.org/x/net/http2"
 )
 
@@ -72,8 +71,8 @@ func (f *ecEngine) getDB(device string) (*IndexDB, error) {
 		return idb, nil
 	}
 	var err error
-	dbpath := filepath.Join(f.driveRoot, device, objectserver.PolicyDir(f.policy), "hec.db")
-	path := filepath.Join(f.driveRoot, device, objectserver.PolicyDir(f.policy), "hec")
+	dbpath := filepath.Join(f.driveRoot, device, PolicyDir(f.policy), "hec.db")
+	path := filepath.Join(f.driveRoot, device, PolicyDir(f.policy), "hec")
 	temppath := filepath.Join(f.driveRoot, device, "tmp")
 	ringPartPower := bits.Len64(f.ring.PartitionCount() - 1)
 	f.idbs[device], err = NewIndexDB(dbpath, path, temppath, ringPartPower, f.dbPartPower, f.numSubDirs, f.logger)
@@ -84,7 +83,7 @@ func (f *ecEngine) getDB(device string) (*IndexDB, error) {
 }
 
 // New returns an instance of ecObject with the given parameters. Metadata is read in and if needData is true, the file is opened.  AsyncWG is a waitgroup if the object spawns any async operations
-func (f *ecEngine) New(vars map[string]string, needData bool, asyncWG *sync.WaitGroup) (objectserver.Object, error) {
+func (f *ecEngine) New(vars map[string]string, needData bool, asyncWG *sync.WaitGroup) (Object, error) {
 	h := md5.New()
 	io.WriteString(h, f.hashPathPrefix+"/"+vars["account"]+"/"+vars["container"]+"/"+vars["obj"]+f.hashPathSuffix)
 	digest := h.Sum(nil)
@@ -119,8 +118,8 @@ func (f *ecEngine) New(vars map[string]string, needData bool, asyncWG *sync.Wait
 	}
 	return nil, errors.New("Unable to open database")
 }
-func (f *ecEngine) GetReplicationDevice(oring ring.Ring, dev *ring.Device, policy int, r *objectserver.Replicator) (objectserver.ReplicationDevice, error) {
-	return objectserver.GetNurseryDevice(oring, dev, policy, r, f)
+func (f *ecEngine) GetReplicationDevice(oring ring.Ring, dev *ring.Device, policy int, r *Replicator) (ReplicationDevice, error) {
+	return GetNurseryDevice(oring, dev, policy, r, f)
 }
 
 func (f *ecEngine) ecFragGetHandler(writer http.ResponseWriter, request *http.Request) {
@@ -314,7 +313,7 @@ func (f *ecEngine) ecFragDeleteHandler(writer http.ResponseWriter, request *http
 	}
 }
 
-func (f *ecEngine) GetObjectsToReplicate(prirep objectserver.PriorityRepJob, c chan objectserver.ObjectStabilizer, cancel chan struct{}) {
+func (f *ecEngine) GetObjectsToReplicate(prirep PriorityRepJob, c chan ObjectStabilizer, cancel chan struct{}) {
 	defer close(c)
 	idb, err := f.getDB(prirep.FromDevice.Device)
 	if err != nil {
@@ -435,7 +434,7 @@ func (f *ecEngine) RegisterHandlers(addRoute func(method, path string, handler h
 	addRoute("GET", "/partition/:device/:partition", f.listPartitionHandler)
 }
 
-func (f *ecEngine) GetNurseryObjects(device string, c chan objectserver.ObjectStabilizer, cancel chan struct{}) {
+func (f *ecEngine) GetNurseryObjects(device string, c chan ObjectStabilizer, cancel chan struct{}) {
 	defer close(c)
 	idb, err := f.getDB(device)
 	if err != nil {
@@ -473,7 +472,7 @@ func (f *ecEngine) GetNurseryObjects(device string, c chan objectserver.ObjectSt
 }
 
 // ecEngineConstructor creates a ecEngine given the object server configs.
-func ecEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.FlagSet) (objectserver.ObjectEngine, error) {
+func ecEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.FlagSet) (ObjectEngine, error) {
 	driveRoot := config.GetDefault("app:object-server", "devices", "/srv/node")
 	reserve := config.GetInt("app:object-server", "fallocate_reserve", 0)
 	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
@@ -556,10 +555,10 @@ func ecEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.Fl
 }
 
 func init() {
-	objectserver.RegisterObjectEngine("hec", ecEngineConstructor)
+	RegisterObjectEngine("hec", ecEngineConstructor)
 }
 
 // make sure these things satisfy interfaces at compile time
-var _ objectserver.ObjectEngineConstructor = ecEngineConstructor
-var _ objectserver.ObjectEngine = &ecEngine{}
-var _ objectserver.PolicyHandlerRegistrator = &ecEngine{}
+var _ ObjectEngineConstructor = ecEngineConstructor
+var _ ObjectEngine = &ecEngine{}
+var _ PolicyHandlerRegistrator = &ecEngine{}

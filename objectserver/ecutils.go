@@ -1,6 +1,6 @@
 //  Copyright (c) 2016 Rackspace
 
-package indexdb
+package objectserver
 
 import (
 	"io"
