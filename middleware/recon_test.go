@@ -281,6 +281,9 @@ func TestQuarantineDeleteAndQuarantineHistoryDelete(t *testing.T) {
 	if err = os.MkdirAll(path.Join(driveRoot, "sda1/quarantined/objects/item"), 0755); err != nil {
 		t.Fatal(err)
 	}
+	if err = os.MkdirAll(path.Join(driveRoot, "sda1/quarantined/objects-2/item"), 0755); err != nil {
+		t.Fatal(err)
+	}
 
 	var contents map[string]interface{}
 	if contents, err = quarantineDelete(driveRoot, "sda1", "accounts", "item"); err != nil {
@@ -310,6 +313,15 @@ func TestQuarantineDeleteAndQuarantineHistoryDelete(t *testing.T) {
 	if _, err = os.Stat(path.Join(driveRoot, "sda1/quarantined-history/objects/item")); err != nil {
 		t.Fatal(err)
 	}
+	if contents, err = quarantineDelete(driveRoot, "sda1", "objects-2", "item"); err != nil {
+		t.Fatal(err)
+	}
+	if contents != nil {
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(path.Join(driveRoot, "sda1/quarantined-history/objects-2/item")); err != nil {
+		t.Fatal(err)
+	}
 
 	if contents, err = quarantineHistoryDelete(driveRoot, "sda1", "accounts", "30"); err != nil {
 		t.Fatal(err)
@@ -329,6 +341,12 @@ func TestQuarantineDeleteAndQuarantineHistoryDelete(t *testing.T) {
 	if v := fmt.Sprintf("%v", contents["items_left"]); v != "1" {
 		t.Fatal(v)
 	}
+	if contents, err = quarantineHistoryDelete(driveRoot, "sda1", "objects-2", "30"); err != nil {
+		t.Fatal(err)
+	}
+	if v := fmt.Sprintf("%v", contents["items_left"]); v != "1" {
+		t.Fatal(v)
+	}
 
 	newTime := time.Now().Add(-time.Hour * 24 * 31)
 	if err = os.Chtimes(path.Join(driveRoot, "sda1/quarantined-history/accounts/item"), newTime, newTime); err != nil {
@@ -338,6 +356,9 @@ func TestQuarantineDeleteAndQuarantineHistoryDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err = os.Chtimes(path.Join(driveRoot, "sda1/quarantined-history/objects/item"), newTime, newTime); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Chtimes(path.Join(driveRoot, "sda1/quarantined-history/objects-2/item"), newTime, newTime); err != nil {
 		t.Fatal(err)
 	}
 	if contents, err = quarantineHistoryDelete(driveRoot, "sda1", "accounts", "30"); err != nil {
@@ -365,6 +386,15 @@ func TestQuarantineDeleteAndQuarantineHistoryDelete(t *testing.T) {
 		t.Fatal(v)
 	}
 	if _, err = os.Stat(path.Join(driveRoot, "sda1/quarantined-history/objects/item")); !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if contents, err = quarantineHistoryDelete(driveRoot, "sda1", "objects-2", "30"); err != nil {
+		t.Fatal(err)
+	}
+	if v := fmt.Sprintf("%v", contents["items_left"]); v != "0" {
+		t.Fatal(v)
+	}
+	if _, err = os.Stat(path.Join(driveRoot, "sda1/quarantined-history/objects-2/item")); !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
 }

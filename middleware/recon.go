@@ -352,7 +352,7 @@ func quarantineDelete(driveRoot, deviceName, reconType, itemPath string) (map[st
 		return nil, fmt.Errorf("invalid device name given: %q", deviceName)
 	}
 	deviceName = cleanedDeviceName
-	if reconType != "accounts" && reconType != "containers" && reconType != "objects" {
+	if reconType != "accounts" && reconType != "containers" && reconType != "objects" && !strings.HasPrefix(reconType, "objects-") {
 		return nil, fmt.Errorf("invalid recon type: %q", reconType)
 	}
 	cleanedItemPath := path.Clean(itemPath)
@@ -385,7 +385,7 @@ func quarantineHistoryDelete(driveRoot, deviceName, reconType, trailingPath stri
 		return nil, fmt.Errorf("invalid device name given: %q", deviceName)
 	}
 	deviceName = cleanedDeviceName
-	if reconType != "accounts" && reconType != "containers" && reconType != "objects" {
+	if reconType != "accounts" && reconType != "containers" && reconType != "objects" && !strings.HasPrefix(reconType, "objects-") {
 		return nil, fmt.Errorf("invalid recon type: %q", reconType)
 	}
 	days, err := strconv.Atoi(trailingPath)
@@ -477,6 +477,18 @@ func quarantineDetail(driveRoot string) (interface{}, error) {
 					} else { // strings.HasPrefix(key, "objects")
 						listing2, err := ioutil.ReadDir(filepath.Join(driveRoot, device.Name(), "quarantined", key, listingItem.Name()))
 						if err != nil {
+							// Assume regular file (EC quarantine)
+							file, err := os.Open(filepath.Join(driveRoot, device.Name(), "quarantined", key, listingItem.Name()))
+							if err != nil {
+								continue
+							}
+							data := make([]byte, 4096)
+							count, err := file.Read(data)
+							file.Close()
+							if err == nil && count < 4096 {
+								ent.NameInURL = string(data[:count])
+								break
+							}
 							continue
 						}
 						for _, listing2Item := range listing2 {

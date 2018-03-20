@@ -13,7 +13,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-package indexdb
+package objectserver
 
 import (
 	"encoding/json"
@@ -33,7 +33,6 @@ import (
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/test"
-	"github.com/troubling/hummingbird/objectserver"
 )
 
 func TestEcEngineConstructor(t *testing.T) {
@@ -129,11 +128,11 @@ func TestGetObjectsToReplicate(t *testing.T) {
 	metadata, err := json.Marshal(map[string]string{"moo": "cow"})
 	require.Nil(t, err)
 	require.Nil(t, idb.Commit(f, hsh0, 0, timestamp, false, "", metadata, false, ""))
-	osc := make(chan objectserver.ObjectStabilizer)
+	osc := make(chan ObjectStabilizer)
 	cancel := make(chan struct{})
 	defer close(cancel)
 	go ece.GetObjectsToReplicate(
-		objectserver.PriorityRepJob{FromDevice: &ring.Device{Device: "sdb1"},
+		PriorityRepJob{FromDevice: &ring.Device{Device: "sdb1"},
 			ToDevice: &ring.Device{Device: "sdb2", Scheme: "http", Port: port, Ip: host}}, osc, cancel)
 	os := <-osc
 	require.Equal(t, "cow", os.Metadata()["moo"])
@@ -178,11 +177,11 @@ func TestGetObjectsToReplicateRemoteHasAll(t *testing.T) {
 	port, err := strconv.Atoi(ports)
 	require.Nil(t, err)
 
-	osc := make(chan objectserver.ObjectStabilizer)
+	osc := make(chan ObjectStabilizer)
 	cancel := make(chan struct{})
 	defer close(cancel)
 	go ece.GetObjectsToReplicate(
-		objectserver.PriorityRepJob{FromDevice: &ring.Device{Device: "sdb1"},
+		PriorityRepJob{FromDevice: &ring.Device{Device: "sdb1"},
 			ToDevice: &ring.Device{Device: "sdb2", Scheme: "http", Port: port, Ip: host}}, osc, cancel)
 	os := <-osc
 	require.Nil(t, os)
@@ -226,11 +225,11 @@ func TestGetObjectsToReplicateRemoteHasSome(t *testing.T) {
 	port, err := strconv.Atoi(ports)
 	require.Nil(t, err)
 
-	osc := make(chan objectserver.ObjectStabilizer)
+	osc := make(chan ObjectStabilizer)
 	cancel := make(chan struct{})
 	defer close(cancel)
 	go ece.GetObjectsToReplicate(
-		objectserver.PriorityRepJob{FromDevice: &ring.Device{Device: "sdb1"},
+		PriorityRepJob{FromDevice: &ring.Device{Device: "sdb1"},
 			ToDevice: &ring.Device{Device: "sdb2", Scheme: "http", Port: port, Ip: host}}, osc, cancel)
 	os := <-osc
 	require.Equal(t, "o2", os.Metadata()["name"])
