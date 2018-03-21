@@ -267,6 +267,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		weight := removeFlags.Float64("weight", -1.0, "Device weight.")
 		meta := removeFlags.String("meta", "", "Metadata.")
 		scheme := removeFlags.String("scheme", "", "URI scheme(http/https).")
+		purge := removeFlags.Bool("purge", false, "Purge device from the ring rather than leaving it but with a weight of -1.")
 		yes := removeFlags.Bool("yes", false, "Force yes.")
 		if err := removeFlags.Parse(args[2:]); err != nil {
 			fmt.Println(err)
@@ -296,7 +297,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 					return
 				}
 			}
-			err := ring.RemoveDevs(pth, devs)
+			err := ring.RemoveDevs(pth, devs, *purge)
 			if err != nil {
 				fmt.Println(err)
 				os.Exit(1)

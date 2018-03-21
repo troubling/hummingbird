@@ -328,8 +328,12 @@ func (b *RingBuilder) SetDevWeight(devId int64, weight float64) error {
 }
 
 // Remove a device from the ring.
-func (b *RingBuilder) RemoveDev(devId int64) {
-	b.Devs[devId].Weight = -1.0
+func (b *RingBuilder) RemoveDev(devId int64, purge bool) {
+	if purge {
+		b.Devs[devId].Weight = -math.MaxFloat64
+	} else {
+		b.Devs[devId].Weight = -1.0
+	}
 	b.removedDevs = append(b.removedDevs, b.Devs[devId])
 	b.DevsChanged = true
 	b.Version += 1
@@ -899,7 +903,12 @@ func (b *RingBuilder) gatherPartsFromFailedDevices(assignParts map[uint][]uint) 
 			}
 
 		}
-		// NOTE: At one time, we used to remove the device from the ring, but now we keep it with a weight of -1 so that tools can know that it has been removed
+		for _, dev := range b.removedDevs {
+			if dev.Weight == -math.MaxFloat64 {
+				b.debug(fmt.Sprintf("Removing dev %d", dev.Id))
+				b.Devs[dev.Id] = nil
+			}
+		}
 		removedDevs := len(b.removedDevs)
 		b.removedDevs = b.removedDevs[:0]
 		return removedDevs
@@ -1720,13 +1729,13 @@ func SetWeight(builderPath string, devs []*RingBuilderDevice, weight float64) er
 	return nil
 }
 
-func RemoveDevs(builderPath string, devs []*RingBuilderDevice) error {
+func RemoveDevs(builderPath string, devs []*RingBuilderDevice, purge bool) error {
 	builder, err := NewRingBuilderFromFile(builderPath, false)
 	if err != nil {
 		return err
 	}
 	for _, dev := range devs {
-		builder.RemoveDev(dev.Id)
+		builder.RemoveDev(dev.Id, purge)
 	}
 	builder.Save(builderPath)
 	return nil
