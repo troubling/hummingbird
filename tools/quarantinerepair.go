@@ -218,12 +218,11 @@ func (qr *quarantineRepair) retrieveTypeToDeviceToEntries(logger *zap.Logger, ur
 }
 
 func (qr *quarantineRepair) repairHECObject(logger *zap.Logger, policy int, ringg ring.Ring, entryNameInURL, account, container, object string) bool {
-	logger.Debug("ATTEMPTING REPAIR OF OBJECT", zap.String("OBJECTNAME", entryNameInURL))
 	partition := ringg.GetPartition(account, container, object)
 	logger = logger.With(zap.Uint64("partition", partition))
 	for _, device := range ringg.GetNodes(partition) {
 		url := fmt.Sprintf("%s://%s:%d/ec-reconstruct/%s/%s/%s/%s", device.Scheme, device.Ip, device.Port, device.Device, account, container, object)
-		logger.Debug("RECONSTRUCT URL", zap.String("url", url))
+		logger.Debug("Trying reconstruct", zap.String("url", url))
 		req, err := http.NewRequest("PUT", url, nil)
 		if err != nil {
 			logger.Error("repair HEC http.NewRequest", zap.Error(err))
@@ -237,6 +236,7 @@ func (qr *quarantineRepair) repairHECObject(logger *zap.Logger, policy int, ring
 		}
 		resp.Body.Close()
 		if resp.StatusCode/100 == 2 {
+			logger.Debug("Reconstruct successful", zap.String("url", url))
 			return true
 		}
 	}
@@ -442,7 +442,6 @@ func (qr *quarantineRepair) clearQuarantine(logger *zap.Logger, ipp *ippInstance
 	}
 	url := fmt.Sprintf("%s://%s:%d/", ipp.scheme, ipp.ip, ipp.port) + path.Join("recon", device, "quarantined", reconType, nameOnDevice)
 	logger = logger.With(zap.String("method", "DELETE"), zap.String("url", url))
-	logger.Info("CLEAR QUARANTINE")
 	req, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
 		logger.Error("http.NewRequest", zap.Error(err))
