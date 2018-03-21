@@ -328,8 +328,12 @@ func (b *RingBuilder) SetDevWeight(devId int64, weight float64) error {
 }
 
 // Remove a device from the ring.
-func (b *RingBuilder) RemoveDev(devId int64) {
-	b.Devs[devId].Weight = 0
+func (b *RingBuilder) RemoveDev(devId int64, purge bool) {
+	if purge {
+		b.Devs[devId].Weight = -math.MaxFloat64
+	} else {
+		b.Devs[devId].Weight = -1.0
+	}
 	b.removedDevs = append(b.removedDevs, b.Devs[devId])
 	b.DevsChanged = true
 	b.Version += 1
@@ -880,6 +884,7 @@ func (b *RingBuilder) gatherPartsFromFailedDevices(assignParts map[uint][]uint) 
 		for _, dev := range b.removedDevs {
 			if dev.Parts > 0 {
 				devsWithParts = append(devsWithParts, uint(dev.Id))
+				b.Devs[dev.Id].Parts = 0
 			}
 		}
 		if len(devsWithParts) > 0 {
@@ -899,8 +904,10 @@ func (b *RingBuilder) gatherPartsFromFailedDevices(assignParts map[uint][]uint) 
 
 		}
 		for _, dev := range b.removedDevs {
-			b.debug(fmt.Sprintf("Removing dev %d", dev.Id))
-			b.Devs[dev.Id] = nil
+			if dev.Weight == -math.MaxFloat64 {
+				b.debug(fmt.Sprintf("Removing dev %d", dev.Id))
+				b.Devs[dev.Id] = nil
+			}
 		}
 		removedDevs := len(b.removedDevs)
 		b.removedDevs = b.removedDevs[:0]
@@ -1722,13 +1729,13 @@ func SetWeight(builderPath string, devs []*RingBuilderDevice, weight float64) er
 	return nil
 }
 
-func RemoveDevs(builderPath string, devs []*RingBuilderDevice) error {
+func RemoveDevs(builderPath string, devs []*RingBuilderDevice, purge bool) error {
 	builder, err := NewRingBuilderFromFile(builderPath, false)
 	if err != nil {
 		return err
 	}
 	for _, dev := range devs {
-		builder.RemoveDev(dev.Id)
+		builder.RemoveDev(dev.Id, purge)
 	}
 	builder.Save(builderPath)
 	return nil
