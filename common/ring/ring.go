@@ -179,7 +179,7 @@ func (r *hashRing) LocalDevices(localPort int) (devs []*Device, err error) {
 	}
 
 	for i, dev := range d.Devs {
-		if dev == nil {
+		if dev == nil || dev.Weight < 0 {
 			continue
 		}
 		if localIPs[dev.ReplicationIp] && dev.ReplicationPort == localPort {
@@ -324,7 +324,7 @@ func (r *hashRing) Reload() error {
 	zoneCount := make(map[regionZone]bool)
 	ipPortCount := make(map[ipPort]bool)
 	for _, d := range data.Devs {
-		if d == nil {
+		if d == nil || d.Weight < 0 {
 			continue
 		}
 		if d.ReplicationIp == "" {

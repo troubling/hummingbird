@@ -112,7 +112,7 @@ func getRingData(oring ring.Ring, onlyWeighted bool) (map[string]*ring.Device, [
 	var servers []*ipPort
 	weightedServers := make(map[string]bool)
 	for _, dev := range oring.AllDevices() {
-		if dev == nil {
+		if dev == nil || dev.Weight < 0 {
 			continue
 		}
 		allRingDevices[deviceId(dev.Ip, dev.Port, dev.Device)] = dev
