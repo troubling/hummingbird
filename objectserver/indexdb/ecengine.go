@@ -56,8 +56,8 @@ type ecEngine struct {
 	idbs            map[string]*IndexDB
 	idbm            sync.Mutex
 	logger          *zap.Logger
-	dataFrags       int
-	parityFrags     int
+	dataShards      int
+	parityShards    int
 	chunkSize       int
 	client          *http.Client
 	nurseryReplicas int
@@ -95,8 +95,8 @@ func (f *ecEngine) New(vars map[string]string, needData bool, asyncWG *sync.Wait
 			Hash:    hash,
 			Nursery: true,
 		},
-		dataFrags:       f.dataFrags, /* TODO: consider just putting a reference to the engine in the object */
-		parityFrags:     f.parityFrags,
+		dataShards:      f.dataShards, /* TODO: consider just putting a reference to the engine in the object */
+		parityShards:    f.parityShards,
 		chunkSize:       f.chunkSize,
 		reserve:         f.reserve,
 		ring:            f.ring,
@@ -123,19 +123,19 @@ func (f *ecEngine) GetReplicationDevice(oring ring.Ring, dev *ring.Device, polic
 	return objectserver.GetNurseryDevice(oring, dev, policy, r, f)
 }
 
-func (f *ecEngine) ecFragGetHandler(writer http.ResponseWriter, request *http.Request) {
+func (f *ecEngine) ecShardGetHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
 	idb, err := f.getDB(vars["device"])
 	if err != nil {
 		srv.StandardResponse(writer, http.StatusBadRequest)
 		return
 	}
-	fragIndex, err := strconv.Atoi(vars["index"])
+	shardIndex, err := strconv.Atoi(vars["index"])
 	if err != nil {
 		srv.StandardResponse(writer, http.StatusBadRequest)
 		return
 	}
-	item, err := idb.Lookup(vars["hash"], fragIndex, false)
+	item, err := idb.Lookup(vars["hash"], shardIndex, false)
 	if err != nil || item == nil || item.Deletion {
 		srv.StandardResponse(writer, http.StatusNotFound)
 		return
@@ -145,7 +145,7 @@ func (f *ecEngine) ecFragGetHandler(writer http.ResponseWriter, request *http.Re
 		srv.StandardResponse(writer, http.StatusBadRequest)
 		return
 	}
-	writer.Header().Set("Ec-Frag-Index", metadata["Ec-Frag-Index"])
+	writer.Header().Set("Ec-Shard-Index", metadata["Ec-Shard-Index"])
 	fl, err := os.Open(item.Path)
 	if err != nil {
 		srv.StandardResponse(writer, http.StatusInternalServerError)
@@ -155,7 +155,7 @@ func (f *ecEngine) ecFragGetHandler(writer http.ResponseWriter, request *http.Re
 	http.ServeContent(writer, request, item.Path, time.Unix(item.Timestamp, 0), fl)
 }
 
-func (f *ecEngine) ecFragPutHandler(writer http.ResponseWriter, request *http.Request) {
+func (f *ecEngine) ecShardPutHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
 	idb, err := f.getDB(vars["device"])
 	if err != nil {
@@ -167,13 +167,13 @@ func (f *ecEngine) ecFragPutHandler(writer http.ResponseWriter, request *http.Re
 		srv.StandardResponse(writer, http.StatusBadRequest)
 		return
 	}
-	fragIndex, err := strconv.Atoi(vars["index"])
+	shardIndex, err := strconv.Atoi(vars["index"])
 	if err != nil {
 		srv.StandardResponse(writer, http.StatusBadRequest)
 		return
 	}
 	timestamp := timestampTime.UnixNano()
-	atm, err := idb.TempFile(vars["hash"], fragIndex, timestamp, request.ContentLength, false)
+	atm, err := idb.TempFile(vars["hash"], shardIndex, timestamp, request.ContentLength, false)
 	if err != nil {
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
@@ -212,7 +212,7 @@ func (f *ecEngine) ecFragPutHandler(writer http.ResponseWriter, request *http.Re
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
-	if err := idb.Commit(atm, vars["hash"], fragIndex, timestamp, false, MetadataHash(metadata), metabytes, false, shardHash); err != nil {
+	if err := idb.Commit(atm, vars["hash"], shardIndex, timestamp, false, MetadataHash(metadata), metabytes, false, shardHash); err != nil {
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 	} else {
 		srv.StandardResponse(writer, http.StatusCreated)
@@ -289,19 +289,19 @@ func (f *ecEngine) ecNurseryPutHandler(writer http.ResponseWriter, request *http
 	}
 }
 
-func (f *ecEngine) ecFragDeleteHandler(writer http.ResponseWriter, request *http.Request) {
+func (f *ecEngine) ecShardDeleteHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
 	idb, err := f.getDB(vars["device"])
 	if err != nil {
 		srv.StandardResponse(writer, http.StatusBadRequest)
 		return
 	}
-	fragIndex, err := strconv.Atoi(vars["index"])
+	shardIndex, err := strconv.Atoi(vars["index"])
 	if err != nil {
 		srv.StandardResponse(writer, http.StatusBadRequest)
 		return
 	}
-	item, err := idb.Lookup(vars["hash"], fragIndex, true)
+	item, err := idb.Lookup(vars["hash"], shardIndex, true)
 	if err != nil || item == nil {
 		srv.StandardResponse(writer, http.StatusNotFound)
 		return
@@ -371,17 +371,17 @@ func (f *ecEngine) GetObjectsToReplicate(prirep objectserver.PriorityRepJob, c c
 		}
 		if sendItem {
 			obj := &ecObject{
-				IndexDBItem: *item,
-				idb:         idb,
-				dataFrags:   f.dataFrags,
-				parityFrags: f.parityFrags,
-				chunkSize:   f.chunkSize,
-				reserve:     f.reserve,
-				ring:        f.ring,
-				logger:      f.logger,
-				policy:      f.policy,
-				client:      f.client,
-				metadata:    map[string]string{},
+				IndexDBItem:  *item,
+				idb:          idb,
+				dataShards:   f.dataShards,
+				parityShards: f.parityShards,
+				chunkSize:    f.chunkSize,
+				reserve:      f.reserve,
+				ring:         f.ring,
+				logger:       f.logger,
+				policy:       f.policy,
+				client:       f.client,
+				metadata:     map[string]string{},
 			}
 			if err = json.Unmarshal(item.Metabytes, &obj.metadata); err != nil {
 				//TODO: this should quarantine right?
@@ -429,9 +429,9 @@ func (f *ecEngine) listPartitionHandler(writer http.ResponseWriter, request *htt
 
 func (f *ecEngine) RegisterHandlers(addRoute func(method, path string, handler http.HandlerFunc)) {
 	addRoute("PUT", "/nursery/:device/:hash", f.ecNurseryPutHandler)
-	addRoute("GET", "/ec-frag/:device/:hash/:index", f.ecFragGetHandler)
-	addRoute("PUT", "/ec-frag/:device/:hash/:index", f.ecFragPutHandler)
-	addRoute("DELETE", "/ec-frag/:device/:hash/:index", f.ecFragDeleteHandler)
+	addRoute("GET", "/ec-shard/:device/:hash/:index", f.ecShardGetHandler)
+	addRoute("PUT", "/ec-shard/:device/:hash/:index", f.ecShardPutHandler)
+	addRoute("DELETE", "/ec-shard/:device/:hash/:index", f.ecShardDeleteHandler)
 	addRoute("GET", "/partition/:device/:partition", f.listPartitionHandler)
 }
 
@@ -449,17 +449,17 @@ func (f *ecEngine) GetNurseryObjects(device string, c chan objectserver.ObjectSt
 
 	for _, item := range items {
 		obj := &ecObject{
-			IndexDBItem: *item,
-			idb:         idb,
-			dataFrags:   f.dataFrags,
-			parityFrags: f.parityFrags,
-			chunkSize:   f.chunkSize,
-			reserve:     f.reserve,
-			ring:        f.ring,
-			logger:      f.logger,
-			policy:      f.policy,
-			client:      f.client,
-			metadata:    map[string]string{},
+			IndexDBItem:  *item,
+			idb:          idb,
+			dataShards:   f.dataShards,
+			parityShards: f.parityShards,
+			chunkSize:    f.chunkSize,
+			reserve:      f.reserve,
+			ring:         f.ring,
+			logger:       f.logger,
+			policy:       f.policy,
+			client:       f.client,
+			metadata:     map[string]string{},
 		}
 		if err = json.Unmarshal(item.Metabytes, &obj.metadata); err != nil {
 			continue
@@ -540,10 +540,10 @@ func ecEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.Fl
 			Transport: transport,
 		},
 	}
-	if engine.dataFrags, err = strconv.Atoi(policy.Config["data_frags"]); err != nil {
+	if engine.dataShards, err = strconv.Atoi(policy.Config["data_shards"]); err != nil {
 		return nil, err
 	}
-	if engine.parityFrags, err = strconv.Atoi(policy.Config["parity_frags"]); err != nil {
+	if engine.parityShards, err = strconv.Atoi(policy.Config["parity_shards"]); err != nil {
 		return nil, err
 	}
 	if engine.chunkSize, err = strconv.Atoi(policy.Config["chunk_size"]); err != nil {

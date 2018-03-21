@@ -53,10 +53,10 @@ func TestNurseryReplicate(t *testing.T) {
 			Deletion: false,
 			Path:     fp.Name(),
 		},
-		client:      http.DefaultClient,
-		dataFrags:   3,
-		parityFrags: 2,
-		chunkSize:   100,
+		client:       http.DefaultClient,
+		dataShards:   3,
+		parityShards: 2,
+		chunkSize:    100,
 		metadata: map[string]string{
 			"Content-Length": "7",
 		},
@@ -100,10 +100,10 @@ func TestNurseryReplicateWithFailure(t *testing.T) {
 			Deletion: false,
 			Path:     fp.Name(),
 		},
-		client:      http.DefaultClient,
-		dataFrags:   3,
-		parityFrags: 2,
-		chunkSize:   100,
+		client:       http.DefaultClient,
+		dataShards:   3,
+		parityShards: 2,
+		chunkSize:    100,
 		metadata: map[string]string{
 			"Content-Length": "7",
 		},
@@ -139,7 +139,7 @@ func TestStabilize(t *testing.T) {
 	var mutex sync.Mutex
 	used := make(map[string]bool)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		drive := r.URL.Path[9:12]
+		drive := r.URL.Path[10:13]
 		mutex.Lock()
 		used[drive] = true
 		mutex.Unlock()
@@ -157,10 +157,10 @@ func TestStabilize(t *testing.T) {
 			Deletion: false,
 			Path:     fp.Name(),
 		},
-		client:      http.DefaultClient,
-		dataFrags:   3,
-		parityFrags: 2,
-		chunkSize:   100,
+		client:       http.DefaultClient,
+		dataShards:   3,
+		parityShards: 2,
+		chunkSize:    100,
 		metadata: map[string]string{
 			"name":           "/a/c/o",
 			"Content-Length": "7",
@@ -191,7 +191,7 @@ func TestDontStabilizeWithFailure(t *testing.T) {
 	fp.Write([]byte("TESTING"))
 	require.Nil(t, err)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		drive := r.URL.Path[9:12]
+		drive := r.URL.Path[10:13]
 		if drive == "sdb" {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
@@ -210,10 +210,10 @@ func TestDontStabilizeWithFailure(t *testing.T) {
 			Deletion: false,
 			Path:     fp.Name(),
 		},
-		client:      http.DefaultClient,
-		dataFrags:   2,
-		parityFrags: 1,
-		chunkSize:   100,
+		client:       http.DefaultClient,
+		dataShards:   2,
+		parityShards: 1,
+		chunkSize:    100,
 		metadata: map[string]string{
 			"name":           "/a/c/o",
 			"Content-Length": "7",
@@ -235,17 +235,17 @@ func TestDontStabilizeWithFailure(t *testing.T) {
 }
 
 func TestParseECScheme(t *testing.T) {
-	algo, dataFrags, parityFrags, chunkSize, err := parseECScheme("reedsolomon/1/2/16")
+	algo, dataShards, parityShards, chunkSize, err := parseECScheme("reedsolomon/1/2/16")
 	require.Nil(t, err)
 	require.Equal(t, "reedsolomon", algo)
-	require.Equal(t, 1, dataFrags)
-	require.Equal(t, 2, parityFrags)
+	require.Equal(t, 1, dataShards)
+	require.Equal(t, 2, parityShards)
 	require.Equal(t, 16, chunkSize)
 
-	algo, dataFrags, parityFrags, chunkSize, err = parseECScheme("1/2/16")
+	algo, dataShards, parityShards, chunkSize, err = parseECScheme("1/2/16")
 	require.NotNil(t, err)
 
-	algo, dataFrags, parityFrags, chunkSize, err = parseECScheme("reedsolomon/1/2/X")
+	algo, dataShards, parityShards, chunkSize, err = parseECScheme("reedsolomon/1/2/X")
 	require.NotNil(t, err)
 }
 
@@ -282,7 +282,7 @@ func TestRangeChunkAlign(t *testing.T) {
 		start         int64
 		end           int64
 		chunkSize     int64
-		dataFrags     int
+		dataShards    int
 		expectedStart int64
 		expectedEnd   int64
 	}{
@@ -292,8 +292,8 @@ func TestRangeChunkAlign(t *testing.T) {
 		{0, 81, 10, 3, 0, 30},
 	}
 	for _, tc := range testCases {
-		fragStart, fragEnd := rangeChunkAlign(tc.start, tc.end, tc.chunkSize, tc.dataFrags)
-		require.Equal(t, tc.expectedStart, fragStart)
-		require.Equal(t, tc.expectedEnd, fragEnd)
+		shardStart, shardEnd := rangeChunkAlign(tc.start, tc.end, tc.chunkSize, tc.dataShards)
+		require.Equal(t, tc.expectedStart, shardStart)
+		require.Equal(t, tc.expectedEnd, shardEnd)
 	}
 }

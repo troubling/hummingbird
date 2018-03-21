@@ -41,8 +41,8 @@ func TestEcEngineConstructor(t *testing.T) {
 	pol := conf.Policy{Index: 0, Type: "hec", Name: "gold",
 		Aliases: []string{}, Default: true, Deprecated: false,
 		Config: map[string]string{"policy_type": "hec",
-			"default": "yes", "name": "gold", "data_frags": "2",
-			"parity_frags": "1"}}
+			"default": "yes", "name": "gold", "data_shards": "2",
+			"parity_shards": "1"}}
 	config, _ := conf.StringConfig(configString)
 	_, err := ecEngineConstructor(
 		config, &pol, &flag.FlagSet{})
@@ -57,8 +57,8 @@ func getTestEce() (*ecEngine, error) {
 	policy := conf.Policy{Index: 0, Type: "hec", Name: "gold",
 		Aliases: []string{}, Default: true, Deprecated: false,
 		Config: map[string]string{"policy_type": "hec",
-			"default": "yes", "name": "gold", "data_frags": "2",
-			"parity_frags": "1"}}
+			"default": "yes", "name": "gold", "data_shards": "2",
+			"parity_shards": "1"}}
 	testRing := &test.FakeRing{}
 	transport := &http.Transport{
 		MaxIdleConnsPerHost: 256,
@@ -88,10 +88,10 @@ func getTestEce() (*ecEngine, error) {
 			Transport: transport,
 		},
 	}
-	if engine.dataFrags, err = strconv.Atoi(policy.Config["data_frags"]); err != nil {
+	if engine.dataShards, err = strconv.Atoi(policy.Config["data_shards"]); err != nil {
 		return nil, err
 	}
-	if engine.parityFrags, err = strconv.Atoi(policy.Config["parity_frags"]); err != nil {
+	if engine.parityShards, err = strconv.Atoi(policy.Config["parity_shards"]); err != nil {
 		return nil, err
 	}
 	if engine.chunkSize, err = strconv.Atoi(policy.Config["chunk_size"]); err != nil {
