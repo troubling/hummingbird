@@ -416,14 +416,38 @@ func quarantineHistoryDelete(driveRoot, deviceName, reconType, trailingPath stri
 	}, nil
 }
 
-func quarantineDetail(driveRoot string) (interface{}, error) {
-	type entry struct {
-		NameOnDevice string
-		NameInURL    string
+type QuarantineDetailEntry struct {
+	NameOnDevice string
+	NameInURL    string
+}
+
+func handleHecMeta(metaPath string, entry *QuarantineDetailEntry) bool {
+	file, err := os.Open(metaPath)
+	if err != nil {
+		return false
 	}
+	defer file.Close()
+	data := make([]byte, 4096)
+	count, err := file.Read(data)
+	if err == nil && count < 4096 {
+		metadata := map[string]string{}
+		if err = json.Unmarshal(data[:count], &metadata); err != nil {
+			return false
+		}
+		name, ok := metadata["name"]
+		if !ok {
+			return false
+		}
+		entry.NameInURL = name
+		return true
+	}
+	return false
+}
+
+func quarantineDetail(driveRoot string) (interface{}, error) {
 	// Map of type to device to entries; type is accounts, containers, objects,
 	// objects-1, etc.
-	typeToDeviceToEntries := map[string]map[string][]*entry{}
+	typeToDeviceToEntries := map[string]map[string][]*QuarantineDetailEntry{}
 	deviceList, err := ioutil.ReadDir(driveRoot)
 	if err != nil {
 		return nil, err
@@ -449,9 +473,9 @@ func quarantineDetail(driveRoot string) (interface{}, error) {
 						// repaired, the remaining items will be shown.
 						break
 					}
-					ent := &entry{NameOnDevice: listingItem.Name()}
+					ent := &QuarantineDetailEntry{NameOnDevice: listingItem.Name()}
 					if typeToDeviceToEntries[key] == nil {
-						typeToDeviceToEntries[key] = map[string][]*entry{}
+						typeToDeviceToEntries[key] = map[string][]*QuarantineDetailEntry{}
 					}
 					typeToDeviceToEntries[key][device.Name()] = append(typeToDeviceToEntries[key][device.Name()], ent)
 					if key == "accounts" || key == "containers" {
@@ -475,20 +499,13 @@ func quarantineDetail(driveRoot string) (interface{}, error) {
 						}
 						db.Close()
 					} else { // strings.HasPrefix(key, "objects")
+						// Check EC first
+						hecMeta := filepath.Join(driveRoot, device.Name(), "quarantined", key, listingItem.Name(), listingItem.Name()+".hecmeta")
+						if handleHecMeta(hecMeta, ent) {
+							break
+						}
 						listing2, err := ioutil.ReadDir(filepath.Join(driveRoot, device.Name(), "quarantined", key, listingItem.Name()))
 						if err != nil {
-							// Assume regular file (EC quarantine)
-							file, err := os.Open(filepath.Join(driveRoot, device.Name(), "quarantined", key, listingItem.Name()))
-							if err != nil {
-								continue
-							}
-							data := make([]byte, 4096)
-							count, err := file.Read(data)
-							file.Close()
-							if err == nil && count < 4096 {
-								ent.NameInURL = string(data[:count])
-								break
-							}
 							continue
 						}
 						for _, listing2Item := range listing2 {

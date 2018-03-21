@@ -227,27 +227,23 @@ func quarantineShard(db *IndexDB, hash string, shard int, timestamp int64, metab
 	shardName := filepath.Base(shardPath)
 	objsDir := filepath.Dir(filepath.Dir(filepath.Dir(shardPath)))
 	driveDir := filepath.Dir(objsDir)
-	quarantineDir := filepath.Join(driveDir, "quarantined", filepath.Base(objsDir))
+	quarantineDir := filepath.Join(driveDir, "quarantined", filepath.Base(objsDir), shardName)
 	if err := os.MkdirAll(quarantineDir, 0755); err != nil {
 		return err
 	}
-	metadata := map[string]string{}
-	if err = json.Unmarshal(metabytes, &metadata); err != nil {
-		return fmt.Errorf("Error decoding metadata: %s", err)
+	dest := filepath.Join(quarantineDir, shardName)
+	if err := os.Rename(shardPath, dest); err != nil {
+		return err
 	}
-	name, ok := metadata["name"]
-	if !ok {
-		return fmt.Errorf("Metadata missing name: %s", string(metabytes))
-	}
-	fName := filepath.Join(quarantineDir, shardName)
-	f, err := os.OpenFile(fName, os.O_RDWR|os.O_CREATE, 0644)
+	metaName := filepath.Join(quarantineDir, shardName+".hecmeta")
+	f, err := os.OpenFile(metaName, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return err
 	}
-	_, err = f.WriteString(name)
+	_, err = f.Write(metabytes)
 	f.Close()
 	if err != nil {
-		if rmErr := os.Remove(fName); rmErr != nil {
+		if rmErr := os.Remove(metaName); rmErr != nil {
 			return rmErr
 		}
 		return err
