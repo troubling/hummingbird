@@ -25,6 +25,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -64,20 +65,29 @@ type Device struct {
 	Zone            int     `json:"zone"`
 }
 
+type RingMD5 interface {
+	Ring
+	MD5() string
+	RingMatching(md5 string) RingMD5
+	Reload() error
+}
+
 type ringData struct {
 	Devs                                []*Device `json:"devs"`
 	ReplicaCount                        int       `json:"replica_count"`
 	PartShift                           uint64    `json:"part_shift"`
 	replica2part2devId                  [][]uint16
 	regionCount, zoneCount, ipPortCount int
+	md5                                 string
 }
 
 type hashRing struct {
-	data   atomic.Value
-	path   string
-	prefix string
-	suffix string
-	mtime  time.Time
+	data    atomic.Value
+	path    string
+	prefix  string
+	suffix  string
+	mtime   time.Time
+	calcMD5 bool
 }
 
 type regionZone struct {
@@ -198,7 +208,70 @@ func (r *hashRing) PartitionCount() (cnt uint64) {
 	return uint64(len(d.replica2part2devId[0]))
 }
 
-func (r *hashRing) reload() error {
+func (r *hashRing) MD5() string {
+	d := r.getData()
+	return d.md5
+}
+
+func (r *hashRing) RingMatching(md5 string) RingMD5 {
+	d := r.getData()
+	if d.md5 == md5 {
+		return r
+	}
+	backupsDir := filepath.Join(filepath.Dir(r.path), "backups")
+	f, err := os.Open(backupsDir)
+	if err != nil {
+		return nil
+	}
+	fis, err := f.Readdir(-1)
+	if err != nil {
+		return nil
+	}
+	// object.ring.gz => ["object"]
+	// object-1.ring.gz => ["object", "1"]
+	parts := strings.SplitN(strings.SplitN(filepath.Base(r.path), ".", 2)[0], "-", 2)
+	typ := parts[0]
+	policyString := ""
+	if len(parts) > 1 {
+		policyString = parts[1]
+	}
+	for _, fi := range fis {
+		if fi.IsDir() {
+			continue
+		}
+		if !strings.HasSuffix(fi.Name(), ".ring.gz") {
+			continue
+		}
+		// 1520549739234856985.object.ring.gz => ["1520549739234856985", "object.ring.gz"]
+		// 1520549739289612841.object-1.ring.gz => ["1520549739289612841", "object-1.ring.gz"]
+		parts = strings.SplitN(fi.Name(), ".", 2)
+		if len(parts) < 2 {
+			continue
+		}
+		// object.ring.gz => ["object"]
+		// object-1.ring.gz => ["object", "1"]
+		parts = strings.SplitN(strings.SplitN(parts[1], ".", 2)[0], "-", 2)
+		if parts[0] != typ {
+			continue
+		}
+		if len(parts) < 2 && policyString != "" {
+			continue
+		}
+		if len(parts) > 1 && parts[1] != policyString {
+			continue
+		}
+		r2, err := LoadRingMD5(filepath.Join(backupsDir, fi.Name()), r.prefix, r.suffix)
+		if err != nil {
+			continue
+		}
+		if r2.MD5() == md5 {
+			return r2
+		}
+	}
+	return nil
+}
+
+func (r *hashRing) Reload() error {
 	fi, err := os.Stat(r.path)
 	if err != nil {
 		return err
@@ -206,9 +279,19 @@ func (r *hashRing) reload() error {
 	if fi.ModTime() == r.mtime {
 		return nil
 	}
+	data := &ringData{}
 	fp, err := os.Open(r.path)
 	if err != nil {
 		return err
+	}
+	defer fp.Close()
+	if r.calcMD5 {
+		h := md5.New()
+		if _, err := io.Copy(h, fp); err != nil {
+			return err
+		}
+		data.md5 = fmt.Sprintf("%x", h.Sum(nil))
+		fp.Seek(0, 0)
 	}
 	gz, err := gzip.NewReader(fp)
 	if err != nil {
@@ -228,7 +311,6 @@ func (r *hashRing) reload() error {
 	binary.Read(gz, binary.BigEndian, &json_len)
 	jsonBuf := make([]byte, json_len)
 	io.ReadFull(gz, jsonBuf)
-	data := &ringData{}
 	if err := json.Unmarshal(jsonBuf, data); err != nil {
 		return err
 	}
@@ -269,7 +351,7 @@ func (r *hashRing) reload() error {
 func (r *hashRing) reloader() error {
 	for {
 		time.Sleep(reloadTime)
-		r.reload()
+		r.Reload()
 	}
 }
 
@@ -340,11 +422,29 @@ func LoadRing(path string, prefix string, suffix string) (Ring, error) {
 	ring := loadedRings[path]
 	if ring == nil {
 		ring = &hashRing{prefix: prefix, suffix: suffix, path: path, mtime: time.Unix(0, 0)}
-		if err := ring.reload(); err != nil {
+		if err := ring.Reload(); err != nil {
 			return nil, err
 		}
 		go ring.reloader()
 		loadedRings[path] = ring
+	}
+	return ring, nil
+}
+
+var loadedRingMD5sLock sync.Mutex
+var loadedRingMD5s map[string]*hashRing = make(map[string]*hashRing)
+
+func LoadRingMD5(path string, prefix string, suffix string) (RingMD5, error) {
+	loadedRingMD5sLock.Lock()
+	defer loadedRingMD5sLock.Unlock()
+	ring := loadedRingMD5s[path]
+	if ring == nil {
+		ring = &hashRing{prefix: prefix, suffix: suffix, path: path, mtime: time.Unix(0, 0), calcMD5: true}
+		if err := ring.Reload(); err != nil {
+			return nil, err
+		}
+		// no reloader for RingMD5s; Reload is called explicitly instead.
+		loadedRingMD5s[path] = ring
 	}
 	return ring, nil
 }
@@ -386,9 +486,37 @@ func (r *hashRing) Save(filename string) error {
 }
 
 // GetRing returns the current ring given the ring_type ("account", "container", "object"),
-// hash path prefix, and hash path suffix. An error is raised if the requested ring does
+// hash path prefix, and hash path suffix. An error is returned if the requested ring does
 // not exist.
 func GetRing(ringType, prefix, suffix string, policy int) (Ring, error) {
+	ring, err := getRingLogic(ringType, prefix, suffix, policy, LoadRing)
+	if err != nil {
+		return nil, err
+	}
+	return ring, nil
+}
+
+// GetRingMD5 returns the current ring given the ring_type ("account",
+// "container", "object"), hash path prefix, and hash path suffix. An error is
+// returned if the requested ring does not exist. This differs from GetRing in
+// that it returns a ring satisfying the RingMD5 interface and that it will
+// compute the MD5 hash of the ring's persisted contents. Also, it will not
+// automatically reload itself -- an explicit Reload is required.
+func GetRingMD5(ringType, prefix, suffix string, policy int) (RingMD5, error) {
+	ring, err := getRingLogic(
+		ringType, prefix, suffix, policy,
+		func(path string, prefix string, suffix string) (Ring, error) {
+			ring, err := LoadRingMD5(path, prefix, suffix)
+			return ring, err
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	return ring.(RingMD5), nil
+}
+
+func getRingLogic(ringType, prefix, suffix string, policy int, loadRing func(path string, prefix string, suffix string) (Ring, error)) (Ring, error) {
 	var ring Ring
 	var err error
 	var err2 error
@@ -396,8 +524,8 @@ func GetRing(ringType, prefix, suffix string, policy int) (Ring, error) {
 	if policy != 0 {
 		ringFile = fmt.Sprintf("%s-%d.ring.gz", ringType, policy)
 	}
-	if ring, err = LoadRing(fmt.Sprintf("/etc/hummingbird/%s", ringFile), prefix, suffix); err != nil {
-		if ring, err2 = LoadRing(fmt.Sprintf("/etc/swift/%s", ringFile), prefix, suffix); err2 != nil {
+	if ring, err = loadRing(fmt.Sprintf("/etc/hummingbird/%s", ringFile), prefix, suffix); err != nil {
+		if ring, err2 = loadRing(fmt.Sprintf("/etc/swift/%s", ringFile), prefix, suffix); err2 != nil {
 			return nil, fmt.Errorf("Error loading %s:%d ring: %s: %s", ringType, policy, err, err2)
 		}
 	}

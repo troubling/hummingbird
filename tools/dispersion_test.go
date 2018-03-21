@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -21,15 +22,15 @@ type FakeRing struct {
 	Devs      []*ring.Device
 	Ip        string
 	Port      int
-	nodeCalls int
+	nodeCalls int64
 	replicas  uint64
 }
 
 func (r *FakeRing) GetNodes(partition uint64) (response []*ring.Device) {
-	if r.nodeCalls <= 0 {
+	if atomic.LoadInt64(&r.nodeCalls) <= 0 {
 		return nil
 	}
-	r.nodeCalls--
+	atomic.AddInt64(&r.nodeCalls, -1)
 	for i := range r.Devs {
 		response = append(response, r.Devs[i])
 	}
@@ -75,7 +76,7 @@ func (r *FakeRing) GetMoreNodes(partition uint64) ring.MoreNodes {
 }
 
 func (r *FakeRing) PartitionCount() uint64 {
-	return 1
+	return 4
 }
 
 func (r *FakeRing) ReplicaCount() uint64 {
@@ -154,6 +155,7 @@ func (c *testDispersionClient) DeleteContainer(account string, container string,
 }
 
 func (c *testDispersionClient) PutObject(account string, container string, obj string, headers http.Header, src io.Reader) *http.Response {
+	fmt.Println("PutObject", account, container, obj)
 	c.objPuts++
 	return nectarutil.ResponseStub(200, "")
 }

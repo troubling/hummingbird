@@ -23,6 +23,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -34,9 +36,9 @@ func TestNurseryReplicate(t *testing.T) {
 	fp, err := ioutil.TempFile("", "")
 	fp.Write([]byte("TESTING"))
 	require.Nil(t, err)
-	calls := 0
+	var calls int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
+		atomic.AddInt64(&calls, 1)
 		io.Copy(ioutil.Discard, r.Body)
 	}))
 	defer srv.Close()
@@ -69,7 +71,7 @@ func TestNurseryReplicate(t *testing.T) {
 		MockGetJobNodesHandoff: false,
 	}
 	require.Nil(t, to.nurseryReplicate(rng, 1, node))
-	require.Equal(t, 2, calls)
+	require.Equal(t, int64(2), calls)
 }
 
 func TestNurseryReplicateWithFailure(t *testing.T) {
@@ -134,10 +136,13 @@ func TestStabilize(t *testing.T) {
 	fp, err := ioutil.TempFile("", "")
 	fp.Write([]byte("TESTING"))
 	require.Nil(t, err)
+	var mutex sync.Mutex
 	used := make(map[string]bool)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		drive := r.URL.Path[9:12]
+		mutex.Lock()
 		used[drive] = true
+		mutex.Unlock()
 		io.Copy(ioutil.Discard, r.Body)
 	}))
 	defer srv.Close()
