@@ -46,8 +46,8 @@ type ecObject struct {
 	ring            ring.Ring
 	logger          *zap.Logger
 	reserve         int64
-	dataFrags       int
-	parityFrags     int
+	dataShards      int
+	parityShards    int
 	chunkSize       int
 	client          *http.Client
 	nurseryReplicas int
@@ -77,22 +77,22 @@ func (o *ecObject) Exists() bool {
 	return o.Path != ""
 }
 
-func parseECScheme(scheme string) (algo string, dataFrags, parityFrags, chunkSize int, err error) {
+func parseECScheme(scheme string) (algo string, dataShards, parityShards, chunkSize int, err error) {
 	sections := strings.Split(scheme, "/")
 	if len(sections) != 4 {
 		return "", 0, 0, 0, fmt.Errorf("%d scheme sections", len(sections))
 	}
 	algo = sections[0]
-	if dataFrags, err = strconv.Atoi(sections[1]); err != nil {
-		return "", 0, 0, 0, errors.New("Invalid data frag count")
+	if dataShards, err = strconv.Atoi(sections[1]); err != nil {
+		return "", 0, 0, 0, errors.New("Invalid data shard count")
 	}
-	if parityFrags, err = strconv.Atoi(sections[2]); err != nil {
-		return "", 0, 0, 0, errors.New("Invalid parity frag count")
+	if parityShards, err = strconv.Atoi(sections[2]); err != nil {
+		return "", 0, 0, 0, errors.New("Invalid parity shard count")
 	}
 	if chunkSize, err = strconv.Atoi(sections[3]); err != nil {
 		return "", 0, 0, 0, errors.New("Invalid chunk size")
 	}
-	return algo, dataFrags, parityFrags, chunkSize, nil
+	return algo, dataShards, parityShards, chunkSize, nil
 }
 
 func (o *ecObject) Copy(dsts ...io.Writer) (written int64, err error) {
@@ -109,7 +109,7 @@ func (o *ecObject) Copy(dsts ...io.Writer) (written int64, err error) {
 		return common.Copy(file, dsts...)
 	}
 
-	algo, dataFrags, parityFrags, chunkSize, err := parseECScheme(o.metadata["Ec-Scheme"])
+	algo, dataShards, parityShards, chunkSize, err := parseECScheme(o.metadata["Ec-Scheme"])
 	if err != nil {
 		return 0, fmt.Errorf("Invalid scheme: %v", err)
 	}
@@ -122,13 +122,13 @@ func (o *ecObject) Copy(dsts ...io.Writer) (written int64, err error) {
 		return 0, fmt.Errorf("invalid metadata name: %s", o.metadata["name"])
 	}
 	nodes := o.ring.GetNodes(o.ring.GetPartition(ns[1], ns[2], ns[3]))
-	if len(nodes) < dataFrags+parityFrags {
-		return 0, fmt.Errorf("Not enough nodes (%d) for scheme (%d)", len(nodes), dataFrags+parityFrags)
+	if len(nodes) < dataShards+parityShards {
+		return 0, fmt.Errorf("Not enough nodes (%d) for scheme (%d)", len(nodes), dataShards+parityShards)
 	}
 	bodies := make([]io.Reader, len(nodes))
-	// TODO: This could be parallelized, and we can probably stop looking once we have dataFrags bodies available.
+	// TODO: This could be parallelized, and we can probably stop looking once we have dataShards bodies available.
 	for i, node := range nodes {
-		req, err := http.NewRequest("GET", fmt.Sprintf("%s://%s:%d/ec-frag/%s/%s/%d", node.Scheme, node.Ip, node.Port, node.Device, o.Hash, i), nil)
+		req, err := http.NewRequest("GET", fmt.Sprintf("%s://%s:%d/ec-shard/%s/%s/%d", node.Scheme, node.Ip, node.Port, node.Device, o.Hash, i), nil)
 		if err != nil {
 			continue
 		}
@@ -144,7 +144,7 @@ func (o *ecObject) Copy(dsts ...io.Writer) (written int64, err error) {
 		}
 		bodies[i] = resp.Body
 	}
-	ecGlue(dataFrags, parityFrags, bodies, chunkSize, contentLength, dsts...)
+	ecGlue(dataShards, parityShards, bodies, chunkSize, contentLength, dsts...)
 	return contentLength, nil
 }
 
@@ -164,7 +164,7 @@ func (o *ecObject) CopyRange(w io.Writer, start int64, end int64) (int64, error)
 		return common.Copy(io.LimitReader(file, end-start), w)
 	}
 
-	algo, dataFrags, parityFrags, chunkSize, err := parseECScheme(o.metadata["Ec-Scheme"])
+	algo, dataShards, parityShards, chunkSize, err := parseECScheme(o.metadata["Ec-Scheme"])
 	if err != nil {
 		return 0, fmt.Errorf("Invalid scheme: %v", err)
 	}
@@ -177,23 +177,23 @@ func (o *ecObject) CopyRange(w io.Writer, start int64, end int64) (int64, error)
 		return 0, fmt.Errorf("invalid metadata name: %s", o.metadata["name"])
 	}
 	nodes := o.ring.GetNodes(o.ring.GetPartition(ns[1], ns[2], ns[3]))
-	if len(nodes) < dataFrags+parityFrags {
-		return 0, fmt.Errorf("Not enough nodes (%d) for scheme (%d)", len(nodes), dataFrags+parityFrags)
+	if len(nodes) < dataShards+parityShards {
+		return 0, fmt.Errorf("Not enough nodes (%d) for scheme (%d)", len(nodes), dataShards+parityShards)
 	}
 	// round the range start(down) and end(up) to chunk boundaries
-	fragStart, fragEnd := rangeChunkAlign(start, end, int64(chunkSize), dataFrags)
-	if fragEnd > contentLength {
-		fragEnd = contentLength
+	shardStart, shardEnd := rangeChunkAlign(start, end, int64(chunkSize), dataShards)
+	if shardEnd > contentLength {
+		shardEnd = contentLength
 	}
 	bodies := make([]io.Reader, len(nodes))
-	// TODO: This could be parallelized, and we can probably stop looking once we have dataFrags bodies available.
+	// TODO: This could be parallelized, and we can probably stop looking once we have dataShards bodies available.
 	for i, node := range nodes {
-		req, err := http.NewRequest("GET", fmt.Sprintf("%s://%s:%d/ec-frag/%s/%s/%d", node.Scheme, node.Ip, node.Port, node.Device, o.Hash, i), nil)
+		req, err := http.NewRequest("GET", fmt.Sprintf("%s://%s:%d/ec-shard/%s/%s/%d", node.Scheme, node.Ip, node.Port, node.Device, o.Hash, i), nil)
 		if err != nil {
 			continue
 		}
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
-		req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", fragStart, fragEnd))
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", shardStart, shardEnd))
 		resp, err := o.client.Do(req)
 		if err != nil {
 			continue
@@ -204,7 +204,7 @@ func (o *ecObject) CopyRange(w io.Writer, start int64, end int64) (int64, error)
 		}
 		bodies[i] = resp.Body
 	}
-	err = ecGlue(dataFrags, parityFrags, bodies, chunkSize, fragEnd-fragStart,
+	err = ecGlue(dataShards, parityShards, bodies, chunkSize, shardEnd-shardStart,
 		&rangeBytesWriter{startOffset: start % int64(chunkSize), length: end - start, writer: w})
 	return end - start, nil
 }
@@ -275,12 +275,12 @@ func (o *ecObject) Replicate(prirep objectserver.PriorityRepJob) error {
 			return err
 		}
 		defer fp.Close()
-		req, err := http.NewRequest("PUT", fmt.Sprintf("%s://%s:%d/ec-frag/%s/%s/%d", prirep.ToDevice.Scheme, prirep.ToDevice.Ip, prirep.ToDevice.Port, prirep.ToDevice.Device, o.Hash, o.Shard), fp)
+		req, err := http.NewRequest("PUT", fmt.Sprintf("%s://%s:%d/ec-shard/%s/%s/%d", prirep.ToDevice.Scheme, prirep.ToDevice.Ip, prirep.ToDevice.Port, prirep.ToDevice.Device, o.Hash, o.Shard), fp)
 		if err != nil {
 			return err
 		}
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(prirep.Policy))
-		req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("reedsolomon/%d/%d/%d", o.dataFrags, o.parityFrags, o.chunkSize))
+		req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("reedsolomon/%d/%d/%d", o.dataShards, o.parityShards, o.chunkSize))
 		for k, v := range o.metadata {
 			req.Header.Set("Meta-"+k, v)
 		}
@@ -296,7 +296,7 @@ func (o *ecObject) Replicate(prirep objectserver.PriorityRepJob) error {
 	}
 	// Else reconstruct the shard and copy over that
 	success := true
-	algo, dataFrags, parityFrags, chunkSize, err := parseECScheme(o.metadata["Ec-Scheme"])
+	algo, dataShards, parityShards, chunkSize, err := parseECScheme(o.metadata["Ec-Scheme"])
 	if err != nil {
 		return fmt.Errorf("Invalid scheme: %v", err)
 	}
@@ -309,8 +309,8 @@ func (o *ecObject) Replicate(prirep objectserver.PriorityRepJob) error {
 		return fmt.Errorf("invalid metadata name: %s", o.metadata["name"])
 	}
 	nodes := o.ring.GetNodes(o.ring.GetPartition(ns[1], ns[2], ns[3]))
-	if len(nodes) < dataFrags+parityFrags {
-		return fmt.Errorf("Not enough nodes (%d) for scheme (%d)", len(nodes), dataFrags+parityFrags)
+	if len(nodes) < dataShards+parityShards {
+		return fmt.Errorf("Not enough nodes (%d) for scheme (%d)", len(nodes), dataShards+parityShards)
 	}
 	bodies := make([]io.Reader, len(nodes))
 	toDeviceShard := -1
@@ -319,7 +319,7 @@ func (o *ecObject) Replicate(prirep objectserver.PriorityRepJob) error {
 			toDeviceShard = i
 			continue
 		}
-		url := fmt.Sprintf("%s://%s:%d/ec-frag/%s/%s/%d", node.Scheme, node.Ip, node.Port, node.Device, o.Hash, i)
+		url := fmt.Sprintf("%s://%s:%d/ec-shard/%s/%s/%d", node.Scheme, node.Ip, node.Port, node.Device, o.Hash, i)
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			continue
@@ -344,12 +344,12 @@ func (o *ecObject) Replicate(prirep objectserver.PriorityRepJob) error {
 	rp, wp := io.Pipe()
 	defer wp.Close()
 	defer rp.Close()
-	req, err := http.NewRequest("PUT", fmt.Sprintf("%s://%s:%d/ec-frag/%s/%s/%d", prirep.ToDevice.Scheme, prirep.ToDevice.Ip, prirep.ToDevice.Port, prirep.ToDevice.Device, o.Hash, toDeviceShard), rp)
+	req, err := http.NewRequest("PUT", fmt.Sprintf("%s://%s:%d/ec-shard/%s/%s/%d", prirep.ToDevice.Scheme, prirep.ToDevice.Ip, prirep.ToDevice.Port, prirep.ToDevice.Device, o.Hash, toDeviceShard), rp)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(prirep.Policy))
-	req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("reedsolomon/%d/%d/%d", o.dataFrags, o.parityFrags, o.chunkSize))
+	req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("reedsolomon/%d/%d/%d", o.dataShards, o.parityShards, o.chunkSize))
 	for k, v := range o.metadata {
 		req.Header.Set("Meta-"+k, v)
 	}
@@ -370,7 +370,7 @@ func (o *ecObject) Replicate(prirep objectserver.PriorityRepJob) error {
 		}
 	}(req)
 	var writer io.WriteCloser = wp
-	err = ecReconstruct(dataFrags, parityFrags, bodies, chunkSize, contentLength, writer, toDeviceShard)
+	err = ecReconstruct(dataShards, parityShards, bodies, chunkSize, contentLength, writer, toDeviceShard)
 	writer.Close()
 	wg.Wait()
 	if !success {
@@ -465,8 +465,8 @@ func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error 
 
 	partition := rng.GetPartition(ns[1], ns[2], ns[3])
 	nodes := rng.GetNodes(partition)
-	if len(nodes) != o.dataFrags+o.parityFrags {
-		return fmt.Errorf("Ring doesn't match EC scheme (%d != %d).", len(nodes), o.dataFrags+o.parityFrags)
+	if len(nodes) != o.dataShards+o.parityShards {
+		return fmt.Errorf("Ring doesn't match EC scheme (%d != %d).", len(nodes), o.dataShards+o.parityShards)
 	}
 	wrs := make([]io.WriteCloser, len(nodes))
 	e := common.NewExpector(o.client)
@@ -476,7 +476,7 @@ func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error 
 		defer rp.Close()
 		defer wp.Close()
 		wrs[i] = wp
-		req, err := http.NewRequest("PUT", fmt.Sprintf("%s://%s:%d/ec-frag/%s/%s/%d", node.Scheme, node.ReplicationIp,
+		req, err := http.NewRequest("PUT", fmt.Sprintf("%s://%s:%d/ec-shard/%s/%s/%d", node.Scheme, node.ReplicationIp,
 			node.ReplicationPort, node.Device, o.Hash, i), rp)
 		if err != nil {
 			return err
@@ -484,7 +484,7 @@ func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error 
 		req.Header.Set("X-Timestamp", o.metadata["X-Timestamp"])
 		req.Header.Set("Deletion", strconv.FormatBool(o.Deletion))
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(policy))
-		req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("reedsolomon/%d/%d/%d", o.dataFrags, o.parityFrags, o.chunkSize))
+		req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("reedsolomon/%d/%d/%d", o.dataShards, o.parityShards, o.chunkSize))
 		for k, v := range o.metadata {
 			req.Header.Set("Meta-"+k, v)
 		}
@@ -522,7 +522,7 @@ func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error 
 			contentLength = fi.Size()
 		}
 
-		ecSplit(o.dataFrags, o.parityFrags, fp, o.chunkSize, contentLength, writers)
+		ecSplit(o.dataShards, o.parityShards, fp, o.chunkSize, contentLength, writers)
 		for _, w := range wrs {
 			w.Close()
 		}
@@ -540,12 +540,12 @@ func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error 
 	return nil
 }
 
-// rangeChunkAlign calculates the range to request of fragments to get a given range of the final file.
-func rangeChunkAlign(start, end, chunkSize int64, dataFrags int) (int64, int64) {
-	startChunk := start / (chunkSize * int64(dataFrags))
-	endChunk := end / (chunkSize * int64(dataFrags))
+// rangeChunkAlign calculates the range to request of shards to get a given range of the final file.
+func rangeChunkAlign(start, end, chunkSize int64, dataShards int) (int64, int64) {
+	startChunk := start / (chunkSize * int64(dataShards))
+	endChunk := end / (chunkSize * int64(dataShards))
 	start = startChunk * chunkSize
-	if end%(chunkSize*int64(dataFrags)) == 0 {
+	if end%(chunkSize*int64(dataShards)) == 0 {
 		end = (endChunk) * chunkSize
 	} else {
 		end = (endChunk + 1) * chunkSize

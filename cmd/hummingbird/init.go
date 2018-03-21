@@ -132,8 +132,8 @@ func initCommand(args []string) error {
 	print(`# [storage-policy:2]`)
 	print(`# name = HEC`)
 	print(`# policy_type = hec`)
-	print(`# data_frags = 4`)
-	print(`# parity_frags = 2`)
+	print(`# data_shards = 4`)
+	print(`# parity_shards = 2`)
 	print(`# nursery_replicas = 4`)
 	print(`EOF`)
 	if subcmd != "deb" {
