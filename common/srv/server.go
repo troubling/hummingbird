@@ -432,7 +432,7 @@ func NewTestConfigLoader(testRing ring.Ring) *TestConfigLoader {
 					Aliases:    nil,
 					Default:    false,
 					Deprecated: false,
-					Config:     map[string]string{"data_frags": "2", "parity_frags": "1", "nursery_replicas": "1"},
+					Config:     map[string]string{"data_shards": "2", "parity_shards": "1", "nursery_replicas": "1"},
 				},
 			}), nil
 		},

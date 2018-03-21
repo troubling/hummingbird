@@ -271,8 +271,6 @@ func (o *ecObject) Close() error {
 }
 
 func (o *ecObject) Reconstruct() error {
-	// Else reconstruct the shard and copy over that
-	o.logger.Info(fmt.Sprintf("ECO: %+v", o))
 	success := true
 	algo, dataShards, parityShards, chunkSize, err := parseECScheme(o.metadata["Ec-Scheme"])
 	if err != nil {
@@ -292,21 +290,23 @@ func (o *ecObject) Reconstruct() error {
 	}
 	bodies := make([]io.Reader, len(nodes))
 	readSuccesses := 0
+	readFails := 0
 	failed := make([]*ring.Device, len(nodes))
 	for i, node := range nodes {
 		url := fmt.Sprintf("%s://%s:%d/ec-shard/%s/%s/%d", node.Scheme, node.Ip, node.Port, node.Device, o.Hash, i)
-		o.logger.Info("GET URL", zap.String("url", url))
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
-			o.logger.Info("NewRequest failed", zap.Int("i", i))
+			o.logger.Error("NewRequest failed", zap.String("url", url))
 			failed[i] = node
+			readFails++
 			continue
 		}
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
 		resp, err := o.client.Do(req)
 		if err != nil {
-			o.logger.Info("NewRequest failed", zap.Int("i", i))
+			o.logger.Error("client.Do failed", zap.String("url", url))
 			failed[i] = node
+			readFails++
 			continue
 		}
 		defer func() {
@@ -314,15 +314,16 @@ func (o *ecObject) Reconstruct() error {
 			resp.Body.Close()
 		}()
 		if resp.StatusCode != http.StatusOK {
-			o.logger.Info("Non OK response", zap.Int("i", i), zap.Int("code", resp.StatusCode))
+			o.logger.Error("Non OK response", zap.String("url", url), zap.Int("code", resp.StatusCode))
 			failed[i] = node
+			readFails++
 			continue
 		}
-		o.logger.Info("ONE SUCCESS!", zap.Int("i", i))
 		bodies[i] = resp.Body
 		readSuccesses++
 	}
-	o.logger.Info("SUCCESSES VS FRAGS", zap.Int("successes", readSuccesses), zap.Int("dataShards", dataShards))
+	o.logger.Info("Reconstruct successful reads", zap.Int("successes", readSuccesses))
+	o.logger.Info("Reconstruct failed reads", zap.Int("fails", readFails))
 	if readSuccesses < dataShards {
 		return fmt.Errorf("Not enough nodes (%d) to reconstruct from (%d)", readSuccesses, dataShards)
 	}
@@ -332,21 +333,19 @@ func (o *ecObject) Reconstruct() error {
 	var shardsToFix []int
 	writeSuccess := make(chan bool)
 
-	o.logger.Info(fmt.Sprintf("Failed: %+v", failed))
-
 	nodeFails := 0
 	for i, node := range failed {
-		o.logger.Info(fmt.Sprintf("FAILED NODE: %+v", node))
 		if node == nil {
 			continue
 		}
 		rp, wp := io.Pipe()
 		defer wp.Close()
 		defer rp.Close()
-		req, err := http.NewRequest("PUT", fmt.Sprintf("%s://%s:%d/ec-frag/%s/%s/%d", node.Scheme, node.Ip, node.Port, node.Device, o.Hash, i), rp)
+		url := fmt.Sprintf("%s://%s:%d/ec-shard/%s/%s/%d", node.Scheme, node.Ip, node.Port, node.Device, o.Hash, i)
+		req, err := http.NewRequest("PUT", url, rp)
 		if err != nil {
 			nodeFails++
-			o.logger.Info("PUT NewRequest failed", zap.Int("i", i), zap.Error(err))
+			o.logger.Info("PUT NewRequest failed", zap.String("url", url), zap.Error(err))
 			continue
 		}
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
@@ -357,17 +356,15 @@ func (o *ecObject) Reconstruct() error {
 		writers = append(writers, io.Writer(wp))
 		writeClosers = append(writeClosers, io.WriteCloser(wp))
 		shardsToFix = append(shardsToFix, i)
-		current := i
 		go func(req *http.Request) {
 			if resp, err := o.client.Do(req); err != nil {
-				o.logger.Info("client.Do Failed", zap.Int("i", current), zap.Error(err))
+				o.logger.Error("client.Do Failed", zap.String("url", url), zap.Error(err))
 				writeSuccess <- false
 			} else {
-				o.logger.Info("client.Do Succeeded, going to discard")
 				io.Copy(ioutil.Discard, resp.Body)
 				resp.Body.Close()
 				if resp.StatusCode/100 != 2 {
-					o.logger.Info("PUT StatusCode failed", zap.Int("i", current), zap.Int("code", resp.StatusCode))
+					o.logger.Info("PUT StatusCode failed", zap.String("url", url), zap.Int("code", resp.StatusCode))
 					writeSuccess <- false
 					return
 				}
@@ -380,7 +377,6 @@ func (o *ecObject) Reconstruct() error {
 		o.logger.Error("ecReconstruct failed", zap.Error(err))
 	}
 	waitingFor := dataShards + parityShards - readSuccesses - nodeFails
-	o.logger.Info(fmt.Sprintf("waitingFor: %v", waitingFor))
 	for _, writer := range writeClosers {
 		writer.Close()
 	}
@@ -394,7 +390,7 @@ func (o *ecObject) Reconstruct() error {
 		}
 	}
 	if !success {
-		return fmt.Errorf("Failed to replicate")
+		return fmt.Errorf("Failed to reconstruct")
 	}
 	return err
 }
