@@ -99,7 +99,10 @@ func (o *ecObject) Copy(dsts ...io.Writer) (written int64, err error) {
 	if !o.Exists() {
 		return 0, errors.New("Doesn't exist")
 	}
-
+	contentLength := o.ContentLength()
+	if contentLength == 0 {
+		return 0, nil
+	}
 	if o.Nursery {
 		file, err := os.Open(o.Path)
 		if err != nil {
@@ -116,7 +119,6 @@ func (o *ecObject) Copy(dsts ...io.Writer) (written int64, err error) {
 	if algo != "reedsolomon" {
 		return 0, fmt.Errorf("Attempt to read EC object with unknown algorithm '%s'", algo)
 	}
-	contentLength := o.ContentLength()
 	ns := strings.SplitN(o.metadata["name"], "/", 4)
 	if len(ns) != 4 {
 		return 0, fmt.Errorf("invalid metadata name: %s", o.metadata["name"])
