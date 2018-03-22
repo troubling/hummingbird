@@ -303,7 +303,10 @@ func (server *ObjectServer) ObjPutHandler(writer http.ResponseWriter, request *h
 
 	hash := md5.New()
 	totalSize, err := common.Copy(request.Body, tempFile, hash)
-	if err == io.ErrUnexpectedEOF {
+	if err == io.ErrUnexpectedEOF || (request.ContentLength >= 0 && totalSize != request.ContentLength) {
+		if request.ContentLength >= 0 && totalSize != request.ContentLength {
+			srv.GetLogger(request).Error(fmt.Sprintf("REMOVE THIS DEBUG ERROR GLH1 %d != %d", totalSize, request.ContentLength))
+		}
 		srv.StandardResponse(writer, 499)
 		return
 	} else if err != nil {

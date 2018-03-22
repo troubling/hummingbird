@@ -138,14 +138,16 @@ func (dpo *dispersionPopulateObjects) putDispersionObjects(logger *zap.Logger, p
 		}
 	}()
 	for object := range objectNames {
+		xtimestamp := time.Now()
 		resp := dpo.aa.hClient.PutObject(
 			AdminAccount,
 			container,
 			object,
 			common.Map2Headers(map[string]string{
-				"Content-Length": "0",
-				"Content-Type":   "text",
-				"X-Timestamp":    fmt.Sprintf("%d", time.Now().Unix()),
+				"Content-Length":         "0",
+				"Content-Type":           "text",
+				"X-Timestamp":            common.CanonicalTimestampFromTime(xtimestamp),
+				"X-Object-Meta-Populate": common.CanonicalTimestampFromTime(xtimestamp), // GLH Just for debugging, remove at some point.
 			}),
 			bytes.NewReader([]byte{}),
 		)
@@ -165,14 +167,16 @@ func (dpo *dispersionPopulateObjects) putDispersionObjects(logger *zap.Logger, p
 	close(cancel)
 	<-progressDone
 	if errors == 0 {
+		xtimestamp := time.Now()
 		resp = dpo.aa.hClient.PutObject(
 			AdminAccount,
 			container,
 			"object-init",
 			common.Map2Headers(map[string]string{
-				"Content-Length": "0",
-				"Content-Type":   "text",
-				"X-Timestamp":    fmt.Sprintf("%d", time.Now().Unix()),
+				"Content-Length":         "0",
+				"Content-Type":           "text",
+				"X-Timestamp":            common.CanonicalTimestampFromTime(xtimestamp),
+				"X-Object-Meta-Populate": common.CanonicalTimestampFromTime(xtimestamp), // GLH Just for debugging, remove at some point.
 			}),
 			bytes.NewReader([]byte{}),
 		)
