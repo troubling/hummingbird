@@ -2,7 +2,7 @@ package tools
 
 // In /etc/hummingbird/andrewd-server.conf:
 // [replication]
-// jobs_per_device = 1      # max jobs per device
+// jobs_per_device = 5      # max jobs per device
 // minimum_pass_time = 60   # seconds each pass needs to take, at a minimum
 // report_interval = 600    # seconds between progress reports
 // db_poll_interval = 10    # seconds between database polls
@@ -31,7 +31,7 @@ type replication struct {
 func newReplication(aa *AutoAdmin) *replication {
 	r := &replication{
 		aa:              aa,
-		jobsPerDevice:   int(aa.serverconf.GetInt("replication", "jobs_per_device", 1)),
+		jobsPerDevice:   int(aa.serverconf.GetInt("replication", "jobs_per_device", 5)),
 		minimumPassTime: time.Duration(aa.serverconf.GetInt("replication", "minimum_pass_time", 60)) * time.Second,
 		reportInterval:  time.Duration(aa.serverconf.GetInt("replication", "report_interval", 600)) * time.Second,
 		dbPollInterval:  time.Duration(aa.serverconf.GetInt("replication", "db_poll_interval", 10)) * time.Second,
