@@ -137,11 +137,11 @@ func TestStabilize(t *testing.T) {
 	fp.Write([]byte("TESTING"))
 	require.Nil(t, err)
 	var mutex sync.Mutex
-	used := make(map[string]bool)
+	methods := make(map[string]string)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		drive := r.URL.Path[10:13]
 		mutex.Lock()
-		used[drive] = true
+		methods[drive] = r.Method
 		mutex.Unlock()
 		io.Copy(ioutil.Discard, r.Body)
 	}))
@@ -179,11 +179,65 @@ func TestStabilize(t *testing.T) {
 		},
 	}
 	require.Nil(t, to.Stabilize(rng, nil, 0))
-	require.True(t, used["sda"])
-	require.True(t, used["sdb"])
-	require.True(t, used["sdc"])
-	require.True(t, used["sdd"])
-	require.True(t, used["sde"])
+	require.Equal(t, "PUT", methods["sda"])
+	require.Equal(t, "PUT", methods["sdb"])
+	require.Equal(t, "PUT", methods["sdc"])
+	require.Equal(t, "PUT", methods["sdd"])
+	require.Equal(t, "PUT", methods["sde"])
+}
+
+func TestStabilizeDelete(t *testing.T) {
+	fp, err := ioutil.TempFile("", "")
+	fp.Write([]byte("TESTING"))
+	require.Nil(t, err)
+	var mutex sync.Mutex
+	methods := make(map[string]string)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		drive := r.URL.Path[10:13]
+		mutex.Lock()
+		methods[drive] = r.Method
+		mutex.Unlock()
+		io.Copy(ioutil.Discard, r.Body)
+	}))
+	defer srv.Close()
+	u, err := url.Parse(srv.URL)
+	require.Nil(t, err)
+	port, err := strconv.Atoi(u.Port())
+	require.Nil(t, err)
+
+	to := &ecObject{
+		IndexDBItem: IndexDBItem{
+			Hash:     "00000011111122222233333344444455",
+			Deletion: true,
+			Path:     fp.Name(),
+		},
+		client:       http.DefaultClient,
+		dataShards:   3,
+		parityShards: 2,
+		chunkSize:    100,
+		metadata: map[string]string{
+			"name":           "/a/c/o",
+			"Content-Length": "7",
+		},
+		nurseryReplicas: 3,
+	}
+	rng := &CustomFakeRing{
+		FakeRing: test.FakeRing{
+			MockDevices: []*ring.Device{
+				{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sda"},
+				{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdb"},
+				{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdc"},
+				{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdd"},
+				{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sde"},
+			},
+		},
+	}
+	require.Nil(t, to.Stabilize(rng, nil, 0))
+	require.Equal(t, "DELETE", methods["sda"])
+	require.Equal(t, "DELETE", methods["sdb"])
+	require.Equal(t, "DELETE", methods["sdc"])
+	require.Equal(t, "DELETE", methods["sdd"])
+	require.Equal(t, "DELETE", methods["sde"])
 }
 
 func TestDontStabilizeWithFailure(t *testing.T) {
