@@ -154,7 +154,7 @@ func (r *replication) handleQueuedReplication(ctx *replicationContext, qr *queue
 		return
 	}
 	toDev := ryng.AllDevices()[qr.toDeviceID]
-	if toDev != nil && toDev.Weight < 0 {
+	if toDev != nil && !toDev.Active() {
 		toDev = nil
 	}
 	if toDev == nil {
@@ -166,7 +166,7 @@ func (r *replication) handleQueuedReplication(ctx *replicationContext, qr *queue
 	var fromDev *ring.Device
 	if qr.fromDeviceID >= 0 {
 		fromDev = ryng.AllDevices()[qr.fromDeviceID]
-		if fromDev != nil && fromDev.Weight < 0 {
+		if fromDev != nil && !fromDev.Active() {
 			fromDev = nil
 		}
 	}
