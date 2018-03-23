@@ -453,7 +453,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		totalWeight := float64(0)
 		devPartitions := make([]map[uint64]bool, len(devs))
 		for i, dev := range devs {
-			if dev != nil && dev.Weight >= 0 {
+			if dev.Active() {
 				totalWeight += dev.Weight
 				devPartitions[i] = make(map[uint64]bool)
 			}
@@ -467,7 +467,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		}
 
 		for i, dev := range devs {
-			if dev != nil && dev.Weight >= 0 {
+			if dev.Active() {
 				want := (dev.Weight / totalWeight) * float64(ring.PartitionCount()) * float64(replicas)
 				if epsilon(float64(partCounts[i]), want) > 0.02 {
 					fmt.Println("Device", dev.Id, "partition count >1% off its want:", partCounts[i], "vs", want)
@@ -477,9 +477,9 @@ func RingBuildCmd(flags *flag.FlagSet) {
 
 		totalPairings := int64(0)
 		for i, dev1 := range devs {
-			if dev1 != nil && dev1.Weight >= 0 {
+			if dev1.Active() {
 				for _, dev2 := range devs[i:] {
-					if dev2 != nil && dev2.Weight >= 0 && dev1.Id != dev2.Id {
+					if dev2.Active() && dev1.Id != dev2.Id {
 						totalPairings += partCounts[dev1.Id] * partCounts[dev2.Id]
 					}
 				}
@@ -490,9 +490,9 @@ func RingBuildCmd(flags *flag.FlagSet) {
 			totalSharesRequired = ring.PartitionCount()
 		}
 		for i, dev1 := range devs {
-			if dev1 != nil && dev1.Weight >= 0 {
+			if dev1.Active() {
 				for _, dev2 := range devs[i:] {
-					if dev2 != nil && dev2.Weight >= 0 && dev1.Id != dev2.Id {
+					if dev2.Active() && dev1.Id != dev2.Id {
 						shouldShare := float64(partCounts[dev1.Id]*partCounts[dev2.Id]) *
 							(float64(totalSharesRequired) / float64(totalPairings))
 						shared := float64(0)
@@ -515,7 +515,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 		devices := make(map[string]bool)
 		primaryCounts := make(map[int][]int, len(devs))
 		for _, dev := range devs {
-			if dev != nil && dev.Weight >= 0 {
+			if dev.Active() {
 				regions[dev.Region] = true
 				ips[dev.Ip] = true
 				zones[dev.Zone] = true
@@ -552,7 +552,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 			}
 		}
 		for _, dev := range devs {
-			if dev != nil && dev.Weight >= 0 {
+			if dev.Active() {
 				expectedParts := float64(ring.PartitionCount()) * float64(dev.Weight) / totalWeight
 				for i, parts := range primaryCounts[dev.Id] {
 					if epsilon(float64(parts), float64(expectedParts)) > 0.02 {
