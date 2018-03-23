@@ -113,6 +113,10 @@ func (d *Device) String() string {
 	return fmt.Sprintf("Device{Id: %d, Device: %s, Ip: %s, Port: %d}", d.Id, d.Device, d.Ip, d.Port)
 }
 
+func (d *Device) Active() bool {
+	return d != nil && d.Weight >= 0
+}
+
 func (r *hashRing) getData() *ringData {
 	return r.data.Load().(*ringData)
 }
@@ -179,7 +183,7 @@ func (r *hashRing) LocalDevices(localPort int) (devs []*Device, err error) {
 	}
 
 	for i, dev := range d.Devs {
-		if dev == nil {
+		if !dev.Active() {
 			continue
 		}
 		if localIPs[dev.ReplicationIp] && dev.ReplicationPort == localPort {
@@ -324,7 +328,7 @@ func (r *hashRing) Reload() error {
 	zoneCount := make(map[regionZone]bool)
 	ipPortCount := make(map[ipPort]bool)
 	for _, d := range data.Devs {
-		if d == nil {
+		if !d.Active() {
 			continue
 		}
 		if d.ReplicationIp == "" {

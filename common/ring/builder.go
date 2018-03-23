@@ -1257,7 +1257,7 @@ func (b *RingBuilder) buildBalancePerDev() map[int64]float64 {
 	balancePerDev := make(map[int64]float64)
 	balance := 0.0
 	for next, dev := devIterator(b.Devs); dev != nil; dev = next() {
-		if dev.Weight == 0.0 {
+		if dev.Weight <= 0.0 {
 			if dev.Parts > 0 {
 				// If a device has no weight but has partitions, then its overage is considered "infinity" and there always the wors possible.  We sho MAX_BALANCE for convenience.
 				balance = MAX_BALANCE

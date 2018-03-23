@@ -151,8 +151,12 @@ func (r *replication) handleQueuedReplication(ctx *replicationContext, qr *queue
 	ryng, _ := getRing("", qr.typ, qr.policy)
 	if qr.toDeviceID < 0 {
 		logger.Error("programming error; the to-device is invalid")
+		return
 	}
 	toDev := ryng.AllDevices()[qr.toDeviceID]
+	if toDev != nil && !toDev.Active() {
+		toDev = nil
+	}
 	if toDev == nil {
 		logger.Debug("the to-device was removed from the ring since it had been queued")
 		if err := r.aa.db.clearQueuedReplication(qr); err != nil {
@@ -162,7 +166,7 @@ func (r *replication) handleQueuedReplication(ctx *replicationContext, qr *queue
 	var fromDev *ring.Device
 	if qr.fromDeviceID >= 0 {
 		fromDev = ryng.AllDevices()[qr.fromDeviceID]
-		if fromDev != nil && fromDev.Weight < 0 {
+		if fromDev != nil && !fromDev.Active() {
 			fromDev = nil
 		}
 	}
