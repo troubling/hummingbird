@@ -165,7 +165,7 @@ func (d *mockReplicationDevice) PriorityReplicate(w http.ResponseWriter, pri Pri
 }
 
 type patchableReplicationDevice struct {
-	*replicationDevice
+	*swiftDevice
 	_beginReplication     func(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse, headers map[string]string)
 	_listObjFiles         func(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool)
 	_syncFile             func(objFile string, dst []*syncFileArg, handoff bool) (syncs int, insync int, err error)
@@ -182,65 +182,65 @@ func (d *patchableReplicationDevice) replicatePartition(partition string) {
 		d._replicatePartition(partition)
 		return
 	}
-	d.replicationDevice.replicatePartition(partition)
+	d.swiftDevice.replicatePartition(partition)
 }
 func (d *patchableReplicationDevice) listPartitions() ([]string, []string, error) {
 	if d._listPartitions != nil {
 		return d._listPartitions()
 	}
-	return d.replicationDevice.listPartitions()
+	return d.swiftDevice.listPartitions()
 }
 func (d *patchableReplicationDevice) beginReplication(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse, headers map[string]string) {
 	if d._beginReplication != nil {
 		d._beginReplication(dev, partition, hashes, rChan, headers)
 		return
 	}
-	d.replicationDevice.beginReplication(dev, partition, hashes, rChan, headers)
+	d.swiftDevice.beginReplication(dev, partition, hashes, rChan, headers)
 }
 func (d *patchableReplicationDevice) listObjFiles(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool) {
 	if d._listObjFiles != nil {
 		d._listObjFiles(objChan, cancel, partdir, needSuffix)
 		return
 	}
-	d.replicationDevice.listObjFiles(objChan, cancel, partdir, needSuffix)
+	d.swiftDevice.listObjFiles(objChan, cancel, partdir, needSuffix)
 }
 func (d *patchableReplicationDevice) syncFile(objFile string, dst []*syncFileArg, handoff bool) (syncs int, insync int, err error) {
 	if d._syncFile != nil {
 		return d._syncFile(objFile, dst, handoff)
 	}
-	return d.replicationDevice.syncFile(objFile, dst, handoff)
+	return d.swiftDevice.syncFile(objFile, dst, handoff)
 }
 func (d *patchableReplicationDevice) replicateUsingHashes(rjob replJob, moreNodes ring.MoreNodes) {
 	if d._replicateUsingHashes != nil {
 		d._replicateUsingHashes(rjob, moreNodes)
 		return
 	}
-	d.replicationDevice.replicateUsingHashes(rjob, moreNodes)
+	d.swiftDevice.replicateUsingHashes(rjob, moreNodes)
 }
 func (d *patchableReplicationDevice) replicateAll(rjob replJob, isHandoff bool) {
 	if d._replicateAll != nil {
 		d._replicateAll(rjob, isHandoff)
 		return
 	}
-	d.replicationDevice.replicateAll(rjob, isHandoff)
+	d.swiftDevice.replicateAll(rjob, isHandoff)
 }
 func (d *patchableReplicationDevice) cleanTemp() {
 	if d._cleanTemp != nil {
 		d._cleanTemp()
 		return
 	}
-	d.replicationDevice.cleanTemp()
+	d.swiftDevice.cleanTemp()
 }
 
 func newPatchableReplicationDevice(rng ring.Ring, r *Replicator) *patchableReplicationDevice {
-	rd := &replicationDevice{
+	rd := &swiftDevice{
 		r:      r,
 		dev:    &ring.Device{},
 		policy: 0,
 		cancel: make(chan struct{}),
 		priRep: make(chan PriorityRepJob),
 	}
-	prd := &patchableReplicationDevice{replicationDevice: rd}
+	prd := &patchableReplicationDevice{swiftDevice: rd}
 	rd.i = prd
 	return prd
 }
@@ -388,7 +388,7 @@ func TestListObjFiles(t *testing.T) {
 	confLoader := srv.NewTestConfigLoader(testRing)
 	repl, _, err := newTestReplicator(confLoader)
 	require.Nil(t, err)
-	rd := &replicationDevice{
+	rd := &swiftDevice{
 		r:      repl,
 		dev:    &ring.Device{},
 		policy: 0,
@@ -447,7 +447,7 @@ func TestCancelListObjFiles(t *testing.T) {
 	confLoader := srv.NewTestConfigLoader(testRing)
 	repl, _, err := newTestReplicator(confLoader)
 	require.Nil(t, err)
-	rd := &replicationDevice{
+	rd := &swiftDevice{
 		r:      repl,
 		dev:    &ring.Device{},
 		policy: 0,
