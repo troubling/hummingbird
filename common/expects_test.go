@@ -55,7 +55,41 @@ func TestExpectorSuccesses(t *testing.T) {
 		require.Nil(t, err)
 		e.AddRequest(req)
 	}
-	require.Equal(t, 3, e.Successes(time.Second))
+	require.Equal(t, 3, e.Successes(time.Second, false))
+}
+
+func TestExpectorSuccessesWith404Fail(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/1" {
+			w.WriteHeader(404)
+		}
+	}))
+	defer srv.Close()
+	e := NewExpector(xpectClient)
+	defer e.Close()
+	for i := 0; i < 3; i++ {
+		req, err := http.NewRequest("PUT", srv.URL+"/"+strconv.Itoa(i), strings.NewReader("STUFF"))
+		require.Nil(t, err)
+		e.AddRequest(req)
+	}
+	require.Equal(t, 2, e.Successes(time.Second, false))
+}
+
+func TestExpectorSuccessesWith404Pass(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/1" {
+			w.WriteHeader(404)
+		}
+	}))
+	defer srv.Close()
+	e := NewExpector(xpectClient)
+	defer e.Close()
+	for i := 0; i < 3; i++ {
+		req, err := http.NewRequest("PUT", srv.URL+"/"+strconv.Itoa(i), strings.NewReader("STUFF"))
+		require.Nil(t, err)
+		e.AddRequest(req)
+	}
+	require.Equal(t, 3, e.Successes(time.Second, true))
 }
 
 func TestExpectorReady(t *testing.T) {
@@ -103,7 +137,7 @@ func TestExpectorErrorRetry(t *testing.T) {
 	require.Nil(t, err)
 	e.AddRequest(req)
 
-	require.Equal(t, 3, e.Successes(time.Second))
+	require.Equal(t, 3, e.Successes(time.Second, false))
 	_, ready := e.Wait(time.Second)
 	require.Equal(t, 4, len(ready))
 	require.Equal(t, false, ready[0])

@@ -448,7 +448,7 @@ func (o *ecObject) nurseryReplicate(rng ring.Ring, partition uint64, dev *ring.D
 		}
 	}
 
-	successes := e.Successes(time.Second * 15)
+	successes := e.Successes(time.Second*15, o.Deletion)
 	if handoff && successes >= nurseryReplicaCount {
 		return o.idb.Remove(o.Hash, o.Shard, o.Timestamp, true)
 	} else if successes < nurseryReplicaCount {
@@ -535,7 +535,7 @@ func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error 
 		for _, w := range wrs {
 			w.Close()
 		}
-		if e.Successes(time.Second*15) < len(nodes) {
+		if e.Successes(time.Second*15, o.Deletion) < len(nodes) {
 			success = false
 		}
 	}
