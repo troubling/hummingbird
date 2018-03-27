@@ -295,17 +295,6 @@ func (r *Replicator) reportStats() {
 	}
 }
 
-func (r *Replicator) priorityReplicate(w http.ResponseWriter, pri PriorityRepJob) error {
-	r.runningDevicesLock.Lock()
-	rd, ok := r.runningDevices[deviceKeyId(pri.FromDevice.Device, pri.Policy)]
-	r.runningDevicesLock.Unlock()
-	if ok {
-		return rd.PriorityReplicate(w, pri)
-	}
-	w.WriteHeader(404)
-	return nil
-}
-
 func (r *Replicator) getDeviceProgress() map[string]*DeviceStats {
 	r.runningDevicesLock.Lock()
 	defer r.runningDevicesLock.Unlock()

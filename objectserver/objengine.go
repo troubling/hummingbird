@@ -70,7 +70,7 @@ type ReplicationDevice interface {
 	ReplicateLoop()
 	Key() string
 	Cancel()
-	PriorityReplicate(w http.ResponseWriter, pri PriorityRepJob) error
+	PriorityReplicate(w http.ResponseWriter, pri PriorityRepJob)
 	UpdateStat(string, int64)
 }
 

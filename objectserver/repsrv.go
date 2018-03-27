@@ -96,9 +96,13 @@ func (r *Replicator) priorityRepHandler(w http.ResponseWriter, req *http.Request
 			return
 		}
 	}
-	if err = r.priorityReplicate(w, pri); err != nil {
-		r.logger.Error("priorityreplicatet error", zap.Error(err))
-		w.WriteHeader(500)
+	r.runningDevicesLock.Lock()
+	rd, ok := r.runningDevices[deviceKeyId(pri.FromDevice.Device, pri.Policy)]
+	r.runningDevicesLock.Unlock()
+	if ok {
+		rd.PriorityReplicate(w, pri)
+	} else {
+		w.WriteHeader(404)
 	}
 }
 

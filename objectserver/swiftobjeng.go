@@ -17,6 +17,7 @@ package objectserver
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -103,8 +104,8 @@ type swiftDevice struct {
 		beginReplication(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse, headers map[string]string)
 		listObjFiles(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool)
 		syncFile(objFile string, dst []*syncFileArg, handoff bool) (syncs int, insync int, err error)
-		replicateUsingHashes(rjob replJob, moreNodes ring.MoreNodes)
-		replicateAll(rjob replJob, isHandoff bool)
+		replicateUsingHashes(rjob replJob, moreNodes ring.MoreNodes, w http.ResponseWriter) (int64, error)
+		replicateAll(rjob replJob, isHandoff bool, w http.ResponseWriter) (int64, error)
 		cleanTemp()
 		listPartitions() ([]string, []string, error)
 		replicatePartition(partition string)
@@ -113,7 +114,6 @@ type swiftDevice struct {
 	dev    *ring.Device
 	policy int
 	cancel chan struct{}
-	priRep chan PriorityRepJob
 }
 
 type beginReplicationResponse struct {
@@ -290,6 +290,49 @@ func (rd *swiftDevice) syncFile(objFile string, dst []*syncFileArg, handoff bool
 	return syncs, insync, nil
 }
 
+func (rd *swiftDevice) PriorityReplicate(w http.ResponseWriter, pri PriorityRepJob) {
+	if !fs.Exists(filepath.Join(rd.r.deviceRoot, pri.FromDevice.Device, PolicyDir(rd.policy), strconv.FormatUint(pri.Partition, 10))) {
+		w.WriteHeader(404)
+		return
+	}
+	partition := strconv.FormatUint(pri.Partition, 10)
+	_, handoff := rd.r.objectRings[rd.policy].GetJobNodes(pri.Partition, pri.FromDevice.Id)
+	jobType := "local"
+	if handoff {
+		jobType = "handoff"
+	}
+	policy := rd.r.policies[rd.policy]
+	if policy == nil {
+		w.WriteHeader(400)
+		return
+	}
+	rd.r.logger.Info("PriorityReplicationJob",
+		zap.Uint64("partition", pri.Partition),
+		zap.String("jobType", jobType),
+		zap.String("From Device", pri.FromDevice.Device),
+		zap.String("To Device", pri.ToDevice.Device))
+	rjob := replJob{
+		partition: partition, nodes: []*ring.Device{pri.ToDevice},
+		headers: map[string]string{"X-Force-Acquire": "true"}}
+	var synced int64
+	var err error
+	if handoff || (policy.Type == "replication-nursery" &&
+		!common.LooksTrue(policy.Config["cache_hash_dirs"])) {
+		synced, err = rd.i.replicateAll(rjob, handoff, w)
+	} else {
+		synced, err = rd.i.replicateUsingHashes(rjob, &NoMoreNodes{}, w)
+	}
+	rd.UpdateStat("PriorityRepsDone", 1)
+	prp := PriorityReplicationResult{ObjectsReplicated: synced, Success: err == nil}
+	b, err := json.Marshal(prp)
+	if err != nil {
+		rd.r.logger.Error("error prirep jsoning", zap.Error(err))
+		b = []byte("There was an internal server error generating JSON.")
+	}
+	w.Write(b)
+	w.Write([]byte("\n"))
+}
+
 func (rd *swiftDevice) beginReplication(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse, headers map[string]string) {
 	var brr BeginReplicationResponse
 	if headers == nil {
@@ -308,13 +351,34 @@ func (rd *swiftDevice) beginReplication(dev *ring.Device, partition string, hash
 	}
 }
 
-func (rd *swiftDevice) replicateUsingHashes(rjob replJob, moreNodes ring.MoreNodes) {
+func spaceWriter(w http.ResponseWriter, c chan struct{}) {
+	t := time.Now()
+	for {
+		time.Sleep(time.Second / 10)
+		if time.Since(t) > time.Minute {
+			w.Write([]byte(" "))
+			t = time.Now()
+		}
+		select {
+		case <-c:
+			return
+		default:
+		}
+	}
+}
+
+func (rd *swiftDevice) replicateUsingHashes(rjob replJob, moreNodes ring.MoreNodes, w http.ResponseWriter) (int64, error) {
 	path := filepath.Join(rd.r.deviceRoot, rd.dev.Device, PolicyDir(rd.policy), rjob.partition)
-	syncCount := 0
+	syncCount := int64(0)
 	startGetHashesRemote := time.Now()
 	remoteHashes := make(map[int]map[string]string)
 	remoteConnections := make(map[int]RepConn)
 	rChan := make(chan beginReplicationResponse)
+	if w != nil {
+		swCan := make(chan struct{})
+		defer close(swCan)
+		go spaceWriter(w, swCan)
+	}
 	for _, dev := range rjob.nodes {
 		go rd.i.beginReplication(dev, rjob.partition, true, rChan, rjob.headers)
 	}
@@ -334,7 +398,7 @@ func (rd *swiftDevice) replicateUsingHashes(rjob replJob, moreNodes ring.MoreNod
 		}
 	}
 	if len(remoteHashes) == 0 {
-		return
+		return 0, fmt.Errorf("replicateAll could get no remote connections")
 	}
 
 	timeGetHashesRemote := float64(time.Now().Sub(startGetHashesRemote)) / float64(time.Second)
@@ -344,7 +408,7 @@ func (rd *swiftDevice) replicateUsingHashes(rjob replJob, moreNodes ring.MoreNod
 	hashes, err := GetHashes(rd.r.deviceRoot, rd.dev.Device, rjob.partition, recalc, rd.r.reclaimAge, rd.policy, rd.r.logger)
 	if err != nil {
 		rd.r.logger.Error("[replicateUsingHashes] error getting local hashes", zap.Error(err))
-		return
+		return 0, err
 	}
 	for suffix, localHash := range hashes {
 		for _, remoteHash := range remoteHashes {
@@ -357,7 +421,7 @@ func (rd *swiftDevice) replicateUsingHashes(rjob replJob, moreNodes ring.MoreNod
 	hashes, err = GetHashes(rd.r.deviceRoot, rd.dev.Device, rjob.partition, recalc, rd.r.reclaimAge, rd.policy, rd.r.logger)
 	if err != nil {
 		rd.r.logger.Error("[replicateUsingHashes] error recalculating local hashes", zap.Error(err))
-		return
+		return 0, err
 	}
 	timeGetHashesLocal := float64(time.Now().Sub(startGetHashesLocal)) / float64(time.Second)
 
@@ -387,10 +451,10 @@ func (rd *swiftDevice) replicateUsingHashes(rjob replJob, moreNodes ring.MoreNod
 			break
 		}
 		if syncs, _, err := rd.i.syncFile(objFile, toSync, false); err == nil {
-			syncCount += syncs
+			syncCount += int64(syncs)
 		} else {
 			rd.r.logger.Error("[syncFile]", zap.Error(err))
-			return
+			return syncCount, err
 		}
 	}
 	for _, conn := range remoteConnections {
@@ -407,13 +471,19 @@ func (rd *swiftDevice) replicateUsingHashes(rjob replJob, moreNodes ring.MoreNod
 			zap.Float64("timeGetHashesLocal", timeGetHashesLocal),
 			zap.Float64("timeSyncing", timeSyncing))
 	}
+	return syncCount, nil
 }
 
-func (rd *swiftDevice) replicateAll(rjob replJob, isHandoff bool) {
+func (rd *swiftDevice) replicateAll(rjob replJob, isHandoff bool, w http.ResponseWriter) (int64, error) {
 	path := filepath.Join(rd.r.deviceRoot, rd.dev.Device, PolicyDir(rd.policy), rjob.partition)
-	syncCount := 0
+	syncCount := int64(0)
 	remoteConnections := make(map[int]RepConn)
 	rChan := make(chan beginReplicationResponse)
+	if w != nil {
+		swCan := make(chan struct{})
+		defer close(swCan)
+		go spaceWriter(w, swCan)
+	}
 	for _, dev := range rjob.nodes {
 		go rd.i.beginReplication(dev, rjob.partition, false, rChan, rjob.headers)
 	}
@@ -425,7 +495,7 @@ func (rd *swiftDevice) replicateAll(rjob replJob, isHandoff bool) {
 		}
 	}
 	if len(remoteConnections) == 0 {
-		return
+		return 0, fmt.Errorf("replicateAll could get no remote connections")
 	}
 
 	objChan := make(chan string, 100)
@@ -440,10 +510,10 @@ func (rd *swiftDevice) replicateAll(rjob replJob, isHandoff bool) {
 			}
 		}
 		if len(toSync) == 0 {
-			return
+			return 0, fmt.Errorf("replicateAll could get no remote connections to sync")
 		}
 		if syncs, insync, err := rd.i.syncFile(objFile, toSync, true); err == nil {
-			syncCount += syncs
+			syncCount += int64(syncs)
 
 			success := insync == len(rjob.nodes)
 			if rd.r.quorumDelete {
@@ -455,7 +525,7 @@ func (rd *swiftDevice) replicateAll(rjob replJob, isHandoff bool) {
 			}
 		} else {
 			rd.r.logger.Error("[syncFile]", zap.Error(err))
-			return
+			return syncCount, err
 		}
 	}
 	for _, conn := range remoteConnections {
@@ -466,6 +536,7 @@ func (rd *swiftDevice) replicateAll(rjob replJob, isHandoff bool) {
 	if syncCount > 0 {
 		rd.r.logger.Info("[replicateAll]", zap.String("Partition", path), zap.Any("Files Synced", syncCount))
 	}
+	return syncCount, nil
 }
 
 func (rd *swiftDevice) Key() string {
@@ -500,9 +571,9 @@ func (rd *swiftDevice) replicatePartition(partition string) {
 	rjob := replJob{partition: partition, nodes: nodes}
 	if handoff || (policy.Type == "replication-nursery" &&
 		!common.LooksTrue(policy.Config["cache_hash_dirs"])) {
-		rd.i.replicateAll(rjob, handoff)
+		rd.i.replicateAll(rjob, handoff, nil)
 	} else {
-		rd.i.replicateUsingHashes(rjob, rd.r.objectRings[rd.policy].GetMoreNodes(partitioni))
+		rd.i.replicateUsingHashes(rjob, rd.r.objectRings[rd.policy].GetMoreNodes(partitioni), nil)
 	}
 	rd.UpdateStat("PartitionsDone", 1)
 }
@@ -540,9 +611,6 @@ func (rd *swiftDevice) listPartitions() ([]string, []string, error) {
 }
 
 func (rd *swiftDevice) Replicate() {
-	if rd.r.policies[rd.policy].Type == "hec" { // TODO yuck
-		return
-	}
 	defer srv.LogPanics(rd.r.logger, fmt.Sprintf("PANIC REPLICATING DEVICE: %s", rd.dev.Device))
 	rd.UpdateStat("startRun", 1)
 	if mounted, err := fs.IsMount(filepath.Join(rd.r.deviceRoot, rd.dev.Device)); rd.r.checkMounts && (err != nil || mounted != true) {
@@ -580,7 +648,6 @@ func (rd *swiftDevice) Replicate() {
 			}
 		default:
 		}
-		rd.processPriorityJobs()
 		rd.i.replicatePartition(partition)
 		if j := common.StringInSliceIndex(partition, handoffPartitions); j >= 0 {
 			handoffPartitions = append(handoffPartitions[:j], handoffPartitions[j+1:]...)
@@ -633,65 +700,6 @@ type NoMoreNodes struct{}
 
 func (n *NoMoreNodes) Next() *ring.Device {
 	return nil
-}
-
-func (rd *swiftDevice) PriorityReplicate(w http.ResponseWriter, pri PriorityRepJob) error {
-	if !fs.Exists(filepath.Join(rd.r.deviceRoot, pri.FromDevice.Device, PolicyDir(rd.policy), strconv.FormatUint(pri.Partition, 10))) {
-		w.WriteHeader(404)
-		return nil
-	}
-	timer := time.NewTimer(priorityReplicateTimeout)
-	defer timer.Stop()
-	select {
-	case rd.priRep <- pri:
-		w.WriteHeader(200)
-		return nil
-	case <-timer.C:
-		return fmt.Errorf("timed out waiting for chan")
-	}
-}
-
-// processPriorityJobs runs any pending priority jobs given the device's id
-func (rd *swiftDevice) processPriorityJobs() {
-	for {
-		select {
-		case pri := <-rd.priRep:
-			func() {
-				time.Sleep(replicatePartSleepTime)
-				rd.r.replicateConcurrencySem <- struct{}{}
-				defer func() {
-					<-rd.r.replicateConcurrencySem
-				}()
-				partition := strconv.FormatUint(pri.Partition, 10)
-				_, handoff := rd.r.objectRings[rd.policy].GetJobNodes(pri.Partition, pri.FromDevice.Id)
-				jobType := "local"
-				if handoff {
-					jobType = "handoff"
-				}
-				policy := rd.r.policies[rd.policy]
-				if policy == nil {
-					return
-				}
-				rd.r.logger.Info("PriorityReplicationJob",
-					zap.Uint64("partition", pri.Partition),
-					zap.String("jobType", jobType),
-					zap.String("From Device", pri.FromDevice.Device),
-					zap.String("To Device", pri.ToDevice.Device))
-				rjob := replJob{
-					partition: partition, nodes: []*ring.Device{pri.ToDevice},
-					headers: map[string]string{"X-Force-Acquire": "true"}}
-				if handoff || (policy.Type == "replication-nursery" &&
-					!common.LooksTrue(policy.Config["cache_hash_dirs"])) {
-					rd.i.replicateAll(rjob, handoff)
-				} else {
-					rd.i.replicateUsingHashes(rjob, &NoMoreNodes{})
-				}
-			}()
-			rd.UpdateStat("PriorityRepsDone", 1)
-		default:
-			return
-		}
-	}
 }
 
 // SwiftObject implements an Object that is compatible with Swift's object server.
@@ -898,7 +906,6 @@ func (f *SwiftEngine) GetReplicationDevice(oring ring.Ring, dev *ring.Device, po
 		dev:    dev,
 		policy: policy,
 		cancel: make(chan struct{}),
-		priRep: make(chan PriorityRepJob),
 	}
 	rd.i = rd
 	return rd, nil

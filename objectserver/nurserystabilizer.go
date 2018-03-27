@@ -77,6 +77,7 @@ type nurseryDevice struct {
 type PriorityReplicationResult struct {
 	ObjectsReplicated int64
 	ObjectsErrored    int64
+	Success           bool
 }
 
 func (nrd *nurseryDevice) UpdateStat(stat string, amount int64) {
@@ -138,7 +139,7 @@ func (nrd *nurseryDevice) Key() string {
 	return deviceKeyId(nrd.dev.Device, nrd.policy)
 }
 
-func (nrd *nurseryDevice) PriorityReplicate(w http.ResponseWriter, pri PriorityRepJob) error {
+func (nrd *nurseryDevice) PriorityReplicate(w http.ResponseWriter, pri PriorityRepJob) {
 	objc := make(chan ObjectStabilizer)
 	canchan := make(chan struct{})
 
@@ -159,14 +160,15 @@ func (nrd *nurseryDevice) PriorityReplicate(w http.ResponseWriter, pri PriorityR
 			}
 		}
 	}
+	prp.Success = prp.ObjectsErrored == 0
 	b, err := json.Marshal(prp)
 	if err != nil {
 		nrd.r.logger.Error("error prirep jsoning", zap.Error(err))
 		b = []byte("There was an internal server error generating JSON.")
+		w.WriteHeader(500)
 	}
 	w.Write(b)
 	w.Write([]byte("\n"))
-	return nil
 }
 
 func GetNurseryDevice(oring ring.Ring, dev *ring.Device, policy int, r *Replicator, f NurseryObjectEngine) (ReplicationDevice, error) {

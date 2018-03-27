@@ -87,31 +87,28 @@ func SendPriRepJob(job *PriorityRepJob, client *http.Client) (string, bool) {
 		return fmt.Sprintf("Error moving partition %d: %v",
 			job.Partition, err), false
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode/100 == 2 {
 		if data, err := ioutil.ReadAll(resp.Body); err == nil {
-			if len(data) > 0 {
-				prp := PriorityReplicationResult{}
-				if err = json.Unmarshal(data, &prp); err == nil {
-					return fmt.Sprintf("Replicating partition %d from %s/%s replicated %d objects with %d errors",
-						job.Partition, job.FromDevice.Ip, job.FromDevice.Device, prp.ObjectsReplicated, prp.ObjectsErrored), true
-
-				} else {
-					return fmt.Sprintf("could not get valid response for partition %d: %v",
-						job.Partition, err), false
-				}
+			prp := PriorityReplicationResult{}
+			if err = json.Unmarshal(data, &prp); err == nil {
+				return fmt.Sprintf("Replicating partition %d from %s/%s to %s/%s replicated %d objects with %d errors",
+					job.Partition, job.FromDevice.Ip, job.FromDevice.Device, job.ToDevice.Ip, job.ToDevice.Device,
+					prp.ObjectsReplicated, prp.ObjectsErrored), prp.Success
+			} else {
+				return fmt.Sprintf("could not get valid response for partition %d: %v",
+					job.Partition, err), false
 			}
 		} else {
 			return fmt.Sprintf("could not  read body forpartition %d: %v",
 				job.Partition, err), false
 		}
+	} else if resp.StatusCode == 404 {
+		return fmt.Sprintf("partition %d: not found on %s/%s",
+			job.Partition, job.FromDevice.Ip, job.FromDevice.Device), true
 	}
-	resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		return fmt.Sprintf("Bad status code moving partition %d: %d",
-			job.Partition, resp.StatusCode), false
-	}
-	return fmt.Sprintf("Replicating partition %d from %s/%s",
-		job.Partition, job.FromDevice.Ip, job.FromDevice.Device), true
+	return fmt.Sprintf("Bad status code moving partition %d: %d",
+		job.Partition, resp.StatusCode), false
 }
 
 // doPriRepJobs executes a list of PriorityRepJobs, limiting concurrent jobs per device to deviceMax.
