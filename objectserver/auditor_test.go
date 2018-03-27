@@ -539,7 +539,7 @@ func TestAuditDB(t *testing.T) {
 	f, err := db.TempFile(hash, 0, timestamp, int64(len(body)), false)
 	assert.Nil(t, err)
 	f.Write([]byte(body))
-	err = db.Commit(f, hash, 0, timestamp, false, "", nil, false, shardHash)
+	err = db.Commit(f, hash, 0, timestamp, "PUT", "", nil, false, shardHash)
 	assert.Nil(t, err)
 	shardPath, err := db.WholeObjectPath(hash, 0, timestamp, false)
 	assert.Nil(t, err)
@@ -547,20 +547,20 @@ func TestAuditDB(t *testing.T) {
 	f, err = db.TempFile(hash1, 0, timestamp, int64(len(body)), false)
 	assert.Nil(t, err)
 	f.Write([]byte(body))
-	err = db.Commit(f, hash1, 0, timestamp, false, "", nil, false, shardHash)
+	err = db.Commit(f, hash1, 0, timestamp, "PUT", "", nil, false, shardHash)
 	assert.Nil(t, err)
 	hash2 := "00000000000000000000000000000002"
 	f, err = db.TempFile(hash2, 0, timestamp, int64(len(body)), false)
 	assert.Nil(t, err)
 	f.Write([]byte(body))
-	err = db.Commit(f, hash2, 0, timestamp, false, "", nil, false, shardHash)
+	err = db.Commit(f, hash2, 0, timestamp, "PUT", "", nil, false, shardHash)
 	assert.Nil(t, err)
 	// Add a nursery object too
 	hash3 := "00000000000000000000000000000003"
 	f, err = db.TempFile(hash3, 0, timestamp, int64(len(body)), true)
 	assert.Nil(t, err)
 	f.Write([]byte(body))
-	err = db.Commit(f, hash3, 0, timestamp, false, "", nil, true, shardHash)
+	err = db.Commit(f, hash3, 0, timestamp, "PUT", "", nil, true, shardHash)
 	assert.Nil(t, err)
 	nurseryPath, err := db.WholeObjectPath(hash3, 0, timestamp, true)
 	assert.Nil(t, err)
@@ -644,7 +644,7 @@ func TestQuarantineShard(t *testing.T) {
 	f, err := db.TempFile(hash, 0, timestamp, int64(len(body)), false)
 	assert.Nil(t, err)
 	f.Write([]byte(body))
-	err = db.Commit(f, hash, 0, timestamp, false, "", nil, false, "unused")
+	err = db.Commit(f, hash, 0, timestamp, "PUT", "", nil, false, "unused")
 	assert.Nil(t, err)
 
 	meta := "{\"name\": \"objectname\"}"
