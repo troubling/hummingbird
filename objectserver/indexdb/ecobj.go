@@ -450,7 +450,7 @@ func (o *ecObject) nurseryReplicate(rng ring.Ring, partition uint64, dev *ring.D
 		}
 	}
 
-	successes := e.Successes(time.Second * 15)
+	successes := e.Successes(time.Second*15, o.Deletion)
 	if handoff && successes >= nurseryReplicaCount {
 		return o.idb.Remove(o.Hash, o.Shard, o.Timestamp, true)
 	} else if successes < nurseryReplicaCount {
@@ -478,8 +478,13 @@ func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error 
 		defer rp.Close()
 		defer wp.Close()
 		wrs[i] = wp
-		req, err := http.NewRequest("PUT", fmt.Sprintf("%s://%s:%d/ec-shard/%s/%s/%d", node.Scheme, node.ReplicationIp,
-			node.ReplicationPort, node.Device, o.Hash, i), rp)
+		url := fmt.Sprintf("%s://%s:%d/ec-shard/%s/%s/%d", node.Scheme, node.ReplicationIp,
+			node.ReplicationPort, node.Device, o.Hash, i)
+		method := "PUT"
+		if o.Deletion {
+			method = "DELETE"
+		}
+		req, err := http.NewRequest(method, url, rp)
 		if err != nil {
 			return err
 		}
@@ -504,31 +509,35 @@ func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error 
 				success = false
 			}
 		} else if ready[i] == true {
-			needUpload = true
-			writers[i] = wrs[i]
+			if !o.Deletion {
+				needUpload = true
+				writers[i] = wrs[i]
+			}
 		} else {
 			success = false
 		}
 	}
-	if success && needUpload {
-		fp, err := os.Open(o.Path)
-		if err != nil {
-			return err
-		}
-		defer fp.Close()
+	if success {
+		if needUpload {
+			fp, err := os.Open(o.Path)
+			if err != nil {
+				return err
+			}
+			defer fp.Close()
 
-		contentLength := int64(0) // TODO: check this against metadata
-		if fi, err := fp.Stat(); err != nil {
-			return err
-		} else {
-			contentLength = fi.Size()
-		}
+			contentLength := int64(0) // TODO: check this against metadata
+			if fi, err := fp.Stat(); err != nil {
+				return err
+			} else {
+				contentLength = fi.Size()
+			}
 
-		ecSplit(o.dataShards, o.parityShards, fp, o.chunkSize, contentLength, writers)
+			ecSplit(o.dataShards, o.parityShards, fp, o.chunkSize, contentLength, writers)
+		}
 		for _, w := range wrs {
 			w.Close()
 		}
-		if e.Successes(time.Second*15) < len(nodes) {
+		if e.Successes(time.Second*15, o.Deletion) < len(nodes) {
 			success = false
 		}
 	}

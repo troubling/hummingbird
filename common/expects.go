@@ -130,7 +130,7 @@ func (e *Expector) Wait(timeout time.Duration) ([]*http.Response, []bool) {
 
 // Successes waits up to timeout time for all of the Expector's requests to return a response,
 // then returns the number that successfully responded with a 2XX response code.
-func (e *Expector) Successes(timeout time.Duration) (count int) {
+func (e *Expector) Successes(timeout time.Duration, notFoundOk bool) (count int) {
 	timer := time.After(timeout)
 	for {
 		// count number of requests from which we're still waiting for responses
@@ -155,7 +155,7 @@ func (e *Expector) Successes(timeout time.Duration) (count int) {
 	}
 	// count the successes
 	for _, r := range e.responses {
-		if r != nil && r.StatusCode/100 == 2 {
+		if r != nil && (r.StatusCode/100 == 2 || notFoundOk && r.StatusCode == 404) {
 			count++
 		}
 	}
