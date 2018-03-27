@@ -978,7 +978,7 @@ func sqliteCreateContainer(containerFile string, account string, container strin
 	defer lock.Close()
 
 	if fs.Exists(containerFile) {
-		return errors.New("Container exists!")
+		return nil
 	}
 
 	if metadata == nil {

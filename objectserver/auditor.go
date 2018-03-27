@@ -252,7 +252,7 @@ func (a *Auditor) statsReport() {
 		zap.String("Object audit", a.auditorType),
 		zap.String("Since", a.lastLog.Format(time.ANSIC)),
 		zap.Int64("Locally passed", a.passes),
-		zap.Int64("Locally quarantied", a.quarantines),
+		zap.Int64("Locally quarantined", a.quarantines),
 		zap.Int64("Locally errored", a.errors),
 		zap.Float64("files/sec", frate),
 		zap.Float64("bytes/sec", brate),

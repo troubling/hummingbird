@@ -948,7 +948,7 @@ func sqliteCreateAccount(accountFile string, account string, putTimestamp string
 	defer lock.Close()
 
 	if fs.Exists(accountFile) {
-		return errors.New("Account exists!")
+		return nil
 	}
 
 	if metadata == nil {
