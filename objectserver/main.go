@@ -223,14 +223,14 @@ func (server *ObjectServer) ObjGetHandler(writer http.ResponseWriter, request *h
 			hash := md5.New()
 			_, err := obj.Copy(writer, hash)
 			if err != nil {
-				srv.GetLogger(request).Debug("Error copying body", zap.Error(err))
+				srv.GetLogger(request).Error("Error copying body", zap.Error(err))
 			} else if hex.EncodeToString(hash.Sum(nil)) != metadata["ETag"] {
 				obj.Quarantine()
 			}
 		} else {
 			_, err := obj.Copy(writer)
 			if err != nil {
-				srv.GetLogger(request).Debug("Error copying body", zap.Error(err))
+				srv.GetLogger(request).Error("Error copying body", zap.Error(err))
 			}
 		}
 	} else {
@@ -393,6 +393,9 @@ func (server *ObjectServer) ObjPostHandler(writer http.ResponseWriter, request *
 	metadata := make(map[string]string)
 	if v, ok := origMetadata["X-Static-Large-Object"]; ok {
 		metadata["X-Static-Large-Object"] = v
+	}
+	if v, ok := origMetadata["Ec-Scheme"]; ok {
+		metadata["Ec-Scheme"] = v
 	}
 	copyHdrs := map[string]bool{"Content-Disposition": true, "Content-Encoding": true, "X-Delete-At": true, "X-Object-Manifest": true, "X-Static-Large-Object": true}
 	for _, v := range strings.Fields(request.Header.Get("X-Backend-Replication-Headers")) {

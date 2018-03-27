@@ -93,7 +93,7 @@ func (nrd *nurseryDevice) Replicate() {
 	c := make(chan ObjectStabilizer, 100)
 	cancel := make(chan struct{})
 	defer close(cancel)
-	go nrd.objEngine.GetNurseryObjects(nrd.dev.Device, c, cancel)
+	go nrd.objEngine.GetObjectsToStabilize(nrd.dev.Device, c, cancel)
 	for o := range c {
 		nrd.UpdateStat("checkin", 1)
 		func() {
@@ -104,7 +104,7 @@ func (nrd *nurseryDevice) Replicate() {
 			if err := o.Stabilize(nrd.oring, nrd.dev, nrd.policy); err == nil {
 				nrd.UpdateStat("objectsStabilized", 1)
 			} else {
-				nrd.r.logger.Error("[stabilizeDevice] error Stabilize obj", zap.String("Object", o.Repr()), zap.Error(err))
+				nrd.r.logger.Debug("[stabilizeDevice] error Stabilize obj", zap.String("Object", o.Repr()), zap.Error(err))
 			}
 		}()
 		select {

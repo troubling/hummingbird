@@ -52,7 +52,7 @@ func TestIndexDB_Commit(t *testing.T) {
 	f, err := ot.TempFile(hsh, 0, timestamp, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true, shardHash))
+	errnil(t, ot.Commit(f, hsh, 0, timestamp, "PUT", "", nil, true, shardHash))
 	pth, err = ot.wholeObjectPath(hsh, 0, timestamp, true)
 	errnil(t, err)
 	fi, err := os.Stat(pth)
@@ -78,7 +78,7 @@ func TestIndexDB_Commit(t *testing.T) {
 	errnil(t, err)
 	f.Write([]byte(body))
 	// FIXME? This *WILL* overwrite the shardHash, but not the object data
-	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true, shardHash))
+	errnil(t, ot.Commit(f, hsh, 0, timestamp, "PUT", "", nil, true, shardHash))
 	pth, err = ot.wholeObjectPath(hsh, 0, timestamp, true)
 	errnil(t, err)
 	fi, err = os.Stat(pth)
@@ -102,7 +102,7 @@ func TestIndexDB_Commit(t *testing.T) {
 	f, err = ot.TempFile(hsh, 0, timestamp+1, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh, 0, timestamp-1, false, "", nil, true, ""))
+	errnil(t, ot.Commit(f, hsh, 0, timestamp-1, "PUT", "", nil, true, ""))
 	pth, err = ot.wholeObjectPath(hsh, 0, timestamp-1, true)
 	fi, err = os.Stat(pth)
 	if !os.IsNotExist(err) {
@@ -126,7 +126,7 @@ func TestIndexDB_Commit(t *testing.T) {
 	errnil(t, err)
 	f.Write([]byte(body))
 	newShardHash := "morenonsense"
-	errnil(t, ot.Commit(f, hsh, 0, timestamp+1, false, "", nil, true, newShardHash))
+	errnil(t, ot.Commit(f, hsh, 0, timestamp+1, "PUT", "", nil, true, newShardHash))
 	pth, err = ot.wholeObjectPath(hsh, 0, timestamp+1, true)
 	errnil(t, err)
 	fi, err = os.Stat(pth)
@@ -161,7 +161,7 @@ func TestIndexDB_Lookup(t *testing.T) {
 	f, err := ot.TempFile(hsh, 0, timestamp, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true, shardHash))
+	errnil(t, ot.Commit(f, hsh, 0, timestamp, "PUT", "", nil, true, shardHash))
 	// Do the lookup.
 	//lookedupTimestamp, deletion, metahash, metadata, path, err := ot.Lookup(hsh, 0)
 	i, err := ot.Lookup(hsh, 0, false)
@@ -209,7 +209,7 @@ func TestIndexDB_Lookup_withOverwrite(t *testing.T) {
 	f, err := ot.TempFile(hsh, 0, timestamp, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true, shardHash))
+	errnil(t, ot.Commit(f, hsh, 0, timestamp, "PUT", "", nil, true, shardHash))
 	// Commit newer file.
 	timestamp = time.Now().UnixNano()
 	body = "just testing newer"
@@ -217,7 +217,7 @@ func TestIndexDB_Lookup_withOverwrite(t *testing.T) {
 	f, err = ot.TempFile(hsh, 0, timestamp, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true, shardHash))
+	errnil(t, ot.Commit(f, hsh, 0, timestamp, "PUT", "", nil, true, shardHash))
 	// Do the lookup.
 	//lookedupTimestamp, deletion, metahash, metadata, path, err := ot.Lookup(hsh, 0)
 	i, err := ot.Lookup(hsh, 0, false)
@@ -265,7 +265,7 @@ func TestIndexDB_Lookup_withUnderwrite(t *testing.T) {
 	f, err := ot.TempFile(hsh, 0, timestamp, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true, shardHash))
+	errnil(t, ot.Commit(f, hsh, 0, timestamp, "PUT", "", nil, true, shardHash))
 	// Commit older file (should be discarded).
 	timestampOlder := timestamp - 1
 	bodyOlder := "just testing older"
@@ -274,7 +274,7 @@ func TestIndexDB_Lookup_withUnderwrite(t *testing.T) {
 	f, err = ot.TempFile(hsh, 0, timestamp+1, int64(len(bodyOlder)), true)
 	errnil(t, err)
 	f.Write([]byte(bodyOlder))
-	errnil(t, ot.Commit(f, hsh, 0, timestampOlder, false, "", nil, true, shardHashOlder))
+	errnil(t, ot.Commit(f, hsh, 0, timestampOlder, "PUT", "", nil, true, shardHashOlder))
 	// Do the lookup.
 	//lookedupTimestamp, deletion, metahash, metadata, path, err := ot.Lookup(hsh, 0)
 	i, err := ot.Lookup(hsh, 0, false)
@@ -338,7 +338,7 @@ func TestIndexDB_List(t *testing.T) {
 		f, err := ot.TempFile(hsh, 0, timestamp, int64(len(body)), true)
 		errnil(t, err)
 		f.Write([]byte(body))
-		errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true, ""))
+		errnil(t, ot.Commit(f, hsh, 0, timestamp, "PUT", "", nil, true, ""))
 	}
 	startHash, stopHash := ot.RingPartRange(0)
 	listing, err := ot.List(startHash, stopHash, "", 0)
@@ -399,12 +399,12 @@ func TestIndexDB_ListRange(t *testing.T) {
 	f, err := ot.TempFile(hsh0, 0, timestamp, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh0, 0, timestamp, false, "", nil, true, ""))
+	errnil(t, ot.Commit(f, hsh0, 0, timestamp, "PUT", "", nil, true, ""))
 
 	f, err = ot.TempFile(hsh1, 0, timestamp, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh1, 0, timestamp, false, "", nil, true, ""))
+	errnil(t, ot.Commit(f, hsh1, 0, timestamp, "PUT", "", nil, true, ""))
 
 	startHash := "00000000000000000000000000000000"
 	stopHash := "11111111111111111111111111111111"
@@ -484,7 +484,7 @@ func TestIndexDB_ListMarker(t *testing.T) {
 		f, err := ot.TempFile(hsh, 0, timestamp, int64(len(body)), true)
 		errnil(t, err)
 		f.Write([]byte(body))
-		errnil(t, ot.Commit(f, hsh, 0, timestamp, false, "", nil, true, ""))
+		errnil(t, ot.Commit(f, hsh, 0, timestamp, "PUT", "", nil, true, ""))
 		fmt.Printf("HASH: %s\n", hsh)
 	}
 
@@ -543,12 +543,12 @@ func TestIndexDB_ListDefaults(t *testing.T) {
 	f, err := ot.TempFile(hsh0, 0, timestamp, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh0, 0, timestamp, false, "", nil, true, ""))
+	errnil(t, ot.Commit(f, hsh0, 0, timestamp, "PUT", "", nil, true, ""))
 
 	f, err = ot.TempFile(hsh1, 0, timestamp, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh1, 0, timestamp, false, "", nil, true, ""))
+	errnil(t, ot.Commit(f, hsh1, 0, timestamp, "PUT", "", nil, true, ""))
 
 	listing, err := ot.List("", "", "", 0)
 	if err != nil {
