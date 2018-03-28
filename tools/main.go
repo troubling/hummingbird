@@ -625,7 +625,6 @@ func (server *AutoAdmin) LogRequest(next http.Handler) http.Handler {
 
 func (a *AutoAdmin) Run() {
 	// TODO: Reimplement run once.
-	newQuarantineRepair(a).runOnce()
 }
 
 func (a *AutoAdmin) RunForever() {
