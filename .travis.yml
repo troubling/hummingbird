@@ -27,7 +27,7 @@ install:
       git checkout stable/pike
     else
       mkdir -p /tmp/output/bin
-      cp /usr/bin/hummingbird /tmp/output/bin
+      cp /usr/local/bin/hummingbird /tmp/output/bin
     fi
   - virtualenv ~/swift-venv
   - ~/swift-venv/bin/pip install -U pip setuptools python-subunit nose-htmloutput nose-exclude
@@ -72,7 +72,7 @@ script:
 deploy:
   provider: releases
   api_key: $GITHUB_TOKEN
-  file: /usr/bin/hummingbird
+  file: /usr/local/bin/hummingbird
   skip_cleanup: true
   overwrite: true
   on:
