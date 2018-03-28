@@ -308,7 +308,9 @@ func (b *RingBuilder) MinPartSecondsLeft() int {
 func (b *RingBuilder) WeightOfOnePart() float64 {
 	totalWeight := 0.0
 	for next, dev := devIterator(b.Devs); dev != nil; dev = next() {
-		totalWeight += dev.Weight
+		if dev.Weight > 0.0 {
+			totalWeight += dev.Weight
+		}
 	}
 	return float64(b.Parts) * b.Replicas / totalWeight
 }
@@ -421,7 +423,7 @@ func (b *RingBuilder) buildWeightedReplicasByTier() (map[string]float64, error) 
 	}
 	for t, r := range replicasAtTier {
 		if math.Abs(b.Replicas-r) > 1e-10 {
-			return nil, fmt.Errorf("%f != %f at tier %d", r, b.Replicas, t)
+			return nil, fmt.Errorf("1: %f != %f at tier %d", r, b.Replicas, t)
 		}
 	}
 
@@ -599,7 +601,7 @@ func (b *RingBuilder) buildWantedReplicasByTier() (map[string]float64, error) {
 	}
 	for t, r := range replicasAtTier {
 		if math.Abs(b.Replicas-r) > 1e-10 {
-			return nil, fmt.Errorf("%f != %f at tier %d", r, b.Replicas, t)
+			return nil, fmt.Errorf("2: %f != %f at tier %d", r, b.Replicas, t)
 		}
 	}
 
@@ -670,7 +672,7 @@ func (b *RingBuilder) buildTargetReplicasByTier() (map[string]float64, error) {
 	}
 	for t, r := range replicasAtTier {
 		if math.Abs(b.Replicas-r) > 1e-10 {
-			return nil, fmt.Errorf("%f != %f at tier %d", r, b.Replicas, t)
+			return nil, fmt.Errorf("3: %f != %f at tier %d", r, b.Replicas, t)
 		}
 	}
 
@@ -714,6 +716,9 @@ func (b *RingBuilder) tiersForDev(dev *RingBuilderDevice) [4]string {
 func (b *RingBuilder) buildTierTree(devs []*RingBuilderDevice) map[string][]string {
 	tier2Children := make(map[string][]string)
 	for next, dev := devIterator(devs); dev != nil; dev = next() {
+		if dev.Weight < 0 {
+			continue
+		}
 		for _, tier := range b.tiersForDev(dev) {
 			parts := strings.Split(tier, ";")
 			if len(parts) == 1 {
@@ -794,7 +799,7 @@ func (b *RingBuilder) setPartsWanted(repPlan map[string]replicaPlan) error {
 	}
 	for t, p := range partsAtTier {
 		if p != totalParts {
-			return fmt.Errorf("%d != %d at tier %d", p, totalParts, t)
+			return fmt.Errorf("4: %d != %d at tier %d", p, totalParts, t)
 		}
 	}
 
