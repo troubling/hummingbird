@@ -322,8 +322,6 @@ func (o *ecObject) Reconstruct() error {
 		bodies[i] = resp.Body
 		readSuccesses++
 	}
-	o.logger.Info("Reconstruct successful reads", zap.Int("successes", readSuccesses))
-	o.logger.Info("Reconstruct failed reads", zap.Int("fails", readFails))
 	if readSuccesses < dataShards {
 		return fmt.Errorf("Not enough nodes (%d) to reconstruct from (%d)", readSuccesses, dataShards)
 	}
