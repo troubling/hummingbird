@@ -199,12 +199,12 @@ func (c *ProxyDirectClient) firstResponse(r ring.Ring, partition uint64, deviceL
 	success := make(chan *http.Response)
 	returned := make(chan struct{})
 	defer close(returned)
-	maxRequests := int(r.ReplicaCount()) * 2
+	primaries := int(r.ReplicaCount())
 	if deviceLimit > 0 {
-		maxRequests = deviceLimit * 2
+		primaries = deviceLimit
 	}
 	devs := r.GetNodes(partition)
-	for i := range devs {
+	for i := 0; i < primaries; i++ {
 		j := rand.Intn(i + 1)
 		devs[i], devs[j] = devs[j], devs[i]
 	}
@@ -232,6 +232,7 @@ func (c *ProxyDirectClient) firstResponse(r ring.Ring, partition uint64, deviceL
 		}
 		return nil
 	}
+	maxRequests := primaries * 2
 	requestsPending := 0
 	for requestCount := 0; requestCount < maxRequests; requestCount++ {
 		var dev *ring.Device
