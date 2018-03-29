@@ -26,6 +26,7 @@ import (
 
 const PostQuorumTimeoutMs = 100
 const postPutTimeout = time.Second * 30
+const firstResponseFinalTimeout = time.Second * 30
 
 func addUpdateHeaders(prefix string, headers http.Header, devices []*ring.Device, i, replicas int) {
 	if i < len(devices) {
@@ -280,6 +281,7 @@ func (c *ProxyDirectClient) firstResponse(r ring.Ring, partition uint64, deviceL
 		case <-time.After(time.Second):
 		}
 	}
+	giveUp := time.After(firstResponseFinalTimeout)
 	for requestsPending > 0 {
 		select {
 		case resp = <-success:
@@ -288,6 +290,9 @@ func (c *ProxyDirectClient) firstResponse(r ring.Ring, partition uint64, deviceL
 			if resp != nil {
 				return resp
 			}
+		case <-giveUp:
+			internalErrors += requestsPending
+			requestsPending = 0
 		}
 	}
 	if notFounds > internalErrors {
