@@ -199,17 +199,41 @@ func (c *ProxyDirectClient) firstResponse(r ring.Ring, partition uint64, deviceL
 	success := make(chan *http.Response)
 	returned := make(chan struct{})
 	defer close(returned)
-	devs := r.GetNodes(partition)
-	if deviceLimit > 0 && len(devs) > deviceLimit {
-		devs = devs[0:deviceLimit]
+	maxRequests := int(r.ReplicaCount()) * 2
+	if deviceLimit > 0 {
+		maxRequests = deviceLimit * 2
 	}
+	devs := r.GetNodes(partition)
 	for i := range devs {
 		j := rand.Intn(i + 1)
 		devs[i], devs[j] = devs[j], devs[i]
 	}
 	more := r.GetMoreNodes(partition)
 	internalErrors := 0
-	for requestCount := 0; requestCount < int(r.ReplicaCount()+2); requestCount++ {
+	notFounds := 0
+	interpretResponse := func(resp *http.Response) *http.Response {
+		if resp != nil && (resp.StatusCode/100 == 2 || resp.StatusCode == http.StatusPreconditionFailed ||
+			resp.StatusCode == http.StatusNotModified || resp.StatusCode == http.StatusRequestedRangeNotSatisfiable) {
+			resp.Header.Set("Accept-Ranges", "bytes")
+			if etag := resp.Header.Get("Etag"); etag != "" {
+				resp.Header.Set("Etag", strings.Trim(etag, "\""))
+			}
+			return resp
+		}
+		if resp != nil {
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusNotFound {
+				notFounds++
+			} else {
+				internalErrors++
+			}
+		} else {
+			internalErrors++
+		}
+		return nil
+	}
+	requestsPending := 0
+	for requestCount := 0; requestCount < maxRequests; requestCount++ {
 		var dev *ring.Device
 		if requestCount < len(devs) {
 			dev = devs[requestCount]
@@ -226,6 +250,7 @@ func (c *ProxyDirectClient) firstResponse(r ring.Ring, partition uint64, deviceL
 			continue
 		}
 
+		requestsPending++
 		go func(r *http.Request) {
 			response, err := c.client.Do(r)
 			if err != nil {
@@ -246,28 +271,28 @@ func (c *ProxyDirectClient) firstResponse(r ring.Ring, partition uint64, deviceL
 
 		select {
 		case resp = <-success:
-			if resp != nil && (resp.StatusCode/100 == 2 || resp.StatusCode == http.StatusPreconditionFailed ||
-				resp.StatusCode == http.StatusNotModified || resp.StatusCode == http.StatusRequestedRangeNotSatisfiable) {
-				resp.Header.Set("Accept-Ranges", "bytes")
-				if etag := resp.Header.Get("Etag"); etag != "" {
-					resp.Header.Set("Etag", strings.Trim(etag, "\""))
-				}
-				return resp
-			}
-			if resp == nil || resp.StatusCode/100 == 5 {
-				internalErrors++
-			}
+			requestsPending--
+			resp = interpretResponse(resp)
 			if resp != nil {
-				resp.Body.Close()
+				return resp
 			}
 		case <-time.After(time.Second):
 		}
 	}
-	if internalErrors >= int(r.ReplicaCount()) {
-		return nectarutil.ResponseStub(http.StatusServiceUnavailable, "")
-	} else {
+	for requestsPending > 0 {
+		select {
+		case resp = <-success:
+			requestsPending--
+			resp = interpretResponse(resp)
+			if resp != nil {
+				return resp
+			}
+		}
+	}
+	if notFounds > internalErrors {
 		return nectarutil.ResponseStub(http.StatusNotFound, "")
 	}
+	return nectarutil.ResponseStub(http.StatusServiceUnavailable, "")
 }
 
 type proxyClient struct {
