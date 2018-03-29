@@ -515,17 +515,18 @@ func (f *ecEngine) GetObjectsToStabilize(device string, c chan objectserver.Obje
 
 	for _, item := range items {
 		obj := &ecObject{
-			IndexDBItem:  *item,
-			idb:          idb,
-			dataShards:   f.dataShards,
-			parityShards: f.parityShards,
-			chunkSize:    f.chunkSize,
-			reserve:      f.reserve,
-			ring:         f.ring,
-			logger:       f.logger,
-			policy:       f.policy,
-			client:       f.client,
-			metadata:     map[string]string{},
+			IndexDBItem:     *item,
+			idb:             idb,
+			policy:          f.policy,
+			metadata:        map[string]string{},
+			ring:            f.ring,
+			logger:          f.logger,
+			reserve:         f.reserve,
+			dataShards:      f.dataShards,
+			parityShards:    f.parityShards,
+			chunkSize:       f.chunkSize,
+			client:          f.client,
+			nurseryReplicas: f.nurseryReplicas,
 		}
 		if err = json.Unmarshal(item.Metabytes, &obj.metadata); err != nil {
 			continue

@@ -453,7 +453,7 @@ func (o *ecObject) nurseryReplicate(rng ring.Ring, partition uint64, dev *ring.D
 	}
 
 	successes := e.Successes(time.Second*15, o.Deletion)
-	if handoff && successes >= nurseryReplicaCount {
+	if handoff && successes >= nurseryReplicaCount && successes > 0 {
 		return o.idb.Remove(o.Hash, o.Shard, o.Timestamp, true)
 	} else if successes < nurseryReplicaCount {
 		return errors.New("Unable to fully nursery-replicate object.")
