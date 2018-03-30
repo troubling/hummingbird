@@ -210,19 +210,19 @@ func (d *patchableReplicationDevice) syncFile(objFile string, dst []*syncFileArg
 	}
 	return d.swiftDevice.syncFile(objFile, dst, handoff)
 }
-func (d *patchableReplicationDevice) replicateUsingHashes(rjob replJob, moreNodes ring.MoreNodes, w http.ResponseWriter) (int64, error) {
+func (d *patchableReplicationDevice) replicateUsingHashes(rjob replJob, moreNodes ring.MoreNodes) (int64, error) {
 	if d._replicateUsingHashes != nil {
 		d._replicateUsingHashes(rjob, moreNodes)
 		return 0, nil
 	}
-	return d.swiftDevice.replicateUsingHashes(rjob, moreNodes, nil)
+	return d.swiftDevice.replicateUsingHashes(rjob, moreNodes)
 }
-func (d *patchableReplicationDevice) replicateAll(rjob replJob, isHandoff bool, w http.ResponseWriter) (int64, error) {
+func (d *patchableReplicationDevice) replicateAll(rjob replJob, isHandoff bool) (int64, error) {
 	if d._replicateAll != nil {
 		d._replicateAll(rjob, isHandoff)
 		return 0, nil
 	}
-	return d.swiftDevice.replicateAll(rjob, isHandoff, nil)
+	return d.swiftDevice.replicateAll(rjob, isHandoff)
 }
 func (d *patchableReplicationDevice) cleanTemp() {
 	if d._cleanTemp != nil {
@@ -650,7 +650,7 @@ func TestReplicateUsingHashes(t *testing.T) {
 		return 0, 0, nil
 	}
 	nodes := []*ring.Device{remoteDev}
-	rd.replicateUsingHashes(replJob{partition, nodes, nil}, &NoMoreNodes{}, nil)
+	rd.replicateUsingHashes(replJob{partition, nodes, nil}, &NoMoreNodes{})
 	require.True(t, syncFileCalled)
 }
 
@@ -685,7 +685,7 @@ func TestReplicateAll(t *testing.T) {
 		return 1, 1, nil
 	}
 	nodes := []*ring.Device{remoteDev}
-	rd.replicateAll(replJob{partition, nodes, nil}, true, nil)
+	rd.replicateAll(replJob{partition, nodes, nil}, true)
 	require.True(t, syncFileCalled)
 	require.False(t, fs.Exists(filename))
 }

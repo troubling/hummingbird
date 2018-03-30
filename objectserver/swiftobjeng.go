@@ -104,8 +104,8 @@ type swiftDevice struct {
 		beginReplication(dev *ring.Device, partition string, hashes bool, rChan chan beginReplicationResponse, headers map[string]string)
 		listObjFiles(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool)
 		syncFile(objFile string, dst []*syncFileArg, handoff bool) (syncs int, insync int, err error)
-		replicateUsingHashes(rjob replJob, moreNodes ring.MoreNodes, w http.ResponseWriter) (int64, error)
-		replicateAll(rjob replJob, isHandoff bool, w http.ResponseWriter) (int64, error)
+		replicateUsingHashes(rjob replJob, moreNodes ring.MoreNodes) (int64, error)
+		replicateAll(rjob replJob, isHandoff bool) (int64, error)
 		cleanTemp()
 		listPartitions() ([]string, []string, error)
 		replicatePartition(partition string)
@@ -290,6 +290,18 @@ func (rd *swiftDevice) syncFile(objFile string, dst []*syncFileArg, handoff bool
 	return syncs, insync, nil
 }
 
+func spaceWriter(w http.ResponseWriter, c chan struct{}, d chan struct{}) {
+	defer close(d)
+	for {
+		select {
+		case <-time.After(time.Minute):
+			w.Write([]byte(" "))
+		case <-c:
+			return
+		}
+	}
+}
+
 func (rd *swiftDevice) PriorityReplicate(w http.ResponseWriter, pri PriorityRepJob) {
 	if !fs.Exists(filepath.Join(rd.r.deviceRoot, pri.FromDevice.Device, PolicyDir(rd.policy), strconv.FormatUint(pri.Partition, 10))) {
 		w.WriteHeader(404)
@@ -316,19 +328,28 @@ func (rd *swiftDevice) PriorityReplicate(w http.ResponseWriter, pri PriorityRepJ
 		headers: map[string]string{"X-Force-Acquire": "true"}}
 	var synced int64
 	var err error
+	w.WriteHeader(200)
+	swc := make(chan struct{})
+	swd := make(chan struct{})
+	go spaceWriter(w, swc, swd)
 	if handoff || (policy.Type == "replication-nursery" &&
 		!common.LooksTrue(policy.Config["cache_hash_dirs"])) {
-		synced, err = rd.i.replicateAll(rjob, handoff, w)
+		synced, err = rd.i.replicateAll(rjob, handoff)
 	} else {
-		synced, err = rd.i.replicateUsingHashes(rjob, &NoMoreNodes{}, w)
+		synced, err = rd.i.replicateUsingHashes(rjob, &NoMoreNodes{})
 	}
 	rd.UpdateStat("PriorityRepsDone", 1)
-	prp := PriorityReplicationResult{ObjectsReplicated: synced, Success: err == nil}
-	b, err := json.Marshal(prp)
+	prr := PriorityReplicationResult{ObjectsReplicated: synced, Success: err == nil}
+	if err != nil {
+		prr.ErrorMsg = fmt.Sprintf("%v", err)
+	}
+	b, err := json.Marshal(prr)
 	if err != nil {
 		rd.r.logger.Error("error prirep jsoning", zap.Error(err))
 		b = []byte("There was an internal server error generating JSON.")
 	}
+	close(swc)
+	<-swd
 	w.Write(b)
 	w.Write([]byte("\n"))
 }
@@ -351,34 +372,13 @@ func (rd *swiftDevice) beginReplication(dev *ring.Device, partition string, hash
 	}
 }
 
-func spaceWriter(w http.ResponseWriter, c chan struct{}) {
-	t := time.Now()
-	for {
-		time.Sleep(time.Second / 10)
-		if time.Since(t) > time.Minute {
-			w.Write([]byte(" "))
-			t = time.Now()
-		}
-		select {
-		case <-c:
-			return
-		default:
-		}
-	}
-}
-
-func (rd *swiftDevice) replicateUsingHashes(rjob replJob, moreNodes ring.MoreNodes, w http.ResponseWriter) (int64, error) {
+func (rd *swiftDevice) replicateUsingHashes(rjob replJob, moreNodes ring.MoreNodes) (int64, error) {
 	path := filepath.Join(rd.r.deviceRoot, rd.dev.Device, PolicyDir(rd.policy), rjob.partition)
 	syncCount := int64(0)
 	startGetHashesRemote := time.Now()
 	remoteHashes := make(map[int]map[string]string)
 	remoteConnections := make(map[int]RepConn)
 	rChan := make(chan beginReplicationResponse)
-	if w != nil {
-		swCan := make(chan struct{})
-		defer close(swCan)
-		go spaceWriter(w, swCan)
-	}
 	for _, dev := range rjob.nodes {
 		go rd.i.beginReplication(dev, rjob.partition, true, rChan, rjob.headers)
 	}
@@ -474,16 +474,11 @@ func (rd *swiftDevice) replicateUsingHashes(rjob replJob, moreNodes ring.MoreNod
 	return syncCount, nil
 }
 
-func (rd *swiftDevice) replicateAll(rjob replJob, isHandoff bool, w http.ResponseWriter) (int64, error) {
+func (rd *swiftDevice) replicateAll(rjob replJob, isHandoff bool) (int64, error) {
 	path := filepath.Join(rd.r.deviceRoot, rd.dev.Device, PolicyDir(rd.policy), rjob.partition)
 	syncCount := int64(0)
 	remoteConnections := make(map[int]RepConn)
 	rChan := make(chan beginReplicationResponse)
-	if w != nil {
-		swCan := make(chan struct{})
-		defer close(swCan)
-		go spaceWriter(w, swCan)
-	}
 	for _, dev := range rjob.nodes {
 		go rd.i.beginReplication(dev, rjob.partition, false, rChan, rjob.headers)
 	}
@@ -571,9 +566,9 @@ func (rd *swiftDevice) replicatePartition(partition string) {
 	rjob := replJob{partition: partition, nodes: nodes}
 	if handoff || (policy.Type == "replication-nursery" &&
 		!common.LooksTrue(policy.Config["cache_hash_dirs"])) {
-		rd.i.replicateAll(rjob, handoff, nil)
+		rd.i.replicateAll(rjob, handoff)
 	} else {
-		rd.i.replicateUsingHashes(rjob, rd.r.objectRings[rd.policy].GetMoreNodes(partitioni), nil)
+		rd.i.replicateUsingHashes(rjob, rd.r.objectRings[rd.policy].GetMoreNodes(partitioni))
 	}
 	rd.UpdateStat("PartitionsDone", 1)
 }

@@ -78,6 +78,7 @@ type PriorityReplicationResult struct {
 	ObjectsReplicated int64
 	ObjectsErrored    int64
 	Success           bool
+	ErrorMsg          string
 }
 
 func (nrd *nurseryDevice) UpdateStat(stat string, amount int64) {
@@ -147,25 +148,27 @@ func (nrd *nurseryDevice) PriorityReplicate(w http.ResponseWriter, pri PriorityR
 	//TODO: add concurrency to this
 	w.WriteHeader(http.StatusOK)
 	t := time.Now()
-	prp := PriorityReplicationResult{}
+	prr := PriorityReplicationResult{}
 	for o := range objc {
 		if err := o.Replicate(pri); err != nil {
 			nrd.r.logger.Error("error prirep Replicate", zap.Error(err))
-			prp.ObjectsErrored++
+			prr.ObjectsErrored++
 		} else {
-			prp.ObjectsReplicated++
+			prr.ObjectsReplicated++
 			if time.Since(t) > time.Minute {
 				w.Write([]byte(" "))
 				t = time.Now()
 			}
 		}
 	}
-	prp.Success = prp.ObjectsErrored == 0
-	b, err := json.Marshal(prp)
+	prr.Success = prr.ObjectsErrored == 0
+	if !prr.Success {
+		prr.ErrorMsg = fmt.Sprintf("%d objects failed to replicate", prr.ObjectsErrored)
+	}
+	b, err := json.Marshal(prr)
 	if err != nil {
 		nrd.r.logger.Error("error prirep jsoning", zap.Error(err))
 		b = []byte("There was an internal server error generating JSON.")
-		w.WriteHeader(500)
 	}
 	w.Write(b)
 	w.Write([]byte("\n"))
