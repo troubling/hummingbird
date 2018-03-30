@@ -285,7 +285,7 @@ func (a *Auditor) auditDB(dbpath string, objRing ring.Ring, policy *conf.Policy)
 		}
 		subdirs = int(subdirsInt64)
 	}
-	db, err := NewIndexDB(dbpath, path, temppath, ringPartPower, dbPartPower, subdirs, zapLogger)
+	db, err := NewIndexDB(dbpath, path, temppath, ringPartPower, dbPartPower, subdirs, 0, zapLogger)
 	if err != nil {
 		a.errors++
 		a.totalErrors++

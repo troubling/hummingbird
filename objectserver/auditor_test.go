@@ -530,7 +530,7 @@ func TestAuditDB(t *testing.T) {
 	policydir := filepath.Join(dir, "objects")
 	dbdir := filepath.Join(policydir, "hec.db")
 	hecdir := filepath.Join(policydir, "hec")
-	db, err := NewIndexDB(dbdir, hecdir, dir, 2, 1, 32, zap.L())
+	db, err := NewIndexDB(dbdir, hecdir, dir, 2, 1, 32, 0, zap.L())
 	assert.Nil(t, err)
 	body := "some shard content nonsense"
 	shardHash := "d3ac5112fe464b81184352ccba743001"
@@ -637,7 +637,7 @@ func TestQuarantineShard(t *testing.T) {
 	policydir := filepath.Join(dir, "objects")
 	dbdir := filepath.Join(policydir, "hec.db")
 	hecdir := filepath.Join(policydir, "hec")
-	db, err := NewIndexDB(dbdir, hecdir, dir, 2, 1, 32, zap.L())
+	db, err := NewIndexDB(dbdir, hecdir, dir, 2, 1, 32, 0, zap.L())
 	timestamp := time.Now().UnixNano()
 	hash := "00000000000000000000000000000000"
 	body := "nonsense"
