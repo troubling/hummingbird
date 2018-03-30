@@ -138,10 +138,12 @@ func TestStabilize(t *testing.T) {
 	require.Nil(t, err)
 	var mutex sync.Mutex
 	methods := make(map[string]string)
+	lengths := make(map[string]int64)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		drive := r.URL.Path[10:13]
 		mutex.Lock()
 		methods[drive] = r.Method
+		lengths[drive] = r.ContentLength
 		mutex.Unlock()
 		io.Copy(ioutil.Discard, r.Body)
 	}))
@@ -180,10 +182,16 @@ func TestStabilize(t *testing.T) {
 	}
 	require.Nil(t, to.Stabilize(rng, nil, 0))
 	require.Equal(t, "PUT", methods["sda"])
+	// 7 bytes / 3 shards rounds up to 3
+	require.Equal(t, int64(3), lengths["sda"])
 	require.Equal(t, "PUT", methods["sdb"])
+	require.Equal(t, int64(3), lengths["sdb"])
 	require.Equal(t, "PUT", methods["sdc"])
+	require.Equal(t, int64(3), lengths["sdc"])
 	require.Equal(t, "PUT", methods["sdd"])
+	require.Equal(t, int64(3), lengths["sdd"])
 	require.Equal(t, "PUT", methods["sde"])
+	require.Equal(t, int64(3), lengths["sde"])
 }
 
 func TestStabilizeDelete(t *testing.T) {

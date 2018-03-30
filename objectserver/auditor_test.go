@@ -494,7 +494,7 @@ func TestStatReport(t *testing.T) {
 		Context: []zapcore.Field{zap.String("Object audit", ""),
 			zap.String("Since", "Tue May  2 05:48:19 2017"),
 			zap.Int64("Locally passed", 120),
-			zap.Int64("Locally quarantied", 17),
+			zap.Int64("Locally quarantined", 17),
 			zap.Int64("Locally errored", 41),
 			zap.Float64("files/sec", 1),
 			zap.Float64("bytes/sec", 2),

@@ -304,6 +304,8 @@ func (f *ecEngine) ecNurseryPutHandler(writer http.ResponseWriter, request *http
 		if strings.HasPrefix(key, "Meta-") {
 			if key == "Meta-Name" {
 				metadata["name"] = request.Header.Get(key)
+			} else if key == "Meta-Etag" {
+				metadata["ETag"] = request.Header.Get(key)
 			} else {
 				metadata[http.CanonicalHeaderKey(key[5:])] = request.Header.Get(key)
 			}
@@ -537,17 +539,18 @@ func (f *ecEngine) GetObjectsToStabilize(device string, c chan ObjectStabilizer,
 
 	for _, item := range items {
 		obj := &ecObject{
-			IndexDBItem:  *item,
-			idb:          idb,
-			dataShards:   f.dataShards,
-			parityShards: f.parityShards,
-			chunkSize:    f.chunkSize,
-			reserve:      f.reserve,
-			ring:         f.ring,
-			logger:       f.logger,
-			policy:       f.policy,
-			client:       f.client,
-			metadata:     map[string]string{},
+			IndexDBItem:     *item,
+			idb:             idb,
+			policy:          f.policy,
+			metadata:        map[string]string{},
+			ring:            f.ring,
+			logger:          f.logger,
+			reserve:         f.reserve,
+			dataShards:      f.dataShards,
+			parityShards:    f.parityShards,
+			chunkSize:       f.chunkSize,
+			client:          f.client,
+			nurseryReplicas: f.nurseryReplicas,
 		}
 		if err = json.Unmarshal(item.Metabytes, &obj.metadata); err != nil {
 			continue

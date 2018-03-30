@@ -346,6 +346,7 @@ func (o *ecObject) Reconstruct() error {
 			o.logger.Info("PUT NewRequest failed", zap.String("url", url), zap.Error(err))
 			continue
 		}
+		req.ContentLength = ecShardLength(o.ContentLength(), o.dataShards)
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
 		req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("reedsolomon/%d/%d/%d", o.dataShards, o.parityShards, o.chunkSize))
 		for k, v := range o.metadata {
@@ -405,6 +406,7 @@ func (o *ecObject) Replicate(prirep PriorityRepJob) error {
 		if err != nil {
 			return err
 		}
+		req.ContentLength = ecShardLength(o.ContentLength(), o.dataShards)
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(prirep.Policy))
 		req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("reedsolomon/%d/%d/%d", o.dataShards, o.parityShards, o.chunkSize))
 		for k, v := range o.metadata {
@@ -493,7 +495,7 @@ func (o *ecObject) nurseryReplicate(rng ring.Ring, partition uint64, dev *ring.D
 	}
 
 	successes := e.Successes(time.Second*15, o.Deletion)
-	if handoff && successes >= nurseryReplicaCount {
+	if handoff && successes >= nurseryReplicaCount && successes > 0 {
 		return o.idb.Remove(o.Hash, o.Shard, o.Timestamp, true)
 	} else if successes < nurseryReplicaCount {
 		return errors.New("Unable to fully nursery-replicate object.")
@@ -572,6 +574,9 @@ func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error 
 		req, err := http.NewRequest(method, url, rp)
 		if err != nil {
 			return err
+		}
+		if !o.Deletion {
+			req.ContentLength = ecShardLength(o.ContentLength(), o.dataShards)
 		}
 		req.Header.Set("X-Timestamp", o.metadata["X-Timestamp"])
 		req.Header.Set("Deletion", strconv.FormatBool(o.Deletion))

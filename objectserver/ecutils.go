@@ -10,6 +10,18 @@ import (
 	"go.uber.org/zap"
 )
 
+func ecShardLength(length int64, dataShards int) int64 {
+	if length < 0 {
+		return 0
+	}
+	shards := int64(dataShards)
+	shardLength := length / shards
+	if length%shards > 0 {
+		shardLength += 1
+	}
+	return shardLength
+}
+
 func ecSplit(dataChunks, parityChunks int, fp io.Reader, chunkSize int, contentLength int64, writers []io.WriteCloser) error {
 	enc, err := reedsolomon.New(dataChunks, parityChunks)
 	if err != nil {
