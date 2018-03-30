@@ -26,7 +26,7 @@ func md5hash(data string) string {
 
 func newTestIndexDB(t *testing.T, pth string) *IndexDB {
 	t.Helper()
-	ot, err := NewIndexDB(pth, pth, pth, 2, 1, 1, zap.L())
+	ot, err := NewIndexDB(pth, pth, pth, 2, 1, 1, 0, zap.L())
 	errnil(t, err)
 	return ot
 }
@@ -567,7 +567,7 @@ func TestIndexDB_ListDefaults(t *testing.T) {
 func TestIndexDB_RingPartRange(t *testing.T) {
 	pth := "testdata/tmp/TestIndexDB_partitionRange"
 	defer os.RemoveAll(pth)
-	ot, err := NewIndexDB(pth, pth, pth, 4, 1, 1, zap.L())
+	ot, err := NewIndexDB(pth, pth, pth, 4, 1, 1, 0, zap.L())
 	errnil(t, err)
 	defer ot.Close()
 	startHash, stopHash := ot.RingPartRange(0)
@@ -591,7 +591,7 @@ func TestIndexDB_RingPartRange(t *testing.T) {
 	if stopHash != "ffffffffffffffffffffffffffffffff" {
 		t.Fatal(stopHash)
 	}
-	ot, err = NewIndexDB(pth, pth, pth, 8, 1, 1, zap.L())
+	ot, err = NewIndexDB(pth, pth, pth, 8, 1, 1, 0, zap.L())
 	errnil(t, err)
 	defer ot.Close()
 	startHash, stopHash = ot.RingPartRange(0)
