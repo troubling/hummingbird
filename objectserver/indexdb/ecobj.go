@@ -283,6 +283,7 @@ func (o *ecObject) Replicate(prirep objectserver.PriorityRepJob) error {
 		if err != nil {
 			return err
 		}
+		req.ContentLength = ecShardLength(o.ContentLength(), o.dataShards)
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(prirep.Policy))
 		req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("reedsolomon/%d/%d/%d", o.dataShards, o.parityShards, o.chunkSize))
 		for k, v := range o.metadata {
@@ -352,6 +353,7 @@ func (o *ecObject) Replicate(prirep objectserver.PriorityRepJob) error {
 	if err != nil {
 		return err
 	}
+	req.ContentLength = ecShardLength(o.ContentLength(), o.dataShards)
 	req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(prirep.Policy))
 	req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("reedsolomon/%d/%d/%d", o.dataShards, o.parityShards, o.chunkSize))
 	for k, v := range o.metadata {
@@ -532,6 +534,9 @@ func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error 
 		req, err := http.NewRequest(method, url, rp)
 		if err != nil {
 			return err
+		}
+		if !o.Deletion {
+			req.ContentLength = ecShardLength(o.ContentLength(), o.dataShards)
 		}
 		req.Header.Set("X-Timestamp", o.metadata["X-Timestamp"])
 		req.Header.Set("Deletion", strconv.FormatBool(o.Deletion))
