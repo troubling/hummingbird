@@ -76,7 +76,7 @@ func (f *ecEngine) getDB(device string) (*IndexDB, error) {
 	path := filepath.Join(f.driveRoot, device, objectserver.PolicyDir(f.policy), "hec")
 	temppath := filepath.Join(f.driveRoot, device, "tmp")
 	ringPartPower := bits.Len64(f.ring.PartitionCount() - 1)
-	f.idbs[device], err = NewIndexDB(dbpath, path, temppath, ringPartPower, f.dbPartPower, f.numSubDirs, f.logger)
+	f.idbs[device], err = NewIndexDB(dbpath, path, temppath, ringPartPower, f.dbPartPower, f.numSubDirs, f.reserve, f.logger)
 	if err != nil {
 		return nil, err
 	}
