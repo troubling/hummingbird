@@ -559,6 +559,7 @@ type AutoAdmin struct {
 	dw             *driveWatch
 	runningForever bool
 	db             *dbInstance
+	fastRingScan   chan struct{}
 }
 
 func (server *AutoAdmin) Type() string {
@@ -636,6 +637,7 @@ func (a *AutoAdmin) RunForever() {
 	go newQuarantineHistory(a).runForever()
 	go newReplication(a).runForever()
 	go newRingMonitor(a).runForever()
+	go newRingScan(a).runForever()
 }
 
 func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (ipPort *srv.IpPort, server srv.Server, logger srv.LowLevelLogger, err error) {
@@ -688,8 +690,9 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 		policies:       pl,
 		runningForever: false,
 		//containerDispersionGauge: []tally.Gauge{}, TODO- add container disp
-		logger:   logger,
-		logLevel: logLevel,
+		logger:       logger,
+		logLevel:     logLevel,
+		fastRingScan: make(chan struct{}, 32), // 32 just "because"; gives some room for a bunch of ring changes to get queued up before blocking.
 	}
 	a.db, err = newDB(&serverconf, "")
 	if err != nil {

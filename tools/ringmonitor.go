@@ -145,6 +145,7 @@ func (rm *ringMonitor) runOnce() time.Duration {
 			}
 		}
 		if ringTask.ring.MD5() != ringTask.previousMD5 {
+			rm.aa.fastRingScan <- struct{}{}
 			if ringTask.previousMD5 == "" {
 				// First time seeing this ring
 				rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, ringTask.ring.MD5())

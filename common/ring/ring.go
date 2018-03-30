@@ -68,6 +68,7 @@ type Device struct {
 type RingMD5 interface {
 	Ring
 	MD5() string
+	DiskPath() string
 	RingMatching(md5 string) RingMD5
 	Reload() error
 }
@@ -215,6 +216,10 @@ func (r *hashRing) PartitionCount() (cnt uint64) {
 func (r *hashRing) MD5() string {
 	d := r.getData()
 	return d.md5
+}
+
+func (r *hashRing) DiskPath() string {
+	return r.path
 }
 
 func (r *hashRing) RingMatching(md5 string) RingMD5 {
