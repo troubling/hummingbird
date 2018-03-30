@@ -1,4 +1,4 @@
-package indexdb
+package objectserver
 
 import (
 	"fmt"

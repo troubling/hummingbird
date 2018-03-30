@@ -217,6 +217,32 @@ func (qr *quarantineRepair) retrieveTypeToDeviceToEntries(logger *zap.Logger, ur
 	return typeToDeviceToEntries
 }
 
+func (qr *quarantineRepair) repairHECObject(logger *zap.Logger, policy int, ringg ring.Ring, entryNameInURL, account, container, object string) bool {
+	partition := ringg.GetPartition(account, container, object)
+	logger = logger.With(zap.Uint64("partition", partition))
+	for _, device := range ringg.GetNodes(partition) {
+		url := fmt.Sprintf("%s://%s:%d/ec-reconstruct/%s/%s/%s/%s", device.Scheme, device.Ip, device.Port, device.Device, account, container, object)
+		logger.Debug("Trying reconstruct", zap.String("url", url))
+		req, err := http.NewRequest("PUT", url, nil)
+		if err != nil {
+			logger.Error("repair HEC http.NewRequest", zap.Error(err))
+			continue
+		}
+		req.Header.Set("X-Backend-Storage-Policy-Index", fmt.Sprintf("%d", policy))
+		resp, err := qr.aa.client.Do(req)
+		if err != nil {
+			logger.Error("repair HEC client.Do", zap.Error(err))
+			continue
+		}
+		resp.Body.Close()
+		if resp.StatusCode/100 == 2 {
+			logger.Debug("Reconstruct successful", zap.String("url", url))
+			return true
+		}
+	}
+	return false
+}
+
 // repairObject tries to ensure all replicas are in place for the quarantined
 // entry and returns true if the entry should be deleted as it has been handled
 // as best as is possible.
@@ -259,6 +285,12 @@ func (qr *quarantineRepair) repairObject(logger *zap.Logger, typ string, policy 
 			return false
 		}
 	}
+
+	policyObj := qr.aa.policies[policy]
+	if policyObj.Type == "hec" {
+		return qr.repairHECObject(logger, policy, ringg, entryNameInURL, account, container, object)
+	}
+
 	partition := ringg.GetPartition(account, container, object)
 	logger = logger.With(zap.Uint64("partition", partition))
 	var have, notfound, unsure []*ring.Device

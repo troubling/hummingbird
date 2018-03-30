@@ -13,7 +13,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-package indexdb
+package objectserver
 
 import (
 	"encoding/json"
@@ -35,7 +35,6 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
-	"github.com/troubling/hummingbird/objectserver"
 )
 
 type ecObject struct {
@@ -224,7 +223,7 @@ func (o *ecObject) SetData(size int64) (io.Writer, error) {
 	}
 	if err := o.afw.Preallocate(size, o.reserve); err != nil {
 		o.afw.Abandon()
-		return nil, objectserver.DriveFullError
+		return nil, DriveFullError
 	}
 	return o.afw, nil
 }
@@ -271,7 +270,131 @@ func (o *ecObject) Close() error {
 	return nil
 }
 
-func (o *ecObject) Replicate(prirep objectserver.PriorityRepJob) error {
+func (o *ecObject) Reconstruct() error {
+	success := true
+	algo, dataShards, parityShards, chunkSize, err := parseECScheme(o.metadata["Ec-Scheme"])
+	if err != nil {
+		return fmt.Errorf("Invalid scheme: %v", err)
+	}
+	if algo != "reedsolomon" {
+		return fmt.Errorf("Attempt to read EC object with unknown algorithm '%s'", algo)
+	}
+	contentLength := o.ContentLength()
+	ns := strings.SplitN(o.metadata["name"], "/", 4)
+	if len(ns) != 4 {
+		return fmt.Errorf("invalid metadata name: %s", o.metadata["name"])
+	}
+	nodes := o.ring.GetNodes(o.ring.GetPartition(ns[1], ns[2], ns[3]))
+	if len(nodes) < dataShards+parityShards {
+		return fmt.Errorf("Not enough nodes (%d) for scheme (%d)", len(nodes), dataShards+parityShards)
+	}
+	bodies := make([]io.Reader, len(nodes))
+	readSuccesses := 0
+	readFails := 0
+	failed := make([]*ring.Device, len(nodes))
+	for i, node := range nodes {
+		url := fmt.Sprintf("%s://%s:%d/ec-shard/%s/%s/%d", node.Scheme, node.Ip, node.Port, node.Device, o.Hash, i)
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			o.logger.Error("NewRequest failed", zap.String("url", url))
+			failed[i] = node
+			readFails++
+			continue
+		}
+		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
+		resp, err := o.client.Do(req)
+		if err != nil {
+			o.logger.Error("client.Do failed", zap.String("url", url))
+			failed[i] = node
+			readFails++
+			continue
+		}
+		defer func() {
+			io.Copy(ioutil.Discard, resp.Body)
+			resp.Body.Close()
+		}()
+		if resp.StatusCode != http.StatusOK {
+			o.logger.Error("Non OK response", zap.String("url", url), zap.Int("code", resp.StatusCode))
+			failed[i] = node
+			readFails++
+			continue
+		}
+		bodies[i] = resp.Body
+		readSuccesses++
+	}
+	if readSuccesses < dataShards {
+		return fmt.Errorf("Not enough nodes (%d) to reconstruct from (%d)", readSuccesses, dataShards)
+	}
+
+	var writers []io.Writer
+	var writeClosers []io.WriteCloser
+	var shardsToFix []int
+	writeSuccess := make(chan bool)
+
+	nodeFails := 0
+	for i, node := range failed {
+		if node == nil {
+			continue
+		}
+		rp, wp := io.Pipe()
+		defer wp.Close()
+		defer rp.Close()
+		url := fmt.Sprintf("%s://%s:%d/ec-shard/%s/%s/%d", node.Scheme, node.Ip, node.Port, node.Device, o.Hash, i)
+		req, err := http.NewRequest("PUT", url, rp)
+		if err != nil {
+			nodeFails++
+			o.logger.Info("PUT NewRequest failed", zap.String("url", url), zap.Error(err))
+			continue
+		}
+		req.ContentLength = ecShardLength(o.ContentLength(), o.dataShards)
+		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
+		req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("reedsolomon/%d/%d/%d", o.dataShards, o.parityShards, o.chunkSize))
+		for k, v := range o.metadata {
+			req.Header.Set("Meta-"+k, v)
+		}
+		writers = append(writers, io.Writer(wp))
+		writeClosers = append(writeClosers, io.WriteCloser(wp))
+		shardsToFix = append(shardsToFix, i)
+		go func(req *http.Request) {
+			if resp, err := o.client.Do(req); err != nil {
+				o.logger.Error("client.Do Failed", zap.String("url", url), zap.Error(err))
+				writeSuccess <- false
+			} else {
+				io.Copy(ioutil.Discard, resp.Body)
+				resp.Body.Close()
+				if resp.StatusCode/100 != 2 {
+					o.logger.Info("PUT StatusCode failed", zap.String("url", url), zap.Int("code", resp.StatusCode))
+					writeSuccess <- false
+					return
+				}
+				writeSuccess <- true
+			}
+		}(req)
+	}
+	err = ecReconstruct(dataShards, parityShards, bodies, chunkSize, contentLength, writers, shardsToFix, o.logger)
+	if err != nil {
+		o.logger.Error("ecReconstruct failed", zap.Error(err))
+	}
+	waitingFor := dataShards + parityShards - readSuccesses - nodeFails
+	for _, writer := range writeClosers {
+		writer.Close()
+	}
+	for waitingFor > 0 {
+		select {
+		case result := <-writeSuccess:
+			if result == false {
+				success = false
+			}
+			waitingFor--
+		}
+	}
+	if !success {
+		return fmt.Errorf("Failed to reconstruct")
+	}
+	return err
+}
+
+func (o *ecObject) Replicate(prirep PriorityRepJob) error {
 	// If we are handoff, just replicate the shard and delete local shard
 	if _, handoff := o.ring.GetJobNodes(prirep.Partition, prirep.FromDevice.Id); handoff {
 		fp, err := os.Open(o.Path)
@@ -299,90 +422,7 @@ func (o *ecObject) Replicate(prirep objectserver.PriorityRepJob) error {
 		}
 		return o.idb.Remove(o.Hash, o.Shard, o.Timestamp, true)
 	}
-	// Else reconstruct the shard and copy over that
-	success := true
-	algo, dataShards, parityShards, chunkSize, err := parseECScheme(o.metadata["Ec-Scheme"])
-	if err != nil {
-		return fmt.Errorf("Invalid scheme: %v", err)
-	}
-	if algo != "reedsolomon" {
-		return fmt.Errorf("Attempt to read EC object with unknown algorithm '%s'", algo)
-	}
-	contentLength := o.ContentLength()
-	ns := strings.SplitN(o.metadata["name"], "/", 4)
-	if len(ns) != 4 {
-		return fmt.Errorf("invalid metadata name: %s", o.metadata["name"])
-	}
-	nodes := o.ring.GetNodes(o.ring.GetPartition(ns[1], ns[2], ns[3]))
-	if len(nodes) < dataShards+parityShards {
-		return fmt.Errorf("Not enough nodes (%d) for scheme (%d)", len(nodes), dataShards+parityShards)
-	}
-	bodies := make([]io.Reader, len(nodes))
-	toDeviceShard := -1
-	for i, node := range nodes {
-		if node.Id == prirep.ToDevice.Id {
-			toDeviceShard = i
-			continue
-		}
-		url := fmt.Sprintf("%s://%s:%d/ec-shard/%s/%s/%d", node.Scheme, node.Ip, node.Port, node.Device, o.Hash, i)
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			continue
-		}
-		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
-		resp, err := o.client.Do(req)
-		if err != nil {
-			continue
-		}
-		defer func() {
-			io.Copy(ioutil.Discard, resp.Body)
-			resp.Body.Close()
-		}()
-		if resp.StatusCode != http.StatusOK {
-			continue
-		}
-		bodies[i] = resp.Body
-	}
-	if toDeviceShard == -1 {
-		return fmt.Errorf("ToDevice %s:%d  %s is not in list of nodes for this object", prirep.ToDevice.Ip, prirep.ToDevice.Port, prirep.ToDevice.Device)
-	}
-	rp, wp := io.Pipe()
-	defer wp.Close()
-	defer rp.Close()
-	req, err := http.NewRequest("PUT", fmt.Sprintf("%s://%s:%d/ec-shard/%s/%s/%d", prirep.ToDevice.Scheme, prirep.ToDevice.Ip, prirep.ToDevice.Port, prirep.ToDevice.Device, o.Hash, toDeviceShard), rp)
-	if err != nil {
-		return err
-	}
-	req.ContentLength = ecShardLength(o.ContentLength(), o.dataShards)
-	req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(prirep.Policy))
-	req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("reedsolomon/%d/%d/%d", o.dataShards, o.parityShards, o.chunkSize))
-	for k, v := range o.metadata {
-		req.Header.Set("Meta-"+k, v)
-	}
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	go func(req *http.Request) {
-		defer wg.Done()
-		if resp, err := o.client.Do(req); err != nil {
-			success = false
-			return
-		} else {
-			io.Copy(ioutil.Discard, resp.Body)
-			resp.Body.Close()
-			if resp.StatusCode/100 != 2 {
-				success = false
-				return
-			}
-		}
-	}(req)
-	var writer io.WriteCloser = wp
-	err = ecReconstruct(dataShards, parityShards, bodies, chunkSize, contentLength, writer, toDeviceShard)
-	writer.Close()
-	wg.Wait()
-	if !success {
-		return fmt.Errorf("Failed to replicate")
-	}
-	return err
+	return o.Reconstruct()
 }
 
 func (o *ecObject) nurseryReplicate(rng ring.Ring, partition uint64, dev *ring.Device) error {
@@ -641,5 +681,5 @@ func (r *rangeBytesWriter) Write(b []byte) (written int, err error) {
 }
 
 // make sure these things satisfy interfaces at compile time
-var _ objectserver.Object = &ecObject{}
-var _ objectserver.ObjectStabilizer = &ecObject{}
+var _ Object = &ecObject{}
+var _ ObjectStabilizer = &ecObject{}
