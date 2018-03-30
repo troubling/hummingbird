@@ -58,6 +58,7 @@ type IndexDB struct {
 	dbPartPower   uint
 	subdirs       int
 	temppath      string
+	reserve       int64
 	dbs           []*sql.DB
 	logger        *zap.Logger
 }
@@ -69,7 +70,7 @@ type IndexDB struct {
 // databases are created (e.g. dbPartPower = 6 gives 64 databases). The
 // subdirs value will define how many subdirectories are created where object
 // content files are placed.
-func NewIndexDB(dbpath, filepath, temppath string, ringPartPower, dbPartPower, subdirs int, logger *zap.Logger) (*IndexDB, error) {
+func NewIndexDB(dbpath, filepath, temppath string, ringPartPower, dbPartPower, subdirs int, reserve int64, logger *zap.Logger) (*IndexDB, error) {
 	if ringPartPower <= dbPartPower {
 		return nil, fmt.Errorf("ringPartPower must be greater than dbPartPower: %d is not greater than %d", ringPartPower, dbPartPower)
 	}
@@ -85,6 +86,7 @@ func NewIndexDB(dbpath, filepath, temppath string, ringPartPower, dbPartPower, s
 		subdirs:       subdirs,
 		dbs:           make([]*sql.DB, 1<<uint(dbPartPower)),
 		logger:        logger,
+		reserve:       reserve,
 	}
 	err := os.MkdirAll(ot.dbpath, 0700)
 	if err != nil {
@@ -192,7 +194,15 @@ func (ot *IndexDB) TempFile(hsh string, shard int, timestamp int64, sizeHint int
 	if err != nil {
 		return nil, err
 	}
-	return fs.NewAtomicFileWriter(ot.temppath, dir)
+	afw, err := fs.NewAtomicFileWriter(ot.temppath, dir)
+	if err != nil {
+		return nil, err
+	}
+	if err := afw.Preallocate(sizeHint, ot.reserve); err != nil {
+		afw.Abandon()
+		return nil, err
+	}
+	return afw, nil
 }
 
 // Commit moves the temporary file (from TempFile) into place and records its

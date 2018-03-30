@@ -87,6 +87,7 @@ func indexDBEngineConstructor(config conf.Config, policy *conf.Policy, flags *fl
 				ringPartPower,
 				dbPartPower,
 				subdirs,
+				0,
 				zap.L(),
 			)
 			if err != nil {
