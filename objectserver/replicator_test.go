@@ -157,11 +157,11 @@ func (d *mockReplicationDevice) Cancel() {
 func (d *mockReplicationDevice) UpdateStat(s string, v int64) {
 }
 
-func (d *mockReplicationDevice) PriorityReplicate(w http.ResponseWriter, pri PriorityRepJob) error {
+func (d *mockReplicationDevice) PriorityReplicate(w http.ResponseWriter, pri PriorityRepJob) {
 	if d._PriorityReplicate != nil {
-		return d._PriorityReplicate(w, pri)
+		d._PriorityReplicate(w, pri)
 	}
-	return nil
+	return
 }
 
 type patchableReplicationDevice struct {
@@ -210,19 +210,19 @@ func (d *patchableReplicationDevice) syncFile(objFile string, dst []*syncFileArg
 	}
 	return d.swiftDevice.syncFile(objFile, dst, handoff)
 }
-func (d *patchableReplicationDevice) replicateUsingHashes(rjob replJob, moreNodes ring.MoreNodes) {
+func (d *patchableReplicationDevice) replicateUsingHashes(rjob replJob, moreNodes ring.MoreNodes) (int64, error) {
 	if d._replicateUsingHashes != nil {
 		d._replicateUsingHashes(rjob, moreNodes)
-		return
+		return 0, nil
 	}
-	d.swiftDevice.replicateUsingHashes(rjob, moreNodes)
+	return d.swiftDevice.replicateUsingHashes(rjob, moreNodes)
 }
-func (d *patchableReplicationDevice) replicateAll(rjob replJob, isHandoff bool) {
+func (d *patchableReplicationDevice) replicateAll(rjob replJob, isHandoff bool) (int64, error) {
 	if d._replicateAll != nil {
 		d._replicateAll(rjob, isHandoff)
-		return
+		return 0, nil
 	}
-	d.swiftDevice.replicateAll(rjob, isHandoff)
+	return d.swiftDevice.replicateAll(rjob, isHandoff)
 }
 func (d *patchableReplicationDevice) cleanTemp() {
 	if d._cleanTemp != nil {
@@ -238,7 +238,6 @@ func newPatchableReplicationDevice(rng ring.Ring, r *Replicator) *patchableRepli
 		dev:    &ring.Device{},
 		policy: 0,
 		cancel: make(chan struct{}),
-		priRep: make(chan PriorityRepJob),
 	}
 	prd := &patchableReplicationDevice{swiftDevice: rd}
 	rd.i = prd
@@ -393,7 +392,6 @@ func TestListObjFiles(t *testing.T) {
 		dev:    &ring.Device{},
 		policy: 0,
 		cancel: make(chan struct{}),
-		priRep: make(chan PriorityRepJob),
 	}
 	rd.i = rd
 	dir, err := ioutil.TempDir("", "")
@@ -452,7 +450,6 @@ func TestCancelListObjFiles(t *testing.T) {
 		dev:    &ring.Device{},
 		policy: 0,
 		cancel: make(chan struct{}),
-		priRep: make(chan PriorityRepJob),
 	}
 	rd.i = rd
 	dir, err := ioutil.TempDir("", "")
@@ -822,11 +819,10 @@ func TestProcessPriorityJobs(t *testing.T) {
 	replicator, _, err := newTestReplicator(confLoader)
 	require.Nil(t, err)
 	rd := newPatchableReplicationDevice(testRing, replicator)
-	rd.priRep = make(chan PriorityRepJob, 1)
-	rd.priRep <- PriorityRepJob{
+	repJob := PriorityRepJob{
 		Partition:  1,
-		FromDevice: &ring.Device{},
-		ToDevice:   &ring.Device{},
+		FromDevice: &ring.Device{Device: "sda"},
+		ToDevice:   &ring.Device{Device: "sdb"},
 		Policy:     0,
 	}
 	replicateUsingHashesCalled := false
@@ -839,19 +835,30 @@ func TestProcessPriorityJobs(t *testing.T) {
 		require.Equal(t, "1", rjob.partition)
 		replicateAllCalled = true
 	}
-	rd.processPriorityJobs()
+	replicator.runningDevices["sda"] = rd
+	replicator.deviceRoot = deviceRoot
+	os.MkdirAll(filepath.Join(deviceRoot, "sda", "objects", "1"), os.ModeDir)
+	data, err := json.Marshal(repJob)
+	require.Nil(t, err)
+	req, err := http.NewRequest("POST", "/", bytes.NewReader(data))
+	require.Nil(t, err)
+	replicator.priorityRepHandler(&httptest.ResponseRecorder{}, req)
 	require.True(t, replicateUsingHashesCalled)
 
-	rd.priRep <- PriorityRepJob{
+	repJob = PriorityRepJob{
 		Partition:  1,
-		FromDevice: &ring.Device{},
-		ToDevice:   &ring.Device{},
+		FromDevice: &ring.Device{Device: "sda"},
+		ToDevice:   &ring.Device{Device: "sdb"},
 		Policy:     0,
 	}
 	testRing.MockGetJobNodesHandoff = true
 	replicateUsingHashesCalled = false
 	replicateAllCalled = false
-	rd.processPriorityJobs()
+	data, err = json.Marshal(repJob)
+	require.Nil(t, err)
+	req, err = http.NewRequest("POST", "/", bytes.NewReader(data))
+	require.Nil(t, err)
+	replicator.priorityRepHandler(&httptest.ResponseRecorder{}, req)
 	require.True(t, replicateAllCalled)
 }
 
@@ -1025,12 +1032,17 @@ func TestPriorityReplicate(t *testing.T) {
 			},
 		},
 	}
-	replicator.priorityReplicate(&httptest.ResponseRecorder{}, PriorityRepJob{
+	repJob := PriorityRepJob{
 		Partition:  1,
 		FromDevice: &ring.Device{Device: "sda"},
 		ToDevice:   nil,
 		Policy:     0,
-	})
+	}
+	data, err := json.Marshal(repJob)
+	require.Nil(t, err)
+	req, err := http.NewRequest("POST", "/", bytes.NewReader(data))
+	require.Nil(t, err)
+	replicator.priorityRepHandler(&httptest.ResponseRecorder{}, req)
 	require.True(t, priorityReplicateCalled)
 }
 

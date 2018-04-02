@@ -556,6 +556,11 @@ func TestCheckMissingDispersionObjects(t *testing.T) {
 			require.Equal(t, uint64(100), prj.Partition)
 			require.Equal(t, "sdb", prj.FromDevice.Device)
 			require.Equal(t, "sda", prj.ToDevice.Device)
+			prp := objectserver.PriorityReplicationResult{Success: true}
+			data, err = json.Marshal(prp)
+			require.Nil(t, err)
+			w.Write(data)
+			return
 		}
 		srv.SimpleErrorResponse(w, 200, "")
 	}))
