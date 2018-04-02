@@ -30,6 +30,27 @@ import (
 	"github.com/troubling/hummingbird/common/pickle"
 )
 
+// GetRingBuilder will return the builder and builder-file-path or an error for
+// the ring type and policy given.
+func GetRingBuilder(ringType string, policy int) (*RingBuilder, string, error) {
+	var ringBuilder *RingBuilder
+	var ringBuilderFilePath string
+	var err error
+	var err2 error
+	ringBuilderFile := fmt.Sprintf("%s.builder", ringType)
+	if policy != 0 {
+		ringBuilderFile = fmt.Sprintf("%s-%d.builder", ringType, policy)
+	}
+	ringBuilderFilePath = fmt.Sprintf("/etc/hummingbird/%s", ringBuilderFile)
+	if ringBuilder, err = NewRingBuilderFromFile(ringBuilderFilePath, false); err != nil {
+		ringBuilderFilePath = fmt.Sprintf("/etc/swift/%s", ringBuilderFile)
+		if ringBuilder, err2 = NewRingBuilderFromFile(ringBuilderFilePath, false); err2 != nil {
+			return nil, "", fmt.Errorf("Error loading %s:%d ring builder: %s: %s", ringType, policy, err, err2)
+		}
+	}
+	return ringBuilder, ringBuilderFilePath, nil
+}
+
 const (
 	NONE_DEV                 uint    = 65535
 	MAX_BALANCE              float64 = 999.99
@@ -1630,7 +1651,7 @@ func CreateRing(builderPath string, partPower int, replicas float64, minPartHour
 }
 
 // Rebalance attempts to rebalance the ring by reassigning partitions that haven't been recently reassigned.
-func Rebalance(builderPath string, debug bool, dryrun bool) error {
+func Rebalance(builderPath string, debug bool, dryrun bool, quiet bool) error {
 	builder, err := NewRingBuilderFromFile(builderPath, debug)
 	if err != nil {
 		return err
@@ -1644,7 +1665,9 @@ func Rebalance(builderPath string, debug bool, dryrun bool) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Changed: %d Balance: %f Removed: %d\n", changed, balance, removed)
+	if !quiet {
+		fmt.Printf("Changed: %d Balance: %f Removed: %d\n", changed, balance, removed)
+	}
 	if dryrun {
 		fmt.Println("Dry run complete; rebalance was not saved.")
 		return nil

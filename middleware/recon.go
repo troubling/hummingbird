@@ -228,7 +228,7 @@ func fromReconCache(reconCachePath string, source string, keys ...string) (inter
 	return results, nil
 }
 
-func getUnmounted(driveRoot string) (interface{}, error) {
+func getUnmounted(driveRoot string, mountCheck bool) (interface{}, error) {
 	unmounted := make([]map[string]interface{}, 0)
 	dirInfo, err := os.Stat(driveRoot)
 	if err != nil {
@@ -239,9 +239,18 @@ func getUnmounted(driveRoot string) (interface{}, error) {
 		return nil, err
 	}
 	for _, info := range fileInfo {
-		if info.Sys().(*syscall.Stat_t).Dev == dirInfo.Sys().(*syscall.Stat_t).Dev {
-			unmounted = append(unmounted, map[string]interface{}{"device": info.Name(), "mounted": false})
+		m := true
+		if mountCheck {
+			m = info.Sys().(*syscall.Stat_t).Dev == dirInfo.Sys().(*syscall.Stat_t).Dev
 		}
+		if m {
+			if _, err = os.Stat(filepath.Join(driveRoot, info.Name(), "unmount")); err == nil {
+				m = false
+			} else if _, err = os.Stat(filepath.Join(driveRoot, info.Name(), "unmounted")); err == nil {
+				m = false
+			}
+		}
+		unmounted = append(unmounted, map[string]interface{}{"device": info.Name(), "mounted": m})
 	}
 	return unmounted, nil
 }
@@ -624,14 +633,10 @@ func ReconHandler(driveRoot string, reconCachePath string, mountCheck bool, writ
 	case "mounted":
 		content = getMounts()
 	case "unmounted":
-		if !mountCheck {
-			content = make([]map[string]interface{}, 0)
-		} else {
-			content, err = getUnmounted(driveRoot)
-			if err != nil {
-				http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-				return
-			}
+		content, err = getUnmounted(driveRoot, mountCheck)
+		if err != nil {
+			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
 		}
 	case "ringmd5":
 		if content, err = common.GetAllRingFileMd5s(); err != nil {
