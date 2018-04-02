@@ -396,6 +396,9 @@ func (o *ecObject) Reconstruct() error {
 
 func (o *ecObject) Replicate(prirep PriorityRepJob) error {
 	// If we are handoff, just replicate the shard and delete local shard
+	if o.Nursery {
+		return fmt.Errorf("not replicating object in nursery")
+	}
 	if _, handoff := o.ring.GetJobNodes(prirep.Partition, prirep.FromDevice.Id); handoff {
 		fp, err := os.Open(o.Path)
 		if err != nil {
