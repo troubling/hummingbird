@@ -420,7 +420,7 @@ func (o *ecObject) Replicate(prirep PriorityRepJob) error {
 		if resp.StatusCode/100 != 2 {
 			return fmt.Errorf("bad status code %d syncing shard with  %s/%d", resp.StatusCode, o.Hash, o.Shard)
 		}
-		return o.idb.Remove(o.Hash, o.Shard, o.Timestamp, true)
+		return o.idb.Remove(o.Hash, o.Shard, o.Timestamp, o.Nursery)
 	}
 	return o.Reconstruct()
 }

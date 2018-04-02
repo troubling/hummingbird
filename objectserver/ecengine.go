@@ -476,6 +476,11 @@ func (f *ecEngine) GetObjectsToReplicate(prirep PriorityRepJob, c chan ObjectSta
 				f.logger.Error("error unmarshal metabytes", zap.Error(err))
 				continue
 			}
+			if obj.Path, err = idb.WholeObjectPath(obj.Hash, obj.Shard, obj.Timestamp, obj.Nursery); err != nil {
+				//TODO: this should quarantine right?
+				f.logger.Error("error building obj path", zap.Error(err))
+				continue
+			}
 			select {
 			case c <- obj:
 			case <-cancel:
