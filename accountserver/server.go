@@ -495,6 +495,7 @@ func (server *AccountServer) GetHandler(config conf.Config, metricsPrefix string
 	router.Put("/loglevel", server.logLevel)
 	router.Get("/healthcheck", commonHandlers.ThenFunc(server.HealthcheckHandler))
 	router.Get("/diskusage", commonHandlers.ThenFunc(server.DiskUsageHandler))
+	router.Put("/ring/*ring_path", commonHandlers.ThenFunc(middleware.RingHandler))
 	router.Get("/recon/:method/:recon_type", commonHandlers.ThenFunc(server.ReconHandler))
 	router.Get("/recon/:method", commonHandlers.ThenFunc(server.ReconHandler))
 	router.Delete("/recon/:device/:method/:recon_type/*item_path", commonHandlers.ThenFunc(server.ReconHandler))
