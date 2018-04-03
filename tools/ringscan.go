@@ -184,7 +184,6 @@ func (rs *ringScan) runOnce() time.Duration {
 			if err != nil {
 				getLogger.Error("error getting ring", zap.String("type", typ), zap.Int("policy", policy), zap.String("md5", md5), zap.Error(err))
 			}
-			md5 = "f" + md5[1:] // TODO: Remove this: It makes every ring look like it has changed, for testing.
 			if md5 != ryng.MD5() {
 				getLogger.Debug("pushing ring", zap.String("type", typ), zap.Int("policy", policy), zap.String("previous md5", md5), zap.String("new md5", ryng.MD5()))
 				u, err := url.Parse(getURL)
