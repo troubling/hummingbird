@@ -187,7 +187,7 @@ func (um *unmountedMonitor) reconUnmountedEndpoints() map[string]*endpointIPPort
 					if dev == nil || dev.Weight < 0 {
 						continue
 					}
-					endpointMap[fmt.Sprintf("%s://%s:%d/recon/unmounted", dev.Scheme, dev.Ip, dev.Port)] = &endpointIPPort{ip: dev.Ip, port: dev.Port}
+					endpointMap[fmt.Sprintf("%s://%s:%d/recon/diskusage", dev.Scheme, dev.Ip, dev.Port)] = &endpointIPPort{ip: dev.Ip, port: dev.Port}
 				}
 			}
 		} else {
@@ -196,7 +196,7 @@ func (um *unmountedMonitor) reconUnmountedEndpoints() map[string]*endpointIPPort
 				if dev == nil || dev.Weight < 0 {
 					continue
 				}
-				endpointMap[fmt.Sprintf("%s://%s:%d/recon/unmounted", dev.Scheme, dev.Ip, dev.Port)] = &endpointIPPort{ip: dev.Ip, port: dev.Port}
+				endpointMap[fmt.Sprintf("%s://%s:%d/recon/diskusage", dev.Scheme, dev.Ip, dev.Port)] = &endpointIPPort{ip: dev.Ip, port: dev.Port}
 			}
 		}
 	}
