@@ -203,25 +203,7 @@ func (server *AccountServer) AccountGetHandler(writer http.ResponseWriter, reque
 			format = "text"
 		}
 	}
-	if format == "text" {
-		response := ""
-		for _, obj := range containers {
-			if or, ok := obj.(*ContainerListingRecord); ok {
-				response += or.Name + "\n"
-			} else if sr, ok := obj.(*SubdirListingRecord); ok {
-				response += sr.Name + "\n"
-			}
-		}
-		if len(response) > 0 {
-			headers.Set("Content-Length", strconv.Itoa(len(response)))
-			writer.WriteHeader(200)
-			writer.Write([]byte(response))
-		} else {
-			headers.Set("Content-Length", "0")
-			writer.WriteHeader(204)
-			writer.Write([]byte(""))
-		}
-	} else if format == "json" {
+	if format == "json" {
 		output, err := json.Marshal(containers)
 		if err != nil {
 			srv.StandardResponse(writer, http.StatusInternalServerError)
@@ -238,12 +220,31 @@ func (server *AccountServer) AccountGetHandler(writer http.ResponseWriter, reque
 			Containers []interface{}
 		}
 		container := &Account{Name: vars["account"], Containers: containers}
-		writer.Header().Set("Content-Type", "application/xml; charset=utf-8")
+		headers.Set("Content-Type", "application/xml; charset=utf-8")
 		output, _ := xml.Marshal(container)
 		headers.Set("Content-Length", strconv.Itoa(len(output)+39))
 		writer.WriteHeader(200)
 		writer.Write([]byte("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"))
 		writer.Write(output)
+	} else {
+		response := ""
+		for _, obj := range containers {
+			if or, ok := obj.(*ContainerListingRecord); ok {
+				response += or.Name + "\n"
+			} else if sr, ok := obj.(*SubdirListingRecord); ok {
+				response += sr.Name + "\n"
+			}
+		}
+		headers.Set("Content-Type", "text/plain; charset=utf-8")
+		if len(response) > 0 {
+			headers.Set("Content-Length", strconv.Itoa(len(response)))
+			writer.WriteHeader(200)
+			writer.Write([]byte(response))
+		} else {
+			headers.Set("Content-Length", "0")
+			writer.WriteHeader(204)
+			writer.Write([]byte(""))
+		}
 	}
 }
 

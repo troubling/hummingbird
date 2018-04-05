@@ -169,6 +169,7 @@ func (server *ContainerServer) ContainerGetHandler(writer http.ResponseWriter, r
 		}
 	}
 	if request.Method == "HEAD" {
+		headers.Set("Content-Type", "text/plain; charset=utf-8")
 		writer.WriteHeader(http.StatusNoContent)
 		writer.Write([]byte(""))
 		return
@@ -216,6 +217,7 @@ func (server *ContainerServer) ContainerGetHandler(writer http.ResponseWriter, r
 				response += sr.Name + "\n"
 			}
 		}
+		headers.Set("Content-Type", "text/plain; charset=utf-8")
 		if len(response) > 0 {
 			headers.Set("Content-Length", strconv.Itoa(len(response)))
 			writer.WriteHeader(200)
