@@ -106,10 +106,15 @@ func (b *bulkPut) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	accept := request.Header.Get("Accept")
 	outputType := "text"
 	if strings.Contains(accept, "/json") {
+		writer.Header().Set("Content-Type", "application/json; charset=utf-8")
 		outputType = "json"
 	} else if strings.Contains(accept, "/xml") {
+		writer.Header().Set("Content-Type", "application/xml; charset=utf-8")
 		outputType = "xml"
+	} else {
+		writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	}
+	writer.Header().Set("Transfer-Encoding", "chunked")
 	writer.WriteHeader(http.StatusOK)
 	if outputType == "xml" {
 		writer.Write([]byte(xml.Header))
@@ -288,10 +293,15 @@ func (b *bulkDelete) ServeHTTP(writer http.ResponseWriter, request *http.Request
 	accept := request.Header.Get("Accept")
 	outputType := "text"
 	if strings.Contains(accept, "/json") {
+		writer.Header().Set("Content-Type", "application/json; charset=utf-8")
 		outputType = "json"
 	} else if strings.Contains(accept, "/xml") {
+		writer.Header().Set("Content-Type", "application/xml; charset=utf-8")
 		outputType = "xml"
+	} else {
+		writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	}
+	writer.Header().Set("Transfer-Encoding", "chunked")
 	writer.WriteHeader(http.StatusOK)
 	if outputType == "xml" {
 		writer.Write([]byte(xml.Header))
@@ -338,13 +348,14 @@ func (b *bulkDelete) ServeHTTP(writer http.ResponseWriter, request *http.Request
 			continue
 		}
 		subpath = u.Path
-		parts := strings.SplitN(subpath, "/", 3)
+		subpath = strings.TrimPrefix(subpath, "/")
+		parts := strings.SplitN(subpath, "/", 2)
 		switch len(parts) {
-		case 0, 1:
+		case 0:
 			failures = append(failures, []string{subpath, httpStatusString(http.StatusBadRequest)})
 			continue
-		case 2:
-			containersToDelete = append(containersToDelete, parts[1])
+		case 1:
+			containersToDelete = append(containersToDelete, parts[0])
 			continue
 		}
 		subreq, err := ctx.newSubrequest("DELETE", "/"+path.Join(apiReq, account, subpath), nil, request, "bulkdelete")

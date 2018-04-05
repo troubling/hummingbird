@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -330,4 +331,11 @@ func TestSliceFromCSV(t *testing.T) {
 			t.Errorf("SliceFromCSV(%v): expected %v, actual %v", tt.s, tt.expected, actual)
 		}
 	}
+}
+
+func TestGetTransactionId(t *testing.T) {
+	txnId := GetTransactionId()
+	matched, err := regexp.MatchString("tx[[:xdigit:]]{21}-[[:xdigit:]]+", txnId)
+	require.Nil(t, err)
+	require.True(t, matched)
 }

@@ -146,7 +146,7 @@ func FormatLastModified(lastModified time.Time) string {
 }
 
 func GetTransactionId() string {
-	return fmt.Sprintf("%x", time.Now().UnixNano())
+	return fmt.Sprintf("tx%012x%09x-%x", rand.Int63n(0xffffffffffff), rand.Int63n(0xfffffffff), time.Now().UnixNano())
 }
 
 func HeaderGetDefault(h http.Header, key string, dfl string) string {
