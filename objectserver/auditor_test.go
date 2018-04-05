@@ -39,24 +39,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type FakeECAuditFuncs struct {
+type FakeECAuditFunc struct {
 	paths        []string
 	shards       []string
 	nurseryPaths []string
 	nurseryBytes [][]byte
 }
 
-// AuditNurseryObject of indexdb shard, does nothing
-func (f *FakeECAuditFuncs) AuditNurseryObject(path string, metabytes []byte, skipMd5 bool) (int64, error) {
-	f.nurseryPaths = append(f.nurseryPaths, path)
-	f.nurseryBytes = append(f.nurseryBytes, metabytes)
-	return 0, nil
-}
-
-// AuditShardHash of indexdb shard
-func (f *FakeECAuditFuncs) AuditShard(path string, hash string, skipMd5 bool) (int64, error) {
-	f.paths = append(f.paths, path)
-	f.shards = append(f.shards, hash)
+func (f *FakeECAuditFunc) AuditEcObj(path string, item *IndexDBItem, md5BytesPerSec int64) (int64, error) {
+	if item.Nursery {
+		f.nurseryPaths = append(f.nurseryPaths, path)
+		f.nurseryBytes = append(f.nurseryBytes, item.Metabytes)
+	} else {
+		f.paths = append(f.paths, path)
+		f.shards = append(f.shards, item.ShardHash)
+	}
 	return 0, nil
 }
 
@@ -71,7 +68,7 @@ func TestAuditHashPasses(t *testing.T) {
 	f, _ = os.Create(filepath.Join(dir, "fffffffffffffffffffffffffffffabc", "12346.ts"))
 	defer f.Close()
 	common.SwiftObjectWriteMetadata(f.Fd(), map[string]string{"name": "somename", "X-Timestamp": ""})
-	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
+	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), 10000)
 	assert.Nil(t, err)
 	assert.Equal(t, bytesProcessed, int64(12))
 }
@@ -85,7 +82,7 @@ func TestAuditNonStringKey(t *testing.T) {
 	metadata := map[interface{}]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "Content-Type": "", "X-Timestamp": "", "name": "", 3: "hi"}
 	common.SwiftObjectRawWriteMetadata(f.Fd(), pickle.PickleDumps(metadata))
 	f.Write([]byte("testcontents"))
-	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
+	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), 10000)
 	assert.NotNil(t, err)
 	assert.Equal(t, bytesProcessed, int64(0))
 }
@@ -99,7 +96,7 @@ func TestAuditNonStringValue(t *testing.T) {
 	metadata := map[string]interface{}{"Content-Length": 12, "ETag": "d3ac5112fe464b81184352ccba743001", "Content-Type": "", "X-Timestamp": "", "name": ""}
 	common.SwiftObjectRawWriteMetadata(f.Fd(), pickle.PickleDumps(metadata))
 	f.Write([]byte("testcontents"))
-	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
+	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), 10000)
 	assert.NotNil(t, err)
 	assert.Equal(t, bytesProcessed, int64(0))
 }
@@ -112,7 +109,7 @@ func TestAuditHashDataMissingMetadata(t *testing.T) {
 	defer f.Close()
 	common.SwiftObjectWriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "Content-Type": "", "X-Timestamp": ""})
 	f.Write([]byte("testcontents"))
-	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
+	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), 10000)
 	assert.NotNil(t, err)
 	assert.Equal(t, bytesProcessed, int64(0))
 }
@@ -124,7 +121,7 @@ func TestAuditHashTSMissingMetadata(t *testing.T) {
 	f, _ := os.Create(filepath.Join(dir, "fffffffffffffffffffffffffffffabc", "12345.ts"))
 	defer f.Close()
 	common.SwiftObjectWriteMetadata(f.Fd(), map[string]string{"name": "somename"})
-	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
+	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), 10000)
 	assert.NotNil(t, err)
 	assert.Equal(t, bytesProcessed, int64(0))
 }
@@ -137,7 +134,7 @@ func TestAuditHashIncorrectContentLength(t *testing.T) {
 	defer f.Close()
 	common.SwiftObjectWriteMetadata(f.Fd(), map[string]string{"Content-Length": "0", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
 	f.Write([]byte("testcontents"))
-	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
+	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), 10000)
 	assert.NotNil(t, err)
 	assert.Equal(t, bytesProcessed, int64(0))
 }
@@ -150,7 +147,7 @@ func TestAuditHashInvalidContentLength(t *testing.T) {
 	defer f.Close()
 	common.SwiftObjectWriteMetadata(f.Fd(), map[string]string{"Content-Length": "X", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
 	f.Write([]byte("testcontents"))
-	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
+	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), 10000)
 	assert.NotNil(t, err)
 	assert.Equal(t, bytesProcessed, int64(0))
 }
@@ -163,7 +160,7 @@ func TestAuditHashBadHash(t *testing.T) {
 	defer f.Close()
 	common.SwiftObjectWriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "f3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
 	f.Write([]byte("testcontents"))
-	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
+	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), 10000)
 	assert.NotNil(t, err)
 	assert.Equal(t, bytesProcessed, int64(12))
 }
@@ -176,7 +173,7 @@ func TestAuditHashBadFilename(t *testing.T) {
 	defer f.Close()
 	common.SwiftObjectWriteMetadata(f.Fd(), map[string]string{"Content-Length": "12", "ETag": "d3ac5112fe464b81184352ccba743001", "name": "", "Content-Type": "", "X-Timestamp": ""})
 	f.Write([]byte("testcontents"))
-	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
+	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), 10000)
 	assert.NotNil(t, err)
 	assert.Equal(t, bytesProcessed, int64(0))
 }
@@ -185,7 +182,7 @@ func TestAuditHashNonfileInDir(t *testing.T) {
 	dir, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(dir)
 	os.MkdirAll(filepath.Join(dir, "fffffffffffffffffffffffffffffabc", "12345.data"), 0777)
-	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
+	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), 10000)
 	assert.NotNil(t, err)
 	assert.Equal(t, bytesProcessed, int64(0))
 }
@@ -197,7 +194,7 @@ func TestAuditHashNoMetadata(t *testing.T) {
 	f, _ := os.Create(filepath.Join(dir, "fffffffffffffffffffffffffffffabc", "12345.data"))
 	defer f.Close()
 	f.Write([]byte("testcontents"))
-	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), false)
+	bytesProcessed, err := auditHash(filepath.Join(dir, "fffffffffffffffffffffffffffffabc"), 10000)
 	assert.NotNil(t, err)
 	assert.Equal(t, bytesProcessed, int64(0))
 }
@@ -233,7 +230,7 @@ func makeAuditor(t *testing.T, confLoader *srv.TestConfigLoader, settings ...str
 	require.Nil(t, err)
 	obs, logs = observer.New(zap.InfoLevel)
 	auditorDaemon.logger = zap.New(obs)
-	return &Auditor{AuditorDaemon: auditorDaemon, filesPerSecond: 1, ecfuncs: RealECAuditFuncs{}}
+	return &Auditor{AuditorDaemon: auditorDaemon, filesPerSecond: 1, ecfunc: realECAuditFuncs{}}
 }
 
 func TestFailsWithoutSection(t *testing.T) {
@@ -523,8 +520,8 @@ func TestAuditDB(t *testing.T) {
 	policies, err := confLoader.GetPolicies()
 	assert.Nil(t, err)
 	auditor := makeAuditor(t, confLoader)
-	fakes := &FakeECAuditFuncs{}
-	auditor.ecfuncs = fakes
+	fake := &FakeECAuditFunc{}
+	auditor.ecfunc = fake
 	dir, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(dir)
 	policydir := filepath.Join(dir, "objects")
@@ -568,15 +565,15 @@ func TestAuditDB(t *testing.T) {
 	// Policy 2 is hec.
 	auditor.auditDB(db.dbpath, testRing, policies[2])
 
-	assert.Equal(t, 3, len(fakes.paths))
-	assert.Equal(t, shardPath, fakes.paths[0])
-	assert.Equal(t, shardHash, fakes.shards[0])
-	assert.Equal(t, 1, len(fakes.nurseryPaths))
-	assert.Equal(t, nurseryPath, fakes.nurseryPaths[0])
+	assert.Equal(t, 3, len(fake.paths))
+	assert.Equal(t, shardPath, fake.paths[0])
+	assert.Equal(t, shardHash, fake.shards[0])
+	assert.Equal(t, 1, len(fake.nurseryPaths))
+	assert.Equal(t, nurseryPath, fake.nurseryPaths[0])
 }
 
 func TestAuditShardPasses(t *testing.T) {
-	auditFuncs := RealECAuditFuncs{}
+	auditFuncs := realECAuditFuncs{}
 	dir, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(dir)
 	fName := filepath.Join(dir, "12345")
@@ -584,13 +581,15 @@ func TestAuditShardPasses(t *testing.T) {
 	hash := "d3ac5112fe464b81184352ccba743001"
 	f.Write([]byte("testcontents"))
 	f.Close()
-	bytes, err := auditFuncs.AuditShard(fName, hash, false)
+	meta := []byte("{\"Content-Length\": \"12\", \"Ec-Scheme\":\"reedsolomon/1/0/10\"}")
+	item := IndexDBItem{Nursery: false, ShardHash: hash, Metabytes: meta}
+	bytes, err := auditFuncs.AuditEcObj(fName, &item, 10000)
 	assert.Nil(t, err)
 	assert.Equal(t, int64(12), bytes)
 }
 
 func TestAuditShardFails(t *testing.T) {
-	auditFuncs := RealECAuditFuncs{}
+	auditFuncs := realECAuditFuncs{}
 	dir, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(dir)
 	fName := filepath.Join(dir, "12345")
@@ -598,35 +597,87 @@ func TestAuditShardFails(t *testing.T) {
 	hash := "d3ac5112fe464b81184352ccba743001"
 	f.Write([]byte("asdftestcontents"))
 	f.Close()
-	bytes, err := auditFuncs.AuditShard(fName, hash, false)
+	meta := []byte("{\"Content-Length\": \"16\", \"Ec-Scheme\":\"reedsolomon/1/0/10\"}")
+	item := IndexDBItem{Nursery: false, ShardHash: hash, Metabytes: meta}
+	bytes, err := auditFuncs.AuditEcObj(fName, &item, 10000)
 	assert.NotNil(t, err)
 	assert.Equal(t, int64(16), bytes)
 }
 
+func TestAuditShardPassLength(t *testing.T) {
+	auditFuncs := realECAuditFuncs{}
+	dir, _ := ioutil.TempDir("", "")
+	defer os.RemoveAll(dir)
+	fName := filepath.Join(dir, "12345")
+	f, _ := os.Create(filepath.Join(dir, "12345"))
+	hash := "d3ac5112fe464b81184352ccba743001"
+	f.Write([]byte("testcontents"))
+	f.Close()
+	meta := []byte("{\"Content-Length\": \"24\", \"Ec-Scheme\":\"reedsolomon/2/1/10\"}")
+	item := IndexDBItem{Nursery: false, ShardHash: hash, Metabytes: meta}
+	bytes, err := auditFuncs.AuditEcObj(fName, &item, 10000)
+	assert.Nil(t, err)
+	assert.Equal(t, int64(12), bytes)
+}
+
+func TestAuditShardFailLength(t *testing.T) {
+	auditFuncs := realECAuditFuncs{}
+	dir, _ := ioutil.TempDir("", "")
+	defer os.RemoveAll(dir)
+	fName := filepath.Join(dir, "12345")
+	f, _ := os.Create(filepath.Join(dir, "12345"))
+	hash := "d3ac5112fe464b81184352ccba743001"
+	f.Write([]byte("testcontents"))
+	f.Close()
+	meta := []byte("{\"Content-Length\": \"25\", \"Ec-Scheme\":\"reedsolomon/2/1/10\"}")
+	item := IndexDBItem{Nursery: false, ShardHash: hash, Metabytes: meta}
+	bytes, err := auditFuncs.AuditEcObj(fName, &item, 10000)
+	assert.NotNil(t, err)
+	assert.Equal(t, int64(0), bytes)
+}
+
+func TestAuditShardFailMd5(t *testing.T) {
+	auditFuncs := realECAuditFuncs{}
+	dir, _ := ioutil.TempDir("", "")
+	defer os.RemoveAll(dir)
+	fName := filepath.Join(dir, "12345")
+	f, _ := os.Create(filepath.Join(dir, "12345"))
+	hash := "d3ac5112fe464b81184352ccba74300w"
+	f.Write([]byte("testcontents"))
+	f.Close()
+	meta := []byte("{\"Content-Length\": \"24\", \"Ec-Scheme\":\"reedsolomon/2/1/10\"}")
+	item := IndexDBItem{Nursery: false, ShardHash: hash, Metabytes: meta}
+	bytes, err := auditFuncs.AuditEcObj(fName, &item, 10000)
+	assert.NotNil(t, err)
+	assert.Equal(t, int64(12), bytes)
+}
+
 func TestAuditNurseryPasses(t *testing.T) {
-	auditFuncs := RealECAuditFuncs{}
+	auditFuncs := realECAuditFuncs{}
 	dir, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(dir)
 	fName := filepath.Join(dir, "12345")
 	f, _ := os.Create(fName)
 	f.Write([]byte("testcontents"))
 	f.Close()
-	goodmeta := []byte("{\"ETag\": \"d3ac5112fe464b81184352ccba743001\"}")
-	bytes, err := auditFuncs.AuditNurseryObject(fName, goodmeta, false)
+	goodmeta := []byte("{\"Content-Length\": \"12\", \"ETag\": \"d3ac5112fe464b81184352ccba743001\"}")
+	item := IndexDBItem{Nursery: true, Metabytes: goodmeta}
+	bytes, err := auditFuncs.AuditEcObj(fName, &item, 10000)
 	assert.Nil(t, err)
 	assert.Equal(t, int64(12), bytes)
 }
 
 func TestAuditNurseryFails(t *testing.T) {
-	auditFuncs := RealECAuditFuncs{}
+	auditFuncs := realECAuditFuncs{}
 	dir, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(dir)
 	fName := filepath.Join(dir, "12345")
 	f, _ := os.Create(filepath.Join(dir, "12345"))
 	f.Write([]byte("asdftestcontents"))
 	f.Close()
-	badmeta := []byte("{\"ETag\": \"d3ac5112fe464b81184352ccba743001\"}")
-	bytes, err := auditFuncs.AuditNurseryObject(fName, badmeta, false)
+	badmeta := []byte("{\"Content-Length\": \"16\", \"ETag\": \"d3ac5112fe464b81184352ccba743001\"}")
+	item := IndexDBItem{Nursery: true, Metabytes: badmeta}
+	bytes, err := auditFuncs.AuditEcObj(fName, &item, 10000)
 	assert.NotNil(t, err)
 	assert.Equal(t, int64(16), bytes)
 }

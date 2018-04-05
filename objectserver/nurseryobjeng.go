@@ -573,7 +573,7 @@ func (f *nurseryEngine) GetObjectsToStabilize(device string, c chan ObjectStabil
 				}
 				dataFile, metaFile := ObjectFiles(hashDir)
 				if dataFile == "" {
-					if _, err := auditHash(hashDir, true); err != nil {
+					if _, err := auditHash(hashDir, 0); err != nil {
 						f.logger.Error("Failed stabilize and is being quarantined", zap.String("worker", "nursery"),
 							zap.String("hashDir", hashDir),
 							zap.Error(err))
@@ -646,7 +646,7 @@ func (f *nurseryEngine) GetObjectsToReplicate(prirep PriorityRepJob, c chan Obje
 			}
 			dataFile, metaFile := ObjectFiles(hashDir)
 			if dataFile == "" {
-				if _, err := auditHash(hashDir, true); err != nil {
+				if _, err := auditHash(hashDir, 0); err != nil {
 					f.logger.Error("Failed getstabilized and is being quarantined", zap.String("worker", "nursery"),
 						zap.String("hashDir", hashDir),
 						zap.Error(err))
