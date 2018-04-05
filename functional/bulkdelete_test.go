@@ -9,15 +9,15 @@ import (
 )
 
 func TestBulkDeletePlain(t *testing.T) {
-	bulkDeleteTester(t, "text/plain", "Response Status: 400 Bad Request\nResponse Body: \nNumber Deleted: 12\nNumber Not Found: 1\nErrors:\njust junk, 400 Bad Request\n/hummingbird-functional-test-4938dd9a65eaa780, 409 Conflict\n")
+	bulkDeleteTester(t, "text/plain", "Response Status: 400 Bad Request\nResponse Body: \nNumber Deleted: 12\nNumber Not Found: 2\nErrors:\n/hummingbird-functional-test-4938dd9a65eaa780, 409 Conflict\n")
 }
 
 func TestBulkDeleteJSON(t *testing.T) {
-	bulkDeleteTester(t, "application/json", "{\"Response Status\":\"400 Bad Request\",\"Response Body\":\"\",\"Number Deleted\":12,\"Number Not Found\":1,\"Errors\":[[\"just junk\",\"400 Bad Request\"],[\"/hummingbird-functional-test-4938dd9a65eaa780\",\"409 Conflict\"]]}\n")
+	bulkDeleteTester(t, "application/json", "{\"Response Status\":\"400 Bad Request\",\"Response Body\":\"\",\"Number Deleted\":12,\"Number Not Found\":2,\"Errors\":[[\"/hummingbird-functional-test-4938dd9a65eaa780\",\"409 Conflict\"]]}\n")
 }
 
 func TestBulkDeleteXML(t *testing.T) {
-	bulkDeleteTester(t, "application/xml", "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<delete><response_status>400 Bad Request</response_status><response_body></response_body><number_deleted>12</number_deleted><number_not_found>1</number_not_found><errors><object><name>just junk</name><status>400 Bad Request</status></object><object><name>/hummingbird-functional-test-4938dd9a65eaa780</name><status>409 Conflict</status></object></errors></delete>\n")
+	bulkDeleteTester(t, "application/xml", "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<delete><response_status>400 Bad Request</response_status><response_body></response_body><number_deleted>12</number_deleted><number_not_found>2</number_not_found><errors><object><name>/hummingbird-functional-test-4938dd9a65eaa780</name><status>409 Conflict</status></object></errors></delete>\n")
 }
 
 func bulkDeleteTester(t *testing.T, accept, expect string) {
@@ -56,7 +56,7 @@ func bulkDeleteTester(t *testing.T, accept, expect string) {
 	bulkDeleteLines := "/something/that/does/not/exist\n"
 	bulkDeleteLines += "/" + container2 + "\n" // Should fail due to 409 Conflict with that single object in there
 	bulkDeleteLines += "/" + container3 + "\n"
-	bulkDeleteLines += "just junk\n"
+	bulkDeleteLines += "just junk which is okay\n"
 	for i := 0; i <= objectCount; i++ {
 		object := fmt.Sprintf("object%d", i)
 		bulkDeleteLines += "/" + container + "/" + object + "\n"
