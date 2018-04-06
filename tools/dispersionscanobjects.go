@@ -7,11 +7,14 @@ package tools
 // report_interval = 600    # seconds between progress reports
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,12 +28,23 @@ import (
 	"go.uber.org/zap"
 )
 
+type checkInfo struct {
+	deviceID  int
+	device    string
+	partition uint64
+	name      string
+	ecShard   bool
+	shard     int
+}
+
 type dispersionScanObjects struct {
 	aa *AutoAdmin
 	// delay between each request; adjusted each pass to try to make passes last passTimeTarget
 	delay          time.Duration
 	passTimeTarget time.Duration
 	reportInterval time.Duration
+	prefix         string
+	suffix         string
 }
 
 func newDispersionScanObjects(aa *AutoAdmin) *dispersionScanObjects {
@@ -46,6 +60,7 @@ func newDispersionScanObjects(aa *AutoAdmin) *dispersionScanObjects {
 	if dso.passTimeTarget < 0 {
 		dso.passTimeTarget = time.Second
 	}
+	dso.prefix, dso.suffix = getAffixes()
 	return dso
 }
 
@@ -102,6 +117,8 @@ type dispersionScanObjectsContext struct {
 
 func (dso *dispersionScanObjects) scanDispersionObjects(logger *zap.Logger, policy *conf.Policy) int {
 	start := time.Now()
+	container := fmt.Sprintf("disp-objs-%d", policy.Index)
+	logger = logger.With(zap.String("account", AdminAccount), zap.String("container", container), zap.Int("policy", policy.Index))
 	logger.Debug("starting policy pass")
 	if err := dso.aa.db.startProcessPass("dispersion scan", "object", policy.Index); err != nil {
 		logger.Error("startProcessPass", zap.Error(err))
@@ -109,8 +126,6 @@ func (dso *dispersionScanObjects) scanDispersionObjects(logger *zap.Logger, poli
 	if err := dso.aa.db.clearDispersionScanFailures("object", policy.Index); err != nil {
 		logger.Error("clearDispersionScanFailures", zap.Int("policy", policy.Index), zap.Error(err))
 	}
-	container := fmt.Sprintf("disp-objs-%d", policy.Index)
-	logger = logger.With(zap.String("account", AdminAccount), zap.String("container", container), zap.Int("policy", policy.Index))
 	resp := dso.aa.hClient.HeadObject(AdminAccount, container, "object-init", nil)
 	io.Copy(ioutil.Discard, resp.Body)
 	resp.Body.Close()
@@ -196,7 +211,7 @@ func (dso *dispersionScanObjects) scanDispersionObjects(logger *zap.Logger, poli
 			atomic.AddInt64(&delays, 1)
 			time.Sleep(dso.delay)
 			devices := objectRing.GetNodes(partition)
-			for _, device := range devices {
+			for shard, device := range devices {
 				service := fmt.Sprintf("%s://%s:%d", device.Scheme, device.Ip, device.Port)
 				serviceChan := serviceChans[service]
 				if serviceChan == nil {
@@ -205,7 +220,19 @@ func (dso *dispersionScanObjects) scanDispersionObjects(logger *zap.Logger, poli
 					go dso.handleChecks(ctx, service, serviceChan)
 					serviceChans[service] = serviceChan
 				}
-				serviceChan <- &checkInfo{deviceID: device.Id, device: device.Device, partition: partition, name: olr.Name}
+				ci := &checkInfo{deviceID: device.Id, device: device.Device, partition: partition, name: olr.Name}
+				if policy.Type == "hec" {
+					// Note that with hec, we query just the stabilized shards.
+					// If the dispersion populate had just run and things
+					// hadn't stabilized yet, we'll queue up some useless
+					// replication jobs to repair missing dispersion shards.
+					// Shouldn't be a big deal as it will just be when a new
+					// cluster is launched and there won't be much, if any,
+					// real data.
+					ci.ecShard = true
+					ci.shard = shard
+				}
+				serviceChan <- ci
 			}
 		}
 		if len(olrs) == 0 {
@@ -231,11 +258,18 @@ func (dso *dispersionScanObjects) scanDispersionObjects(logger *zap.Logger, poli
 
 func (dso *dispersionScanObjects) handleChecks(ctx *dispersionScanObjectsContext, service string, checkChan chan *checkInfo) {
 	for check := range checkChan {
-		url := fmt.Sprintf("%s/%s/%d/%s/%s/%s", service, check.device, check.partition, common.Urlencode(AdminAccount), common.Urlencode(ctx.container), common.Urlencode(check.name))
-		req, err := http.NewRequest("HEAD", url, nil)
+		var url string
+		if check.ecShard {
+			h := md5.New()
+			io.WriteString(h, path.Join(dso.prefix, AdminAccount, ctx.container, check.name+dso.suffix))
+			url = fmt.Sprintf("%s/ec-shard/%s/%s/%d", service, check.device, hex.EncodeToString(h.Sum(nil)), check.shard)
+		} else {
+			url = fmt.Sprintf("%s/%s/%d/%s/%s/%s", service, check.device, check.partition, common.Urlencode(AdminAccount), common.Urlencode(ctx.container), common.Urlencode(check.name))
+		}
+		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			atomic.AddInt64(&ctx.errored, 1)
-			ctx.logger.Error("http.NewRequest(HEAD, url, nil) // likely programming error", zap.String("url", url), zap.Error(err))
+			ctx.logger.Error("http.NewRequest(GET, url, nil) // likely programming error", zap.String("url", url), zap.Error(err))
 			if err = dso.aa.db.recordDispersionScanFailure("object", ctx.policy, check.partition, service, check.deviceID); err != nil {
 				ctx.logger.Error("recordDispersionScanFailure", zap.Int("policy", ctx.policy), zap.Uint64("partition", check.partition), zap.String("service", service), zap.Int("deviceID", check.deviceID), zap.Error(err))
 			}
@@ -246,6 +280,7 @@ func (dso *dispersionScanObjects) handleChecks(ctx *dispersionScanObjectsContext
 		resp, err := dso.aa.client.Do(req)
 		if err != nil {
 			atomic.AddInt64(&ctx.errored, 1)
+			ctx.logger.Debug("Do", zap.String("url", url), zap.Error(err))
 			if err = dso.aa.db.recordDispersionScanFailure("object", ctx.policy, check.partition, service, -1); err != nil {
 				ctx.logger.Error("recordDispersionScanFailure", zap.Int("policy", ctx.policy), zap.Uint64("partition", check.partition), zap.String("service", service), zap.Error(err))
 			}
@@ -262,6 +297,7 @@ func (dso *dispersionScanObjects) handleChecks(ctx *dispersionScanObjectsContext
 		}
 		if resp.StatusCode/100 != 2 {
 			atomic.AddInt64(&ctx.errored, 1)
+			ctx.logger.Debug("StatusCode", zap.String("url", url), zap.Int("status code", resp.StatusCode))
 			if err = dso.aa.db.recordDispersionScanFailure("object", ctx.policy, check.partition, "", check.deviceID); err != nil {
 				ctx.logger.Error("recordDispersionScanFailure", zap.Int("policy", ctx.policy), zap.Uint64("partition", check.partition), zap.Int("deviceID", check.deviceID), zap.Error(err))
 			}

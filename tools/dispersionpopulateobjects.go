@@ -144,10 +144,9 @@ func (dpo *dispersionPopulateObjects) putDispersionObjects(logger *zap.Logger, p
 			container,
 			object,
 			common.Map2Headers(map[string]string{
-				"Content-Length":         "0",
-				"Content-Type":           "text",
-				"X-Timestamp":            common.CanonicalTimestampFromTime(xtimestamp),
-				"X-Object-Meta-Populate": common.CanonicalTimestampFromTime(xtimestamp), // GLH Just for debugging, remove at some point.
+				"Content-Length": "0",
+				"Content-Type":   "text",
+				"X-Timestamp":    common.CanonicalTimestampFromTime(xtimestamp),
 			}),
 			bytes.NewReader([]byte{}),
 		)
@@ -173,10 +172,9 @@ func (dpo *dispersionPopulateObjects) putDispersionObjects(logger *zap.Logger, p
 			container,
 			"object-init",
 			common.Map2Headers(map[string]string{
-				"Content-Length":         "0",
-				"Content-Type":           "text",
-				"X-Timestamp":            common.CanonicalTimestampFromTime(xtimestamp),
-				"X-Object-Meta-Populate": common.CanonicalTimestampFromTime(xtimestamp), // GLH Just for debugging, remove at some point.
+				"Content-Length": "0",
+				"Content-Type":   "text",
+				"X-Timestamp":    common.CanonicalTimestampFromTime(xtimestamp),
 			}),
 			bytes.NewReader([]byte{}),
 		)

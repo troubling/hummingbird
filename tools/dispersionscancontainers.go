@@ -26,13 +26,6 @@ import (
 
 const queuedPerDevice = 10
 
-type checkInfo struct {
-	deviceID  int
-	device    string
-	partition uint64
-	name      string
-}
-
 type dispersionScanContainers struct {
 	aa *AutoAdmin
 	// delay between each request; adjusted each pass to try to make passes last passTimeTarget

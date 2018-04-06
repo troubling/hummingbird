@@ -252,9 +252,6 @@ func (f *ecEngine) ecShardPutHandler(writer http.ResponseWriter, request *http.R
 	hash := md5.New()
 	n, err := common.Copy(request.Body, atm, hash)
 	if err == io.ErrUnexpectedEOF || (request.ContentLength >= 0 && n != request.ContentLength) {
-		if request.ContentLength >= 0 && n != request.ContentLength {
-			srv.GetLogger(request).Error(fmt.Sprintf("REMOVE THIS DEBUG ERROR GLH2 %d != %d", n, request.ContentLength))
-		}
 		srv.StandardResponse(writer, 499)
 		return
 	} else if err != nil {
@@ -328,9 +325,6 @@ func (f *ecEngine) ecNurseryPutHandler(writer http.ResponseWriter, request *http
 
 		n, err := common.Copy(request.Body, atm)
 		if err == io.ErrUnexpectedEOF || (request.ContentLength >= 0 && n != request.ContentLength) {
-			if request.ContentLength >= 0 && n != request.ContentLength {
-				srv.GetLogger(request).Error(fmt.Sprintf("REMOVE THIS DEBUG ERROR GLH3 %d != %d", n, request.ContentLength))
-			}
 			srv.StandardResponse(writer, 499)
 			return
 		} else if err != nil {
