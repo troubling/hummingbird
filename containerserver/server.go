@@ -178,7 +178,10 @@ func (server *ContainerServer) ContainerGetHandler(writer http.ResponseWriter, r
 	limitStr := request.FormValue("limit")
 	if limitStr != "" {
 		limit, _ = strconv.ParseInt(limitStr, 10, 64)
-		if limit < 0 || limit > 10000 {
+		if limit > 10000 {
+			srv.StandardResponse(writer, http.StatusPreconditionFailed)
+			return
+		} else if limit < 0 {
 			limit = 10000
 		}
 	}
