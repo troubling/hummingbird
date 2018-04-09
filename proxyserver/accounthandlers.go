@@ -113,6 +113,10 @@ func (server *ProxyServer) AccountPostHandler(writer http.ResponseWriter, reques
 		if common.OwnerHeaders[strings.ToLower(k)] && !ctx.StorageOwner {
 			request.Header.Del(k)
 		}
+		if strings.HasPrefix(strings.ToLower(k), "x-remove-account-meta-") {
+			request.Header.Del(k)
+			request.Header.Set(strings.Replace(strings.ToLower(k), "-remove", "", 1), "")
+		}
 	}
 	defer ctx.InvalidateAccountInfo(vars["account"])
 	resp := ctx.C.PostAccount(vars["account"], request.Header)
@@ -147,6 +151,10 @@ func (server *ProxyServer) AccountPutHandler(writer http.ResponseWriter, request
 	for k := range request.Header {
 		if common.OwnerHeaders[strings.ToLower(k)] && !ctx.StorageOwner {
 			request.Header.Del(k)
+		}
+		if strings.HasPrefix(strings.ToLower(k), "x-remove-account-meta-") {
+			request.Header.Del(k)
+			request.Header.Set(strings.Replace(strings.ToLower(k), "-remove", "", 1), "")
 		}
 	}
 	defer ctx.InvalidateAccountInfo(vars["account"])
