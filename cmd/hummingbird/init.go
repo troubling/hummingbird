@@ -71,8 +71,9 @@ func initCommand(args []string) error {
 		print(`sudo apt install -y memcached`)
 	case "haio":
 		print(`sudo apt install -y gcc git-core make memcached sqlite3 tar wget xfsprogs`)
-		print(`wget -nc https://dl.google.com/go/go1.10.linux-amd64.tar.gz`)
-		print(`sudo tar -C /usr/local -xzf go1.10.linux-amd64.tar.gz`)
+		print(`wget -nc https://dl.google.com/go/go1.10.1.linux-amd64.tar.gz`)
+		print(`sudo rm -rf /usr/local/go`)
+		print(`sudo tar -C /usr/local -xzf go1.10.1.linux-amd64.tar.gz`)
 		print(`export PATH=$PATH:/usr/local/go/bin`)
 		print(`grep -q /usr/local/go/bin /etc/profile || echo 'export PATH=$PATH:/usr/local/go/bin' | sudo tee -a /etc/profile`)
 		print(`echo "Retrieving sources; this may take a while..."`)
