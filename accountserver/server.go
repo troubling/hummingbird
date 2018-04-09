@@ -174,12 +174,16 @@ func (server *AccountServer) AccountGetHandler(writer http.ResponseWriter, reque
 		writer.Write([]byte(""))
 		return
 	}
-	limit, _ := strconv.ParseInt(request.FormValue("limit"), 10, 64)
-	if limit > 10000 {
-		srv.StandardResponse(writer, http.StatusPreconditionFailed)
-		return
-	} else if limit <= 0 {
-		limit = 10000
+	limit := int64(10000)
+	limitStr := request.FormValue("limit")
+	if limitStr != "" {
+		limit, _ = strconv.ParseInt(limitStr, 10, 64)
+		if limit > 10000 {
+			srv.StandardResponse(writer, http.StatusPreconditionFailed)
+			return
+		} else if limit < 0 {
+			limit = 10000
+		}
 	}
 	marker := request.Form.Get("marker")
 	delimiter := request.Form.Get("delimiter")
