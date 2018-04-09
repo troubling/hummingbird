@@ -132,6 +132,10 @@ func (server *ProxyServer) ContainerPostHandler(writer http.ResponseWriter, requ
 		if common.OwnerHeaders[strings.ToLower(k)] && !ctx.StorageOwner {
 			request.Header.Del(k)
 		}
+		if strings.HasPrefix(strings.ToLower(k), "x-remove-container-meta-") {
+			request.Header.Del(k)
+			request.Header.Set(strings.Replace(strings.ToLower(k), "-remove", "", 1), "")
+		}
 	}
 	resp := ctx.C.PostContainer(vars["account"], vars["container"], request.Header)
 	resp.Body.Close()
@@ -175,6 +179,10 @@ func (server *ProxyServer) ContainerPutHandler(writer http.ResponseWriter, reque
 	for k := range request.Header {
 		if common.OwnerHeaders[strings.ToLower(k)] && !ctx.StorageOwner {
 			request.Header.Del(k)
+		}
+		if strings.HasPrefix(strings.ToLower(k), "x-remove-container-meta-") {
+			request.Header.Del(k)
+			request.Header.Set(strings.Replace(strings.ToLower(k), "-remove", "", 1), "")
 		}
 	}
 	resp := ctx.C.PutContainer(vars["account"], vars["container"], request.Header)
