@@ -10,6 +10,8 @@ import (
 	"github.com/troubling/hummingbird/common/conf"
 )
 
+var DB_NAME = "andrewd.db"
+
 type dbInstance struct {
 	db                     *sql.DB
 	serviceErrorExpiration time.Duration
@@ -50,6 +52,12 @@ func newDB(serverconf *conf.Config, memoryDBID string) (*dbInstance, error) {
 	}
 	db.db.SetMaxOpenConns(1)
 	_, err = db.db.Exec(`
+        PRAGMA synchronous = NORMAL;
+        PRAGMA cache_size = -4096;
+        PRAGMA temp_store = MEMORY;
+        PRAGMA journal_mode = WAL;
+        PRAGMA busy_timeout = 25000;
+
         CREATE TABLE IF NOT EXISTS replication_queue (
             create_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             update_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -89,6 +97,32 @@ func newDB(serverconf *conf.Config, memoryDBID string) (*dbInstance, error) {
             policy INTEGER NOT NULL,            -- only used with object
             hash TEXT NOT NULL                  -- MD5 of on-disk file
         );
+
+        -- records multiple states of each server, keeping a configurable time
+        -- range of entries, letting us detect how long a server has been down
+        -- and if it's been "bouncing" for a while, etc.
+        CREATE TABLE IF NOT EXISTS server_state (
+            ip TEXT NOT NULL,
+            port INTEGER NOT NULL,
+            recorded TIMESTAMP NOT NULL,
+            state INTEGER NOT NULL      -- 0 = down, 1 = up
+        );
+
+        -- similar to server_state
+        CREATE TABLE IF NOT EXISTS device_state (
+            ip TEXT NOT NULL,
+            port INTEGER NOT NULL,
+            device TEXT NOT NULL,
+            recorded TIMESTAMP NOT NULL,
+            state INTEGER NOT NULL      -- 0 = unmounted, 1 = mounted
+        );
+
+        CREATE TABLE IF NOT EXISTS ring_log (
+            create_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            rtype TEXT NOT NULL,                -- account, container, object
+            policy INTEGER NOT NULL,            -- only used with object
+            reason TEXT NOT NULL
+        )
     `)
 	if err != nil {
 		return nil, err
@@ -562,4 +596,119 @@ func (db *dbInstance) ringHash(typ string, policy int) (string, error) {
 		err = rows.Scan(&hsh)
 	}
 	return hsh, err
+}
+
+type stateEntry struct {
+	recorded time.Time
+	state    bool
+}
+
+func (db *dbInstance) serverStates(ip string, port int) ([]*stateEntry, error) {
+	var rows *sql.Rows
+	var states []*stateEntry
+	var err error
+	defer func() {
+		if rows != nil {
+			rows.Close()
+		}
+	}()
+	if rows, err = db.db.Query(`
+        SELECT recorded, state
+        FROM server_state
+        WHERE ip = ?
+          AND port = ?
+        ORDER BY recorded DESC
+    `, ip, port); err != nil {
+		return states, err
+	}
+	for rows.Next() {
+		var recorded time.Time
+		var state int
+		if err = rows.Scan(&recorded, &state); err != nil {
+			return states, err
+		}
+		states = append(states, &stateEntry{recorded: recorded, state: state == 1})
+	}
+	err = rows.Err()
+	return states, err
+}
+
+func (db *dbInstance) addServerState(ip string, port int, up bool, retention time.Time) error {
+	state := 0
+	if up {
+		state = 1
+	}
+	_, err := db.db.Exec(`
+        INSERT INTO server_state
+        (ip, port, recorded, state)
+        VALUES (?, ?, ?, ?)
+    `, ip, port, time.Now(), state)
+	if err != nil {
+		return err
+	}
+	_, err = db.db.Exec(`
+        DELETE FROM server_state
+        WHERE recorded < ?
+    `, retention)
+	return err
+}
+
+func (db *dbInstance) deviceStates(ip string, port int, device string) ([]*stateEntry, error) {
+	var rows *sql.Rows
+	var states []*stateEntry
+	var err error
+	defer func() {
+		if rows != nil {
+			rows.Close()
+		}
+	}()
+	if rows, err = db.db.Query(`
+        SELECT recorded, state
+        FROM device_state
+        WHERE ip = ?
+          AND port = ?
+          AND device = ?
+        ORDER BY recorded DESC
+    `, ip, port, device); err != nil {
+		return states, err
+	}
+	for rows.Next() {
+		var recorded time.Time
+		var state int
+		if err = rows.Scan(&recorded, &state); err != nil {
+			return states, err
+		}
+		states = append(states, &stateEntry{recorded: recorded, state: state == 1})
+	}
+	err = rows.Err()
+	return states, err
+}
+
+func (db *dbInstance) addDeviceState(ip string, port int, device string, mounted bool, retention time.Time) error {
+	state := 0
+	if mounted {
+		state = 1
+	}
+	_, err := db.db.Exec(`
+        INSERT INTO device_state
+        (ip, port, device, recorded, state)
+        VALUES (?, ?, ?, ?, ?)
+    `, ip, port, device, time.Now(), state)
+	if err != nil {
+		return err
+	}
+	_, err = db.db.Exec(`
+        DELETE FROM device_state
+        WHERE recorded < ?
+    `, retention)
+	return err
+}
+
+func (db *dbInstance) addRingLog(typ string, policy int, reason string) error {
+	_, err := db.db.Exec(`
+        INSERT INTO ring_log
+        (rtype, policy, reason)
+        VALUES (?, ?, ?)
+    `, typ, policy, reason)
+	return err
 }

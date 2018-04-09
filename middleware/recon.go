@@ -228,7 +228,7 @@ func fromReconCache(reconCachePath string, source string, keys ...string) (inter
 	return results, nil
 }
 
-func getUnmounted(driveRoot string) (interface{}, error) {
+func getUnmounted(driveRoot string, mountCheck bool) (interface{}, error) {
 	unmounted := make([]map[string]interface{}, 0)
 	dirInfo, err := os.Stat(driveRoot)
 	if err != nil {
@@ -239,9 +239,18 @@ func getUnmounted(driveRoot string) (interface{}, error) {
 		return nil, err
 	}
 	for _, info := range fileInfo {
-		if info.Sys().(*syscall.Stat_t).Dev == dirInfo.Sys().(*syscall.Stat_t).Dev {
-			unmounted = append(unmounted, map[string]interface{}{"device": info.Name(), "mounted": false})
+		m := true
+		if mountCheck {
+			m = info.Sys().(*syscall.Stat_t).Dev == dirInfo.Sys().(*syscall.Stat_t).Dev
 		}
+		if m {
+			if _, err = os.Stat(filepath.Join(driveRoot, info.Name(), "unmount")); err == nil {
+				m = false
+			} else if _, err = os.Stat(filepath.Join(driveRoot, info.Name(), "unmounted")); err == nil {
+				m = false
+			}
+		}
+		unmounted = append(unmounted, map[string]interface{}{"device": info.Name(), "mounted": m})
 	}
 	return unmounted, nil
 }
@@ -526,7 +535,7 @@ func quarantineDetail(driveRoot string) (interface{}, error) {
 	return typeToDeviceToEntries, nil
 }
 
-func diskUsage(driveRoot string) ([]map[string]interface{}, error) {
+func diskUsage(driveRoot string, mountCheck bool) ([]map[string]interface{}, error) {
 	devices := make([]map[string]interface{}, 0)
 	dirInfo, err := os.Stat(driveRoot)
 	if err != nil {
@@ -537,20 +546,34 @@ func diskUsage(driveRoot string) ([]map[string]interface{}, error) {
 		return nil, err
 	}
 	for _, info := range fileInfo {
-		if info.Sys().(*syscall.Stat_t).Dev == dirInfo.Sys().(*syscall.Stat_t).Dev {
-			devices = append(devices, map[string]interface{}{"device": info.Name(), "mounted": false,
-				"size": "", "used": "", "avail": ""})
-		} else {
+		mounted := true
+		if mountCheck {
+			mounted = info.Sys().(*syscall.Stat_t).Dev == dirInfo.Sys().(*syscall.Stat_t).Dev
+		}
+		if mounted {
+			if _, err = os.Stat(filepath.Join(driveRoot, info.Name(), "unmount")); err == nil {
+				mounted = false
+			} else if _, err = os.Stat(filepath.Join(driveRoot, info.Name(), "unmounted")); err == nil {
+				mounted = false
+			}
+		}
+		var capacity, used, available int64
+		if mounted {
 			var fsinfo syscall.Statfs_t
 			err := syscall.Statfs(filepath.Join(driveRoot, info.Name()), &fsinfo)
 			if err == nil {
-				capacity := int64(fsinfo.Bsize) * int64(fsinfo.Blocks)
-				used := int64(fsinfo.Bsize) * (int64(fsinfo.Blocks) - int64(fsinfo.Bavail))
-				available := int64(fsinfo.Bsize) * int64(fsinfo.Bavail)
-				devices = append(devices, map[string]interface{}{"device": info.Name(), "mounted": true,
-					"size": capacity, "used": used, "avail": available})
+				capacity = int64(fsinfo.Bsize) * int64(fsinfo.Blocks)
+				used = int64(fsinfo.Bsize) * (int64(fsinfo.Blocks) - int64(fsinfo.Bavail))
+				available = int64(fsinfo.Bsize) * int64(fsinfo.Bavail)
 			}
 		}
+		devices = append(devices, map[string]interface{}{
+			"device":  info.Name(),
+			"mounted": mounted,
+			"size":    capacity,
+			"used":    used,
+			"avail":   available,
+		})
 	}
 	return devices, nil
 }
@@ -624,14 +647,10 @@ func ReconHandler(driveRoot string, reconCachePath string, mountCheck bool, writ
 	case "mounted":
 		content = getMounts()
 	case "unmounted":
-		if !mountCheck {
-			content = make([]map[string]interface{}, 0)
-		} else {
-			content, err = getUnmounted(driveRoot)
-			if err != nil {
-				http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-				return
-			}
+		content, err = getUnmounted(driveRoot, mountCheck)
+		if err != nil {
+			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
 		}
 	case "ringmd5":
 		if content, err = common.GetAllRingFileMd5s(); err != nil {
@@ -696,7 +715,7 @@ func ReconHandler(driveRoot string, reconCachePath string, mountCheck bool, writ
 	case "version":
 		content = map[string]string{"version": "idunno"}
 	case "diskusage":
-		content, err = diskUsage(driveRoot)
+		content, err = diskUsage(driveRoot, mountCheck)
 		if err != nil {
 			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return

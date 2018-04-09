@@ -556,7 +556,6 @@ type AutoAdmin struct {
 	policies       conf.PolicyList
 	metricsScope   tally.Scope
 	metricsCloser  io.Closer
-	dw             *driveWatch
 	runningForever bool
 	db             *dbInstance
 	fastRingScan   chan struct{}
@@ -604,7 +603,6 @@ func (server *AutoAdmin) GetHandler(config conf.Config, metricsPrefix string) ht
 	router.Get("/healthcheck", commonHandlers.ThenFunc(server.HealthcheckHandler))
 	router.Get("/debug/pprof/:parm", http.DefaultServeMux)
 	router.Post("/debug/pprof/:parm", http.DefaultServeMux)
-	router.Get("/drivewatch", server.dw)
 	return alice.New(middleware.Metrics(metricsScope)).Then(router)
 }
 
@@ -633,8 +631,9 @@ func (a *AutoAdmin) RunForever() {
 	go newDispersionPopulateObjects(a).runForever()
 	go newDispersionScanContainers(a).runForever()
 	go newDispersionScanObjects(a).runForever()
-	go newQuarantineRepair(a).runForever()
 	go newQuarantineHistory(a).runForever()
+	go newQuarantineRepair(a).runForever()
+	go newUnmountedMonitor(a).runForever()
 	go newReplication(a).runForever()
 	go newRingMonitor(a).runForever()
 	go newRingScan(a).runForever()
@@ -705,8 +704,6 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 		CachedReporter: promreporter.NewReporter(promreporter.Options{}),
 		Separator:      promreporter.DefaultSeparator,
 	}, time.Second)
-
-	a.dw = NewDriveWatch(a.logger, a.metricsScope, serverconf, cnf, certFile, keyFile)
 
 	ipPort = &srv.IpPort{Ip: ip, Port: port, CertFile: certFile, KeyFile: keyFile}
 	resp := a.hClient.PutAccount(

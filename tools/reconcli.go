@@ -35,6 +35,45 @@ import (
 	"golang.org/x/net/http2"
 )
 
+type ipPort struct {
+	ip, scheme      string
+	port            int
+	replicationPort int
+}
+
+func (v *ipPort) String() string {
+	return fmt.Sprintf("%s://%s:%d|%d", v.scheme, v.ip, v.port, v.replicationPort)
+}
+
+func serverId(ip string, port int) string {
+	return fmt.Sprintf("%s:%d", ip, port)
+}
+
+func deviceId(ip string, port int, device string) string {
+	return fmt.Sprintf("%s:%d/%s", ip, port, device)
+}
+
+func getRingData(oring ring.Ring, onlyWeighted bool) (map[string]*ring.Device, []*ipPort) {
+	allRingDevices := make(map[string]*ring.Device)
+	var servers []*ipPort
+	weightedServers := make(map[string]bool)
+	for _, dev := range oring.AllDevices() {
+		if dev == nil {
+			continue
+		}
+		allRingDevices[deviceId(dev.Ip, dev.Port, dev.Device)] = dev
+
+		if !onlyWeighted || dev.Weight > 0 {
+			if _, ok := weightedServers[serverId(dev.Ip, dev.Port)]; !ok {
+				servers =
+					append(servers, &ipPort{ip: dev.Ip, port: dev.Port, scheme: dev.Scheme, replicationPort: dev.ReplicationPort})
+				weightedServers[serverId(dev.Ip, dev.Port)] = true
+			}
+		}
+	}
+	return allRingDevices, servers
+}
+
 func queryHostRecon(client http.Client, s *ipPort, endpoint string) ([]byte, error) {
 	serverUrl := fmt.Sprintf("%s://%s:%d/recon/%s", s.scheme, s.ip, s.port, endpoint)
 	req, err := http.NewRequest("GET", serverUrl, nil)
@@ -974,10 +1013,10 @@ func ReconClient(flags *flag.FlagSet, cnf srv.ConfigLoader) bool {
 		reports = append(reports, getDispersionReport(flags))
 	}
 	if flags.Lookup("ds").Value.(flag.Getter).Get().(bool) {
-		reports = append(reports, getDriveReport(flags))
+		// TODO: reports = append(reports, getDriveReport(flags))
 	}
 	if flags.Lookup("rar").Value.(flag.Getter).Get().(bool) {
-		reports = append(reports, getRingActionReport(flags))
+		// TODO: reports = append(reports, getRingActionReport(flags))
 	}
 	if len(reports) == 0 {
 		flags.Usage()
