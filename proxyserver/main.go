@@ -126,6 +126,7 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 			{middleware.NewCatchError, "filter:catch_errors"},
 			{middleware.NewHealthcheck, "filter:healthcheck"},
 			{middleware.NewRequestLogger, "filter:proxy-logging"},
+			{middleware.NewCrossDomain, "filter:crossdomain"},
 			{middleware.NewCors, "filter:cors"}, // TODO: i dont want to have to have a seciton for this
 			{middleware.NewFormPost, "filter:formpost"},
 			{middleware.NewTempURL, "filter:tempurl"},
@@ -146,6 +147,7 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 			{middleware.NewCatchError, "filter:catch_errors"},
 			{middleware.NewHealthcheck, "filter:healthcheck"},
 			{middleware.NewRequestLogger, "filter:proxy-logging"},
+			{middleware.NewCrossDomain, "filter:crossdomain"},
 			{middleware.NewCors, "filter:cors"},
 			{middleware.NewFormPost, "filter:formpost"},
 			{middleware.NewTempURL, "filter:tempurl"},
