@@ -66,8 +66,8 @@ type ObjectStabilizer interface {
 }
 
 type ReplicationDevice interface {
-	Replicate()
-	ReplicateLoop()
+	Scan()
+	ScanLoop()
 	Key() string
 	Cancel()
 	PriorityReplicate(w http.ResponseWriter, pri PriorityRepJob)

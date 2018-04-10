@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -83,7 +84,8 @@ func TestNurseryReplicateWithFailure(t *testing.T) {
 	defer os.RemoveAll(fp.Name())
 	used := make(map[string]bool)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		drive := r.URL.Path[9:12]
+		ns := strings.SplitN(r.URL.Path, "/", 4)
+		drive := ns[2]
 		if drive == "sdb" {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return

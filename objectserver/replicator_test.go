@@ -133,12 +133,12 @@ type mockReplicationDevice struct {
 	_PriorityReplicate func(w http.ResponseWriter, pri PriorityRepJob) error
 }
 
-func (d *mockReplicationDevice) Replicate() {
+func (d *mockReplicationDevice) Scan() {
 	if d._Replicate != nil {
 		d._Replicate()
 	}
 }
-func (d *mockReplicationDevice) ReplicateLoop() {
+func (d *mockReplicationDevice) ScanLoop() {
 	if d._ReplicateLoop != nil {
 		d._ReplicateLoop()
 	}
@@ -729,7 +729,7 @@ func TestReplicate(t *testing.T) {
 	rd._replicatePartition = func(partition string) {
 		calledWith = append(calledWith, partition)
 	}
-	rd.Replicate()
+	rd.Scan()
 	require.Equal(t, []string{"1", "2", "2", "3"}, calledWith)
 }
 
@@ -748,7 +748,7 @@ func TestCancelReplicate(t *testing.T) {
 	}
 	rd.cancel = make(chan struct{}, 1)
 	rd.cancel <- struct{}{}
-	rd.Replicate()
+	rd.Scan()
 	require.Equal(t, 0, len(calledWith))
 }
 

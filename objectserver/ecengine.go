@@ -16,8 +16,6 @@
 package objectserver
 
 import (
-	"crypto/md5"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -86,10 +84,7 @@ func (f *ecEngine) getDB(device string) (*IndexDB, error) {
 
 // New returns an instance of ecObject with the given parameters. Metadata is read in and if needData is true, the file is opened.  AsyncWG is a waitgroup if the object spawns any async operations
 func (f *ecEngine) New(vars map[string]string, needData bool, asyncWG *sync.WaitGroup) (Object, error) {
-	h := md5.New()
-	io.WriteString(h, f.hashPathPrefix+"/"+vars["account"]+"/"+vars["container"]+"/"+vars["obj"]+f.hashPathSuffix)
-	digest := h.Sum(nil)
-	hash := hex.EncodeToString(digest)
+	hash := ObjHash(vars, f.hashPathPrefix, f.hashPathSuffix)
 
 	obj := &ecObject{
 		IndexDBItem: IndexDBItem{
@@ -115,7 +110,7 @@ func (f *ecEngine) New(vars map[string]string, needData bool, asyncWG *sync.Wait
 			if err = json.Unmarshal(item.Metabytes, &obj.metadata); err != nil {
 				return nil, fmt.Errorf("Error parsing metadata: %v", err)
 			}
-		}
+		} //TODO: dfg handle lookup err here
 		return obj, nil
 	}
 	return nil, errors.New("Unable to open database")
@@ -169,44 +164,11 @@ func (f *ecEngine) ecShardPostHandler(writer http.ResponseWriter, request *http.
 		srv.StandardResponse(writer, http.StatusBadRequest)
 		return
 	}
-	item, err := idb.Lookup(vars["hash"], shardIndex, false)
-	if err != nil || item == nil || item.Deletion {
-		srv.StandardResponse(writer, http.StatusNotFound)
-		return
-	}
-	timestampTime, err := common.ParseDate(request.Header.Get("Meta-X-Timestamp"))
+	rStatus, err := idb.StablePost(vars["hash"], shardIndex, request)
 	if err != nil {
-		srv.StandardResponse(writer, http.StatusBadRequest)
-		return
+		srv.GetLogger(request).Error("error in StablePost", zap.Error(err))
 	}
-	timestamp := timestampTime.UnixNano()
-	if timestamp <= item.Timestamp {
-		srv.StandardResponse(writer, http.StatusConflict)
-		return
-	}
-	metadata := make(map[string]string)
-	for key := range request.Header {
-		if strings.HasPrefix(key, "Meta-") {
-			if key == "Meta-Name" {
-				metadata["name"] = request.Header.Get(key)
-			} else if key == "Meta-Etag" {
-				metadata["ETag"] = request.Header.Get(key)
-			} else {
-				metadata[http.CanonicalHeaderKey(key[5:])] = request.Header.Get(key)
-			}
-		}
-	}
-	metabytes, err := json.Marshal(metadata)
-	if err != nil {
-		srv.GetLogger(request).Error("Error marshaling meta", zap.Error(err))
-		return
-	}
-	if err = idb.Commit(nil, vars["hash"], shardIndex, timestamp, "POST", MetadataHash(metadata), metabytes, false, ""); err != nil {
-		srv.GetLogger(request).Error("Error saving shard meta file", zap.Error(err))
-		srv.StandardResponse(writer, http.StatusInternalServerError)
-	} else {
-		srv.StandardResponse(writer, http.StatusAccepted)
-	}
+	srv.StandardResponse(writer, rStatus)
 	return
 }
 
@@ -217,61 +179,17 @@ func (f *ecEngine) ecShardPutHandler(writer http.ResponseWriter, request *http.R
 		srv.StandardResponse(writer, http.StatusBadRequest)
 		return
 	}
-	timestampTime, err := common.ParseDate(request.Header.Get("Meta-X-Timestamp"))
-	if err != nil {
-		srv.StandardResponse(writer, http.StatusBadRequest)
-		return
-	}
 	shardIndex, err := strconv.Atoi(vars["index"])
 	if err != nil {
 		srv.StandardResponse(writer, http.StatusBadRequest)
 		return
 	}
-	timestamp := timestampTime.UnixNano()
-	atm, err := idb.TempFile(vars["hash"], shardIndex, timestamp, request.ContentLength, false)
+	rStatus, err := idb.StablePut(vars["hash"], shardIndex, request)
 	if err != nil {
-		srv.StandardResponse(writer, http.StatusInternalServerError)
-		return
+		srv.GetLogger(request).Error("error in StablePut", zap.Error(err))
 	}
-	if atm == nil {
-		srv.StandardResponse(writer, http.StatusCreated)
-		return
-	}
-	defer atm.Abandon()
-	metadata := make(map[string]string)
-	for key := range request.Header {
-		if strings.HasPrefix(key, "Meta-") {
-			if key == "Meta-Name" {
-				metadata["name"] = request.Header.Get(key)
-			} else if key == "Meta-Etag" {
-				metadata["ETag"] = request.Header.Get(key)
-			} else {
-				metadata[http.CanonicalHeaderKey(key[5:])] = request.Header.Get(key)
-			}
-		}
-	}
-
-	hash := md5.New()
-	n, err := common.Copy(request.Body, atm, hash)
-	if err == io.ErrUnexpectedEOF || (request.ContentLength >= 0 && n != request.ContentLength) {
-		srv.StandardResponse(writer, 499)
-		return
-	} else if err != nil {
-		srv.GetLogger(request).Error("Error writing to file", zap.Error(err))
-		srv.StandardResponse(writer, http.StatusInternalServerError)
-		return
-	}
-	shardHash := hex.EncodeToString(hash.Sum(nil))
-	metabytes, err := json.Marshal(metadata)
-	if err != nil {
-		srv.StandardResponse(writer, http.StatusInternalServerError)
-		return
-	}
-	if err := idb.Commit(atm, vars["hash"], shardIndex, timestamp, "PUT", MetadataHash(metadata), metabytes, false, shardHash); err != nil {
-		srv.StandardResponse(writer, http.StatusInternalServerError)
-	} else {
-		srv.StandardResponse(writer, http.StatusCreated)
-	}
+	srv.StandardResponse(writer, rStatus)
+	return
 }
 
 func (f *ecEngine) ecNurseryPutHandler(writer http.ResponseWriter, request *http.Request) {
@@ -394,7 +312,7 @@ func (f *ecEngine) ecShardDeleteHandler(writer http.ResponseWriter, request *htt
 	if err := idb.Remove(item.Hash, item.Shard, item.Timestamp, item.Nursery); err != nil {
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 	} else {
-		srv.StandardResponse(writer, http.StatusCreated)
+		srv.StandardResponse(writer, http.StatusNoContent)
 	}
 }
 
@@ -410,7 +328,7 @@ func (f *ecEngine) GetObjectsToReplicate(prirep PriorityRepJob, c chan ObjectSta
 	if len(items) == 0 {
 		return
 	}
-	url := fmt.Sprintf("%s://%s:%d/partition/%s/%d", prirep.ToDevice.Scheme, prirep.ToDevice.Ip, prirep.ToDevice.Port, prirep.ToDevice.Device, prirep.Partition)
+	url := fmt.Sprintf("%s://%s:%d/ec-partition/%s/%d", prirep.ToDevice.Scheme, prirep.ToDevice.Ip, prirep.ToDevice.Port, prirep.ToDevice.Device, prirep.Partition)
 	req, err := http.NewRequest("GET", url, nil)
 	req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(prirep.Policy))
 	req.Header.Set("User-Agent", "nursery-stabilizer")
@@ -517,12 +435,12 @@ func (f *ecEngine) listPartitionHandler(writer http.ResponseWriter, request *htt
 }
 
 func (f *ecEngine) RegisterHandlers(addRoute func(method, path string, handler http.HandlerFunc)) {
-	addRoute("PUT", "/nursery/:device/:hash", f.ecNurseryPutHandler)
+	addRoute("PUT", "/ec-nursery/:device/:hash", f.ecNurseryPutHandler)
 	addRoute("GET", "/ec-shard/:device/:hash/:index", f.ecShardGetHandler)
 	addRoute("PUT", "/ec-shard/:device/:hash/:index", f.ecShardPutHandler)
 	addRoute("DELETE", "/ec-shard/:device/:hash/:index", f.ecShardDeleteHandler)
 	addRoute("POST", "/ec-shard/:device/:hash/:index", f.ecShardPostHandler)
-	addRoute("GET", "/partition/:device/:partition", f.listPartitionHandler)
+	addRoute("GET", "/ec-partition/:device/:partition", f.listPartitionHandler)
 	addRoute("PUT", "/ec-reconstruct/:device/:account/:container/*obj", f.ecReconstructHandler)
 }
 

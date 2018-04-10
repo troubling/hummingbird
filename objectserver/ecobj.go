@@ -453,7 +453,7 @@ func (o *ecObject) nurseryReplicate(rng ring.Ring, partition uint64, dev *ring.D
 		defer rp.Close()
 		defer wp.Close()
 		wrs = append(wrs, wp)
-		req, err := http.NewRequest("PUT", fmt.Sprintf("%s://%s:%d/nursery/%s/%s",
+		req, err := http.NewRequest("PUT", fmt.Sprintf("%s://%s:%d/ec-nursery/%s/%s",
 			node.Scheme, node.ReplicationIp, node.ReplicationPort, node.Device, o.Hash), rp)
 		if err != nil {
 			return err
@@ -544,7 +544,7 @@ func (o *ecObject) restabilize(rng ring.Ring, dev *ring.Device, policy int) erro
 	if successes != int64(len(nodes)) {
 		return fmt.Errorf("could not restabilize all primaries %d/%d", successes, len(nodes))
 	}
-	return o.idb.SetRestablized(o.Hash, o.Shard, o.Timestamp)
+	return o.idb.SetStabilized(o.Hash, o.Shard, o.Timestamp, false)
 }
 
 func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error {
@@ -555,7 +555,7 @@ func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error 
 	if len(ns) != 4 {
 		return fmt.Errorf("invalid metadata name: %s", o.metadata["name"])
 	}
-	partition := rng.GetPartition(ns[1], ns[2], ns[3])
+	partition := rng.GetPartition(ns[1], ns[2], ns[3]) //TODO: this should just get partition from o.Hash right?
 	nodes := rng.GetNodes(partition)
 	if len(nodes) != o.dataShards+o.parityShards {
 		return fmt.Errorf("Ring doesn't match EC scheme (%d != %d).", len(nodes), o.dataShards+o.parityShards)
@@ -582,7 +582,7 @@ func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error 
 			req.ContentLength = ecShardLength(o.ContentLength(), o.dataShards)
 		}
 		req.Header.Set("X-Timestamp", o.metadata["X-Timestamp"])
-		req.Header.Set("Deletion", strconv.FormatBool(o.Deletion))
+		req.Header.Set("Deletion", strconv.FormatBool(o.Deletion)) //TODO: this can be removed right?
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(policy))
 		req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("reedsolomon/%d/%d/%d", o.dataShards, o.parityShards, o.chunkSize))
 		for k, v := range o.metadata {
@@ -597,7 +597,7 @@ func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error 
 	success := true
 	for i := range responses {
 		if responses[i] != nil {
-			if responses[i].StatusCode/100 == 2 {
+			if responses[i].StatusCode/100 == 2 || (o.Deletion && responses[i].StatusCode == 404) {
 			} else {
 				success = false
 			}
