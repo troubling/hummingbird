@@ -135,6 +135,7 @@ func (c *copyMiddleware) handleCopy(writer *CopyWriter, request *http.Request) {
 	request.ContentLength = 0
 	request.Header.Set("X-Copy-From", common.Urlencode(source))
 	request.Header.Del("Destination")
+	request.TransferEncoding = []string{"chunked"}
 
 	c.handlePut(writer, request)
 }
@@ -312,7 +313,7 @@ func (c *copyMiddleware) handlePut(writer *CopyWriter, request *http.Request) {
 	copiedFrom := fmt.Sprintf("%s/%s", srcContainer, srcObject)
 	respHeader.Set("X-Copied-From", common.Urlencode(copiedFrom))
 	if srcHeader.Get("Last-Modified") != "" {
-		respHeader.Set("Last-Modified", srcHeader.Get("Last-Modified"))
+		respHeader.Set("X-Copied-From-Last-Modified", srcHeader.Get("Last-Modified"))
 	}
 
 	copyMetaItems(respHeader, request.Header)
