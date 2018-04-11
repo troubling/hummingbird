@@ -344,6 +344,7 @@ func (a *Auditor) auditDB(dbpath string, objRing ring.Ring, policy *conf.Policy)
 				a.totalQuarantines++
 			}
 			a.bytesProcessed += bytes
+			a.totalBytes += bytes
 			rateLimitSleep(a.passStart, a.totalPasses, a.filesPerSecond)
 			rateLimitSleep(a.passStart, a.totalBytes, a.bytesPerSecond)
 
