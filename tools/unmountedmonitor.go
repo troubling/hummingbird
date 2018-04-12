@@ -319,7 +319,7 @@ func (um *unmountedMonitor) removeFromBuilder(logger *zap.Logger, ip string, por
 	if err != nil {
 		logger.Error("Error while saving builder", zap.String("type", typ), zap.Int("policy", policy), zap.String("path", ringBuilderFilePath), zap.Error(err))
 	}
-	err = ring.Rebalance(ringBuilderFilePath, false, false, true)
+	_, _, _, err = ring.Rebalance(ringBuilderFilePath, false, false, true)
 	if err != nil {
 		logger.Error("Error while rebalancing", zap.String("type", typ), zap.Int("policy", policy), zap.String("path", ringBuilderFilePath), zap.Error(err))
 	}
@@ -328,4 +328,6 @@ func (um *unmountedMonitor) removeFromBuilder(logger *zap.Logger, ip string, por
 	} else {
 		um.aa.db.addRingLog(typ, policy, fmt.Sprintf("rebalanced due to downed device %s on %s:%d", device, ip, port))
 	}
+	// NOTE: The ringmonitor.go will detect these ring changes on disk and
+	// initiate a fastscan for ringscan.go to push out the new rings.
 }

@@ -90,7 +90,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 			fmt.Println(err)
 			os.Exit(1)
 		}
-		err := ring.Rebalance(pth, debug, *dryrun, false)
+		_, _, _, err := ring.Rebalance(pth, debug, *dryrun, false)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(1)

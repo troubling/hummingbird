@@ -1651,55 +1651,55 @@ func CreateRing(builderPath string, partPower int, replicas float64, minPartHour
 }
 
 // Rebalance attempts to rebalance the ring by reassigning partitions that haven't been recently reassigned.
-func Rebalance(builderPath string, debug bool, dryrun bool, quiet bool) error {
+func Rebalance(builderPath string, debug bool, dryrun bool, quiet bool) (int, float64, int, error) {
 	builder, err := NewRingBuilderFromFile(builderPath, debug)
 	if err != nil {
-		return err
+		return 0, 0, 0, err
 	}
 	changed, balance, removed, err := builder.Rebalance()
 	if err != nil {
-		return err
+		return changed, balance, removed, err
 	}
 	// make sure the ring is valid
 	err = builder.Validate()
 	if err != nil {
-		return err
+		return changed, balance, removed, err
 	}
 	if !quiet {
 		fmt.Printf("Changed: %d Balance: %f Removed: %d\n", changed, balance, removed)
 	}
 	if dryrun {
 		fmt.Println("Dry run complete; rebalance was not saved.")
-		return nil
+		return changed, balance, removed, nil
 	}
 	backupPath := path.Join(path.Dir(builderPath), "backups")
 	err = os.Mkdir(backupPath, 0777)
 	if err != nil {
 		e := err.(*os.PathError)
 		if e.Err != syscall.EEXIST {
-			return err
+			return changed, balance, removed, err
 		}
 	}
 	ts := time.Now().UnixNano()
 	err = builder.Save(path.Join(backupPath, fmt.Sprintf("%d.%s", ts, path.Base(builderPath))))
 	if err != nil {
-		return err
+		return changed, balance, removed, err
 	}
 	err = builder.Save(builderPath)
 	if err != nil {
-		return err
+		return changed, balance, removed, err
 	}
 	ringFile := strings.TrimSuffix(builderPath, ".builder") + ".ring.gz"
 	r := builder.GetRing()
 	err = r.Save(path.Join(backupPath, fmt.Sprintf("%d.%s", ts, path.Base(ringFile))))
 	if err != nil {
-		return err
+		return changed, balance, removed, err
 	}
 	err = r.Save(ringFile)
 	if err != nil {
-		return err
+		return changed, balance, removed, err
 	}
-	return nil
+	return changed, balance, removed, nil
 }
 
 // AddDevice adds a device to the builder filer
