@@ -300,6 +300,17 @@ func (um *unmountedMonitor) removeFromBuilder(logger *zap.Logger, ip string, por
 		logger.Error("Could not find builder", zap.String("type", typ), zap.Int("policy", policy), zap.Error(err))
 		return
 	}
+	ringBuilderLock, err := ring.LockBuilderPath(ringBuilderFilePath)
+	if err != nil {
+		logger.Error("Could not lock builder path", zap.String("type", typ), zap.Int("policy", policy), zap.String("ring builder file path", ringBuilderFilePath), zap.Error(err))
+		return
+	}
+	defer ringBuilderLock.Close()
+	ringBuilder, ringBuilderFilePath, err = ring.GetRingBuilder(typ, policy)
+	if err != nil {
+		logger.Error("Could not find builder after lock", zap.String("type", typ), zap.Int("policy", policy), zap.Error(err))
+		return
+	}
 	changed := false
 	for _, dev := range ringBuilder.SearchDevs(-1, -1, ip, int64(port), "", -1, device, -1, "", "") {
 		if dev.Weight >= 0 {

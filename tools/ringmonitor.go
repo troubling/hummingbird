@@ -153,24 +153,43 @@ func (rm *ringMonitor) runOnce() time.Duration {
 					logger.Error("Could not find builder", zap.String("type", ringTask.typ), zap.Int("policy", ringTask.policy), zap.Error(err))
 					continue
 				}
-				var changedReplicas int
-				changedReplicas, _, _, err = ring.Rebalance(ringBuilderFilePath, false, false, true)
+				ringBuilderLock, err := ring.LockBuilderPath(ringBuilderFilePath)
 				if err != nil {
-					logger.Error("Error while rebalancing", zap.String("type", ringTask.typ), zap.Int("policy", ringTask.policy), zap.String("path", ringBuilderFilePath), zap.Error(err))
+					logger.Error("Could not lock builder path", zap.String("type", ringTask.typ), zap.Int("policy", ringTask.policy), zap.String("ring builder file path", ringBuilderFilePath), zap.Error(err))
+					continue
 				}
-				if err := ringTask.ring.Reload(); err != nil {
-					atomic.AddInt64(&errors, 1)
-					taskLogger.Error("could not reload", zap.Error(err))
-				}
-				// So we don't get stuck rebalancing a ring by tiny amounts for forever:
-				if float64(changedReplicas)/(float64(ringBuilder.Parts)*ringBuilder.Replicas) < 0.01 {
-					rm.aa.db.addRingLog(ringTask.typ, ringTask.policy, fmt.Sprintf("rebalanced due to schedule; now settled"))
-					rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, ringTask.ring.MD5(), time.Time{})
+				if func() bool { // to get the localized defer
+					defer ringBuilderLock.Close()
+					ringBuilder, ringBuilderFilePath, err = ring.GetRingBuilder(ringTask.typ, ringTask.policy)
+					if err != nil {
+						logger.Error("Could not find builder after lock", zap.String("type", ringTask.typ), zap.Int("policy", ringTask.policy), zap.Error(err))
+						return false
+					}
+					var changedReplicas int
+					changedReplicas, _, _, err = ring.Rebalance(ringBuilderFilePath, false, false, true)
+					if err != nil {
+						logger.Error("Error while rebalancing", zap.String("type", ringTask.typ), zap.Int("policy", ringTask.policy), zap.String("path", ringBuilderFilePath), zap.Error(err))
+						return false
+					}
+					if err := ringTask.ring.Reload(); err != nil {
+						atomic.AddInt64(&errors, 1)
+						taskLogger.Error("could not reload", zap.Error(err))
+						return false
+					}
+					// So we don't get stuck rebalancing a ring by tiny amounts for forever:
+					if float64(changedReplicas)/(float64(ringBuilder.Parts)*ringBuilder.Replicas) < 0.01 {
+						rm.aa.db.addRingLog(ringTask.typ, ringTask.policy, fmt.Sprintf("rebalanced due to schedule; now settled"))
+						rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, ringTask.ring.MD5(), time.Time{})
+					} else {
+						rm.aa.db.addRingLog(ringTask.typ, ringTask.policy, fmt.Sprintf("rebalanced due to schedule"))
+						rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, ringTask.ring.MD5(), time.Now().Add(time.Hour*time.Duration(ringBuilder.MinPartHours)+randomDuration(time.Minute, 15*time.Minute)))
+					}
+					return true
+				}() {
+					rm.aa.fastRingScan <- struct{}{}
 				} else {
-					rm.aa.db.addRingLog(ringTask.typ, ringTask.policy, fmt.Sprintf("rebalanced due to schedule"))
-					rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, ringTask.ring.MD5(), time.Now().Add(time.Hour*time.Duration(ringBuilder.MinPartHours)+randomDuration(time.Minute, 15*time.Minute)))
+					continue
 				}
-				rm.aa.fastRingScan <- struct{}{}
 			}
 		} else {
 			rm.aa.fastRingScan <- struct{}{}

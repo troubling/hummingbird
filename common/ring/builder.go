@@ -30,8 +30,31 @@ import (
 	"github.com/troubling/hummingbird/common/pickle"
 )
 
+func LockBuilderPath(pth string) (*os.File, error) {
+	lockPath := ".lock." + pth
+	f, err := os.Open(lockPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			f, err = os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0755)
+			if err != nil {
+				f, err = os.Open(lockPath)
+			}
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX)
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+	return f, nil
+}
+
 // GetRingBuilder will return the builder and builder-file-path or an error for
-// the ring type and policy given.
+// the ring type and policy given. Note that no locking is done here, you
+// should call LockBuilderPath and then call GetRingBuilder again.
 func GetRingBuilder(ringType string, policy int) (*RingBuilder, string, error) {
 	var ringBuilder *RingBuilder
 	var ringBuilderFilePath string
@@ -204,6 +227,7 @@ func NewRingBuilder(partPower int, replicas float64, minPartHours int, debug boo
 	return builder, nil
 }
 
+// Note that no locking is done here, you should call LockBuilderPath first.
 func NewRingBuilderFromFile(builderPath string, debug bool) (*RingBuilder, error) {
 
 	f, err := os.Open(builderPath)
@@ -259,6 +283,7 @@ func (b *RingBuilder) debug(msg string) {
 }
 
 // Save serializes this RingBuilder instance to disk
+// Note that no locking is done here, you should call LockBuilderPath first.
 func (b *RingBuilder) Save(builderPath string) error {
 	f, err := os.OpenFile(builderPath, os.O_WRONLY|os.O_CREATE, 0755)
 	if err != nil {
@@ -1626,6 +1651,7 @@ func (b *RingBuilder) AddDev(dev *RingBuilderDevice) (int64, error) {
 // CreateRing creates a ring builder file.
 //   builderpath must include the filename of the the builder to create.
 //   A backup folder will also be created in the back with a backup of the original builder.
+// Note that no locking is done here, you should call LockBuilderPath first.
 func CreateRing(builderPath string, partPower int, replicas float64, minPartHours int, debug bool) error {
 	builder, err := NewRingBuilder(partPower, replicas, minPartHours, debug)
 	if err != nil {
@@ -1651,6 +1677,7 @@ func CreateRing(builderPath string, partPower int, replicas float64, minPartHour
 }
 
 // Rebalance attempts to rebalance the ring by reassigning partitions that haven't been recently reassigned.
+// Note that no locking is done here, you should call LockBuilderPath first.
 func Rebalance(builderPath string, debug bool, dryrun bool, quiet bool) (int, float64, int, error) {
 	builder, err := NewRingBuilderFromFile(builderPath, debug)
 	if err != nil {
@@ -1705,6 +1732,7 @@ func Rebalance(builderPath string, debug bool, dryrun bool, quiet bool) (int, fl
 // AddDevice adds a device to the builder filer
 //   builderpath must include the filename of the builder file.
 //   Returns the id of the device in the ring.
+// Note that no locking is done here, you should call LockBuilderPath first.
 func AddDevice(builderPath string, id, region, zone int64, scheme, ip string, port int64, replicationIp string, replicationPort int64, device string, weight float64, debug bool) (int64, error) {
 	builder, err := NewRingBuilderFromFile(builderPath, debug)
 	if err != nil {
@@ -1733,6 +1761,7 @@ func AddDevice(builderPath string, id, region, zone int64, scheme, ip string, po
 	return id, nil
 }
 
+// Note that no locking is done here, you should call LockBuilderPath first.
 func Search(builderPath string, region, zone int64, ip string, port int64, repIp string, repPort int64, device string, weight float64, meta string, scheme string) ([]*RingBuilderDevice, error) {
 	builder, err := NewRingBuilderFromFile(builderPath, false)
 	if err != nil {
@@ -1742,6 +1771,7 @@ func Search(builderPath string, region, zone int64, ip string, port int64, repIp
 	return devs, nil
 }
 
+// Note that no locking is done here, you should call LockBuilderPath first.
 func SetWeight(builderPath string, devs []*RingBuilderDevice, weight float64) error {
 	builder, err := NewRingBuilderFromFile(builderPath, false)
 	if err != nil {
@@ -1757,6 +1787,7 @@ func SetWeight(builderPath string, devs []*RingBuilderDevice, weight float64) er
 	return nil
 }
 
+// Note that no locking is done here, you should call LockBuilderPath first.
 func RemoveDevs(builderPath string, devs []*RingBuilderDevice, purge bool) error {
 	builder, err := NewRingBuilderFromFile(builderPath, false)
 	if err != nil {
@@ -1769,6 +1800,7 @@ func RemoveDevs(builderPath string, devs []*RingBuilderDevice, purge bool) error
 	return nil
 }
 
+// Note that no locking is done here, you should call LockBuilderPath first.
 func SetInfo(builderPath string, devs []*RingBuilderDevice, newIp string, newPort int64, newRepIp string, newRepPort int64, newDevice, newMeta string, newScheme string) error {
 	builder, err := NewRingBuilderFromFile(builderPath, false)
 	if err != nil {
@@ -1784,6 +1816,7 @@ func SetInfo(builderPath string, devs []*RingBuilderDevice, newIp string, newPor
 	return nil
 }
 
+// Note that no locking is done here, you should call LockBuilderPath first.
 func WriteRing(builderPath string) error {
 	builder, err := NewRingBuilderFromFile(builderPath, false)
 	if err != nil {
@@ -1817,6 +1850,7 @@ func WriteRing(builderPath string) error {
 	return nil
 }
 
+// Note that no locking is done here, you should call LockBuilderPath first.
 func PretendMinPartHoursPassed(builderPath string) error {
 	builder, err := NewRingBuilderFromFile(builderPath, false)
 	if err != nil {
@@ -1827,6 +1861,7 @@ func PretendMinPartHoursPassed(builderPath string) error {
 	return nil
 }
 
+// Note that no locking is done here, you should call LockBuilderPath first.
 func Validate(builderPath string) error {
 	builder, err := NewRingBuilderFromFile(builderPath, false)
 	if err != nil {
