@@ -74,7 +74,6 @@ type Auditor struct {
 func slowCopyMd5(file *os.File, bps int64) (int64, string, error) {
 	h := md5.New()
 	st := time.Now()
-	tb := int64(0)
 	bytesRead := int64(0)
 	for {
 		if b, err := io.CopyN(h, file, 64*1024); err != nil {
@@ -84,9 +83,8 @@ func slowCopyMd5(file *os.File, bps int64) (int64, string, error) {
 			bytesRead += b
 			break
 		} else {
-			tb += b
 			bytesRead += b
-			rateLimitSleep(st, tb, bps)
+			rateLimitSleep(st, bytesRead, bps)
 		}
 	}
 	return bytesRead, hex.EncodeToString(h.Sum(nil)), nil
