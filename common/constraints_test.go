@@ -106,14 +106,23 @@ func TestBadXDeleteAfter(t *testing.T) {
 	req.Header.Set("X-Delete-After", "-1")
 	status, _ := CheckObjPut(req, "o")
 	require.Equal(t, http.StatusBadRequest, status)
+	status, _ = CheckObjPost(req, "o")
+	require.Equal(t, http.StatusBadRequest, status)
 
 	req.Header.Set("X-Delete-After", "!")
 	status, _ = CheckObjPut(req, "o")
+	require.Equal(t, http.StatusBadRequest, status)
+	status, _ = CheckObjPost(req, "o")
 	require.Equal(t, http.StatusBadRequest, status)
 
 	req.Header.Set("X-Delete-After", "5")
 	status, _ = CheckObjPut(req, "o")
 	xda := req.Header.Get("X-Delete-At")
+	require.True(t, xda == fmt.Sprintf("%d", time.Now().Unix()+5) || xda == fmt.Sprintf("%d", time.Now().Unix()+4))
+
+	req.Header.Set("X-Delete-After", "5")
+	status, _ = CheckObjPost(req, "o")
+	xda = req.Header.Get("X-Delete-At")
 	require.True(t, xda == fmt.Sprintf("%d", time.Now().Unix()+5) || xda == fmt.Sprintf("%d", time.Now().Unix()+4))
 }
 
