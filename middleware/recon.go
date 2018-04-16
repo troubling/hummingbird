@@ -241,7 +241,7 @@ func getUnmounted(driveRoot string, mountCheck bool) (interface{}, error) {
 	for _, info := range fileInfo {
 		m := true
 		if mountCheck {
-			m = info.Sys().(*syscall.Stat_t).Dev == dirInfo.Sys().(*syscall.Stat_t).Dev
+			m = info.Sys().(*syscall.Stat_t).Dev != dirInfo.Sys().(*syscall.Stat_t).Dev
 		}
 		if m {
 			if _, err = os.Stat(filepath.Join(driveRoot, info.Name(), "unmount")); err == nil {
@@ -548,7 +548,7 @@ func diskUsage(driveRoot string, mountCheck bool) ([]map[string]interface{}, err
 	for _, info := range fileInfo {
 		mounted := true
 		if mountCheck {
-			mounted = info.Sys().(*syscall.Stat_t).Dev == dirInfo.Sys().(*syscall.Stat_t).Dev
+			mounted = info.Sys().(*syscall.Stat_t).Dev != dirInfo.Sys().(*syscall.Stat_t).Dev
 		}
 		if mounted {
 			if _, err = os.Stat(filepath.Join(driveRoot, info.Name(), "unmount")); err == nil {
