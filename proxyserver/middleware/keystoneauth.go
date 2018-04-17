@@ -198,12 +198,11 @@ func (ka *keystoneAuth) authorize(r *http.Request) (bool, int) {
 	}
 
 	isAuthorized, authErr := AuthorizeUnconfirmedIdentity(r, pathParts["object"], referrers, roles)
-
-	if isAuthorized {
-		return true, http.StatusOK
-	}
-
 	if !ka.accountMatchesTenant(pathParts["account"], tenantID) {
+		if isAuthorized {
+			// Passed the unconfirmed check, with mismatching tenant, don't go through to the storage owner matrix
+			return true, http.StatusOK
+		}
 		return false, s
 	}
 	accountPrefix, _ := ka.getAccountPrefix(pathParts["account"])
@@ -248,12 +247,14 @@ func (ka *keystoneAuth) authorize(r *http.Request) (bool, int) {
 	if !isAuthorized && authErr == nil {
 		return false, s
 	}
-
 	for _, role := range roles {
 		if common.StringInSlice(role, userRoles) {
 			return true, http.StatusOK
 		}
 
+	}
+	if isAuthorized {
+		return true, http.StatusOK
 	}
 	return false, s
 }
