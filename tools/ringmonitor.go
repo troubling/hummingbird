@@ -234,7 +234,7 @@ func (rm *ringMonitor) runOnce() time.Duration {
 		sleepFor = 0
 	}
 	logger.Debug("pass complete", zap.Int("total rings", len(ringTasks)), zap.Int64("errors", errors), zap.Int64("partition copies changed", partitionCopiesChanged), zap.String("next delay", rm.delay.String()), zap.String("sleep for", sleepFor.String()))
-	if err := rm.aa.db.progressProcessPass("ring monitor", "", 0, fmt.Sprintf("%d of %d urls, %d errors, %d partition copies changed", delays, len(ringTasks), errors, partitionCopiesChanged)); err != nil {
+	if err := rm.aa.db.progressProcessPass("ring monitor", "", 0, fmt.Sprintf("%d of %d rings, %d errors, %d partition copies changed", delays, len(ringTasks), errors, partitionCopiesChanged)); err != nil {
 		logger.Error("progressProcessPass", zap.Error(err))
 	}
 	if err := rm.aa.db.completeProcessPass("ring monitor", "", 0); err != nil {
