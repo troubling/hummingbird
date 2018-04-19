@@ -136,6 +136,7 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 			{middleware.NewRatelimiter, "filter:ratelimit"},
 			{middleware.NewStaticWeb, "filter:staticweb"},
 			{middleware.NewCopyMiddleware, "filter:copy"},
+			{middleware.NewContainerQuota, "filter:container-quotas"},
 			{middleware.NewVersionedWrites, "filter:versioned_writes"},
 			{middleware.NewXlo, "filter:slo"},
 		}
@@ -158,6 +159,7 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 			{middleware.NewRatelimiter, "filter:ratelimit"},
 			{middleware.NewStaticWeb, "filter:staticweb"},
 			{middleware.NewCopyMiddleware, "filter:copy"},
+			{middleware.NewContainerQuota, "filter:container-quotas"},
 			{middleware.NewVersionedWrites, "filter:versioned_writes"},
 			{middleware.NewXlo, "filter:slo"},
 		}
