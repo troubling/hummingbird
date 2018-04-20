@@ -53,15 +53,12 @@ func containerQuota(metric tally.Counter) func(http.Handler) http.Handler {
 					}
 				}
 			} else if obj != "" && request.Method == "PUT" {
-				ctx.Logger.Info("containter quota PUT")
 				ci, err := ctx.C.GetContainerInfo(account, container)
 				if err != nil {
 					next.ServeHTTP(writer, request)
 					return
 				}
-				ctx.Logger.Info("container meta", zap.String("meta", fmt.Sprintf("%+v", ci.Metadata)))
 				qBytes := ci.Metadata["Quota-Bytes"]
-				ctx.Logger.Info("qBytes", zap.String("qBytes", qBytes), zap.Int64("Content-Length", request.ContentLength))
 				if qBytes != "" {
 					if quota, err := strconv.ParseInt(qBytes, 10, 64); err == nil {
 						newSize := ci.ObjectBytes + request.ContentLength
@@ -72,7 +69,6 @@ func containerQuota(metric tally.Counter) func(http.Handler) http.Handler {
 					}
 				}
 				qCount := ci.Metadata["Quota-Count"]
-				ctx.Logger.Info("qCount", zap.String("qCount", qCount), zap.Int64("ObjectCount", ci.ObjectCount))
 				if qCount != "" {
 					if quota, err := strconv.ParseInt(qCount, 10, 64); err == nil {
 						newCount := ci.ObjectCount + 1
