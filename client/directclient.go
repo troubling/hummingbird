@@ -353,6 +353,9 @@ func (c *proxyClient) GetContainer(account string, container string, options map
 func (c *proxyClient) GetContainerInfo(account string, container string) (*ContainerInfo, error) {
 	return c.pdc.GetContainerInfo(account, container, c.mc, c.lc)
 }
+func (c *proxyClient) SetContainerInfo(account string, container string, resp *http.Response) (*ContainerInfo, error) {
+	return c.pdc.SetContainerInfo(account, container, c.mc, c.lc, resp)
+}
 func (c *proxyClient) HeadContainer(account string, container string, headers http.Header) *http.Response {
 	return c.pdc.HeadContainer(account, container, headers)
 }
@@ -529,6 +532,46 @@ func (c *ProxyDirectClient) GetContainer(account string, container string, optio
 	})
 }
 
+func (c *ProxyDirectClient) SetContainerInfo(account, container string, mc ring.MemcacheRing, lc map[string]*ContainerInfo, resp *http.Response) (*ContainerInfo, error) {
+	key := fmt.Sprintf("container/%s/%s", account, container)
+	ci := &ContainerInfo{
+		Metadata:    make(map[string]string),
+		SysMetadata: make(map[string]string),
+	}
+	var err error
+	if ci.ObjectCount, err = strconv.ParseInt(resp.Header.Get("X-Container-Object-Count"), 10, 64); err != nil {
+		return nil, fmt.Errorf("Error retrieving X-Container-Object-Count for container %s/%s : %s", account, container, resp.Header.Get("X-Container-Object-Count"))
+	}
+	if ci.ObjectBytes, err = strconv.ParseInt(resp.Header.Get("X-Container-Bytes-Used"), 10, 64); err != nil {
+		return nil, fmt.Errorf("Error retrieving X-Container-Bytes-Used for container %s/%s : %s", account, container, resp.Header.Get("X-Container-Bytes-Used"))
+	}
+	if ci.StoragePolicyIndex, err = strconv.Atoi(resp.Header.Get("X-Backend-Storage-Policy-Index")); err != nil {
+		return nil, fmt.Errorf("Error retrieving X-Backend-Storage-Policy-Index for container %s/%s : %s", account, container, resp.Header.Get("X-Backend-Storage-Policy-Index"))
+	}
+	for k := range resp.Header {
+		if strings.HasPrefix(k, "X-Container-Meta-") {
+			ci.Metadata[k[17:]] = resp.Header.Get(k)
+		} else if strings.HasPrefix(k, "X-Container-Sysmeta-") {
+			ci.SysMetadata[k[20:]] = resp.Header.Get(k)
+		} else if k == "X-Container-Read" {
+			ci.ReadACL = resp.Header.Get(k)
+		} else if k == "X-Container-Write" {
+			ci.WriteACL = resp.Header.Get(k)
+		} else if k == "X-Container-Sync-Key" {
+			ci.SyncKey = resp.Header.Get(k)
+		}
+	}
+	if mc != nil {
+		mc.Set(key, ci, 30)
+	}
+	if lc != nil && ci != nil {
+		c.lcm.Lock()
+		lc[key] = ci
+		c.lcm.Unlock()
+	}
+	return ci, nil
+}
+
 // NilContainerInfo is useful for testing.
 var NilContainerInfo = &ContainerInfo{}
 
@@ -551,44 +594,13 @@ func (c *ProxyDirectClient) GetContainerInfo(account string, container string, m
 		if resp.StatusCode/100 != 2 {
 			return nil, fmt.Errorf("%d error retrieving info for container %s/%s", resp.StatusCode, account, container)
 		}
-		ci = &ContainerInfo{
-			Metadata:    make(map[string]string),
-			SysMetadata: make(map[string]string),
-		}
 		var err error
-		if ci.ObjectCount, err = strconv.ParseInt(resp.Header.Get("X-Container-Object-Count"), 10, 64); err != nil {
-			return nil, fmt.Errorf("Error retrieving X-Container-Object-Count for container %s/%s : %s", account, container, resp.Header.Get("X-Container-Object-Count"))
-		}
-		if ci.ObjectBytes, err = strconv.ParseInt(resp.Header.Get("X-Container-Bytes-Used"), 10, 64); err != nil {
-			return nil, fmt.Errorf("Error retrieving X-Container-Bytes-Used for container %s/%s : %s", account, container, resp.Header.Get("X-Container-Bytes-Used"))
-		}
-		if ci.StoragePolicyIndex, err = strconv.Atoi(resp.Header.Get("X-Backend-Storage-Policy-Index")); err != nil {
-			return nil, fmt.Errorf("Error retrieving X-Backend-Storage-Policy-Index for container %s/%s : %s", account, container, resp.Header.Get("X-Backend-Storage-Policy-Index"))
-		}
-		for k := range resp.Header {
-			if strings.HasPrefix(k, "X-Container-Meta-") {
-				ci.Metadata[k[17:]] = resp.Header.Get(k)
-			} else if strings.HasPrefix(k, "X-Container-Sysmeta-") {
-				ci.SysMetadata[k[20:]] = resp.Header.Get(k)
-			} else if k == "X-Container-Read" {
-				ci.ReadACL = resp.Header.Get(k)
-			} else if k == "X-Container-Write" {
-				ci.WriteACL = resp.Header.Get(k)
-			} else if k == "X-Container-Sync-Key" {
-				ci.SyncKey = resp.Header.Get(k)
-			}
-		}
-		if mc != nil {
-			mc.Set(key, ci, 30)
+		if ci, err = c.SetContainerInfo(account, container, mc, lc, resp); err != nil {
+			return nil, err
 		}
 	}
 	if ci == NilContainerInfo {
 		return nil, errors.New("No container info for testing")
-	}
-	if lc != nil && ci != nil {
-		c.lcm.Lock()
-		lc[key] = ci
-		c.lcm.Unlock()
 	}
 	return ci, nil
 }

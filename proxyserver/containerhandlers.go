@@ -57,6 +57,7 @@ func (server *ProxyServer) ContainerGetHandler(writer http.ResponseWriter, reque
 	}
 	resp := ctx.C.GetContainer(vars["account"], vars["container"], options, request.Header)
 	defer resp.Body.Close()
+	ctx.C.SetContainerInfo(vars["account"], vars["container"], resp)
 	ctx.ACL = resp.Header.Get("X-Container-Read")
 	if ctx.Authorize != nil {
 		if ok, s := ctx.Authorize(request); !ok {
@@ -86,6 +87,7 @@ func (server *ProxyServer) ContainerHeadHandler(writer http.ResponseWriter, requ
 	}
 	resp := ctx.C.HeadContainer(vars["account"], vars["container"], request.Header)
 	resp.Body.Close()
+	ctx.C.SetContainerInfo(vars["account"], vars["container"], resp)
 	ctx.ACL = resp.Header.Get("X-Container-Read")
 	if ctx.Authorize != nil {
 		if ok, s := ctx.Authorize(request); !ok {

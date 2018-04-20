@@ -18,6 +18,7 @@ type ProxyClient interface {
 	PostContainer(account string, container string, headers http.Header) *http.Response
 	GetContainer(account string, container string, options map[string]string, headers http.Header) *http.Response
 	GetContainerInfo(account string, container string) (*ContainerInfo, error)
+	SetContainerInfo(account string, container string, resp *http.Response) (*ContainerInfo, error)
 	HeadContainer(account string, container string, headers http.Header) *http.Response
 	DeleteContainer(account string, container string, headers http.Header) *http.Response
 	PutObject(account string, container string, obj string, headers http.Header, src io.Reader) *http.Response
