@@ -16,7 +16,6 @@
 package middleware
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -24,7 +23,6 @@ import (
 	"github.com/troubling/hummingbird/common/srv"
 
 	"github.com/uber-go/tally"
-	"go.uber.org/zap"
 )
 
 func containerQuota(metric tally.Counter) func(http.Handler) http.Handler {
