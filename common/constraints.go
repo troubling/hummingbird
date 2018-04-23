@@ -106,6 +106,32 @@ func CheckMetadata(req *http.Request, targetType string) (int, string) {
 	return http.StatusOK, ""
 }
 
+func handleObjDeleteHeaders(req *http.Request) (int, string) {
+	if xda := req.Header.Get("X-Delete-At"); xda != "" {
+		if deleteAfter, err := strconv.ParseInt(xda, 10, 64); err != nil {
+			return http.StatusBadRequest, "Non-integer X-Delete-At"
+		} else if deleteAfter < time.Now().Unix() {
+			return http.StatusBadRequest, "X-Delete-At in past"
+		}
+	} else if xda := req.Header.Get("X-Delete-After"); xda != "" {
+		if deleteAfter, err := strconv.ParseInt(xda, 10, 64); err != nil {
+			return http.StatusBadRequest, "Non-integer X-Delete-After"
+		} else if deleteAfter < 0 {
+			return http.StatusBadRequest, "X-Delete-After in past"
+		} else {
+			req.Header.Set("X-Delete-At", strconv.FormatInt(time.Now().Unix()+deleteAfter, 10))
+		}
+	}
+	return http.StatusOK, ""
+}
+
+func CheckObjPost(req *http.Request, objectName string) (int, string) {
+	if status, msg := handleObjDeleteHeaders(req); status != http.StatusOK {
+		return status, msg
+	}
+	return CheckMetadata(req, "Object")
+}
+
 func CheckObjPut(req *http.Request, objectName string) (int, string) {
 	if req.ContentLength > MAX_FILE_SIZE {
 		return http.StatusRequestEntityTooLarge, "Your request is too large."
@@ -122,21 +148,8 @@ func CheckObjPut(req *http.Request, objectName string) (int, string) {
 	if req.Header.Get("Content-Type") == "" {
 		return http.StatusBadRequest, "No content type"
 	}
-
-	if xda := req.Header.Get("X-Delete-At"); xda != "" {
-		if deleteAfter, err := strconv.ParseInt(xda, 10, 64); err != nil {
-			return http.StatusBadRequest, "Non-integer X-Delete-At"
-		} else if deleteAfter < time.Now().Unix() {
-			return http.StatusBadRequest, "X-Delete-At in past"
-		}
-	} else if xda := req.Header.Get("X-Delete-After"); xda != "" {
-		if deleteAfter, err := strconv.ParseInt(xda, 10, 64); err != nil {
-			return http.StatusBadRequest, "Non-integer X-Delete-After"
-		} else if deleteAfter < 0 {
-			return http.StatusBadRequest, "X-Delete-After in past"
-		} else {
-			req.Header.Set("X-Delete-At", strconv.FormatInt(time.Now().Unix()+deleteAfter, 10))
-		}
+	if status, msg := handleObjDeleteHeaders(req); status != http.StatusOK {
+		return status, msg
 	}
 	if strings.Contains(req.Header.Get("Content-Type"), "\x00") {
 		return http.StatusBadRequest, "Invalid Content-Type"

@@ -146,6 +146,10 @@ func (c *testDispersionClient) GetContainerInfo(account string, container string
 	return nil, nil
 }
 
+func (c *testDispersionClient) SetContainerInfo(account string, container string, resp *http.Response) (*client.ContainerInfo, error) {
+	return nil, nil
+}
+
 func (c *testDispersionClient) HeadContainer(account string, container string, headers http.Header) *http.Response {
 	return nectarutil.ResponseStub(200, "")
 }

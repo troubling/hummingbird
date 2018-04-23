@@ -155,7 +155,7 @@ func (server *ProxyServer) ObjectPostHandler(writer http.ResponseWriter, request
 			return
 		}
 	}
-	if status, str := common.CheckMetadata(request, "Object"); status != http.StatusOK {
+	if status, str := common.CheckObjPost(request, vars["obj"]); status != http.StatusOK {
 		writer.Header().Set("Content-Type", "text/plain")
 		writer.WriteHeader(status)
 		writer.Write([]byte(str))

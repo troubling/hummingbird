@@ -146,12 +146,13 @@ func (um *unmountedMonitor) runOnce() time.Duration {
 		atomic.AddInt64(&serversUp, 1)
 		um.serverUp(reconLogger, endpoint.ip, endpoint.port)
 		for _, item := range items {
+			devLogger := reconLogger.With(zap.String("device", item.Device))
 			if item.Mounted {
 				atomic.AddInt64(&devicesMounted, 1)
-				um.deviceMounted(reconLogger, endpoint.ip, endpoint.port, item.Device)
+				um.deviceMounted(devLogger, endpoint.ip, endpoint.port, item.Device)
 			} else {
 				atomic.AddInt64(&devicesUnmounted, 1)
-				um.deviceUnmounted(reconLogger, endpoint.ip, endpoint.port, item.Device)
+				um.deviceUnmounted(devLogger, endpoint.ip, endpoint.port, item.Device)
 			}
 		}
 	}
@@ -244,12 +245,14 @@ func (um *unmountedMonitor) serverDown(logger *zap.Logger, ip string, port int) 
 }
 
 func (um *unmountedMonitor) deviceMounted(logger *zap.Logger, ip string, port int, device string) {
+	logger.Debug("device mounted")
 	if err := um.aa.db.addDeviceState(ip, port, device, true, time.Now().Add(-um.stateRetention)); err != nil {
 		logger.Error("could not add device mounted state", zap.Error(err))
 	}
 }
 
 func (um *unmountedMonitor) deviceUnmounted(logger *zap.Logger, ip string, port int, device string) {
+	logger.Debug("device unmounted")
 	if err := um.aa.db.addDeviceState(ip, port, device, false, time.Now().Add(-um.stateRetention)); err != nil {
 		logger.Error("could not add device unmounted state", zap.Error(err))
 	}
@@ -265,21 +268,28 @@ func (um *unmountedMonitor) deviceUnmounted(logger *zap.Logger, ip string, port 
 			break
 		}
 	}
+	logger.Debug("device unmounted, last up initially", zap.String("last up", lastUp.String()))
 	// If there were no "up" entries...
 	if lastUp.IsZero() {
 		if len(states) > 0 {
 			// Just pretend it was last "up" at the time of the oldest entry.
 			lastUp = states[len(states)-1].recorded
+			logger.Debug("device unmounted, last up assumed", zap.String("last up", lastUp.String()))
 		} else {
 			// It would be weird if there are no entries, since we supposedly
 			// just added one. But, in that case, just get outta here.
+			logger.Error("device unmounted, NO ENTRIES!")
 			return
 		}
 	}
+	logger.Debug("device unmounted, duration check", zap.String("last up", lastUp.String()), zap.String("limit", um.deviceUnmountedLimit.String()), zap.String("elapsed", time.Since(lastUp).String()))
 	if time.Since(lastUp) < um.deviceUnmountedLimit {
+		logger.Debug("device unmounted, but not long enough yet")
 		return
 	}
+	logger.Debug("device unmounted, it's time to remove it")
 	um.removeFromBuilders(logger, ip, port, device)
+	logger.Debug("device unmounted, done trying to remove it")
 }
 
 func (um *unmountedMonitor) removeFromBuilders(logger *zap.Logger, ip string, port int, device string) {

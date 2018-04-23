@@ -126,6 +126,7 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 			{middleware.NewCatchError, "filter:catch_errors"},
 			{middleware.NewHealthcheck, "filter:healthcheck"},
 			{middleware.NewRequestLogger, "filter:proxy-logging"},
+			{middleware.NewCrossDomain, "filter:crossdomain"},
 			{middleware.NewCors, "filter:cors"}, // TODO: i dont want to have to have a seciton for this
 			{middleware.NewFormPost, "filter:formpost"},
 			{middleware.NewTempURL, "filter:tempurl"},
@@ -135,6 +136,7 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 			{middleware.NewRatelimiter, "filter:ratelimit"},
 			{middleware.NewStaticWeb, "filter:staticweb"},
 			{middleware.NewCopyMiddleware, "filter:copy"},
+			{middleware.NewContainerQuota, "filter:container-quotas"},
 			{middleware.NewVersionedWrites, "filter:versioned_writes"},
 			{middleware.NewXlo, "filter:slo"},
 		}
@@ -146,6 +148,7 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 			{middleware.NewCatchError, "filter:catch_errors"},
 			{middleware.NewHealthcheck, "filter:healthcheck"},
 			{middleware.NewRequestLogger, "filter:proxy-logging"},
+			{middleware.NewCrossDomain, "filter:crossdomain"},
 			{middleware.NewCors, "filter:cors"},
 			{middleware.NewFormPost, "filter:formpost"},
 			{middleware.NewTempURL, "filter:tempurl"},
@@ -156,6 +159,7 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 			{middleware.NewRatelimiter, "filter:ratelimit"},
 			{middleware.NewStaticWeb, "filter:staticweb"},
 			{middleware.NewCopyMiddleware, "filter:copy"},
+			{middleware.NewContainerQuota, "filter:container-quotas"},
 			{middleware.NewVersionedWrites, "filter:versioned_writes"},
 			{middleware.NewXlo, "filter:slo"},
 		}

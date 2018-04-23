@@ -316,8 +316,8 @@ func (b *RingBuilder) Save(builderPath string) error {
 	}
 	rbp.Devs = b.Devs
 	rbp.RemoveDevs = b.removedDevs
-	f.Write(pickle.PickleDumps(rbp))
-	return nil
+	_, err = f.Write(pickle.PickleDumps(rbp))
+	return err
 }
 
 func (b *RingBuilder) setPartMoved(part uint) {
@@ -1669,11 +1669,7 @@ func CreateRing(builderPath string, partPower int, replicas float64, minPartHour
 	if err != nil {
 		return err
 	}
-	err = builder.Save(builderPath)
-	if err != nil {
-		return err
-	}
-	return nil
+	return builder.Save(builderPath)
 }
 
 // Rebalance attempts to rebalance the ring by reassigning partitions that haven't been recently reassigned.
@@ -1722,11 +1718,7 @@ func Rebalance(builderPath string, debug bool, dryrun bool, quiet bool) (int, fl
 	if err != nil {
 		return changed, balance, removed, err
 	}
-	err = r.Save(ringFile)
-	if err != nil {
-		return changed, balance, removed, err
-	}
-	return changed, balance, removed, nil
+	return changed, balance, removed, r.Save(ringFile)
 }
 
 // AddDevice adds a device to the builder filer
@@ -1783,8 +1775,7 @@ func SetWeight(builderPath string, devs []*RingBuilderDevice, weight float64) er
 			return err
 		}
 	}
-	builder.Save(builderPath)
-	return nil
+	return builder.Save(builderPath)
 }
 
 // Note that no locking is done here, you should call LockBuilderPath first.
@@ -1796,8 +1787,7 @@ func RemoveDevs(builderPath string, devs []*RingBuilderDevice, purge bool) error
 	for _, dev := range devs {
 		builder.RemoveDev(dev.Id, purge)
 	}
-	builder.Save(builderPath)
-	return nil
+	return builder.Save(builderPath)
 }
 
 // Note that no locking is done here, you should call LockBuilderPath first.
@@ -1812,8 +1802,7 @@ func SetInfo(builderPath string, devs []*RingBuilderDevice, newIp string, newPor
 			return err
 		}
 	}
-	builder.Save(builderPath)
-	return nil
+	return builder.Save(builderPath)
 }
 
 // Note that no locking is done here, you should call LockBuilderPath first.
@@ -1844,10 +1833,7 @@ func WriteRing(builderPath string) error {
 	if err != nil {
 		return err
 	}
-	if err := r.Save(ringFile); err != nil {
-		return err
-	}
-	return nil
+	return r.Save(ringFile)
 }
 
 // Note that no locking is done here, you should call LockBuilderPath first.
@@ -1857,8 +1843,7 @@ func PretendMinPartHoursPassed(builderPath string) error {
 		return err
 	}
 	builder.PretendMinPartHoursPassed()
-	builder.Save(builderPath)
-	return nil
+	return builder.Save(builderPath)
 }
 
 // Note that no locking is done here, you should call LockBuilderPath first.

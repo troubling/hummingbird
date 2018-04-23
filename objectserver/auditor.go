@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"math/bits"
 	"os"
 	"path/filepath"
@@ -67,77 +68,92 @@ type Auditor struct {
 	bytesProcessed, totalBytes    int64
 	quarantines, totalQuarantines int64
 	errors, totalErrors           int64
-	ecfuncs                       ECAuditFuncs
+	ecfunc                        ECAuditFunc
 }
 
-type ECAuditFuncs interface {
-	AuditShard(path string, hash string, skipMd5 bool) (int64, error)
-	AuditNurseryObject(path string, metabytes []byte, skipMd5 bool) (int64, error)
+func slowCopyMd5(file *os.File, bps int64) (int64, string, error) {
+	h := md5.New()
+	st := time.Now()
+	bytesRead := int64(0)
+	for {
+		if b, err := io.CopyN(h, file, 64*1024); err != nil {
+			if err != io.EOF {
+				return bytesRead, "", err
+			}
+			bytesRead += b
+			break
+		} else {
+			bytesRead += b
+			rateLimitSleep(st, bytesRead, bps)
+		}
+	}
+	return bytesRead, hex.EncodeToString(h.Sum(nil)), nil
 }
 
-type RealECAuditFuncs struct{}
+type ECAuditFunc interface {
+	AuditEcObj(path string, item *IndexDBItem, md5BytesPerSec int64) (int64, error)
+}
 
-// AuditNurseryObject of indexdb shard, does nothing
-func (RealECAuditFuncs) AuditNurseryObject(path string, metabytes []byte, skipMd5 bool) (int64, error) {
+type realECAuditFuncs struct{}
+
+func (realECAuditFuncs) AuditEcObj(path string, item *IndexDBItem, md5BytesPerSec int64) (int64, error) {
 	finfo, err := os.Stat(path)
 	if err != nil || !finfo.Mode().IsRegular() {
-		// We're not going to do any quarantining here. It's likely the object
-		// simply got stabilized and is gone.
-		return 0, nil
-	}
-
-	bytes := int64(0)
-	if !skipMd5 {
-		metadata := map[string]string{}
-		if err = json.Unmarshal(metabytes, &metadata); err != nil {
-			return bytes, fmt.Errorf("Error decoding metadata: %s", err)
+		if item.Nursery {
+			// We're not going to do any quarantining here. It's likely the object
+			// simply got stabilized and is gone.
+			return 0, nil
+		} else {
+			return 0, fmt.Errorf("Object file isn't a normal file: %s", err)
 		}
-		hash, ok := metadata["ETag"]
+	}
+	var hsh string
+	var fBytes int64
+	var ok bool
+	metadata := map[string]string{}
+	if err = json.Unmarshal(item.Metabytes, &metadata); err != nil {
+		return 0, fmt.Errorf("Error decoding metadata: %s", err)
+	}
+	contentLength, err := strconv.ParseInt(metadata["Content-Length"], 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("Error parsing content-length from metadata: %q %v", metadata["Content-Length"], err)
+	}
+	if item.Nursery {
+		hsh, ok = metadata["ETag"]
 		if !ok {
-			return bytes, fmt.Errorf("Metadata missing ETag: %s", string(metabytes))
+			return 0, fmt.Errorf("Metadata missing ETag: %s", metadata)
 		}
-
+		fBytes = contentLength
+	} else {
+		hsh = item.ShardHash
+		if _, ds, _, _, err := parseECScheme(metadata["Ec-Scheme"]); err == nil {
+			fBytes = ecShardLength(contentLength, ds)
+		} else {
+			return 0, fmt.Errorf("Error decoding ec-scheme: %s", err)
+		}
+	}
+	if fBytes != finfo.Size() {
+		return 0, fmt.Errorf("File size (%d) doesn't match metadata (%d)", finfo.Size(), fBytes)
+	}
+	if md5BytesPerSec > 0 {
 		file, err := os.Open(path)
 		if err != nil {
-			return bytes, fmt.Errorf("Error opening file: %s", err)
+			return 0, fmt.Errorf("Error opening file: %s", err)
 		}
 		defer file.Close()
-		h := md5.New()
-		bytes, err = common.Copy(file, h)
+		bytesRead, calcHsh, err := slowCopyMd5(file, md5BytesPerSec)
 		if err != nil {
-			return bytes, fmt.Errorf("Error reading file: %s", err)
+			return bytesRead, fmt.Errorf("Error calc md5 file: %s", err)
 		}
-		if hex.EncodeToString(h.Sum(nil)) != hash {
-			return bytes, fmt.Errorf("File contents don't match object hash")
+		if bytesRead != fBytes {
+			return bytesRead, fmt.Errorf("did not read in entire file")
 		}
+		if calcHsh != hsh {
+			return bytesRead, fmt.Errorf("File contents don't match object hash")
+		}
+		return bytesRead, nil
 	}
-	return bytes, nil
-}
-
-// AuditShardHash of indexdb shard
-func (RealECAuditFuncs) AuditShard(path string, hash string, skipMd5 bool) (int64, error) {
-	finfo, err := os.Stat(path)
-	if err != nil || !finfo.Mode().IsRegular() {
-		return 0, fmt.Errorf("Object file isn't a normal file: %s", err)
-	}
-
-	bytes := int64(0)
-	if !skipMd5 {
-		file, err := os.Open(path)
-		if err != nil {
-			return bytes, fmt.Errorf("Error opening file: %s", err)
-		}
-		defer file.Close()
-		h := md5.New()
-		bytes, err = common.Copy(file, h)
-		if err != nil {
-			return bytes, fmt.Errorf("Error reading file: %s", err)
-		}
-		if hex.EncodeToString(h.Sum(nil)) != hash {
-			return bytes, fmt.Errorf("File contents don't match shard hash")
-		}
-	}
-	return bytes, nil
+	return 0, nil
 }
 
 // OneTimeChan returns a channel that will yield the current time once, then is closed.
@@ -156,8 +172,8 @@ func rateLimitSleep(startTime time.Time, done int64, rate int64) {
 	}
 }
 
-// auditHash of object hash dir.
-func auditHash(hashPath string, skipMd5 bool) (bytesProcessed int64, err error) {
+// auditHash of object hash dir. if md5BytesPerSec == 0 then it will not calc md5
+func auditHash(hashPath string, md5BytesPerSec int64) (bytesProcessed int64, err error) {
 	objFiles, err := fs.ReadDirNames(hashPath)
 	if err != nil {
 		return 0, fmt.Errorf("Error reading hash dir")
@@ -193,18 +209,17 @@ func auditHash(hashPath string, skipMd5 bool) (bytesProcessed int64, err error) 
 			if contentLength != finfo.Size() {
 				return bytesProcessed, fmt.Errorf("File size (%d) doesn't match metadata (%d)", finfo.Size(), contentLength)
 			}
-			if !skipMd5 {
+			if md5BytesPerSec > 0 {
 				file, err := os.Open(filePath)
 				if err != nil {
 					return bytesProcessed, fmt.Errorf("Error opening file: %s", err)
 				}
-				h := md5.New()
-				bytes, err := common.Copy(file, h)
+				bytesRead, calcHsh, err := slowCopyMd5(file, md5BytesPerSec)
 				if err != nil {
-					return bytesProcessed, fmt.Errorf("Error reading file: %s", err)
+					return bytesRead, fmt.Errorf("Error calc md5 file: %s", err)
 				}
-				bytesProcessed += bytes
-				if hex.EncodeToString(h.Sum(nil)) != metadata["ETag"] {
+				bytesProcessed += bytesRead
+				if calcHsh != metadata["ETag"] {
 					return bytesProcessed, fmt.Errorf("File contents don't match etag")
 				}
 			}
@@ -310,12 +325,11 @@ func (a *Auditor) auditDB(dbpath string, objRing ring.Ring, policy *conf.Policy)
 			}
 			a.passes++
 			a.totalPasses++
-			var bytes int64
-			if item.Nursery {
-				bytes, err = a.ecfuncs.AuditNurseryObject(shardPath, item.Metabytes, a.auditorType == "ZBF")
-			} else {
-				bytes, err = a.ecfuncs.AuditShard(shardPath, item.ShardHash, a.auditorType == "ZBF")
+			var bytesPerSecond int64
+			if a.auditorType != "ZBF" {
+				bytesPerSecond = a.bytesPerSecond
 			}
+			bytes, err := a.ecfunc.AuditEcObj(shardPath, item, bytesPerSecond)
 			if err != nil {
 				a.logger.Error("Failed audit and is being quarantined",
 					zap.String("shardPath", shardPath), zap.Error(err))
@@ -328,6 +342,7 @@ func (a *Auditor) auditDB(dbpath string, objRing ring.Ring, policy *conf.Policy)
 				a.totalQuarantines++
 			}
 			a.bytesProcessed += bytes
+			a.totalBytes += bytes
 			rateLimitSleep(a.passStart, a.totalPasses, a.filesPerSecond)
 			rateLimitSleep(a.passStart, a.totalBytes, a.bytesPerSecond)
 
@@ -360,7 +375,11 @@ func (a *Auditor) auditSuffix(suffixDir string) {
 		}
 		a.passes++
 		a.totalPasses++
-		bytesProcessed, err := auditHash(hashDir, a.auditorType == "ZBF")
+		var bps int64
+		if a.auditorType != "ZBF" {
+			bps = a.bytesPerSecond
+		}
+		bytesProcessed, err := auditHash(hashDir, bps)
 		a.bytesProcessed += bytesProcessed
 		a.totalBytes += bytesProcessed
 		rateLimitSleep(a.passStart, a.totalPasses, a.filesPerSecond)
@@ -544,12 +563,12 @@ func (d *AuditorDaemon) Run() {
 	if d.zbFilesPerSecond > 0 {
 		wg.Add(1)
 		go func() {
-			zba := Auditor{AuditorDaemon: d, auditorType: "ZBF", mode: "once", filesPerSecond: d.zbFilesPerSecond, ecfuncs: RealECAuditFuncs{}}
+			zba := Auditor{AuditorDaemon: d, auditorType: "ZBF", mode: "once", filesPerSecond: d.zbFilesPerSecond, ecfunc: realECAuditFuncs{}}
 			zba.run(OneTimeChan())
 			wg.Done()
 		}()
 	}
-	reg := Auditor{AuditorDaemon: d, auditorType: "ALL", mode: "once", filesPerSecond: d.regFilesPerSecond, ecfuncs: RealECAuditFuncs{}}
+	reg := Auditor{AuditorDaemon: d, auditorType: "ALL", mode: "once", filesPerSecond: d.regFilesPerSecond, ecfunc: realECAuditFuncs{}}
 	reg.run(OneTimeChan())
 	wg.Wait()
 }
@@ -557,10 +576,10 @@ func (d *AuditorDaemon) Run() {
 // RunForever triggering audit passes every time AuditForeverInterval has passed.
 func (d *AuditorDaemon) RunForever() {
 	if d.zbFilesPerSecond > 0 {
-		zba := Auditor{AuditorDaemon: d, auditorType: "ZBF", mode: "forever", filesPerSecond: d.zbFilesPerSecond, ecfuncs: RealECAuditFuncs{}}
+		zba := Auditor{AuditorDaemon: d, auditorType: "ZBF", mode: "forever", filesPerSecond: d.zbFilesPerSecond, ecfunc: realECAuditFuncs{}}
 		go zba.run(time.Tick(AuditForeverInterval))
 	}
-	reg := Auditor{AuditorDaemon: d, auditorType: "ALL", mode: "forever", filesPerSecond: d.regFilesPerSecond, ecfuncs: RealECAuditFuncs{}}
+	reg := Auditor{AuditorDaemon: d, auditorType: "ALL", mode: "forever", filesPerSecond: d.regFilesPerSecond, ecfunc: realECAuditFuncs{}}
 	reg.run(time.Tick(AuditForeverInterval))
 }
 
