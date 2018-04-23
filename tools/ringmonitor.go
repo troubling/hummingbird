@@ -8,6 +8,7 @@ package tools
 
 import (
 	"fmt"
+	"math/rand"
 	"sync/atomic"
 	"time"
 
@@ -66,10 +67,11 @@ func (rm *ringMonitor) runOnce() time.Duration {
 	var errors int64
 	var partitionCopiesChanged int64
 	type ringTask struct {
-		typ         string
-		policy      int
-		ring        ring.RingMD5
-		previousMD5 string
+		typ           string
+		policy        int
+		ring          ring.RingMD5
+		previousMD5   string
+		nextRebalance time.Time
 	}
 	var ringTasks []*ringTask
 	ryng, err := ring.GetRingMD5("account", rm.prefix, rm.suffix, 0)
@@ -133,22 +135,67 @@ func (rm *ringMonitor) runOnce() time.Duration {
 		taskLogger := logger.With(zap.String("type", ringTask.typ), zap.Int("policy", ringTask.policy))
 		if err := ringTask.ring.Reload(); err != nil {
 			atomic.AddInt64(&errors, 1)
-			taskLogger.Error("couldn't not reload", zap.Error(err))
+			taskLogger.Error("could not reload", zap.Error(err))
 			continue
 		}
 		if ringTask.previousMD5 == "" {
-			ringTask.previousMD5, err = rm.aa.db.ringHash(ringTask.typ, ringTask.policy)
+			ringTask.previousMD5, ringTask.nextRebalance, err = rm.aa.db.ringHash(ringTask.typ, ringTask.policy)
 			if err != nil {
 				atomic.AddInt64(&errors, 1)
 				taskLogger.Error("couldn't retreive previous hash", zap.Error(err))
 				continue
 			}
 		}
-		if ringTask.ring.MD5() != ringTask.previousMD5 {
+		if ringTask.ring.MD5() == ringTask.previousMD5 {
+			if !ringTask.nextRebalance.IsZero() && time.Now().After(ringTask.nextRebalance) {
+				ringBuilder, ringBuilderFilePath, err := ring.GetRingBuilder(ringTask.typ, ringTask.policy)
+				if err != nil {
+					logger.Error("Could not find builder", zap.String("type", ringTask.typ), zap.Int("policy", ringTask.policy), zap.Error(err))
+					continue
+				}
+				ringBuilderLock, err := ring.LockBuilderPath(ringBuilderFilePath)
+				if err != nil {
+					logger.Error("Could not lock builder path", zap.String("type", ringTask.typ), zap.Int("policy", ringTask.policy), zap.String("ring builder file path", ringBuilderFilePath), zap.Error(err))
+					continue
+				}
+				if func() bool { // to get the localized defer
+					defer ringBuilderLock.Close()
+					ringBuilder, ringBuilderFilePath, err = ring.GetRingBuilder(ringTask.typ, ringTask.policy)
+					if err != nil {
+						logger.Error("Could not find builder after lock", zap.String("type", ringTask.typ), zap.Int("policy", ringTask.policy), zap.Error(err))
+						return false
+					}
+					var changedReplicas int
+					changedReplicas, _, _, err = ring.Rebalance(ringBuilderFilePath, false, false, true)
+					if err != nil {
+						logger.Error("Error while rebalancing", zap.String("type", ringTask.typ), zap.Int("policy", ringTask.policy), zap.String("path", ringBuilderFilePath), zap.Error(err))
+						return false
+					}
+					if err := ringTask.ring.Reload(); err != nil {
+						atomic.AddInt64(&errors, 1)
+						taskLogger.Error("could not reload", zap.Error(err))
+						return false
+					}
+					// So we don't get stuck rebalancing a ring by tiny amounts for forever:
+					if float64(changedReplicas)/(float64(ringBuilder.Parts)*ringBuilder.Replicas) < 0.01 {
+						rm.aa.db.addRingLog(ringTask.typ, ringTask.policy, fmt.Sprintf("rebalanced due to schedule; now settled"))
+						rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, ringTask.ring.MD5(), time.Time{})
+					} else {
+						rm.aa.db.addRingLog(ringTask.typ, ringTask.policy, fmt.Sprintf("rebalanced due to schedule"))
+						rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, ringTask.ring.MD5(), time.Now().Add(time.Hour*time.Duration(ringBuilder.MinPartHours)+randomDuration(time.Minute, 15*time.Minute)))
+					}
+					return true
+				}() {
+					rm.aa.fastRingScan <- struct{}{}
+				} else {
+					continue
+				}
+			}
+		} else {
 			rm.aa.fastRingScan <- struct{}{}
 			if ringTask.previousMD5 == "" {
 				// First time seeing this ring
-				rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, ringTask.ring.MD5())
+				rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, ringTask.ring.MD5(), time.Now().Add(randomDuration(time.Minute*30, time.Hour)))
 				continue
 			}
 			changeTaskLogger := taskLogger.With(zap.String("previous md5", ringTask.previousMD5), zap.String("current md5", ringTask.ring.MD5()))
@@ -157,7 +204,7 @@ func (rm *ringMonitor) runOnce() time.Duration {
 			if previousRing == nil {
 				atomic.AddInt64(&errors, 1)
 				changeTaskLogger.Error("can't find previous ring; assuming nothing changed")
-				rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, ringTask.ring.MD5())
+				rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, ringTask.ring.MD5(), time.Now().Add(randomDuration(time.Minute*30, time.Hour)))
 				continue
 			}
 			partitionCount := previousRing.PartitionCount()
@@ -168,7 +215,7 @@ func (rm *ringMonitor) runOnce() time.Duration {
 					zap.Uint64("previous partition count", previousRing.PartitionCount()),
 					zap.Uint64("current partition count", ringTask.ring.PartitionCount()),
 				)
-				rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, ringTask.ring.MD5())
+				rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, ringTask.ring.MD5(), time.Now().Add(randomDuration(time.Minute*30, time.Hour)))
 				continue
 			}
 			replicaCount := previousRing.ReplicaCount()
@@ -179,7 +226,7 @@ func (rm *ringMonitor) runOnce() time.Duration {
 					zap.Uint64("previous replica count", previousRing.ReplicaCount()),
 					zap.Uint64("current replica count", ringTask.ring.ReplicaCount()),
 				)
-				rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, ringTask.ring.MD5())
+				rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, ringTask.ring.MD5(), time.Now().Add(randomDuration(time.Minute*30, time.Hour)))
 				continue
 			}
 			failed := false
@@ -214,7 +261,7 @@ func (rm *ringMonitor) runOnce() time.Duration {
 				}
 			}
 			if !failed {
-				if err = rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, ringTask.ring.MD5()); err != nil {
+				if err = rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, ringTask.ring.MD5(), time.Now().Add(randomDuration(time.Minute*30, time.Hour))); err != nil {
 					atomic.AddInt64(&errors, 1)
 					changeTaskLogger.Error(
 						"could not record the new ring hash; will try again next pass",
@@ -241,4 +288,8 @@ func (rm *ringMonitor) runOnce() time.Duration {
 		logger.Error("completeProcessPass", zap.Error(err))
 	}
 	return sleepFor
+}
+
+func randomDuration(min, max time.Duration) time.Duration {
+	return time.Duration(int64(min) + rand.Int63n(int64(max)-int64(min)+1))
 }

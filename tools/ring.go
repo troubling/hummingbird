@@ -56,6 +56,12 @@ func RingBuildCmd(flags *flag.FlagSet) {
 	} else {
 		cmd = args[1]
 	}
+	builderLock, err := ring.LockBuilderPath(pth)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	defer builderLock.Close()
 	switch cmd {
 	case "create":
 		if len(args) < 5 {
@@ -90,7 +96,7 @@ func RingBuildCmd(flags *flag.FlagSet) {
 			fmt.Println(err)
 			os.Exit(1)
 		}
-		err := ring.Rebalance(pth, debug, *dryrun, false)
+		_, _, _, err := ring.Rebalance(pth, debug, *dryrun, false)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(1)

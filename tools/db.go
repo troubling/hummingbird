@@ -95,7 +95,8 @@ func newDB(serverconf *conf.Config, memoryDBID string) (*dbInstance, error) {
             update_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             rtype TEXT NOT NULL,                -- account, container, object
             policy INTEGER NOT NULL,            -- only used with object
-            hash TEXT NOT NULL                  -- MD5 of on-disk file
+            hash TEXT NOT NULL,                 -- MD5 of on-disk file
+            next_rebalance TIMESTAMP            -- Next scheduled rebalance attempt or NULL/IsZero if stable
         );
 
         -- records multiple states of each server, keeping a configurable time
@@ -518,7 +519,7 @@ func (db *dbInstance) processPasses() ([]*processPassData, error) {
 	return data, nil
 }
 
-func (db *dbInstance) setRingHash(typ string, policy int, hsh string) error {
+func (db *dbInstance) setRingHash(typ string, policy int, hsh string, nextRebalance time.Time) error {
 	var tx *sql.Tx
 	var rows *sql.Rows
 	var err error
@@ -547,10 +548,10 @@ func (db *dbInstance) setRingHash(typ string, policy int, hsh string) error {
 		rows = nil
 		if _, err = tx.Exec(`
             UPDATE ring_hash
-            SET update_date = ?, hash = ?
+            SET update_date = ?, hash = ?, next_rebalance = ?
             WHERE rtype = ?
               AND policy = ?
-        `, time.Now(), hsh, typ, policy); err != nil {
+        `, time.Now(), hsh, nextRebalance, typ, policy); err != nil {
 			return err
 		}
 		if err = tx.Commit(); err != nil {
@@ -563,9 +564,9 @@ func (db *dbInstance) setRingHash(typ string, policy int, hsh string) error {
 	rows = nil
 	if _, err = tx.Exec(`
         INSERT INTO ring_hash
-        (update_date, rtype, policy, hash)
-        VALUES (?, ?, ?, ?)
-    `, time.Now(), typ, policy, hsh); err != nil {
+        (update_date, rtype, policy, hash, next_rebalance)
+        VALUES (?, ?, ?, ?, ?)
+    `, time.Now(), typ, policy, hsh, nextRebalance); err != nil {
 		return err
 	}
 	if err = tx.Commit(); err != nil {
@@ -575,27 +576,31 @@ func (db *dbInstance) setRingHash(typ string, policy int, hsh string) error {
 	return nil
 }
 
-func (db *dbInstance) ringHash(typ string, policy int) (string, error) {
+func (db *dbInstance) ringHash(typ string, policy int) (string, time.Time, error) {
 	var rows *sql.Rows
 	var err error
 	var hsh string
+	var nextRebalance time.Time
 	defer func() {
 		if rows != nil {
 			rows.Close()
 		}
 	}()
 	if rows, err = db.db.Query(`
-        SELECT hash
+        SELECT hash, next_rebalance
         FROM ring_hash
         WHERE rtype = ?
           AND policy = ?
     `, typ, policy); err != nil {
-		return hsh, err
+		return hsh, nextRebalance, err
 	}
 	if rows.Next() {
-		err = rows.Scan(&hsh)
+		err = rows.Scan(&hsh, &nextRebalance)
 	}
-	return hsh, err
+	if nextRebalance.UnixNano() == 0 {
+		nextRebalance = time.Time{}
+	}
+	return hsh, nextRebalance, err
 }
 
 type stateEntry struct {

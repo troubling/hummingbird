@@ -310,6 +310,17 @@ func (um *unmountedMonitor) removeFromBuilder(logger *zap.Logger, ip string, por
 		logger.Error("Could not find builder", zap.String("type", typ), zap.Int("policy", policy), zap.Error(err))
 		return
 	}
+	ringBuilderLock, err := ring.LockBuilderPath(ringBuilderFilePath)
+	if err != nil {
+		logger.Error("Could not lock builder path", zap.String("type", typ), zap.Int("policy", policy), zap.String("ring builder file path", ringBuilderFilePath), zap.Error(err))
+		return
+	}
+	defer ringBuilderLock.Close()
+	ringBuilder, ringBuilderFilePath, err = ring.GetRingBuilder(typ, policy)
+	if err != nil {
+		logger.Error("Could not find builder after lock", zap.String("type", typ), zap.Int("policy", policy), zap.Error(err))
+		return
+	}
 	changed := false
 	for _, dev := range ringBuilder.SearchDevs(-1, -1, ip, int64(port), "", -1, device, -1, "", "") {
 		if dev.Weight >= 0 {
@@ -329,7 +340,7 @@ func (um *unmountedMonitor) removeFromBuilder(logger *zap.Logger, ip string, por
 	if err != nil {
 		logger.Error("Error while saving builder", zap.String("type", typ), zap.Int("policy", policy), zap.String("path", ringBuilderFilePath), zap.Error(err))
 	}
-	err = ring.Rebalance(ringBuilderFilePath, false, false, true)
+	_, _, _, err = ring.Rebalance(ringBuilderFilePath, false, false, true)
 	if err != nil {
 		logger.Error("Error while rebalancing", zap.String("type", typ), zap.Int("policy", policy), zap.String("path", ringBuilderFilePath), zap.Error(err))
 	}
@@ -338,4 +349,6 @@ func (um *unmountedMonitor) removeFromBuilder(logger *zap.Logger, ip string, por
 	} else {
 		um.aa.db.addRingLog(typ, policy, fmt.Sprintf("rebalanced due to downed device %s on %s:%d", device, ip, port))
 	}
+	// NOTE: The ringmonitor.go will detect these ring changes on disk and
+	// initiate a fastscan for ringscan.go to push out the new rings.
 }
