@@ -177,6 +177,7 @@ func (ka *keystoneAuth) authorize(r *http.Request) (bool, int) {
 	if common.StringInSlice(ka.resellerAdminRole, userRoles) {
 		ctx.Logger.Debug("User has reseller admin authorization", zap.String("userid", tenantID))
 		ctx.StorageOwner = true
+		ctx.ResellerRequest = true
 		return true, http.StatusOK
 	}
 
