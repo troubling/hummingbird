@@ -62,7 +62,11 @@ func (r *progressReport) String() string {
 		data = append(data, nil)
 		data = append(data, []string{process, ago, status, detail})
 		if report.PreviousProgress != "" {
-			data = append(data, []string{"", "", "", fmt.Sprintf("Previous pass completed %s ago: %s", time.Since(report.PreviousCompleted).Truncate(time.Second), report.PreviousProgress)})
+			if report.PreviousCompleted.IsZero() {
+				data = append(data, []string{"", "", "", fmt.Sprintf("Previous pass did not complete: %s", report.PreviousProgress)})
+			} else {
+				data = append(data, []string{"", "", "", fmt.Sprintf("Previous pass completed %s ago: %s", time.Since(report.PreviousCompleted).Truncate(time.Second), report.PreviousProgress)})
+			}
 		}
 	}
 	opts := brimtext.NewUnicodeBoxedAlignOptions()
