@@ -31,7 +31,7 @@ import (
 )
 
 func LockBuilderPath(pth string) (*os.File, error) {
-	lockPath := ".lock." + pth
+	lockPath := path.Join(path.Dir(pth), ".lock."+path.Base(pth))
 	f, err := os.Open(lockPath)
 	if err != nil {
 		if os.IsNotExist(err) {
