@@ -71,6 +71,7 @@ type RingMD5 interface {
 	DiskPath() string
 	RingMatching(md5 string) RingMD5
 	Reload() error
+	AssignmentCount(devId int) int
 }
 
 type ringData struct {
@@ -225,7 +226,9 @@ func (r *hashRing) DiskPath() string {
 func (r *hashRing) RingMatching(md5 string) RingMD5 {
 	d := r.getData()
 	if d.md5 == md5 {
-		return r
+		if r2, err := LoadRingMD5(r.path, r.prefix, r.suffix); err == nil {
+			return r2
+		}
 	}
 	backupsDir := filepath.Join(filepath.Dir(r.path), "backups")
 	f, err := os.Open(backupsDir)
@@ -364,6 +367,18 @@ func (r *hashRing) reloader() error {
 	}
 }
 
+func (r *hashRing) AssignmentCount(devId int) int {
+	count := 0
+	for _, part2devId := range r.getData().replica2part2devId {
+		for _, rDevId := range part2devId {
+			if int(rDevId) == devId {
+				count++
+			}
+		}
+	}
+	return count
+}
+
 func (m *hashMoreNodes) addDevice(d *Device) {
 	m.used[d.Id] = true
 	m.sameRegions[d.Region] = true
@@ -440,20 +455,10 @@ func LoadRing(path string, prefix string, suffix string) (Ring, error) {
 	return ring, nil
 }
 
-var loadedRingMD5sLock sync.Mutex
-var loadedRingMD5s map[string]*hashRing = make(map[string]*hashRing)
-
 func LoadRingMD5(path string, prefix string, suffix string) (RingMD5, error) {
-	loadedRingMD5sLock.Lock()
-	defer loadedRingMD5sLock.Unlock()
-	ring := loadedRingMD5s[path]
-	if ring == nil {
-		ring = &hashRing{prefix: prefix, suffix: suffix, path: path, mtime: time.Unix(0, 0), calcMD5: true}
-		if err := ring.Reload(); err != nil {
-			return nil, err
-		}
-		// no reloader for RingMD5s; Reload is called explicitly instead.
-		loadedRingMD5s[path] = ring
+	ring := &hashRing{prefix: prefix, suffix: suffix, path: path, mtime: time.Unix(0, 0), calcMD5: true}
+	if err := ring.Reload(); err != nil {
+		return nil, err
 	}
 	return ring, nil
 }

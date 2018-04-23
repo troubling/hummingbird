@@ -1,5 +1,11 @@
 package tools
 
+// The ring scan process will constantly compare the rings servers have with
+// the local rings and send out new rings as needed. By default, it will lazily
+// scan servers, trying to hit each one about every ten minutes. But, if a
+// fast-scan is triggered because a ring just changed locally, the ring scan
+// process will go as quickly as it can to send out the new rings.
+//
 // In /etc/hummingbird/andrewd-server.conf:
 // [ring-scan]
 // initial_delay = 1            # seconds to wait between ring checks for the first pass
@@ -45,6 +51,8 @@ type ringScan struct {
 	fastScan            bool
 	prefix              string
 	suffix              string
+	ringMD5CacheLock    sync.Mutex
+	ringMD5Cache        map[string]map[int]ring.RingMD5
 }
 
 func newRingScan(aa *AutoAdmin) *ringScan {
@@ -54,6 +62,7 @@ func newRingScan(aa *AutoAdmin) *ringScan {
 		passTimeTarget:      time.Duration(aa.serverconf.GetInt("ring-scan", "pass_time_target", 600)) * time.Second,
 		reportInterval:      time.Duration(aa.serverconf.GetInt("ring-scan", "report_interval", 600)) * time.Second,
 		fastScanConcurrency: int(aa.serverconf.GetInt("ring-scan", "fast_scan_concurrency", 25)),
+		ringMD5Cache:        map[string]map[int]ring.RingMD5{},
 	}
 	if rs.delay < 0 {
 		rs.delay = time.Second
@@ -69,6 +78,9 @@ func newRingScan(aa *AutoAdmin) *ringScan {
 	}
 	rs.fastScan = true
 	rs.prefix, rs.suffix = getAffixes()
+	rs.ringMD5Cache["account"] = map[int]ring.RingMD5{}
+	rs.ringMD5Cache["container"] = map[int]ring.RingMD5{}
+	rs.ringMD5Cache["object"] = map[int]ring.RingMD5{}
 	return rs
 }
 
@@ -180,7 +192,7 @@ func (rs *ringScan) runOnce() time.Duration {
 				}
 			}
 			getLogger.Debug("parsed", zap.String("type", typ), zap.Int("policy", policy), zap.String("md5", md5))
-			ryng, err := ring.GetRingMD5(typ, rs.prefix, rs.suffix, policy)
+			ryng, err := rs.GetRingMD5(typ, policy)
 			if err != nil {
 				getLogger.Error("error getting ring", zap.String("type", typ), zap.Int("policy", policy), zap.String("md5", md5), zap.Error(err))
 			}
@@ -247,9 +259,15 @@ func (rs *ringScan) runOnce() time.Duration {
 		close(fastScanURLs)
 		wg.Wait()
 	} else {
+	STANDARDSCAN:
 		for _, url := range urls {
-			time.Sleep(rs.delay)
-			reconURL(url)
+			select {
+			case <-rs.aa.fastRingScan:
+				rs.aa.fastRingScan <- struct{}{}
+				break STANDARDSCAN
+			case <-time.After(rs.delay):
+				reconURL(url)
+			}
 		}
 	}
 	close(cancel)
@@ -310,4 +328,18 @@ func (rs *ringScan) ringMD5URLs() []string {
 		urls = append(urls, url)
 	}
 	return urls
+}
+
+func (rs *ringScan) GetRingMD5(typ string, policy int) (ring.RingMD5, error) {
+	rs.ringMD5CacheLock.Lock()
+	defer rs.ringMD5CacheLock.Unlock()
+	if ryng, ok := rs.ringMD5Cache[typ][policy]; ok {
+		return ryng, ryng.Reload()
+	}
+	ryng, err := ring.GetRingMD5(typ, rs.prefix, rs.suffix, policy)
+	if err != nil {
+		return nil, err
+	}
+	rs.ringMD5Cache[typ][policy] = ryng
+	return ryng, nil
 }
