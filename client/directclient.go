@@ -755,7 +755,7 @@ func (oc *standardObjectClient) putObject(account, container, obj string, header
 	defer close(cancel)
 	responsec := make(chan *http.Response)
 	devs, more := oc.objectRing.getWriteNodes(objectPartition, oc.deviceLimit)
-	objectReplicaCount := int(oc.objectRing.ReplicaCount())
+	objectReplicaCount := len(devs)
 
 	devToRequest := func(index int, dev *ring.Device) (*http.Request, error) {
 		trp, wp := io.Pipe()
