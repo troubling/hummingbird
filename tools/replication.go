@@ -136,7 +136,10 @@ func (r *replication) progress(ctx *replicationContext) {
 			ctx.ipDevsInUseLock.Unlock()
 			countLeft := atomic.LoadInt64(&ctx.countLeft)
 			countDone := atomic.LoadInt64(&ctx.countDone)
-			eta := time.Duration(int64(time.Since(ctx.start)) / countDone * countLeft)
+			var eta time.Duration
+			if countDone > 0 {
+				eta = time.Duration(int64(time.Since(ctx.start)) / countDone * countLeft)
+			}
 			ctx.logger.Debug("progress", zap.Int64("jobs done", countDone), zap.Int64("jobs left", countLeft), zap.Int("active devices", activeDevs), zap.String("eta", eta.String()))
 			if err := r.aa.db.progressProcessPass("replication", "", 0, fmt.Sprintf("%d jobs done, %d jobs left, %d active devices, %s eta", countDone, countLeft, activeDevs, eta)); err != nil {
 				ctx.logger.Error("progressProcessPass", zap.Error(err))

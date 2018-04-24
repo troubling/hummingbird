@@ -70,7 +70,10 @@ func (dpc *dispersionPopulateContainers) runOnce() time.Duration {
 			case <-time.After(dpc.reportInterval):
 				s := atomic.LoadInt64(&successes)
 				e := atomic.LoadInt64(&errors)
-				eta := time.Duration(int64(time.Since(start)) / (s + e) * (int64(containerRing.PartitionCount()) - s - e))
+				var eta time.Duration
+				if s+e > 0 {
+					eta = time.Duration(int64(time.Since(start)) / (s + e) * (int64(containerRing.PartitionCount()) - s - e))
+				}
 				logger.Debug("progress", zap.Int64("successes", s), zap.Int64("errors", e), zap.String("eta", eta.String()))
 				if err := dpc.aa.db.progressProcessPass("dispersion populate", "container", 0, fmt.Sprintf("%d of %d partitions, %d successes, %d errors, %s eta", s+e, containerRing.PartitionCount(), s, e, eta)); err != nil {
 					logger.Error("progressProcessPass", zap.Error(err))

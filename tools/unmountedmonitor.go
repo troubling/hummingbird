@@ -8,6 +8,7 @@ package tools
 // state_retention = 86400          # seconds to retain state entries
 // server_down_limit = 14400        # seconds a server can be down before removal
 // device_unmounted_limit = 3600    # seconds a device can be unmounted before removal
+// ignore_duration = 14400          # seconds to ignore a device's state change after updating its state in a ring
 
 import (
 	"encoding/json"
@@ -30,6 +31,8 @@ type unmountedMonitor struct {
 	stateRetention       time.Duration
 	serverDownLimit      time.Duration
 	deviceUnmountedLimit time.Duration
+	ignoreDuration       time.Duration
+	ignore               map[string]time.Time
 }
 
 func newUnmountedMonitor(aa *AutoAdmin) *unmountedMonitor {
@@ -41,6 +44,8 @@ func newUnmountedMonitor(aa *AutoAdmin) *unmountedMonitor {
 		stateRetention:       time.Duration(aa.serverconf.GetInt("unmounted-monitor", "state_retention", 86400)) * time.Second,
 		serverDownLimit:      time.Duration(aa.serverconf.GetInt("unmounted-monitor", "server_down_limit", 14400)) * time.Second,
 		deviceUnmountedLimit: time.Duration(aa.serverconf.GetInt("unmounted-monitor", "device_unmounted_limit", 3600)) * time.Second,
+		ignoreDuration:       time.Duration(aa.serverconf.GetInt("unmounted-monitor", "ignore_duration", 14400)) * time.Second,
+		ignore:               map[string]time.Time{},
 	}
 	if um.delay < 0 {
 		um.delay = time.Second
@@ -97,7 +102,10 @@ func (um *unmountedMonitor) runOnce() time.Duration {
 				down := atomic.LoadInt64(&serversDown)
 				mounted := atomic.LoadInt64(&devicesMounted)
 				unmounted := atomic.LoadInt64(&devicesUnmounted)
-				eta := time.Duration(int64(time.Since(start)) / d * (int64(len(endpoints)) - d))
+				var eta time.Duration
+				if d > 0 {
+					eta = time.Duration(int64(time.Since(start)) / d * (int64(len(endpoints)) - d))
+				}
 				logger.Debug("progress", zap.Int64("endpoints so far", d), zap.Int("total endpoints", len(endpoints)), zap.Int64("errors", e), zap.Int64("servers up", up), zap.Int64("servers down", down), zap.Int64("mounted devices", mounted), zap.Int64("unmounted devices", unmounted), zap.String("eta", eta.String()))
 				if err := um.aa.db.progressProcessPass("unmounted monitor", "", 0, fmt.Sprintf("%d of %d endpoints, %d errors, %d/%d servers up/down, %d/%d devices mounted/unmounted, eta %s", d, len(endpoints), e, up, down, mounted, unmounted, eta)); err != nil {
 					logger.Error("progressProcessPass", zap.Error(err))
@@ -305,6 +313,11 @@ func (um *unmountedMonitor) removeFromBuilders(logger *zap.Logger, ip string, po
 }
 
 func (um *unmountedMonitor) removeFromBuilder(logger *zap.Logger, ip string, port int, device, typ string, policy int) {
+	ignoreKey := fmt.Sprintf("%s:%d/%s/%s/%d", ip, port, device, typ, policy)
+	if time.Now().Before(um.ignore[ignoreKey]) {
+		logger.Debug("ignoring", zap.String("ignore key", ignoreKey), zap.String("until", um.ignore[ignoreKey].String()))
+		return
+	}
 	ringBuilder, ringBuilderFilePath, err := ring.GetRingBuilder(typ, policy)
 	if err != nil {
 		logger.Error("Could not find builder", zap.String("type", typ), zap.Int("policy", policy), zap.Error(err))
@@ -334,6 +347,8 @@ func (um *unmountedMonitor) removeFromBuilder(logger *zap.Logger, ip string, por
 		}
 	}
 	if !changed {
+		um.ignore[ignoreKey] = time.Now().Add(um.ignoreDuration)
+		logger.Debug("not changed; now ignoring", zap.String("ignore key", ignoreKey), zap.String("until", um.ignore[ignoreKey].String()))
 		return
 	}
 	err = ringBuilder.Save(ringBuilderFilePath)
@@ -349,6 +364,8 @@ func (um *unmountedMonitor) removeFromBuilder(logger *zap.Logger, ip string, por
 	} else {
 		um.aa.db.addRingLog(typ, policy, fmt.Sprintf("rebalanced due to downed device %s on %s:%d", device, ip, port))
 	}
-	// NOTE: The ringmonitor.go will detect these ring changes on disk and
+	// NOTE: The ringmonitor.go will detect the above ring changes on disk and
 	// initiate a fastscan for ringscan.go to push out the new rings.
+	um.ignore[ignoreKey] = time.Now().Add(um.ignoreDuration)
+	logger.Debug("changed; will now ignore", zap.String("ignore key", ignoreKey), zap.String("until", um.ignore[ignoreKey].String()))
 }
