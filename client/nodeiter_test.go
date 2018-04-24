@@ -112,3 +112,39 @@ func TestDeviceLimit(t *testing.T) {
 	}
 	require.Equal(t, 2, i)
 }
+
+func TestWriteAffinityNonPreferred(t *testing.T) {
+	r := &fakeRing{
+		FakeRing: &test.FakeRing{
+			MockMoreNodes: &ring.Device{Id: 6, Region: 1, Zone: 1, Device: "sdg"},
+		},
+		nodes: []*ring.Device{
+			{Id: 0, Region: 1, Zone: 1, Device: "sda"},
+			{Id: 1, Region: 2, Zone: 1, Device: "sdb"},
+			{Id: 2, Region: 1, Zone: 1, Device: "sdc"},
+			{Id: 3, Region: 2, Zone: 1, Device: "sdd"},
+			{Id: 4, Region: 1, Zone: 1, Device: "sde"},
+			{Id: 5, Region: 2, Zone: 1, Device: "sdf"},
+		},
+	}
+
+	a := newClientRingFilter(r, "", "r1", "4")
+	devs, more := a.getWriteNodes(1, 3)
+	require.Equal(t, 3, len(devs))
+	require.Equal(t, 0, devs[0].Id)
+	require.Equal(t, 2, devs[1].Id)
+	require.Equal(t, 4, devs[2].Id)
+	require.Equal(t, 6, more.Next().Id)
+	require.Equal(t, 1, more.Next().Id)
+	require.Equal(t, 3, more.Next().Id)
+	require.Equal(t, (*ring.Device)(nil), more.Next())
+
+	a = newClientRingFilter(r, "", "r1", "2")
+	devs, more = a.getWriteNodes(1, 3)
+	require.Equal(t, 3, len(devs))
+	require.Equal(t, 0, devs[0].Id)
+	require.Equal(t, 2, devs[1].Id)
+	require.Equal(t, 3, devs[2].Id)
+	require.Equal(t, 4, more.Next().Id)
+	require.Equal(t, 5, more.Next().Id)
+}

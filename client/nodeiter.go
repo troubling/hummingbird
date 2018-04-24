@@ -22,30 +22,35 @@ type ringFilter interface {
 }
 
 type writeNodeIter struct {
-	mutex      sync.Mutex
-	devs       []*ring.Device
-	more       ring.MoreNodes
-	waffRegion int
-	waffCount  int
-	limit      int
+	mutex        sync.Mutex
+	devs         []*ring.Device
+	nonPreferred []*ring.Device
+	more         ring.MoreNodes
+	waffRegion   int
+	waffCount    int
+	limit        int
 }
 
 func (wni *writeNodeIter) next() *ring.Device {
 	var dev *ring.Device
 	for {
 		if len(wni.devs) > 0 {
-			dev = wni.devs[0]
-			wni.devs = wni.devs[1:]
+			dev, wni.devs = wni.devs[0], wni.devs[1:]
+		} else if len(wni.nonPreferred) > 0 && wni.waffCount <= 0 {
+			dev, wni.nonPreferred = wni.nonPreferred[0], wni.nonPreferred[1:]
 		} else {
-			dev = wni.more.Next()
-		}
-		if dev == nil {
-			return nil
+			if dev = wni.more.Next(); dev == nil {
+				if len(wni.nonPreferred) > 0 {
+					dev, wni.nonPreferred = wni.nonPreferred[0], wni.nonPreferred[1:]
+				}
+				return dev
+			}
 		}
 		if wni.waffCount <= 0 || wni.waffRegion == -1 || dev.Region == wni.waffRegion {
 			wni.waffCount--
 			return dev
 		}
+		wni.nonPreferred = append(wni.nonPreferred, dev)
 	}
 }
 
@@ -80,12 +85,16 @@ func (a *clientRingFilter) ring() ring.Ring {
 func (a *clientRingFilter) getReadNodes(partition uint64) ([]*ring.Device, ring.MoreNodes) {
 	devs := a.GetNodes(partition)
 	d2a := make(map[*ring.Device]int, len(devs))
-	for i := len(a.raffs) - 1; i >= 0; i-- {
-		af := a.raffs[i]
+	for i, af := range a.raffs {
 		for _, dev := range devs {
-			if (af.region == -1 || af.region == dev.Region) && (af.zone == -1 || af.zone == dev.Zone) {
+			if _, in := d2a[dev]; !in && (af.region == dev.Region) && (af.zone == dev.Zone || af.zone == -1) {
 				d2a[dev] = i
 			}
+		}
+	}
+	for _, dev := range devs { // move any nodes that haven't matched a raff to the end.
+		if _, in := d2a[dev]; !in {
+			d2a[dev] = len(a.raffs)
 		}
 	}
 	rand.Shuffle(len(devs), func(i, j int) { devs[i], devs[j] = devs[j], devs[i] })
@@ -143,8 +152,6 @@ func newClientRingFilter(r ring.Ring, readAff, writeAff, waffCount string) *clie
 		}
 	}
 	sort.Slice(raffs, func(i, j int) bool { return raffs[i].weight < raffs[j].weight })
-	raffs = append(raffs, readAffSection{zone: -1, region: -1, weight: -1})
-
 	return &clientRingFilter{
 		Ring:       r,
 		raffs:      raffs,
