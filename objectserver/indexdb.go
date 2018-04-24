@@ -662,7 +662,7 @@ func (ot *IndexDB) StablePost(hsh string, shardIndex int, request *http.Request)
 	if err != nil || item == nil || item.Deletion {
 		return http.StatusNotFound, err
 	}
-	timestampTime, err := common.ParseDate(request.Header.Get("Meta-X-Timestamp"))
+	timestampTime, err := common.ParseDate(request.Header.Get("X-Timestamp"))
 	if err != nil {
 		return http.StatusBadRequest, fmt.Errorf("invalid timestamp")
 	}

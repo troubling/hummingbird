@@ -28,12 +28,12 @@ const (
 )
 
 func init() {
-	RegisterObjectEngine("hreplication", replEngineConstructor)
+	RegisterObjectEngine("rep", repEngineConstructor)
 }
 
-var _ ObjectEngineConstructor = replEngineConstructor
+var _ ObjectEngineConstructor = repEngineConstructor
 
-func replEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.FlagSet) (ObjectEngine, error) {
+func repEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.FlagSet) (ObjectEngine, error) {
 	hashPathPrefix, hashPathSuffix, err := conf.GetHashPrefixAndSuffix()
 	if err != nil {
 		return nil, err
@@ -88,7 +88,7 @@ func replEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.
 			return nil, err
 		}
 	}
-	return &replEngine{
+	return &repEngine{
 		driveRoot:      driveRoot,
 		hashPathPrefix: hashPathPrefix,
 		hashPathSuffix: hashPathSuffix,
@@ -106,9 +106,9 @@ func replEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.
 	}, nil
 }
 
-var _ ObjectEngine = &replEngine{}
+var _ ObjectEngine = &repEngine{}
 
-type replEngine struct {
+type repEngine struct {
 	driveRoot      string
 	hashPathPrefix string
 	hashPathSuffix string
@@ -123,7 +123,7 @@ type replEngine struct {
 	client         *http.Client
 }
 
-func (re *replEngine) getDB(device string) (*IndexDB, error) {
+func (re *repEngine) getDB(device string) (*IndexDB, error) {
 	re.dblock.Lock()
 	defer re.dblock.Unlock()
 	if idb, ok := re.idbs[device]; ok && idb != nil {
@@ -141,10 +141,10 @@ func (re *replEngine) getDB(device string) (*IndexDB, error) {
 	return re.idbs[device], nil
 }
 
-func (re *replEngine) New(vars map[string]string, needData bool, asyncWG *sync.WaitGroup) (Object, error) {
+func (re *repEngine) New(vars map[string]string, needData bool, asyncWG *sync.WaitGroup) (Object, error) {
 	//TODO: not sure if here- but need to show x-backend timestamp on deleted objects
 	hash := ObjHash(vars, re.hashPathPrefix, re.hashPathSuffix)
-	obj := &replObject{
+	obj := &repObject{
 		IndexDBItem: IndexDBItem{
 			Hash: hash,
 		},
@@ -168,11 +168,11 @@ func (re *replEngine) New(vars map[string]string, needData bool, asyncWG *sync.W
 	}
 }
 
-func (re *replEngine) GetReplicationDevice(oring ring.Ring, dev *ring.Device, policy int, r *Replicator) (ReplicationDevice, error) {
+func (re *repEngine) GetReplicationDevice(oring ring.Ring, dev *ring.Device, policy int, r *Replicator) (ReplicationDevice, error) {
 	return GetNurseryDevice(oring, dev, policy, r, re)
 }
 
-func (re *replEngine) GetObjectsToReplicate(prirep PriorityRepJob, c chan ObjectStabilizer, cancel chan struct{}) {
+func (re *repEngine) GetObjectsToReplicate(prirep PriorityRepJob, c chan ObjectStabilizer, cancel chan struct{}) {
 	defer close(c)
 	idb, err := re.getDB(prirep.FromDevice.Device)
 	if err != nil {
@@ -184,7 +184,7 @@ func (re *replEngine) GetObjectsToReplicate(prirep PriorityRepJob, c chan Object
 	if len(items) == 0 {
 		return
 	}
-	url := fmt.Sprintf("%s://%s:%d/repl-partition/%s/%d", prirep.ToDevice.Scheme, prirep.ToDevice.Ip, prirep.ToDevice.Port, prirep.ToDevice.Device, prirep.Partition)
+	url := fmt.Sprintf("%s://%s:%d/rep-partition/%s/%d", prirep.ToDevice.Scheme, prirep.ToDevice.Ip, prirep.ToDevice.Port, prirep.ToDevice.Device, prirep.Partition)
 	req, err := http.NewRequest("GET", url, nil)
 	req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(prirep.Policy))
 	req.Header.Set("User-Agent", "nursery-stabilizer")
@@ -227,7 +227,7 @@ func (re *replEngine) GetObjectsToReplicate(prirep PriorityRepJob, c chan Object
 			rii++
 			break
 		}
-		obj := &replObject{
+		obj := &repObject{
 			IndexDBItem: *item,
 			reserve:     re.reserve,
 			rng:         re.rng,
@@ -252,7 +252,7 @@ func (re *replEngine) GetObjectsToReplicate(prirep PriorityRepJob, c chan Object
 	}
 }
 
-func (re *replEngine) GetObjectsToStabilize(device string, c chan ObjectStabilizer, cancel chan struct{}) {
+func (re *repEngine) GetObjectsToStabilize(device string, c chan ObjectStabilizer, cancel chan struct{}) {
 	defer close(c)
 	idb, err := re.getDB(device)
 	if err != nil {
@@ -265,7 +265,7 @@ func (re *replEngine) GetObjectsToStabilize(device string, c chan ObjectStabiliz
 	}
 
 	for _, item := range items {
-		obj := &replObject{
+		obj := &repObject{
 			IndexDBItem: *item,
 			reserve:     re.reserve,
 			rng:         re.rng,
@@ -284,7 +284,7 @@ func (re *replEngine) GetObjectsToStabilize(device string, c chan ObjectStabiliz
 	}
 }
 
-func (re *replEngine) listPartitionHandler(writer http.ResponseWriter, request *http.Request) {
+func (re *repEngine) listPartitionHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
 	idb, err := re.getDB(vars["device"])
 	if err != nil {
@@ -314,7 +314,7 @@ func (re *replEngine) listPartitionHandler(writer http.ResponseWriter, request *
 	return
 }
 
-func (re *replEngine) putStableObject(writer http.ResponseWriter, request *http.Request) {
+func (re *repEngine) putStableObject(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
 	idb, err := re.getDB(vars["device"])
 	if err != nil {
@@ -329,7 +329,7 @@ func (re *replEngine) putStableObject(writer http.ResponseWriter, request *http.
 	return
 }
 
-func (re *replEngine) postStableObject(writer http.ResponseWriter, request *http.Request) {
+func (re *repEngine) postStableObject(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
 	idb, err := re.getDB(vars["device"])
 	if err != nil {
@@ -344,7 +344,7 @@ func (re *replEngine) postStableObject(writer http.ResponseWriter, request *http
 	return
 }
 
-func (re *replEngine) deleteStableObject(writer http.ResponseWriter, request *http.Request) {
+func (re *repEngine) deleteStableObject(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
 	idb, err := re.getDB(vars["device"])
 	if err != nil {
@@ -372,9 +372,9 @@ func (re *replEngine) deleteStableObject(writer http.ResponseWriter, request *ht
 	}
 }
 
-func (re *replEngine) RegisterHandlers(addRoute func(method, path string, handler http.HandlerFunc)) {
-	addRoute("GET", "/repl-partition/:device/:partition", re.listPartitionHandler)
-	addRoute("PUT", "/repl-obj/:device/:hash", re.putStableObject)
-	addRoute("POST", "/repl-obj/:device/:hash", re.postStableObject)
-	addRoute("DELETE", "/repl-obj/:device/:hash", re.deleteStableObject)
+func (re *repEngine) RegisterHandlers(addRoute func(method, path string, handler http.HandlerFunc)) {
+	addRoute("GET", "/rep-partition/:device/:partition", re.listPartitionHandler)
+	addRoute("PUT", "/rep-obj/:device/:hash", re.putStableObject)
+	addRoute("POST", "/rep-obj/:device/:hash", re.postStableObject)
+	addRoute("DELETE", "/rep-obj/:device/:hash", re.deleteStableObject)
 }

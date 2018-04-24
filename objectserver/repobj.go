@@ -19,9 +19,9 @@ import (
 	"github.com/troubling/hummingbird/common/ring"
 )
 
-var _ Object = &replObject{}
+var _ Object = &repObject{}
 
-type replObject struct {
+type repObject struct {
 	IndexDBItem
 	reserve          int64
 	asyncWG          *sync.WaitGroup
@@ -33,11 +33,11 @@ type replObject struct {
 	client           *http.Client
 }
 
-func (ro *replObject) Metadata() map[string]string {
+func (ro *repObject) Metadata() map[string]string {
 	return ro.metadata
 }
 
-func (ro *replObject) ContentLength() int64 {
+func (ro *repObject) ContentLength() int64 {
 	if contentLength, err := strconv.ParseInt(ro.metadata["Content-Length"], 10, 64); err != nil {
 		return -1
 	} else {
@@ -45,18 +45,18 @@ func (ro *replObject) ContentLength() int64 {
 	}
 }
 
-func (ro *replObject) Quarantine() error {
+func (ro *repObject) Quarantine() error {
 	return errors.New("Unimplemented")
 }
 
-func (ro *replObject) Exists() bool {
+func (ro *repObject) Exists() bool {
 	if ro.Deletion == true {
 		return false
 	}
 	return ro.Path != ""
 }
 
-func (ro *replObject) Copy(dsts ...io.Writer) (written int64, err error) {
+func (ro *repObject) Copy(dsts ...io.Writer) (written int64, err error) {
 	var f *os.File
 	f, err = os.Open(ro.Path)
 	if err != nil {
@@ -77,7 +77,7 @@ func (ro *replObject) Copy(dsts ...io.Writer) (written int64, err error) {
 	return written, err
 }
 
-func (ro *replObject) CopyRange(w io.Writer, start int64, end int64) (int64, error) {
+func (ro *repObject) CopyRange(w io.Writer, start int64, end int64) (int64, error) {
 	f, err := os.Open(ro.Path)
 	if err != nil {
 		return 0, err
@@ -95,11 +95,11 @@ func (ro *replObject) CopyRange(w io.Writer, start int64, end int64) (int64, err
 	return written, err
 }
 
-func (ro *replObject) Repr() string {
-	return fmt.Sprintf("replObject<%s, %d>", ro.Hash, ro.Timestamp)
+func (ro *repObject) Repr() string {
+	return fmt.Sprintf("repObject<%s, %d>", ro.Hash, ro.Timestamp)
 }
 
-func (ro *replObject) SetData(size int64) (io.Writer, error) {
+func (ro *repObject) SetData(size int64) (io.Writer, error) {
 	if ro.atomicFileWriter != nil {
 		ro.atomicFileWriter.Abandon()
 	}
@@ -108,7 +108,7 @@ func (ro *replObject) SetData(size int64) (io.Writer, error) {
 	return ro.atomicFileWriter, err
 }
 
-func (ro *replObject) commit(metadata map[string]string, method string) error {
+func (ro *repObject) commit(metadata map[string]string, method string, nursery bool) error {
 	var timestamp int64
 	timestampStr, ok := metadata["X-Timestamp"]
 	if !ok {
@@ -123,24 +123,24 @@ func (ro *replObject) commit(metadata map[string]string, method string) error {
 	if err != nil {
 		return err
 	}
-	err = ro.idb.Commit(ro.atomicFileWriter, ro.Hash, roShard, timestamp, method, MetadataHash(metadata), metabytes, true, "")
+	err = ro.idb.Commit(ro.atomicFileWriter, ro.Hash, roShard, timestamp, method, MetadataHash(metadata), metabytes, nursery, "")
 	ro.atomicFileWriter = nil
 	return err
 }
 
-func (ro *replObject) Commit(metadata map[string]string) error {
-	return ro.commit(metadata, "PUT")
+func (ro *repObject) Commit(metadata map[string]string) error {
+	return ro.commit(metadata, "PUT", true)
 }
 
-func (ro *replObject) CommitMetadata(metadata map[string]string) error {
-	return ro.commit(metadata, "POST")
+func (ro *repObject) Delete(metadata map[string]string) error {
+	return ro.commit(metadata, "DELETE", true)
 }
 
-func (ro *replObject) Delete(metadata map[string]string) error {
-	return ro.commit(metadata, "DELETE")
+func (ro *repObject) CommitMetadata(metadata map[string]string) error {
+	return ro.commit(metadata, "POST", ro.Nursery)
 }
 
-func (ro *replObject) Close() error {
+func (ro *repObject) Close() error {
 	if ro.atomicFileWriter != nil {
 		ro.atomicFileWriter.Abandon()
 		ro.atomicFileWriter = nil
@@ -148,7 +148,7 @@ func (ro *replObject) Close() error {
 	return nil
 }
 
-func (ro *replObject) canStabilize(rng ring.Ring, dev *ring.Device, policy int) (bool, error) {
+func (ro *repObject) canStabilize(rng ring.Ring, dev *ring.Device, policy int) (bool, error) {
 	if ro.Deletion {
 		return false, fmt.Errorf("you just send deletions")
 	}
@@ -163,11 +163,11 @@ func (ro *replObject) canStabilize(rng ring.Ring, dev *ring.Device, policy int) 
 	}
 	nodes := rng.GetNodes(partition)
 	goodNodes := uint64(0)
-	for _, device := range nodes {
-		if device.Ip == dev.Ip && device.Port == dev.Port && device.Device == device.Device {
+	for _, node := range nodes {
+		if node.Ip == dev.Ip && node.Port == dev.Port && node.Device == dev.Device {
 			continue
 		}
-		url := fmt.Sprintf("%s://%s:%d/%s/%d%s", device.Scheme, device.Ip, device.Port, device.Device, partition, common.Urlencode(metadata["name"]))
+		url := fmt.Sprintf("%s://%s:%d/%s/%d%s", node.Scheme, node.Ip, node.Port, node.Device, partition, common.Urlencode(metadata["name"]))
 		req, err := http.NewRequest("HEAD", url, nil)
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.FormatInt(int64(policy), 10))
 		req.Header.Set("User-Agent", "nursery-stabilizer")
@@ -185,7 +185,7 @@ func (ro *replObject) canStabilize(rng ring.Ring, dev *ring.Device, policy int) 
 	return goodNodes+1 == rng.ReplicaCount(), nil
 }
 
-func (ro *replObject) stabilizeDelete(rng ring.Ring, dev *ring.Device, policy int) error {
+func (ro *repObject) stabilizeDelete(rng ring.Ring, dev *ring.Device, policy int) error {
 	metadata := ro.Metadata()
 	ns := strings.SplitN(metadata["name"], "/", 4)
 	if len(ns) != 4 {
@@ -196,10 +196,10 @@ func (ro *replObject) stabilizeDelete(rng ring.Ring, dev *ring.Device, policy in
 	var successes int64
 	wg := sync.WaitGroup{}
 	for _, node := range nodes {
-		if node.Ip == dev.Ip && node.Port == dev.Port && node.Device == node.Device {
+		if node.Ip == dev.Ip && node.Port == dev.Port && node.Device == dev.Device {
 			continue
 		}
-		req, err := http.NewRequest("DELETE", fmt.Sprintf("%s://%s:%d/repl-obj/%s/%s", node.Scheme, node.Ip, node.Port, node.Device, ro.Hash), nil)
+		req, err := http.NewRequest("DELETE", fmt.Sprintf("%s://%s:%d/rep-obj/%s/%s", node.Scheme, node.ReplicationIp, node.ReplicationPort, node.Device, ro.Hash), nil)
 		if err != nil {
 			return err
 		}
@@ -219,12 +219,12 @@ func (ro *replObject) stabilizeDelete(rng ring.Ring, dev *ring.Device, policy in
 	}
 	wg.Wait()
 	if successes+1 != int64(len(nodes)) {
-		return fmt.Errorf("could not stabilize DELETE to all primaries %d/%d", successes, len(nodes))
+		return fmt.Errorf("could not stabilize DELETE to all primaries %d/%d", successes, len(nodes)-1)
 	}
 	return ro.idb.Remove(ro.Hash, ro.Shard, ro.Timestamp, ro.Nursery)
 }
 
-func (ro *replObject) restabilize(rng ring.Ring, dev *ring.Device, policy int) error {
+func (ro *repObject) restabilize(rng ring.Ring, dev *ring.Device, policy int) error {
 	ns := strings.SplitN(ro.metadata["name"], "/", 4)
 	if len(ns) != 4 {
 		return fmt.Errorf("invalid metadata name: %s", ro.metadata["name"])
@@ -234,7 +234,10 @@ func (ro *replObject) restabilize(rng ring.Ring, dev *ring.Device, policy int) e
 	partition := rng.GetPartition(ns[1], ns[2], ns[3])
 	nodes := rng.GetNodes(partition)
 	for _, node := range nodes {
-		req, err := http.NewRequest("POST", fmt.Sprintf("%s://%s:%d/repl-obj/%s/%s", node.Scheme, node.Ip, node.Port, node.Device, ro.Hash), nil)
+		if node.Ip == dev.Ip && node.Port == dev.Port && node.Device == dev.Device {
+			continue
+		}
+		req, err := http.NewRequest("POST", fmt.Sprintf("%s://%s:%d/rep-obj/%s/%s", node.Scheme, node.ReplicationIp, node.ReplicationPort, node.Device, ro.Hash), nil)
 		if err != nil {
 			return err
 		}
@@ -256,18 +259,18 @@ func (ro *replObject) restabilize(rng ring.Ring, dev *ring.Device, policy int) e
 		}(req)
 	}
 	wg.Wait()
-	if successes != int64(len(nodes)) {
+	if successes != int64(len(nodes)-1) {
 		return fmt.Errorf("could not restabilize all primaries %d/%d", successes, len(nodes))
 	}
 	return ro.idb.SetStabilized(ro.Hash, ro.Shard, ro.Timestamp, false)
 }
 
-func (ro *replObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error {
-	if !ro.Nursery {
-		return nil
-	}
+func (ro *repObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error {
 	if ro.Restabilize {
 		return ro.restabilize(rng, dev, policy)
+	}
+	if !ro.Nursery {
+		return nil
 	}
 	if ro.Deletion {
 		return ro.stabilizeDelete(rng, dev, policy)
@@ -280,7 +283,7 @@ func (ro *replObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) err
 	return ro.idb.SetStabilized(ro.Hash, roShard, ro.Timestamp, true)
 }
 
-func (ro *replObject) Replicate(prirep PriorityRepJob) error {
+func (ro *repObject) Replicate(prirep PriorityRepJob) error {
 	if ro.Nursery {
 		return fmt.Errorf("not replicating object in nursery")
 	}
@@ -291,7 +294,7 @@ func (ro *replObject) Replicate(prirep PriorityRepJob) error {
 	}
 	defer fp.Close()
 	req, err := http.NewRequest("PUT",
-		fmt.Sprintf("%s://%s:%d/repl-obj/%s/%s",
+		fmt.Sprintf("%s://%s:%d/rep-obj/%s/%s",
 			prirep.ToDevice.Scheme, prirep.ToDevice.Ip, prirep.ToDevice.Port,
 			prirep.ToDevice.Device, ro.Hash), fp)
 	if err != nil {
