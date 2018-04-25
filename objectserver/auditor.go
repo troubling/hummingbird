@@ -278,7 +278,7 @@ func (a *Auditor) auditDB(dbpath string, objRing ring.Ring, policy *conf.Policy)
 		zapLogger = zap.L()
 	}
 	// Shamelessly copypasted from ecengine.go.
-	dbPartPower := 1
+	dbPartPower := 0
 	if policy.Config["db_part_power"] != "" {
 		dbPartPowerInt64, err := strconv.ParseInt(policy.Config["db_part_power"], 10, 64)
 		if err != nil {
@@ -289,7 +289,10 @@ func (a *Auditor) auditDB(dbpath string, objRing ring.Ring, policy *conf.Policy)
 		}
 		dbPartPower = int(dbPartPowerInt64)
 	}
-	subdirs := 32
+	if dbPartPower < 1 {
+		dbPartPower = 5
+	}
+	subdirs := 0
 	if policy.Config["subdirs"] != "" {
 		subdirsInt64, err := strconv.ParseInt(policy.Config["subdirs"], 10, 64)
 		if err != nil {
@@ -299,6 +302,9 @@ func (a *Auditor) auditDB(dbpath string, objRing ring.Ring, policy *conf.Policy)
 			return
 		}
 		subdirs = int(subdirsInt64)
+	}
+	if subdirs < 1 {
+		subdirs = 32
 	}
 	db, err := NewIndexDB(dbpath, path, temppath, ringPartPower, dbPartPower, subdirs, 0, zapLogger)
 	if err != nil {

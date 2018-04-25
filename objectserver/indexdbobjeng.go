@@ -44,13 +44,19 @@ func indexDBEngineConstructor(config conf.Config, policy *conf.Policy, flags *fl
 		}
 		dbPartPower = int(dbPartPowerInt64)
 	}
-	subdirs := 64
+	if dbPartPower < 1 {
+		dbPartPower = 5
+	}
+	subdirs := 0
 	if policy.Config["subdirs"] != "" {
 		subdirsInt64, err := strconv.ParseInt(policy.Config["subdirs"], 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("Could not parse subdirs value %q: %s", policy.Config["subdirs"], err)
 		}
 		subdirs = int(subdirsInt64)
+	}
+	if subdirs < 1 {
+		subdirs = 32
 	}
 	devicespath := config.GetDefault("app:object-server", "devices", "/srv/node")
 	dbspath := config.GetDefault("app:object-server", "dbs", "")

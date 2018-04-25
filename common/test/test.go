@@ -131,7 +131,7 @@ func (r *FakeRing) GetMoreNodes(partition uint64) ring.MoreNodes {
 }
 
 func (r *FakeRing) PartitionCount() uint64 {
-	return 3
+	return 64
 }
 
 func (r *FakeRing) ReplicaCount() uint64 {
