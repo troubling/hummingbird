@@ -53,27 +53,6 @@ func deviceId(ip string, port int, device string) string {
 	return fmt.Sprintf("%s:%d/%s", ip, port, device)
 }
 
-func getRingData(oring ring.Ring, onlyWeighted bool) (map[string]*ring.Device, []*ipPort) {
-	allRingDevices := make(map[string]*ring.Device)
-	var servers []*ipPort
-	weightedServers := make(map[string]bool)
-	for _, dev := range oring.AllDevices() {
-		if dev == nil {
-			continue
-		}
-		allRingDevices[deviceId(dev.Ip, dev.Port, dev.Device)] = dev
-
-		if !onlyWeighted || dev.Weight > 0 {
-			if _, ok := weightedServers[serverId(dev.Ip, dev.Port)]; !ok {
-				servers =
-					append(servers, &ipPort{ip: dev.Ip, port: dev.Port, scheme: dev.Scheme, replicationPort: dev.ReplicationPort})
-				weightedServers[serverId(dev.Ip, dev.Port)] = true
-			}
-		}
-	}
-	return allRingDevices, servers
-}
-
 func queryHostRecon(client http.Client, s *ipPort, endpoint string) ([]byte, error) {
 	serverUrl := fmt.Sprintf("%s://%s:%d/recon/%s", s.scheme, s.ip, s.port, endpoint)
 	req, err := http.NewRequest("GET", serverUrl, nil)
@@ -978,36 +957,49 @@ func ReconClient(flags *flag.FlagSet, cnf srv.ConfigLoader) bool {
 		}
 	}
 	client := http.Client{Timeout: 10 * time.Second, Transport: transport}
-	_, allWeightedServers := getRingData(oring, false)
+	activeServerMap := make(map[string]*ipPort)
+	for _, dev := range oring.AllDevices() {
+		if dev == nil || dev.Weight < 0 {
+			continue
+		}
+		sId := serverId(dev.Ip, dev.Port)
+		if _, ok := activeServerMap[sId]; !ok {
+			activeServerMap[sId] = &ipPort{ip: dev.Ip, port: dev.Port, scheme: dev.Scheme, replicationPort: dev.ReplicationPort}
+		}
+	}
+	activeServers := make([]*ipPort, 0, len(activeServerMap))
+	for _, server := range activeServerMap {
+		activeServers = append(activeServers, server)
+	}
 	var reports []passable
 	if flags.Lookup("progress").Value.(flag.Getter).Get().(bool) {
 		reports = append(reports, getProgressReport(flags))
 	}
 	if flags.Lookup("md5").Value.(flag.Getter).Get().(bool) {
-		reports = append(reports, getRingMD5Report(client, allWeightedServers, nil))
-		reports = append(reports, getMainConfMD5Report(client, allWeightedServers))
-		reports = append(reports, getHummingbirdMD5Report(client, allWeightedServers))
+		reports = append(reports, getRingMD5Report(client, activeServers, nil))
+		reports = append(reports, getMainConfMD5Report(client, activeServers))
+		reports = append(reports, getHummingbirdMD5Report(client, activeServers))
 	}
 	if flags.Lookup("time").Value.(flag.Getter).Get().(bool) {
-		reports = append(reports, getTimeReport(client, allWeightedServers))
+		reports = append(reports, getTimeReport(client, activeServers))
 	}
 	if flags.Lookup("q").Value.(flag.Getter).Get().(bool) {
-		reports = append(reports, getQuarantineReport(client, allWeightedServers))
+		reports = append(reports, getQuarantineReport(client, activeServers))
 	}
 	if flags.Lookup("qd").Value.(flag.Getter).Get().(bool) {
-		reports = append(reports, getQuarantineDetailReport(client, allWeightedServers))
+		reports = append(reports, getQuarantineDetailReport(client, activeServers))
 	}
 	if flags.Lookup("a").Value.(flag.Getter).Get().(bool) {
-		reports = append(reports, getAsyncReport(client, allWeightedServers))
+		reports = append(reports, getAsyncReport(client, activeServers))
 	}
 	if flags.Lookup("rd").Value.(flag.Getter).Get().(bool) {
-		reports = append(reports, getReplicationDurationReport(client, allWeightedServers))
+		reports = append(reports, getReplicationDurationReport(client, activeServers))
 	}
 	if flags.Lookup("rp").Value.(flag.Getter).Get().(bool) {
-		reports = append(reports, getReplicationPartsSecReport(client, allWeightedServers))
+		reports = append(reports, getReplicationPartsSecReport(client, activeServers))
 	}
 	if flags.Lookup("rc").Value.(flag.Getter).Get().(bool) {
-		reports = append(reports, getReplicationCanceledReport(client, allWeightedServers))
+		reports = append(reports, getReplicationCanceledReport(client, activeServers))
 	}
 	if flags.Lookup("d").Value.(flag.Getter).Get().(bool) {
 		reports = append(reports, getDispersionReport(flags))
