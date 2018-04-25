@@ -102,7 +102,7 @@ func authenticateFormpost(ctx *ProxyContext, account, container, path string, at
 
 func formpostRespond(writer http.ResponseWriter, status int, message, redirect string) {
 	if redirect == "" {
-		body := fmt.Sprintf("<h1>%d %s</h1>%s", status, http.StatusText(status), message)
+		body := fmt.Sprintf("<h1>%d %s</h1>FormPost: %s", status, http.StatusText(status), message)
 		writer.Header().Set("Content-Type", "text/html")
 		writer.Header().Set("Content-Length", strconv.FormatInt(int64(len(body)), 10))
 		writer.WriteHeader(status)
@@ -205,10 +205,10 @@ func formpost(formpostRequestsMetric tally.Counter) func(http.Handler) http.Hand
 						scope := authenticateFormpost(ctx, account, container, request.URL.Path, attrs)
 						switch scope {
 						case FP_EXPIRED:
-							formpostRespond(writer, 401, "request expired", attrs["redirect"])
+							formpostRespond(writer, 401, "Form Expired", attrs["redirect"])
 							return
 						case FP_INVALID:
-							formpostRespond(writer, 401, "invalid signature", attrs["redirect"])
+							formpostRespond(writer, 401, "Invalid Signature", attrs["redirect"])
 							return
 						case FP_ERROR:
 							formpostRespond(writer, 400, "invalid request", attrs["redirect"])
@@ -240,6 +240,7 @@ func formpost(formpostRequestsMetric tally.Counter) func(http.Handler) http.Hand
 					}
 					newreq.Header.Set("X-Delete-At", attrs["x_delete_at"])
 					newreq.Header.Set("X-Delete-After", attrs["x_delete_after"])
+					newreq.TransferEncoding = []string{"chunked"}
 					if attrs["content-type"] != "" {
 						newreq.Header.Set("Content-Type", attrs["content-type"])
 					} else {
