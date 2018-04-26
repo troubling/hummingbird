@@ -658,7 +658,7 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 	port := int(serverconf.GetInt("andrewd", "bind_port", common.DefaultAndrewdPort))
 	certFile := serverconf.GetDefault("andrewd", "cert_file", "")
 	keyFile := serverconf.GetDefault("andrewd", "key_file", "")
-	pdc, pdcerr := client.NewProxyDirectClient(policies, srv.DefaultConfigLoader{}, logger, certFile, keyFile)
+	pdc, pdcerr := client.NewProxyDirectClient(policies, srv.DefaultConfigLoader{}, logger, certFile, keyFile, "", "", "")
 	if pdcerr != nil {
 		return ipPort, nil, nil, fmt.Errorf("Could not make client: %v", pdcerr)
 	}

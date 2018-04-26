@@ -193,6 +193,9 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 	certFile := serverconf.GetDefault("DEFAULT", "cert_file", "")
 	keyFile := serverconf.GetDefault("DEFAULT", "key_file", "")
 
+	readAff := serverconf.GetDefault("app:proxy-server", "read_affinity", "")
+	writeAff := serverconf.GetDefault("app:proxy-server", "write_affinity", "")
+	writeAffCount := serverconf.GetDefault("app:proxy-server", "write_affinity_node_count", "")
 	logLevelString := serverconf.GetDefault("app:proxy-server", "log_level", "INFO")
 	server.logLevel = zap.NewAtomicLevel()
 	server.logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
@@ -204,7 +207,8 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 	if err != nil {
 		return ipPort, nil, nil, err
 	}
-	server.proxyDirectClient, err = client.NewProxyDirectClient(policies, cnf, server.logger, certFile, keyFile)
+	server.proxyDirectClient, err = client.NewProxyDirectClient(
+		policies, cnf, server.logger, certFile, keyFile, readAff, writeAff, writeAffCount)
 	if err != nil {
 		return ipPort, nil, nil, fmt.Errorf("Error setting up proxyDirectClient: %v", err)
 	}
