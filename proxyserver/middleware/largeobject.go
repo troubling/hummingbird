@@ -146,19 +146,6 @@ func (x *xloForwardBodyWriter) Write(b []byte) (int, error) {
 	return x.ResponseWriter.Write(b)
 }
 
-type xloCaptureWriter struct {
-	status int
-	body   []byte
-	header http.Header
-}
-
-func (x *xloCaptureWriter) Header() http.Header    { return x.header }
-func (x *xloCaptureWriter) WriteHeader(status int) { x.status = status }
-func (x *xloCaptureWriter) Write(b []byte) (int, error) {
-	x.body = append(x.body, b...)
-	return len(b), nil
-}
-
 func needToRefetchManifest(sw *xloIdentifyWriter, request *http.Request) bool {
 	if request.Method == "HEAD" {
 		return true
@@ -270,7 +257,7 @@ func (xlo *xloMiddleware) buildSloManifest(request *http.Request, manPath string
 	if err != nil {
 		return manifest, http.StatusInternalServerError, err
 	}
-	swRefetch := &xloCaptureWriter{header: make(http.Header)}
+	swRefetch := NewCaptureWriter()
 	ctx.serveHTTPSubrequest(swRefetch, newReq)
 	if swRefetch.status != 200 && swRefetch.body == nil {
 		return nil, swRefetch.status, errors.New("Error fetching manifest")
@@ -285,7 +272,7 @@ func (xlo *xloMiddleware) buildDloManifest(sw *xloIdentifyWriter, request *http.
 	if err != nil {
 		return manifest, 500, err
 	}
-	swRefetch := &xloCaptureWriter{header: make(http.Header)}
+	swRefetch := NewCaptureWriter()
 	ctx.serveHTTPSubrequest(swRefetch, newReq)
 	if swRefetch.status != 200 || swRefetch.body == nil {
 		return nil, swRefetch.status, fmt.Errorf("Error %d fetching manifest", swRefetch.status)
@@ -544,7 +531,7 @@ func (xlo *xloMiddleware) handleSloPut(writer http.ResponseWriter, request *http
 			ctx.Logger.Error("Couldn't create http.Request", zap.Error(err))
 			return
 		}
-		pw := &xloCaptureWriter{header: make(http.Header)}
+		pw := NewCaptureWriter()
 		ctx.serveHTTPSubrequest(pw, newReq)
 		if pw.status != 200 {
 			errs = append(errs, fmt.Sprintf("%d %s response on segment: %s", pw.status, http.StatusText(pw.status), newPath))
@@ -646,7 +633,7 @@ func (xlo *xloMiddleware) deleteAllSegments(w http.ResponseWriter, request *http
 		if err != nil {
 			return fmt.Errorf("error building subrequest: %s", err)
 		}
-		sw := &xloCaptureWriter{header: make(http.Header)}
+		sw := NewCaptureWriter()
 		ctx.serveHTTPSubrequest(sw, newReq)
 	}
 	return nil
