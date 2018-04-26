@@ -237,6 +237,7 @@ func (rs *ringScan) runOnce() time.Duration {
 			}
 		}
 	}
+	fullpass := true
 	if rs.fastScan {
 		var wg sync.WaitGroup
 		fastScanURLs := make(chan string, rs.fastScanConcurrency)
@@ -263,6 +264,7 @@ func (rs *ringScan) runOnce() time.Duration {
 		for _, url := range urls {
 			select {
 			case <-rs.aa.fastRingScan:
+				fullpass = false
 				rs.aa.fastRingScan <- struct{}{}
 				break STANDARDSCAN
 			case <-time.After(rs.delay):
@@ -272,7 +274,7 @@ func (rs *ringScan) runOnce() time.Duration {
 	}
 	close(cancel)
 	<-progressDone
-	if !rs.fastScan {
+	if !rs.fastScan && fullpass && delays > 0 {
 		rs.delay = rs.passTimeTarget / time.Duration(delays)
 	}
 	sleepFor := time.Until(start.Add(rs.passTimeTarget))
