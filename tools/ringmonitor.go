@@ -68,6 +68,14 @@ func (rm *ringMonitor) runForever() {
 	}
 }
 
+type ringTaskInstance struct {
+	typ           string
+	policy        int
+	ring          ring.RingMD5
+	previousMD5   string
+	nextRebalance time.Time
+}
+
 func (rm *ringMonitor) runOnce() time.Duration {
 	start := time.Now()
 	logger := rm.aa.logger.With(zap.String("process", "ring monitor"))
@@ -78,20 +86,13 @@ func (rm *ringMonitor) runOnce() time.Duration {
 	var delays int64
 	var errors int64
 	var partitionCopiesChanged int64
-	type ringTask struct {
-		typ           string
-		policy        int
-		ring          ring.RingMD5
-		previousMD5   string
-		nextRebalance time.Time
-	}
-	var ringTasks []*ringTask
+	var ringTasks []*ringTaskInstance
 	ryng, err := rm.GetRingMD5("account", 0)
 	if err != nil {
 		errors++
 		logger.Error("could not load ring", zap.String("type", "account"), zap.Int("policy", 0), zap.Error(err))
 	} else {
-		ringTasks = append(ringTasks, &ringTask{
+		ringTasks = append(ringTasks, &ringTaskInstance{
 			typ:  "account",
 			ring: ryng,
 		})
@@ -101,7 +102,7 @@ func (rm *ringMonitor) runOnce() time.Duration {
 		errors++
 		logger.Error("could not load ring", zap.String("type", "container"), zap.Int("policy", 0), zap.Error(err))
 	} else {
-		ringTasks = append(ringTasks, &ringTask{
+		ringTasks = append(ringTasks, &ringTaskInstance{
 			typ:  "container",
 			ring: ryng,
 		})
@@ -114,7 +115,7 @@ func (rm *ringMonitor) runOnce() time.Duration {
 				logger.Error("could not load ring", zap.String("type", "object"), zap.Int("policy", policy.Index), zap.Error(err))
 				continue
 			}
-			ringTasks = append(ringTasks, &ringTask{
+			ringTasks = append(ringTasks, &ringTaskInstance{
 				typ:    "object",
 				policy: policy.Index,
 				ring:   ryng,
@@ -154,57 +155,8 @@ func (rm *ringMonitor) runOnce() time.Duration {
 			}
 		}
 		if ringTask.ring.MD5() == ringTask.previousMD5 && !ringTask.nextRebalance.IsZero() && time.Now().After(ringTask.nextRebalance) {
-			ringBuilder, ringBuilderFilePath, err := ring.GetRingBuilder(ringTask.typ, ringTask.policy)
-			if err != nil {
-				logger.Error("Could not find builder", zap.String("type", ringTask.typ), zap.Int("policy", ringTask.policy), zap.Error(err))
-				continue
-			}
-			ringBuilderLock, err := ring.LockBuilderPath(ringBuilderFilePath)
-			if err != nil {
-				logger.Error("Could not lock builder path", zap.String("type", ringTask.typ), zap.Int("policy", ringTask.policy), zap.String("ring builder file path", ringBuilderFilePath), zap.Error(err))
-				continue
-			}
-			if !func() bool { // to get the localized defer
-				defer ringBuilderLock.Close()
-				ringBuilder, ringBuilderFilePath, err = ring.GetRingBuilder(ringTask.typ, ringTask.policy)
-				if err != nil {
-					logger.Error("Could not find builder after lock", zap.String("type", ringTask.typ), zap.Int("policy", ringTask.policy), zap.Error(err))
-					return false
-				}
-				var changedReplicas int
-				changedReplicas, _, _, err = ring.Rebalance(ringBuilderFilePath, false, false, true)
-				if err != nil {
-					logger.Error("Error while rebalancing", zap.String("type", ringTask.typ), zap.Int("policy", ringTask.policy), zap.String("path", ringBuilderFilePath), zap.Error(err))
-					return false
-				}
-				md5BeforeRebalance := ringTask.ring.MD5()
-				if ringTask.ring, err = rm.GetRingMD5(ringTask.typ, ringTask.policy); err != nil {
-					atomic.AddInt64(&errors, 1)
-					taskLogger.Error("could not load modified ring", zap.Error(err))
-					return false
-				}
-				// So we don't get stuck rebalancing a ring by tiny amounts for forever:
-				settled := float64(changedReplicas)/(float64(ringBuilder.Parts)*ringBuilder.Replicas) < 0.01
-				if settled {
-					for _, dev := range ringTask.ring.AllDevices() {
-						if dev == nil {
-							continue
-						}
-						if dev.Weight == 0 && ringTask.ring.AssignmentCount(dev.Id) > 0 {
-							settled = false
-							break
-						}
-					}
-				}
-				if settled {
-					rm.aa.db.addRingLog(ringTask.typ, ringTask.policy, fmt.Sprintf("rebalanced due to schedule; now settled"))
-					rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, md5BeforeRebalance, time.Time{})
-				} else {
-					rm.aa.db.addRingLog(ringTask.typ, ringTask.policy, fmt.Sprintf("rebalanced due to schedule"))
-					rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, md5BeforeRebalance, time.Now().Add(time.Hour*time.Duration(ringBuilder.MinPartHours)+randomDuration(time.Minute, 15*time.Minute)))
-				}
-				return true
-			}() {
+			if !rm.rebalance(taskLogger, ringTask) {
+				atomic.AddInt64(&errors, 1)
 				continue
 			}
 		}
@@ -320,6 +272,57 @@ func (rm *ringMonitor) GetRingMD5(typ string, policy int) (ring.RingMD5, error) 
 	}
 	rm.ringMD5Cache[typ][policy] = ryng
 	return ryng, nil
+}
+
+func (rm *ringMonitor) rebalance(logger *zap.Logger, ringTask *ringTaskInstance) bool {
+	ringBuilder, ringBuilderFilePath, err := ring.GetRingBuilder(ringTask.typ, ringTask.policy)
+	if err != nil {
+		logger.Error("Could not find builder", zap.Error(err))
+		return false
+	}
+	ringBuilderLock, err := ring.LockBuilderPath(ringBuilderFilePath)
+	if err != nil {
+		logger.Error("Could not lock builder path", zap.String("ring builder file path", ringBuilderFilePath), zap.Error(err))
+		return false
+	}
+	defer ringBuilderLock.Close()
+	ringBuilder, ringBuilderFilePath, err = ring.GetRingBuilder(ringTask.typ, ringTask.policy)
+	if err != nil {
+		logger.Error("Could not find builder after lock", zap.Error(err))
+		return false
+	}
+	var changedReplicas int
+	changedReplicas, _, _, err = ring.Rebalance(ringBuilderFilePath, false, false, true)
+	if err != nil {
+		logger.Error("Error while rebalancing", zap.String("path", ringBuilderFilePath), zap.Error(err))
+		return false
+	}
+	md5BeforeRebalance := ringTask.ring.MD5()
+	if ringTask.ring, err = rm.GetRingMD5(ringTask.typ, ringTask.policy); err != nil {
+		logger.Error("could not load modified ring", zap.Error(err))
+		return false
+	}
+	// So we don't get stuck rebalancing a ring by tiny amounts for forever:
+	settled := float64(changedReplicas)/(float64(ringBuilder.Parts)*ringBuilder.Replicas) < 0.01
+	if settled {
+		for _, dev := range ringTask.ring.AllDevices() {
+			if dev == nil {
+				continue
+			}
+			if dev.Weight == 0 && ringTask.ring.AssignmentCount(dev.Id) > 0 {
+				settled = false
+				break
+			}
+		}
+	}
+	if settled {
+		rm.aa.db.addRingLog(ringTask.typ, ringTask.policy, fmt.Sprintf("rebalanced due to schedule; now settled"))
+		rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, md5BeforeRebalance, time.Time{})
+	} else {
+		rm.aa.db.addRingLog(ringTask.typ, ringTask.policy, fmt.Sprintf("rebalanced due to schedule"))
+		rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, md5BeforeRebalance, time.Now().Add(time.Hour*time.Duration(ringBuilder.MinPartHours)+randomDuration(time.Minute, 15*time.Minute)))
+	}
+	return true
 }
 
 func randomDuration(min, max time.Duration) time.Duration {
