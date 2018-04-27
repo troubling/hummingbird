@@ -86,6 +86,16 @@ func splitSegPath(thePath string) (string, string, error) {
 	return segPathParts[0], segPathParts[1], nil
 }
 
+type etagQuoteWriter struct {
+	http.ResponseWriter
+}
+
+func (w *etagQuoteWriter) WriteHeader(status int) {
+	etag := w.Header().Get("ETag")
+	w.Header().Set("ETag", fmt.Sprintf("\"%s\"", strings.Trim(etag, "\"")))
+	w.ResponseWriter.WriteHeader(status)
+}
+
 type xloIdentifyWriter struct {
 	http.ResponseWriter
 	funcName string
@@ -626,8 +636,25 @@ func (xlo *xloMiddleware) handleSloPut(writer http.ResponseWriter, request *http
 	request.Header.Set("X-Object-Sysmeta-Slo-Size", fmt.Sprintf("%d", totalSize))
 	request.Header.Set("Etag", fmt.Sprintf("%x", md5.Sum(newBody)))
 	request.Header.Set("Content-Length", strconv.Itoa(len(newBody)))
-	xlo.next.ServeHTTP(writer, request)
+
+	etagWriter := &etagQuoteWriter{ResponseWriter: writer}
+	xlo.next.ServeHTTP(etagWriter, request)
 	return
+}
+
+func segmentIsSlo(request *http.Request, path string) bool {
+	ctx := GetProxyContext(request)
+	newReq, err := ctx.newSubrequest("HEAD", path, http.NoBody, request, "slo")
+	if err != nil {
+		ctx.Logger.Error("error building subrequest", zap.Error(err))
+		return false
+	}
+	writer := &xloCaptureWriter{header: make(http.Header)}
+	ctx.serveHTTPSubrequest(writer, newReq)
+	if writer.Header().Get("X-Static-Large-Object") == "True" {
+		return true
+	}
+	return false
 }
 
 func (xlo *xloMiddleware) deleteAllSegments(w http.ResponseWriter, request *http.Request, manifest []segItem) error {
@@ -641,7 +668,10 @@ func (xlo *xloMiddleware) deleteAllSegments(w http.ResponseWriter, request *http
 		if err != nil {
 			return fmt.Errorf("invalid slo item: %s: %s", si.Name, err)
 		}
-		newPath := fmt.Sprintf("/v1/%s/%s/%s?multipart-manifest=delete", pathMap["account"], container, object)
+		newPath := fmt.Sprintf("/v1/%s/%s/%s", pathMap["account"], container, object)
+		if segmentIsSlo(request, newPath) {
+			newPath += "?multipart-manifest=delete"
+		}
 		newReq, err := ctx.newSubrequest("DELETE", newPath, http.NoBody, request, "slo")
 		if err != nil {
 			return fmt.Errorf("error building subrequest: %s", err)
