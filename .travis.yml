@@ -76,8 +76,8 @@ deploy:
   skip_cleanup: true
   overwrite: true
   on:
-    branch: master
     tags: true
+    condition: $HYBRID = NO
 
 deploy:
   provider: pages
