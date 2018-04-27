@@ -122,6 +122,8 @@ func TestGetObjectsToReplicate(t *testing.T) {
 	timestamp := time.Now().UnixNano()
 	body := "just testing"
 	hsh0 := md5hash("object0")
+	partition, _ := strconv.ParseInt(hsh0[:2], 16, 64)
+	partition >>= 2
 	f, err := idb.TempFile(hsh0, 0, timestamp, int64(len(body)), true)
 	require.Nil(t, err)
 	f.Write([]byte(body))
@@ -132,8 +134,11 @@ func TestGetObjectsToReplicate(t *testing.T) {
 	cancel := make(chan struct{})
 	defer close(cancel)
 	go ece.GetObjectsToReplicate(
-		PriorityRepJob{FromDevice: &ring.Device{Device: "sdb1"},
-			ToDevice: &ring.Device{Device: "sdb2", Scheme: "http", Port: port, Ip: host}}, osc, cancel)
+		PriorityRepJob{
+			Partition:  uint64(partition),
+			FromDevice: &ring.Device{Device: "sdb1"},
+			ToDevice:   &ring.Device{Device: "sdb2", Scheme: "http", Port: port, Ip: host},
+		}, osc, cancel)
 	os := <-osc
 	require.Equal(t, "cow", os.Metadata()["moo"])
 	os = <-osc
