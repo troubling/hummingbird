@@ -70,21 +70,19 @@ script:
     fi
 
 deploy:
-  provider: releases
-  api_key: $GITHUB_TOKEN
-  file: /usr/local/bin/hummingbird
-  skip_cleanup: true
-  overwrite: true
-  on:
-    tags: true
-    condition: $HYBRID = NO
-
-deploy:
-  provider: pages
-  github-token: $GITHUB_TOKEN
-  skip-cleanup: true
-  local-dir: output
-  verbose: true
-  on:
-    branch: master
-    condition: $HYBRID = NO
+  - provider: releases
+    api_key: $GITHUB_TOKEN
+    file: /usr/local/bin/hummingbird
+    skip_cleanup: true
+    overwrite: true
+    on:
+      tags: true
+      condition: $HYBRID = NO
+  - provider: pages
+    github-token: $GITHUB_TOKEN
+    skip-cleanup: true
+    local-dir: output
+    verbose: true
+    on:
+      branch: master
+      condition: $HYBRID = NO
