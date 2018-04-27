@@ -29,15 +29,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/tracing"
+	"go.uber.org/zap"
 	"golang.org/x/net/http2"
 )
 
 type DirectObject struct {
 	Url    string
 	Data   []byte
-	Client *http.Client
+	Client common.HTTPClient
 }
 
 func (obj *DirectObject) Put() bool {
@@ -90,7 +93,7 @@ func (obj *DirectObject) Delete() bool {
 	return err == nil && resp.StatusCode/100 == 2
 }
 
-func GetDevices(client *http.Client, address string, checkMounted bool) []string {
+func GetDevices(client common.HTTPClient, address string, checkMounted bool) []string {
 	deviceUrl := fmt.Sprintf("%srecon/diskusage", address)
 	req, err := http.NewRequest("GET", deviceUrl, nil)
 	resp, err := client.Do(req)
@@ -129,6 +132,8 @@ func RunDBench(args []string) {
 		fmt.Println("    #drive_list = sdb1,sdb2")
 		fmt.Println("    #cert_file = /etc/hummingbird/server.crt")
 		fmt.Println("    #key_file = /etc/hummingbird/server.key")
+		fmt.Println("    #[tracing]")
+		fmt.Println("    #agent_host_port=127.0.0.1:6831")
 		os.Exit(1)
 	}
 
@@ -178,11 +183,30 @@ func RunDBench(args []string) {
 			os.Exit(1)
 		}
 	}
-	client := &http.Client{
+	var c common.HTTPClient
+	httpClient := &http.Client{
 		Transport: transport,
 		Timeout:   10 * time.Second,
 	}
-	deviceList := GetDevices(client, address, checkMounted)
+	c = httpClient
+	if benchconf.HasSection("tracing") {
+		clientTracer, clientTraceCloser, err := tracing.Init("dbench-client", zap.NewNop(), benchconf.GetSection("tracing"))
+		if err != nil {
+			fmt.Printf("Error setting up tracer: %v", err)
+			os.Exit(1)
+		}
+		if clientTraceCloser != nil {
+			defer clientTraceCloser.Close()
+		}
+		enableHTTPTrace := benchconf.GetBool("tracing", "enable_httptrace", true)
+		c, err = client.NewTracingClient(clientTracer, httpClient, enableHTTPTrace)
+		if err != nil {
+			fmt.Printf("Error setting up tracing client: %v", err)
+			os.Exit(1)
+		}
+	}
+
+	deviceList := GetDevices(c, address, checkMounted)
 	if driveList != "" {
 		deviceList = strings.Split(driveList, ",")
 	}
@@ -196,7 +220,7 @@ func RunDBench(args []string) {
 		objects[i] = &DirectObject{
 			Url:    fmt.Sprintf("%s%s/%d/%s/%s/%d", address, device, part, "a", "c", rand.Int63()),
 			Data:   data,
-			Client: client,
+			Client: c,
 		}
 		deviceParts[fmt.Sprintf("%s/%d", device, part)] = true
 	}
@@ -212,7 +236,7 @@ func RunDBench(args []string) {
 	replWork := make([]func() bool, 0)
 	for replKey := range deviceParts {
 		devicePart := strings.Split(replKey, "/")
-		replWork = append(replWork, (&DirectObject{Url: fmt.Sprintf("%s%s/%s", address, devicePart[0], devicePart[1]), Client: client}).Replicate)
+		replWork = append(replWork, (&DirectObject{Url: fmt.Sprintf("%s%s/%s", address, devicePart[0], devicePart[1]), Client: c}).Replicate)
 	}
 	if doReplicates {
 		DoJobs("REPLICATE", replWork, concurrency)

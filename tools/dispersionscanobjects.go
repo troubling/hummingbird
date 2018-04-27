@@ -7,6 +7,7 @@ package tools
 // report_interval = 600    # seconds between progress reports
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
@@ -126,7 +127,7 @@ func (dso *dispersionScanObjects) scanDispersionObjects(logger *zap.Logger, poli
 	if err := dso.aa.db.clearDispersionScanFailures("object", policy.Index); err != nil {
 		logger.Error("clearDispersionScanFailures", zap.Int("policy", policy.Index), zap.Error(err))
 	}
-	resp := dso.aa.hClient.HeadObject(AdminAccount, container, "object-init", nil)
+	resp := dso.aa.hClient.HeadObject(context.Background(), AdminAccount, container, "object-init", nil)
 	io.Copy(ioutil.Discard, resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
@@ -141,7 +142,7 @@ func (dso *dispersionScanObjects) scanDispersionObjects(logger *zap.Logger, poli
 	}
 	var delays int64
 	serviceChans := map[string]chan *checkInfo{}
-	objectRing, resp := dso.aa.hClient.ObjectRingFor(AdminAccount, container)
+	objectRing, resp := dso.aa.hClient.ObjectRingFor(context.Background(), AdminAccount, container)
 	if resp != nil {
 		io.Copy(ioutil.Discard, resp.Body)
 		resp.Body.Close()
@@ -178,7 +179,7 @@ func (dso *dispersionScanObjects) scanDispersionObjects(logger *zap.Logger, poli
 	}()
 	var marker string
 	for {
-		resp := dso.aa.hClient.GetContainer(AdminAccount, container, map[string]string{
+		resp := dso.aa.hClient.GetContainer(context.Background(), AdminAccount, container, map[string]string{
 			"format": "json",
 			"marker": marker,
 		}, http.Header{})

@@ -59,7 +59,7 @@ type expectResponder struct {
 // Expector helps organize a group of "Expect: 100-continue" requests.  It attempts to get all requests
 // to a state where they've either given a non-100 response or they are ready to receive upload bodies.
 type Expector struct {
-	client        *http.Client
+	client        HTTPClient
 	ready         chan int
 	responded     chan expectResponder
 	cancel        chan struct{}
@@ -69,9 +69,9 @@ type Expector struct {
 }
 
 // NewExpector returns an Expector object that uses the given http client.
-func NewExpector(client *http.Client) *Expector {
+func NewExpector(c HTTPClient) *Expector {
 	e := &Expector{
-		client:    client,
+		client:    c,
 		ready:     make(chan int),
 		responded: make(chan expectResponder),
 		cancel:    make(chan struct{}),

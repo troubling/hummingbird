@@ -20,6 +20,7 @@ package containerserver
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -36,12 +37,15 @@ import (
 	"time"
 
 	"github.com/justinas/alice"
+	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/common/tracing"
 	"github.com/troubling/hummingbird/middleware"
 	"github.com/uber-go/tally"
 	promreporter "github.com/uber-go/tally/prometheus"
@@ -58,24 +62,28 @@ var (
 
 // Replicator is the container replicator daemon object
 type Replicator struct {
-	checkMounts    bool
-	deviceRoot     string
-	reconCachePath string
-	logger         srv.LowLevelLogger
-	serverPort     int
-	Ring           ring.Ring
-	accountRing    ring.Ring
-	perUsync       int64
-	maxUsyncs      int
-	concurrencySem chan struct{}
-	sendStat       chan statUpdate
-	checkin        chan string
-	startRun       chan string
-	client         *http.Client
-	runningDevices map[string]*replicationDevice
-	reclaimAge     int64
-	logLevel       zap.AtomicLevel
-	metricsCloser  io.Closer
+	checkMounts       bool
+	deviceRoot        string
+	reconCachePath    string
+	logger            srv.LowLevelLogger
+	serverPort        int
+	Ring              ring.Ring
+	accountRing       ring.Ring
+	perUsync          int64
+	maxUsyncs         int
+	concurrencySem    chan struct{}
+	sendStat          chan statUpdate
+	checkin           chan string
+	startRun          chan string
+	client            common.HTTPClient
+	runningDevices    map[string]*replicationDevice
+	reclaimAge        int64
+	logLevel          zap.AtomicLevel
+	metricsCloser     io.Closer
+	traceCloser       io.Closer
+	tracer            opentracing.Tracer
+	clientTracer      opentracing.Tracer
+	clientTraceCloser io.Closer
 }
 
 type statUpdate struct {
@@ -244,6 +252,7 @@ func (rd *replicationDevice) replicateDatabaseToDevice(dev *ring.Device, c Repli
 			accountNodes := rd.r.accountRing.GetNodes(accountPartition)
 			accountNode := accountNodes[ringIndex%len(accountNodes)]
 			if accountUpdateHelper(
+				context.Background(),
 				info,
 				accountNode.Scheme,
 				fmt.Sprintf("%s:%d", accountNode.Ip, accountNode.Port),
@@ -517,12 +526,18 @@ func (server *Replicator) GetHandler(config conf.Config, metricsPrefix string) h
 	router.Get("/healthcheck", commonHandlers.ThenFunc(server.HealthcheckHandler))
 	router.Get("/debug/pprof/:parm", http.DefaultServeMux)
 	router.Post("/debug/pprof/:parm", http.DefaultServeMux)
-	return alice.New(middleware.Metrics(metricsScope)).Then(router)
+	return alice.New(middleware.Metrics(metricsScope), middleware.ServerTracer(server.tracer)).Then(router)
 }
 
 func (server *Replicator) Finalize() {
 	if server.metricsCloser != nil {
 		server.metricsCloser.Close()
+	}
+	if server.traceCloser != nil {
+		server.traceCloser.Close()
+	}
+	if server.clientTraceCloser != nil {
+		server.clientTraceCloser.Close()
 	}
 }
 
@@ -720,6 +735,10 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 			return ipPort, nil, nil, fmt.Errorf("Error setting up http2: %v", err)
 		}
 	}
+	c := &http.Client{
+		Timeout:   time.Minute * 15,
+		Transport: transport,
+	}
 	server := &Replicator{
 		runningDevices: make(map[string]*replicationDevice),
 		perUsync:       3000,
@@ -736,11 +755,23 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 		concurrencySem: make(chan struct{}, concurrency),
 		Ring:           ring,
 		accountRing:    accountRing,
-		client: &http.Client{
-			Timeout:   time.Minute * 15,
-			Transport: transport,
-		},
-		logLevel: logLevel,
+		client:         c,
+		logLevel:       logLevel,
+	}
+	if serverconf.HasSection("tracing") {
+		server.tracer, server.traceCloser, err = tracing.Init("container-replicator", server.logger, serverconf.GetSection("tracing"))
+		if err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error setting up tracer: %v", err)
+		}
+		server.clientTracer, server.clientTraceCloser, err = tracing.Init("account-replicator-client", server.logger, serverconf.GetSection("tracing"))
+		if err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error setting up tracer: %v", err)
+		}
+		enableHTTPTrace := serverconf.GetBool("tracing", "enable_httptrace", true)
+		server.client, err = client.NewTracingClient(server.clientTracer, c, enableHTTPTrace)
+		if err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error setting up tracing client: %v", err)
+		}
 	}
 	ipPort = &srv.IpPort{Ip: ip, Port: port, CertFile: certFile, KeyFile: keyFile}
 	return ipPort, server, logger, nil

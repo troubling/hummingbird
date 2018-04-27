@@ -356,5 +356,5 @@ func (r *Replicator) GetHandler(config conf.Config, metricsPrefix string) http.H
 			})
 		}
 	}
-	return alice.New(middleware.Metrics(metricsScope)).Then(router)
+	return alice.New(middleware.Metrics(metricsScope), middleware.ServerTracer(r.tracer)).Then(router)
 }

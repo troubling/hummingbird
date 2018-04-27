@@ -26,6 +26,7 @@
 package tools
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"flag"
@@ -50,6 +51,7 @@ import (
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/common/tracing"
 	"github.com/troubling/hummingbird/middleware"
 	"github.com/troubling/hummingbird/objectserver"
 	"github.com/uber-go/tally"
@@ -546,19 +548,21 @@ func ObjectInfo(flags *flag.FlagSet, cnf srv.ConfigLoader) {
 }
 
 type AutoAdmin struct {
-	serverconf     conf.Config
-	logger         srv.LowLevelLogger
-	logLevel       zap.AtomicLevel
-	port           int
-	bindIp         string
-	client         *http.Client
-	hClient        client.ProxyClient
-	policies       conf.PolicyList
-	metricsScope   tally.Scope
-	metricsCloser  io.Closer
-	runningForever bool
-	db             *dbInstance
-	fastRingScan   chan struct{}
+	serverconf        conf.Config
+	logger            srv.LowLevelLogger
+	logLevel          zap.AtomicLevel
+	port              int
+	bindIp            string
+	client            common.HTTPClient
+	hClient           client.ProxyClient
+	policies          conf.PolicyList
+	metricsScope      tally.Scope
+	metricsCloser     io.Closer
+	pdcCloser         io.Closer
+	clientTraceCloser io.Closer
+	runningForever    bool
+	db                *dbInstance
+	fastRingScan      chan struct{}
 }
 
 func (server *AutoAdmin) Type() string {
@@ -610,6 +614,12 @@ func (server *AutoAdmin) Finalize() {
 	if server.metricsCloser != nil {
 		server.metricsCloser.Close()
 	}
+	if server.clientTraceCloser != nil {
+		server.clientTraceCloser.Close()
+	}
+	if server.pdcCloser != nil {
+		server.pdcCloser.Close()
+	}
 }
 
 func (server *AutoAdmin) HealthcheckHandler(writer http.ResponseWriter, request *http.Request) {
@@ -658,7 +668,7 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 	port := int(serverconf.GetInt("andrewd", "bind_port", common.DefaultAndrewdPort))
 	certFile := serverconf.GetDefault("andrewd", "cert_file", "")
 	keyFile := serverconf.GetDefault("andrewd", "key_file", "")
-	pdc, pdcerr := client.NewProxyDirectClient(policies, srv.DefaultConfigLoader{}, logger, certFile, keyFile, "", "", "")
+	pdc, pdcerr := client.NewProxyDirectClient(policies, srv.DefaultConfigLoader{}, logger, certFile, keyFile, "", "", "", serverconf)
 	if pdcerr != nil {
 		return ipPort, nil, nil, fmt.Errorf("Could not make client: %v", pdcerr)
 	}
@@ -680,9 +690,13 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 			panic(fmt.Sprintf("Error setting up http2: %v", err))
 		}
 	}
+	httpClient := &http.Client{
+		Transport: transport,
+		Timeout:   10 * time.Second,
+	}
 	a := &AutoAdmin{
 		serverconf:     serverconf,
-		client:         &http.Client{Timeout: 10 * time.Second, Transport: transport},
+		client:         httpClient,
 		hClient:        client.NewProxyClient(pdc, nil, nil, logger),
 		port:           port,
 		bindIp:         ip,
@@ -697,6 +711,19 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 	if err != nil {
 		return ipPort, nil, nil, err
 	}
+	if serverconf.HasSection("tracing") {
+		clientTracer, clientTraceCloser, err := tracing.Init("andrewd", zap.NewNop(), serverconf.GetSection("tracing"))
+		if err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error setting up tracer: %v", err)
+		}
+		a.clientTraceCloser = clientTraceCloser
+		a.pdcCloser = pdc.ClientTraceCloser
+		enableHTTPTrace := serverconf.GetBool("tracing", "enable_httptrace", true)
+		a.client, err = client.NewTracingClient(clientTracer, httpClient, enableHTTPTrace)
+		if err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error setting up tracing client: %v", err)
+		}
+	}
 
 	a.metricsScope, a.metricsCloser = tally.NewRootScope(tally.ScopeOptions{
 		Prefix:         "hb_andrewd",
@@ -707,6 +734,7 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 
 	ipPort = &srv.IpPort{Ip: ip, Port: port, CertFile: certFile, KeyFile: keyFile}
 	resp := a.hClient.PutAccount(
+		context.Background(),
 		AdminAccount,
 		common.Map2Headers(map[string]string{
 			"Content-Length": "0",

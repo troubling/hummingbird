@@ -30,11 +30,14 @@ import (
 	"time"
 
 	"github.com/justinas/alice"
+	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/common/tracing"
 	"github.com/troubling/hummingbird/middleware"
 	"github.com/uber-go/tally"
 	promreporter "github.com/uber-go/tally/prometheus"
@@ -44,21 +47,25 @@ import (
 
 // ContainerServer contains all of the information for a running container server.
 type ContainerServer struct {
-	driveRoot        string
-	hashPathPrefix   string
-	hashPathSuffix   string
-	reconCachePath   string
-	logger           srv.LowLevelLogger
-	logLevel         zap.AtomicLevel
-	diskInUse        *common.KeyedLimit
-	checkMounts      bool
-	containerEngine  ContainerEngine
-	updateClient     *http.Client
-	autoCreatePrefix string
-	syncRealms       conf.SyncRealmList
-	defaultPolicy    int
-	policyList       conf.PolicyList
-	metricsCloser    io.Closer
+	driveRoot               string
+	hashPathPrefix          string
+	hashPathSuffix          string
+	reconCachePath          string
+	logger                  srv.LowLevelLogger
+	logLevel                zap.AtomicLevel
+	diskInUse               *common.KeyedLimit
+	checkMounts             bool
+	containerEngine         ContainerEngine
+	updateClient            common.HTTPClient
+	updateClientTracer      opentracing.Tracer
+	updateClientTraceCloser io.Closer
+	autoCreatePrefix        string
+	syncRealms              conf.SyncRealmList
+	defaultPolicy           int
+	policyList              conf.PolicyList
+	metricsCloser           io.Closer
+	traceCloser             io.Closer
+	tracer                  opentracing.Tracer
 }
 
 var saveHeaders = map[string]bool{
@@ -96,6 +103,12 @@ func (server *ContainerServer) Background(flags *flag.FlagSet) chan struct{} {
 func (server *ContainerServer) Finalize() {
 	if server.metricsCloser != nil {
 		server.metricsCloser.Close()
+	}
+	if server.traceCloser != nil {
+		server.traceCloser.Close()
+	}
+	if server.updateClientTraceCloser != nil {
+		server.updateClientTraceCloser.Close()
 	}
 }
 
@@ -598,7 +611,7 @@ func (server *ContainerServer) GetHandler(config conf.Config, metricsPrefix stri
 	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Invalid path: %s", r.URL.Path), http.StatusBadRequest)
 	})
-	return alice.New(middleware.Metrics(metricsScope)).Append(middleware.GrepObject).Then(router)
+	return alice.New(middleware.Metrics(metricsScope), middleware.GrepObject, middleware.ServerTracer(server.tracer)).Then(router)
 }
 
 // NewServer parses configs and command-line flags, returning a configured server object and the ip and port it should bind on.
@@ -632,7 +645,6 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 	if server.logger, err = srv.SetupLogger("container-server", &server.logLevel, flags); err != nil {
 		return ipPort, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
-
 	server.diskInUse = common.NewKeyedLimit(serverconf.GetLimit("app:container-server", "disk_limit", 0, 0))
 	bindIP := serverconf.GetDefault("app:container-server", "bind_ip", "0.0.0.0")
 	bindPort := int(serverconf.GetInt("app:container-server", "bind_port", common.DefaultContainerServerPort))
@@ -658,9 +670,25 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 			return ipPort, nil, nil, fmt.Errorf("Error setting up http2: %v", err)
 		}
 	}
-	server.updateClient = &http.Client{
+	c := &http.Client{
 		Timeout:   nodeTimeout,
 		Transport: transport,
+	}
+	server.updateClient = c
+	if serverconf.HasSection("tracing") {
+		server.tracer, server.traceCloser, err = tracing.Init("containerserver", server.logger, serverconf.GetSection("tracing"))
+		if err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error setting up tracer: %v", err)
+		}
+		server.updateClientTracer, server.updateClientTraceCloser, err = tracing.Init("container-updateclient", server.logger, serverconf.GetSection("tracing"))
+		if err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error setting up tracer: %v", err)
+		}
+		enableHTTPTrace := serverconf.GetBool("tracing", "enable_httptrace", true)
+		server.updateClient, err = client.NewTracingClient(server.updateClientTracer, c, enableHTTPTrace)
+		if err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error setting up tracing client: %v", err)
+		}
 	}
 	ipPort = &srv.IpPort{Ip: bindIP, Port: bindPort, CertFile: certFile, KeyFile: keyFile}
 	return ipPort, server, server.logger, nil

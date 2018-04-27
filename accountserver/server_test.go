@@ -49,7 +49,6 @@ func makeTestServer() (http.Handler, func(), error) {
 		logLevel:         zap.NewAtomicLevelAt(zapcore.InfoLevel),
 		logger:           zap.NewNop(),
 		checkMounts:      false,
-		updateClient:     http.DefaultClient,
 		accountEngine:    newLRUEngine(dir, "changeme", "changeme", 32),
 		diskInUse:        common.NewKeyedLimit(2, 2),
 		autoCreatePrefix: ".",

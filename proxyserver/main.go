@@ -25,11 +25,14 @@ import (
 	"strings"
 	"time"
 
+	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/common/tracing"
+	globalmiddleware "github.com/troubling/hummingbird/middleware"
 	"github.com/troubling/hummingbird/proxyserver/middleware"
 
 	"github.com/justinas/alice"
@@ -46,6 +49,8 @@ type ProxyServer struct {
 	accountAutoCreate bool
 	proxyDirectClient *client.ProxyDirectClient
 	metricsCloser     io.Closer
+	traceCloser       io.Closer
+	tracer            opentracing.Tracer
 }
 
 func (server *ProxyServer) Type() string {
@@ -59,6 +64,12 @@ func (server *ProxyServer) Background(flags *flag.FlagSet) chan struct{} {
 func (server *ProxyServer) Finalize() {
 	if server.metricsCloser != nil {
 		server.metricsCloser.Close()
+	}
+	if server.traceCloser != nil {
+		server.traceCloser.Close()
+	}
+	if server.proxyDirectClient.ClientTraceCloser != nil {
+		server.proxyDirectClient.ClientTraceCloser.Close()
 	}
 }
 
@@ -167,7 +178,7 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 		}
 	}
 	pipeline := alice.New(middleware.NewContext(config.GetBool("debug", "debug_x_source_code", false),
-		server.mc, server.logger, server.proxyDirectClient))
+		server.mc, server.logger, server.proxyDirectClient), globalmiddleware.ServerTracer(server.tracer))
 	for _, m := range middlewares {
 		mid, err := m.construct(config.GetSection(m.section), metricsScope)
 		if err != nil {
@@ -203,12 +214,18 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 	if server.logger, err = srv.SetupLogger("proxy-server", &server.logLevel, flags); err != nil {
 		return ipPort, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
+	if serverconf.HasSection("tracing") {
+		server.tracer, server.traceCloser, err = tracing.Init("proxyserver", server.logger, serverconf.GetSection("tracing"))
+		if err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error setting up tracer: %v", err)
+		}
+	}
 	policies, err := cnf.GetPolicies()
 	if err != nil {
 		return ipPort, nil, nil, err
 	}
 	server.proxyDirectClient, err = client.NewProxyDirectClient(
-		policies, cnf, server.logger, certFile, keyFile, readAff, writeAff, writeAffCount)
+		policies, cnf, server.logger, certFile, keyFile, readAff, writeAff, writeAffCount, serverconf)
 	if err != nil {
 		return ipPort, nil, nil, fmt.Errorf("Error setting up proxyDirectClient: %v", err)
 	}

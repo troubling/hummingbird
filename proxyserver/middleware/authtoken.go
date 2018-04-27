@@ -25,13 +25,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
 type identity struct {
-	client          *http.Client
+	client          common.HTTPClient
 	authURL         string
 	authPlugin      string
 	projectDomainID string
@@ -370,7 +371,7 @@ func NewAuthToken(config conf.Section, metricsScope tally.Scope) (func(http.Hand
 				userName:        config.GetDefault("username", "swift"),
 				password:        config.GetDefault("password", "password"),
 				userAgent:       config.GetDefault("user_agent", "hummingbird-keystone-middleware/1.0"),
-				client: &http.Client{
+				client: &http.Client{ // TODO: Should we trace requests from this client?
 					Timeout: 5 * time.Second,
 				}},
 		}

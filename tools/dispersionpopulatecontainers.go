@@ -6,6 +6,7 @@ package tools
 // report_interval = 600 # seconds between progress reports
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -43,7 +44,7 @@ func (dpc *dispersionPopulateContainers) runForever() {
 func (dpc *dispersionPopulateContainers) runOnce() time.Duration {
 	start := time.Now()
 	logger := dpc.aa.logger.With(zap.String("process", "dispersion populate containers"))
-	resp := dpc.aa.hClient.HeadContainer(AdminAccount, "container-init", nil)
+	resp := dpc.aa.hClient.HeadContainer(context.Background(), AdminAccount, "container-init", nil)
 	io.Copy(ioutil.Discard, resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode/100 == 2 {
@@ -83,6 +84,7 @@ func (dpc *dispersionPopulateContainers) runOnce() time.Duration {
 	}()
 	for container := range containerNames {
 		resp := dpc.aa.hClient.PutContainer(
+			context.Background(),
 			AdminAccount,
 			container,
 			common.Map2Headers(map[string]string{
@@ -108,6 +110,7 @@ func (dpc *dispersionPopulateContainers) runOnce() time.Duration {
 	<-progressDone
 	if errors == 0 {
 		resp = dpc.aa.hClient.PutContainer(
+			context.Background(),
 			AdminAccount,
 			"container-init",
 			common.Map2Headers(map[string]string{

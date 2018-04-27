@@ -94,11 +94,11 @@ func TestUpdateDeleteAt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server.updateDeleteAt(req.Method, req.Header, deleteAtTime, vars, dl)
+	server.updateDeleteAt(req.Context(), req.Method, req.Header, deleteAtTime, vars, dl)
 	require.True(t, requestSent)
 
 	cs.Close()
-	server.updateDeleteAt(req.Method, req.Header, deleteAtTime, vars, dl)
+	server.updateDeleteAt(req.Context(), req.Method, req.Header, deleteAtTime, vars, dl)
 	expectedFile := filepath.Join(ts.root, "sda", "async_pending", "8fc", "02cc012fe572f27e455edbea32da78fc-12345.6789")
 	require.True(t, fs.Exists(expectedFile))
 	data, err := ioutil.ReadFile(expectedFile)
@@ -131,7 +131,7 @@ func TestUpdateDeleteAtNoHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server.updateDeleteAt(req.Method, req.Header, deleteAtTime, vars, zap.NewNop())
+	server.updateDeleteAt(req.Context(), req.Method, req.Header, deleteAtTime, vars, zap.NewNop())
 	expectedFile := filepath.Join(ts.root, "sda", "async_pending", "8fc", "02cc012fe572f27e455edbea32da78fc-12345.6789")
 	require.True(t, fs.Exists(expectedFile))
 	data, err := ioutil.ReadFile(expectedFile)
@@ -184,11 +184,11 @@ func TestUpdateContainer(t *testing.T) {
 		"Content-Length": "30",
 		"ETag":           "ffffffffffffffffffffffffffffffff",
 	}
-	server.updateContainer(metadata, req, vars, dl)
+	server.updateContainer(req.Context(), metadata, req, vars, dl)
 	require.True(t, requestSent)
 
 	cs.Close()
-	server.updateContainer(metadata, req, vars, dl)
+	server.updateContainer(req.Context(), metadata, req, vars, dl)
 	expectedFile := filepath.Join(ts.root, "sda", "async_pending", "099", "2f714cd91b0e5d803cde2012b01d7099-12345.6789")
 	require.True(t, fs.Exists(expectedFile))
 	data, err := ioutil.ReadFile(expectedFile)
@@ -230,11 +230,11 @@ func TestUpdateContainerNoHeaders(t *testing.T) {
 		"ETag":           "ffffffffffffffffffffffffffffffff",
 	}
 	dl := zap.NewNop()
-	server.updateContainer(metadata, req, vars, dl)
+	server.updateContainer(req.Context(), metadata, req, vars, dl)
 	require.False(t, requestSent)
 
 	cs.Close()
-	server.updateContainer(metadata, req, vars, dl)
+	server.updateContainer(req.Context(), metadata, req, vars, dl)
 	expectedFile := filepath.Join(ts.root, "sda", "async_pending", "099", "2f714cd91b0e5d803cde2012b01d7099-12345.6789")
 	require.False(t, fs.Exists(expectedFile))
 }

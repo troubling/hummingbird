@@ -70,7 +70,7 @@ func (d *devLimiter) waitForSomethingToFinish() {
 	<-d.somethingFinished
 }
 
-func SendPriRepJob(job *PriorityRepJob, client *http.Client) (string, bool) {
+func SendPriRepJob(job *PriorityRepJob, client common.HTTPClient) (string, bool) {
 	url := fmt.Sprintf("%s://%s:%d/priorityrep", job.FromDevice.Scheme, job.FromDevice.ReplicationIp, job.FromDevice.ReplicationPort)
 	jsonned, err := json.Marshal(job)
 	if err != nil {
@@ -112,7 +112,7 @@ func SendPriRepJob(job *PriorityRepJob, client *http.Client) (string, bool) {
 }
 
 // doPriRepJobs executes a list of PriorityRepJobs, limiting concurrent jobs per device to deviceMax.
-func doPriRepJobs(jobs []*PriorityRepJob, deviceMax int, client *http.Client) []uint64 {
+func doPriRepJobs(jobs []*PriorityRepJob, deviceMax int, client common.HTTPClient) []uint64 {
 	limiter := &devLimiter{inUse: make(map[int]int), max: deviceMax, somethingFinished: make(chan struct{}, 1)}
 	wg := sync.WaitGroup{}
 	badParts := []uint64{}
@@ -264,6 +264,7 @@ func doMoveParts(args []string, cnf srv.ConfigLoader) int {
 			return 1
 		}
 	}
+	// TODO: Do we want to trace requests with this client?
 	client := &http.Client{Timeout: time.Hour,
 		Transport: transport,
 	}
@@ -409,6 +410,7 @@ func RestoreDevice(args []string, cnf srv.ConfigLoader) {
 			return
 		}
 	}
+	// TODO: Do we want to trace requests with this client?
 	client := &http.Client{
 		Timeout:   time.Hour * 4,
 		Transport: transport,

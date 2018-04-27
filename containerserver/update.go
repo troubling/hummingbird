@@ -16,6 +16,7 @@
 package containerserver
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -61,7 +62,7 @@ func (server *ContainerServer) accountUpdate(writer http.ResponseWriter, request
 			schemes = append(schemes, "http")
 		}
 		for index, host := range hosts {
-			if err := accountUpdateHelper(info, schemes[index], host, devices[index], accpartition, vars["account"], vars["container"], request.Header.Get("X-Trans-Id"), request.Header.Get("X-Account-Override-Deleted") == "yes", server.updateClient); err != nil {
+			if err := accountUpdateHelper(request.Context(), info, schemes[index], host, devices[index], accpartition, vars["account"], vars["container"], request.Header.Get("X-Trans-Id"), request.Header.Get("X-Account-Override-Deleted") == "yes", server.updateClient); err != nil {
 				logger.Error(
 					"Account update failed:", zap.Error(err),
 					zap.String("schemes[index]", schemes[index]),
@@ -77,13 +78,14 @@ func (server *ContainerServer) accountUpdate(writer http.ResponseWriter, request
 	}
 }
 
-func accountUpdateHelper(info *ContainerInfo, scheme, host, device, accpartition, account, container, transID string, accountOverrideDeleted bool, updateClient *http.Client) error {
+func accountUpdateHelper(ctx context.Context, info *ContainerInfo, scheme, host, device, accpartition, account, container, transID string, accountOverrideDeleted bool, updateClient common.HTTPClient) error {
 	url := fmt.Sprintf("%s://%s/%s/%s/%s/%s", scheme, host, device, accpartition,
 		common.Urlencode(account), common.Urlencode(container))
 	req, err := http.NewRequest("PUT", url, nil)
 	if err != nil {
 		return err
 	}
+	req = req.WithContext(ctx)
 	req.Header.Add("X-Backend-Suppress-2xx-Logging", "t")
 	req.Header.Add("X-Put-Timestamp", info.PutTimestamp)
 	req.Header.Add("X-Delete-Timestamp", info.DeleteTimestamp)

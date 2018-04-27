@@ -1,0 +1,9 @@
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = false
+	logallrefupdates = true
+	ignorecase = true
+[remote "origin"]
+	url = https://github.com/uber/jaeger-lib
+	fetch = +refs/tags/v1.4.0:refs/tags/v1.4.0

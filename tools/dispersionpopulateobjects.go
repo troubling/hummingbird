@@ -7,6 +7,7 @@ package tools
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -80,7 +81,7 @@ func (dpo *dispersionPopulateObjects) putDispersionObjects(logger *zap.Logger, p
 	start := time.Now()
 	logger = logger.With(zap.Int("policy", policy.Index))
 	container := fmt.Sprintf("disp-objs-%d", policy.Index)
-	resp := dpo.aa.hClient.HeadObject(AdminAccount, container, "object-init", nil)
+	resp := dpo.aa.hClient.HeadObject(context.Background(), AdminAccount, container, "object-init", nil)
 	io.Copy(ioutil.Discard, resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode/100 == 2 {
@@ -88,6 +89,7 @@ func (dpo *dispersionPopulateObjects) putDispersionObjects(logger *zap.Logger, p
 		return true
 	}
 	resp = dpo.aa.hClient.PutContainer(
+		context.Background(),
 		AdminAccount,
 		container,
 		common.Map2Headers(map[string]string{
@@ -101,7 +103,7 @@ func (dpo *dispersionPopulateObjects) putDispersionObjects(logger *zap.Logger, p
 		logger.Error("PUT", zap.String("account", AdminAccount), zap.String("container", container), zap.Int("status", resp.StatusCode))
 		return false
 	}
-	objectRing, resp := dpo.aa.hClient.ObjectRingFor(AdminAccount, container)
+	objectRing, resp := dpo.aa.hClient.ObjectRingFor(context.Background(), AdminAccount, container)
 	if objectRing == nil || resp != nil {
 		if resp == nil {
 			logger.Error("no ring")
@@ -143,6 +145,7 @@ func (dpo *dispersionPopulateObjects) putDispersionObjects(logger *zap.Logger, p
 	for object := range objectNames {
 		xtimestamp := time.Now()
 		resp := dpo.aa.hClient.PutObject(
+			context.Background(),
 			AdminAccount,
 			container,
 			object,
@@ -171,6 +174,7 @@ func (dpo *dispersionPopulateObjects) putDispersionObjects(logger *zap.Logger, p
 	if errors == 0 {
 		xtimestamp := time.Now()
 		resp = dpo.aa.hClient.PutObject(
+			context.Background(),
 			AdminAccount,
 			container,
 			"object-init",

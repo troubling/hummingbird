@@ -16,6 +16,7 @@
 package middleware
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha1"
 	"encoding/hex"
@@ -65,7 +66,7 @@ func (o *fpLimitReader) Read(p []byte) (int, error) {
 	return i, err
 }
 
-func authenticateFormpost(ctx *ProxyContext, account, container, path string, attrs map[string]string) int {
+func authenticateFormpost(ctx context.Context, proxyCtx *ProxyContext, account, container, path string, attrs map[string]string) int {
 	if expires, err := common.ParseDate(attrs["expires"]); err != nil {
 		return FP_ERROR
 	} else if time.Now().After(expires) {
@@ -84,12 +85,12 @@ func authenticateFormpost(ctx *ProxyContext, account, container, path string, at
 		return hmac.Equal(sigb, mac.Sum(nil))
 	}
 
-	if ai, err := ctx.GetAccountInfo(account); err == nil {
+	if ai, err := proxyCtx.GetAccountInfo(ctx, account); err == nil {
 		if key, ok := ai.Metadata["Temp-Url-Key"]; ok && checkhmac([]byte(key)) {
 			return FP_SCOPE_ACCOUNT
 		} else if key, ok := ai.Metadata["Temp-Url-Key-2"]; ok && checkhmac([]byte(key)) {
 			return FP_SCOPE_ACCOUNT
-		} else if ci, err := ctx.C.GetContainerInfo(account, container); err == nil {
+		} else if ci, err := proxyCtx.C.GetContainerInfo(ctx, account, container); err == nil {
 			if key, ok := ci.Metadata["Temp-Url-Key"]; ok && checkhmac([]byte(key)) {
 				return FP_SCOPE_CONTAINER
 			} else if key, ok := ci.Metadata["Temp-Url-Key-2"]; ok && checkhmac([]byte(key)) {
@@ -202,7 +203,7 @@ func formpost(formpostRequestsMetric tally.Counter) func(http.Handler) http.Hand
 							formpostRespond(writer, 400, "max_file_size not valid", attrs["redirect"])
 							return
 						}
-						scope := authenticateFormpost(ctx, account, container, request.URL.Path, attrs)
+						scope := authenticateFormpost(request.Context(), ctx, account, container, request.URL.Path, attrs)
 						switch scope {
 						case FP_EXPIRED:
 							formpostRespond(writer, 401, "Form Expired", attrs["redirect"])

@@ -160,9 +160,9 @@ func TestFpLimitReader(t *testing.T) {
 	require.True(t, r.overRead())
 }
 
-// func authorizeFormpost(ctx *ProxyContext, account, container, path string, attrs map[string]string) int {
+// func authorizeFormpost(ctx context.Context, pc *ProxyContext, account, container, path string, attrs map[string]string) int {
 func TestAuthenticateFormpost(t *testing.T) {
-	ctx := &ProxyContext{
+	pc := &ProxyContext{
 		Logger: zap.NewNop(),
 		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
 			"container/a/c": {Metadata: map[string]string{
@@ -178,30 +178,30 @@ func TestAuthenticateFormpost(t *testing.T) {
 	}
 
 	require.Equal(t, FP_ERROR,
-		authenticateFormpost(ctx, "a", "c", "/v1/a/c", map[string]string{"expires": "X"}))
+		authenticateFormpost(context.Background(), pc, "a", "c", "/v1/a/c", map[string]string{"expires": "X"}))
 	require.Equal(t, FP_EXPIRED,
-		authenticateFormpost(ctx, "a", "c", "/v1/a/c", map[string]string{"expires": "12345"}))
+		authenticateFormpost(context.Background(), pc, "a", "c", "/v1/a/c", map[string]string{"expires": "12345"}))
 	require.Equal(t, FP_ERROR,
-		authenticateFormpost(ctx, "a", "c", "/v1/a/c", map[string]string{"expires": "9999999999", "signature": "X"}))
+		authenticateFormpost(context.Background(), pc, "a", "c", "/v1/a/c", map[string]string{"expires": "9999999999", "signature": "X"}))
 
 	// account key 1
 	require.Equal(t, FP_SCOPE_ACCOUNT,
-		authenticateFormpost(ctx, "a", "c", "/v1/a/c", map[string]string{"expires": "9999999999",
+		authenticateFormpost(context.Background(), pc, "a", "c", "/v1/a/c", map[string]string{"expires": "9999999999",
 			"signature": "1d4cb17a0d70b32f7987fe49b1990020bab52ae6"}))
 	// account key 2
 	require.Equal(t, FP_SCOPE_ACCOUNT,
-		authenticateFormpost(ctx, "a", "c", "/v1/a/c", map[string]string{"expires": "9999999999",
+		authenticateFormpost(context.Background(), pc, "a", "c", "/v1/a/c", map[string]string{"expires": "9999999999",
 			"signature": "9749158451be0383af1ec6d8e10f09a2d0d5f2b1"}))
 	// container key 1
 	require.Equal(t, FP_SCOPE_CONTAINER,
-		authenticateFormpost(ctx, "a", "c", "/v1/a/c", map[string]string{"expires": "9999999999",
+		authenticateFormpost(context.Background(), pc, "a", "c", "/v1/a/c", map[string]string{"expires": "9999999999",
 			"signature": "3320ff06b119d287a1c8d18d4356cd91e8518fe7"}))
 	// container key 2
 	require.Equal(t, FP_SCOPE_CONTAINER,
-		authenticateFormpost(ctx, "a", "c", "/v1/a/c", map[string]string{"expires": "9999999999",
+		authenticateFormpost(context.Background(), pc, "a", "c", "/v1/a/c", map[string]string{"expires": "9999999999",
 			"signature": "a3c3dd56ad65f5b87eeb384f9e0406c79511b556"}))
 	// invalid key
 	require.Equal(t, FP_INVALID,
-		authenticateFormpost(ctx, "a", "c", "/v1/a/c", map[string]string{"expires": "9999999999",
+		authenticateFormpost(context.Background(), pc, "a", "c", "/v1/a/c", map[string]string{"expires": "9999999999",
 			"signature": "1111111111111111111111111111111111111111"}))
 }
