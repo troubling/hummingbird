@@ -165,7 +165,10 @@ func (dso *dispersionScanObjects) scanDispersionObjects(logger *zap.Logger, poli
 				return
 			case <-time.After(dso.reportInterval):
 				d := atomic.LoadInt64(&delays)
-				eta := time.Duration(int64(time.Since(start)) / d * (int64(ctx.ring.PartitionCount()) - d))
+				var eta time.Duration
+				if d > 0 {
+					eta = time.Duration(int64(time.Since(start)) / d * (int64(ctx.ring.PartitionCount()) - d))
+				}
 				logger.Debug("progress", zap.Int64("partitions", d), zap.String("eta", eta.String()))
 				if err := dso.aa.db.progressProcessPass("dispersion scan", "object", policy.Index, fmt.Sprintf("%d of %d partitions, %d not found, %d errored, %s eta", d, ctx.ring.PartitionCount(), atomic.LoadInt64(&ctx.notFound), atomic.LoadInt64(&ctx.errored), eta)); err != nil {
 					logger.Error("progressProcessPass", zap.Error(err))

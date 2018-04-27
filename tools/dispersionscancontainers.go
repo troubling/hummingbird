@@ -105,7 +105,10 @@ func (dsc *dispersionScanContainers) runOnce() time.Duration {
 				return
 			case <-time.After(dsc.reportInterval):
 				d := atomic.LoadInt64(&delays)
-				eta := time.Duration(int64(time.Since(start)) / d * (int64(ctx.ring.PartitionCount()) - d))
+				var eta time.Duration
+				if d > 0 {
+					eta = time.Duration(int64(time.Since(start)) / d * (int64(ctx.ring.PartitionCount()) - d))
+				}
 				logger.Debug("progress", zap.Int64("partitions", d), zap.String("eta", eta.String()))
 				if err := dsc.aa.db.progressProcessPass("dispersion scan", "container", 0, fmt.Sprintf("%d of %d partitions, %d not found, %d errored, %s eta", d, ctx.ring.PartitionCount(), atomic.LoadInt64(&ctx.notFound), atomic.LoadInt64(&ctx.errored), eta)); err != nil {
 					logger.Error("progressProcessPass", zap.Error(err))

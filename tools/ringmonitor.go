@@ -134,7 +134,10 @@ func (rm *ringMonitor) runOnce() time.Duration {
 				d := atomic.LoadInt64(&delays)
 				e := atomic.LoadInt64(&errors)
 				p := atomic.LoadInt64(&partitionCopiesChanged)
-				eta := time.Duration(int64(time.Since(start)) / d * (int64(len(ringTasks)) - d))
+				var eta time.Duration
+				if d > 0 {
+					eta = time.Duration(int64(time.Since(start)) / d * (int64(len(ringTasks)) - d))
+				}
 				logger.Debug("progress", zap.Int64("rings so far", d), zap.Int("total rings", len(ringTasks)), zap.Int64("errors", e), zap.Int64("partition copies changed", p), zap.String("eta", eta.String()))
 				if err := rm.aa.db.progressProcessPass("ring monitor", "", 0, fmt.Sprintf("%d of %d rings, %d errors, %d partition copies changed, eta %s", d, len(ringTasks), e, p, eta)); err != nil {
 					logger.Error("progressProcessPass", zap.Error(err))

@@ -136,7 +136,10 @@ func (rs *ringScan) runOnce() time.Duration {
 			case <-time.After(rs.reportInterval):
 				d := atomic.LoadInt64(&delays)
 				e := atomic.LoadInt64(&errors)
-				eta := time.Duration(int64(time.Since(start)) / d * (int64(len(urls)) - d))
+				var eta time.Duration
+				if d > 0 {
+					eta = time.Duration(int64(time.Since(start)) / d * (int64(len(urls)) - d))
+				}
 				logger.Debug("progress", zap.Int64("urls so far", d), zap.Int("total urls", len(urls)), zap.String("eta", eta.String()))
 				if err := rs.aa.db.progressProcessPass("ring scan", "", 0, fmt.Sprintf("%d of %d urls, %d errors, eta %s", d, len(urls), e, eta)); err != nil {
 					logger.Error("progressProcessPass", zap.Error(err))

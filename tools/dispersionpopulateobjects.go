@@ -129,7 +129,10 @@ func (dpo *dispersionPopulateObjects) putDispersionObjects(logger *zap.Logger, p
 			case <-time.After(dpo.reportInterval):
 				s := atomic.LoadInt64(&successes)
 				e := atomic.LoadInt64(&errors)
-				eta := time.Duration(int64(time.Since(start)) / (s + e) * (int64(objectRing.PartitionCount()) - s - e))
+				var eta time.Duration
+				if s+e > 0 {
+					eta = time.Duration(int64(time.Since(start)) / (s + e) * (int64(objectRing.PartitionCount()) - s - e))
+				}
 				logger.Debug("progress", zap.Int64("successes", s), zap.Int64("errors", e), zap.String("eta", eta.String()))
 				if err := dpo.aa.db.progressProcessPass("dispersion populate", "object", policy.Index, fmt.Sprintf("%d of %d partitions, %d successes, %d errors, %s eta", s+e, objectRing.PartitionCount(), s, e, eta)); err != nil {
 					logger.Error("progressProcessPass", zap.Error(err))

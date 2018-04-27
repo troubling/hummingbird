@@ -90,7 +90,10 @@ func (qh *quarantineHistory) runOnce() time.Duration {
 				e := atomic.LoadInt64(&errors)
 				p := atomic.LoadInt64(&itemsPurged)
 				l := atomic.LoadInt64(&itemsLeft)
-				eta := time.Duration(int64(time.Since(start)) / d * (int64(len(urls)) - d))
+				var eta time.Duration
+				if d > 0 {
+					eta = time.Duration(int64(time.Since(start)) / d * (int64(len(urls)) - d))
+				}
 				logger.Debug("progress", zap.Int64("urls so far", d), zap.Int("total urls", len(urls)), zap.String("eta", eta.String()))
 				if err := qh.aa.db.progressProcessPass("quarantine history", "", 0, fmt.Sprintf("%d of %d urls, %d errors, %d purged, %d left for next pass, eta %s", d, len(urls), e, p, l, eta)); err != nil {
 					logger.Error("progressProcessPass", zap.Error(err))

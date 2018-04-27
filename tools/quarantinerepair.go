@@ -78,7 +78,10 @@ func (qr *quarantineRepair) runOnce() time.Duration {
 				d := atomic.LoadInt64(&delays)
 				r := atomic.LoadInt64(&repairsMade)
 				p := atomic.LoadInt64(&partitionReplicationsQueued)
-				eta := time.Duration(int64(time.Since(start)) / d * (int64(len(urls)) - d))
+				var eta time.Duration
+				if d > 0 {
+					eta = time.Duration(int64(time.Since(start)) / d * (int64(len(urls)) - d))
+				}
 				logger.Debug("progress", zap.Int64("urls so far", d), zap.Int("total urls", len(urls)), zap.String("eta", eta.String()))
 				if err := qr.aa.db.progressProcessPass("quarantine repair", "", 0, fmt.Sprintf("%d of %d urls, %d repairs made, %d partition replications queued, eta %s", d, len(urls), r, p, eta)); err != nil {
 					logger.Error("progressProcessPass", zap.Error(err))
