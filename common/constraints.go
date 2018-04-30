@@ -69,6 +69,7 @@ func CheckMetadata(req *http.Request, targetType string) (int, string) {
 	metaCount := 0
 	metaSize := 0
 	metaPrefix := fmt.Sprintf("X-%s-Meta-", targetType)
+	fixKeys := make(map[string]string)
 	for key := range req.Header {
 		value := req.Header.Get(key)
 		if len(value) > MAX_HEADER_SIZE {
@@ -102,6 +103,16 @@ func CheckMetadata(req *http.Request, targetType string) (int, string) {
 		if metaSize > MAX_META_OVERALL_SIZE {
 			return http.StatusBadRequest, fmt.Sprintf("Total metadata too large; max %d", MAX_META_OVERALL_SIZE)
 		}
+		fixedKey := strings.Replace(key, "_", "-", -1)
+		if key != fixedKey {
+			fixKeys[key] = fixedKey
+		}
+	}
+	for oldKey, newKey := range fixKeys {
+		oldKey = metaPrefix + oldKey
+		newKey = metaPrefix + newKey
+		req.Header.Set(newKey, req.Header.Get(oldKey))
+		req.Header.Del(oldKey)
 	}
 	return http.StatusOK, ""
 }

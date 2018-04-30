@@ -142,6 +142,18 @@ func TestUnnamedMeta(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, status)
 }
 
+func TestUnderscoreMeta(t *testing.T) {
+	req, err := http.NewRequest("PUT", "/v1/a/c/o", nil)
+	require.Nil(t, err)
+	req.Header.Set("X-Object-Meta-My_Underscore_Key", "X")
+	status, _ := CheckMetadata(req, "Object")
+	require.Equal(t, http.StatusOK, status)
+	fmt.Printf("header: %+v\n", req.Header)
+	require.Equal(t, []string{"X"}, req.Header["X-Object-Meta-My-Underscore-Key"])
+	_, ok := req.Header["X-Object-Meta-My_Underscore_Key"]
+	require.Equal(t, false, ok)
+}
+
 func TestLongMetaName(t *testing.T) {
 	req, err := http.NewRequest("PUT", "/v1/a/c/o", nil)
 	require.Nil(t, err)
