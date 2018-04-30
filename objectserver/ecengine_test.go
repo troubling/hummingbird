@@ -23,16 +23,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"testing"
 	"time"
-
-	"go.uber.org/zap"
 
 	"github.com/stretchr/testify/require"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/test"
+	"go.uber.org/zap"
 )
 
 func TestEcEngineConstructor(t *testing.T) {
@@ -48,11 +48,12 @@ func TestEcEngineConstructor(t *testing.T) {
 	require.Nil(t, err)
 }
 
-func getTestEce() (*ecEngine, error) {
+func getTestEce() (*ecEngine, string, error) {
 	driveRoot, err := ioutil.TempDir("", "")
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
+	defer os.RemoveAll(driveRoot)
 	policy := conf.Policy{Index: 0, Type: "hec", Name: "gold",
 		Aliases: []string{}, Default: true, Deprecated: false,
 		Config: map[string]string{"policy_type": "hec",
@@ -88,15 +89,15 @@ func getTestEce() (*ecEngine, error) {
 		},
 	}
 	if engine.dataShards, err = strconv.Atoi(policy.Config["data_shards"]); err != nil {
-		return nil, err
+		return nil, driveRoot, err
 	}
 	if engine.parityShards, err = strconv.Atoi(policy.Config["parity_shards"]); err != nil {
-		return nil, err
+		return nil, driveRoot, err
 	}
 	if engine.chunkSize, err = strconv.Atoi(policy.Config["chunk_size"]); err != nil {
 		engine.chunkSize = 1 << 20
 	}
-	return engine, nil
+	return engine, driveRoot, nil
 }
 
 func TestGetObjectsToReplicate(t *testing.T) {
@@ -114,7 +115,10 @@ func TestGetObjectsToReplicate(t *testing.T) {
 	port, err := strconv.Atoi(ports)
 	require.Nil(t, err)
 
-	ece, err := getTestEce()
+	ece, dr, err := getTestEce()
+	if dr != "" {
+		defer os.RemoveAll(dr)
+	}
 	require.Nil(t, err)
 	idb, err := ece.getDB("sdb1")
 	require.Nil(t, err)
@@ -146,7 +150,10 @@ func TestGetObjectsToReplicate(t *testing.T) {
 }
 
 func TestGetObjectsToReplicateRemoteHasAll(t *testing.T) {
-	ece, err := getTestEce()
+	ece, dr, err := getTestEce()
+	if dr != "" {
+		defer os.RemoveAll(dr)
+	}
 	require.Nil(t, err)
 	idb, err := ece.getDB("sdb1")
 	require.Nil(t, err)
@@ -193,7 +200,10 @@ func TestGetObjectsToReplicateRemoteHasAll(t *testing.T) {
 }
 
 func TestGetObjectsToReplicateRemoteHasSome(t *testing.T) {
-	ece, err := getTestEce()
+	ece, dr, err := getTestEce()
+	if dr != "" {
+		defer os.RemoveAll(dr)
+	}
 	require.Nil(t, err)
 	idb, err := ece.getDB("sdb1")
 	require.Nil(t, err)

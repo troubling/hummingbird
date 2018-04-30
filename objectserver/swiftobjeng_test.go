@@ -266,7 +266,7 @@ func TestSwiftObjectCommitMeta(t *testing.T) {
 	var wg sync.WaitGroup
 	defer func() {
 		wg.Wait()
-		defer os.RemoveAll(driveRoot)
+		os.RemoveAll(driveRoot)
 	}()
 
 	vars := map[string]string{"device": "sda", "account": "a", "container": "c", "object": "o", "partition": "1"}
@@ -302,7 +302,7 @@ func TestNurseryObjectCommitMeta(t *testing.T) {
 	var wg sync.WaitGroup
 	defer func() {
 		wg.Wait()
-		defer os.RemoveAll(driveRoot)
+		os.RemoveAll(driveRoot)
 	}()
 
 	vars := map[string]string{"device": "sda", "account": "a", "container": "c", "object": "o", "partition": "1"}

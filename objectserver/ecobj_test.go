@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -36,6 +37,7 @@ func TestNurseryReplicate(t *testing.T) {
 	fp, err := ioutil.TempFile("", "")
 	fp.Write([]byte("TESTING"))
 	require.Nil(t, err)
+	defer os.RemoveAll(fp.Name())
 	var calls int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt64(&calls, 1)
@@ -78,6 +80,7 @@ func TestNurseryReplicateWithFailure(t *testing.T) {
 	fp, err := ioutil.TempFile("", "")
 	fp.Write([]byte("TESTING"))
 	require.Nil(t, err)
+	defer os.RemoveAll(fp.Name())
 	used := make(map[string]bool)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		drive := r.URL.Path[9:12]
@@ -136,6 +139,7 @@ func TestStabilize(t *testing.T) {
 	fp, err := ioutil.TempFile("", "")
 	fp.Write([]byte("TESTING"))
 	require.Nil(t, err)
+	defer os.RemoveAll(fp.Name())
 	var mutex sync.Mutex
 	methods := make(map[string]string)
 	lengths := make(map[string]int64)
@@ -198,6 +202,7 @@ func TestStabilizeDelete(t *testing.T) {
 	fp, err := ioutil.TempFile("", "")
 	fp.Write([]byte("TESTING"))
 	require.Nil(t, err)
+	defer os.RemoveAll(fp.Name())
 	var mutex sync.Mutex
 	methods := make(map[string]string)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -252,6 +257,7 @@ func TestDontStabilizeWithFailure(t *testing.T) {
 	fp, err := ioutil.TempFile("", "")
 	fp.Write([]byte("TESTING"))
 	require.Nil(t, err)
+	defer os.RemoveAll(fp.Name())
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		drive := r.URL.Path[10:13]
 		if drive == "sdb" {
