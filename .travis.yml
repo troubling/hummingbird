@@ -59,6 +59,7 @@ script:
       goverage -coverprofile=/tmp/coverage.out github.com/troubling/hummingbird/...
       go tool cover -html=/tmp/coverage.out -o "/tmp/output/coverage.html"
       hummingbird start main
+      export BOTO_CONFIG=/dev/null
       PATH=$PATH:~/swift-venv/bin nosetests --with-html --html-file=/tmp/output/functional_hbproxy.html ~/swift/test/functional --exclude-test-file=$TRAVIS_BUILD_DIR/.swift_func_excludes
     fi
   - echo "<html><body><h1>Files</h1><ul>$(for file in `find /tmp/output -type f -printf "%P\n" | sort`; do echo "<li><a href='$file'>$file</a></li>"; done)</ul></body></html>" > /tmp/output/index.html
