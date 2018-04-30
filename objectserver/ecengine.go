@@ -389,10 +389,20 @@ func (f *ecEngine) ecShardDeleteHandler(writer http.ResponseWriter, request *htt
 		return
 	}
 
+	timestampTime, err := common.ParseDate(request.Header.Get("X-Timestamp"))
+	if err != nil {
+		srv.StandardResponse(writer, http.StatusBadRequest)
+		return
+	}
+	timestamp := timestampTime.UnixNano()
+	if timestamp <= item.Timestamp {
+		srv.StandardResponse(writer, http.StatusConflict)
+		return
+	}
 	if err := idb.Remove(item.Hash, item.Shard, item.Timestamp, item.Nursery); err != nil {
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 	} else {
-		srv.StandardResponse(writer, http.StatusCreated)
+		srv.StandardResponse(writer, http.StatusNoContent)
 	}
 }
 
