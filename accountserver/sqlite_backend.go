@@ -873,7 +873,7 @@ func (db *sqliteAccount) PutContainer(name string, putTimestamp string, deleteTi
 		return err
 	}
 	if info, err := file.Stat(); err == nil && info.Size() > pendingCap {
-		db.flushAlreadyLocked()
+		return db.flushAlreadyLocked()
 	}
 	return nil
 }
