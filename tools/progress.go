@@ -73,7 +73,7 @@ func (r *progressReport) String() string {
 	opts.NilBetweenEveryRow = false
 	opts.Alignments = []brimtext.Alignment{brimtext.Right, brimtext.Center, brimtext.Left, brimtext.Left}
 	opts.Widths = []int{30, 7, 10}
-	w := brimtext.GetTTYWidth() - 2
+	w := brimtext.GetTTYWidth() - 3
 	for _, x := range opts.Widths {
 		w -= x + 3
 	}

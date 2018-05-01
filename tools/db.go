@@ -69,6 +69,8 @@ func newDB(serverconf *conf.Config, memoryDBID string) (*dbInstance, error) {
             to_device INTEGER NOT NULL    -- device id in ring to replicate to, must be valid device
         );
 
+        CREATE INDEX IF NOT EXISTS ix_replication_queue_rtype_policy_update_date ON replication_queue (rtype, policy, update_date);
+
         CREATE TABLE IF NOT EXISTS dispersion_scan_failure (
             create_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             rtype TEXT NOT NULL,        -- account, container, object
@@ -109,6 +111,8 @@ func newDB(serverconf *conf.Config, memoryDBID string) (*dbInstance, error) {
             state INTEGER NOT NULL      -- 0 = down, 1 = up
         );
 
+        CREATE INDEX IF NOT EXISTS ix_server_state_ip_port_recorded ON server_state (ip, port, recorded);
+
         -- similar to server_state
         CREATE TABLE IF NOT EXISTS device_state (
             ip TEXT NOT NULL,
@@ -118,12 +122,16 @@ func newDB(serverconf *conf.Config, memoryDBID string) (*dbInstance, error) {
             state INTEGER NOT NULL      -- 0 = unmounted, 1 = mounted
         );
 
+        CREATE INDEX IF NOT EXISTS ix_device_state_ip_port_recorded ON device_state (ip, port, recorded);
+
         CREATE TABLE IF NOT EXISTS ring_log (
             create_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             rtype TEXT NOT NULL,                -- account, container, object
             policy INTEGER NOT NULL,            -- only used with object
             reason TEXT NOT NULL
-        )
+        );
+
+        CREATE INDEX IF NOT EXISTS ix_ring_log_rtype_policy_create_date ON ring_log (rtype, policy, create_date);
     `)
 	if err != nil {
 		return nil, err
