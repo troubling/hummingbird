@@ -636,7 +636,7 @@ func segmentIsSlo(request *http.Request, path string) bool {
 		ctx.Logger.Error("error building subrequest", zap.Error(err))
 		return false
 	}
-	writer := &xloCaptureWriter{header: make(http.Header)}
+	writer := NewCaptureWriter()
 	ctx.serveHTTPSubrequest(writer, newReq)
 	if writer.Header().Get("X-Static-Large-Object") == "True" {
 		return true
