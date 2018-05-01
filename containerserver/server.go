@@ -302,6 +302,8 @@ func (server *ContainerServer) ContainerPutHandler(writer http.ResponseWriter, r
 		server.accountUpdate(writer, request, vars, info, srv.GetLogger(request))
 	} else {
 		srv.GetLogger(request).Error("could not GetInfo on cont create.", zap.Error(err))
+		srv.StandardResponse(writer, http.StatusInternalServerError)
+		return
 	}
 	if created {
 		srv.StandardResponse(writer, http.StatusCreated)
@@ -348,6 +350,8 @@ func (server *ContainerServer) ContainerDeleteHandler(writer http.ResponseWriter
 		server.accountUpdate(writer, request, vars, info, srv.GetLogger(request))
 	} else {
 		srv.GetLogger(request).Error("could not GetInfo on cont delete.", zap.Error(err))
+		srv.StandardResponse(writer, http.StatusInternalServerError)
+		return
 	}
 	writer.WriteHeader(http.StatusNoContent)
 	writer.Write([]byte(""))
