@@ -155,6 +155,9 @@ func (db *sqliteContainer) GetInfo() (*ContainerInfo, error) {
 		&info.ReportedObjectCount, &info.ReportedBytesUsed, &info.Hash,
 		&info.ID, &info.XContainerSyncPoint1, &info.XContainerSyncPoint2,
 		&info.StoragePolicyIndex, &info.RawMetadata, &info.MaxRow); err != nil {
+		if common.IsCorruptDBError(err) {
+			return nil, fmt.Errorf("Failed to GetInfo: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
 		return nil, err
 	}
 	if info.RawMetadata == "" {
@@ -193,6 +196,9 @@ func (db *sqliteContainer) Delete(timestamp string) error {
 	var metastr string
 	var metadata map[string][]string
 	if err := tx.QueryRow("SELECT metadata FROM container_info").Scan(&metastr); err != nil {
+		if common.IsCorruptDBError(err) {
+			return fmt.Errorf("Failed to Delete SELECT: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
 		return err
 	}
 	if err := json.Unmarshal([]byte(metastr), &metadata); err != nil {
@@ -208,10 +214,19 @@ func (db *sqliteContainer) Delete(timestamp string) error {
 		return err
 	}
 	if _, err = tx.Exec("UPDATE container_info SET delete_timestamp = ?, metadata = ?", timestamp, string(serializedMetadata)); err != nil {
+		if common.IsCorruptDBError(err) {
+			return fmt.Errorf("Failed to Delete UPDATE: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
 		return err
 	}
 	defer db.invalidateCache()
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		if common.IsCorruptDBError(err) {
+			return fmt.Errorf("Failed to Delete Commit: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
+		return err
+	}
+	return nil
 }
 
 // MergeItems merges ObjectRecords into the container.  If a remote id is provided (incoming replication), the incoming_sync table is updated.
@@ -250,6 +265,9 @@ func (db *sqliteContainer) MergeItems(records []*ObjectRecord, remoteID string) 
 		}
 		rows, err := tx.Query(query, batch...)
 		if err != nil {
+			if common.IsCorruptDBError(err) {
+				return fmt.Errorf("Failed to MergeItems SELECT: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+			}
 			return err
 		}
 		for rows.Next() {
@@ -257,14 +275,23 @@ func (db *sqliteContainer) MergeItems(records []*ObjectRecord, remoteID string) 
 			var rowid int64
 			var policy int
 			if err := rows.Scan(&name, &policy, &timestamp, &rowid); err != nil {
+				if common.IsCorruptDBError(err) {
+					return fmt.Errorf("Failed to MergeItems SELECT Scan: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+				}
 				return err
 			}
 			existing[recordID{policy, name}] = &ObjectRecord{CreatedAt: timestamp, Rowid: rowid}
 		}
 		if err := rows.Err(); err != nil {
+			if common.IsCorruptDBError(err) {
+				return fmt.Errorf("Failed to MergeItems SELECT Err: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+			}
 			return err
 		}
 		if err := rows.Close(); err != nil {
+			if common.IsCorruptDBError(err) {
+				return fmt.Errorf("Failed to MergeItems SELECT Close: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+			}
 			return err
 		}
 	}
@@ -291,6 +318,9 @@ func (db *sqliteContainer) MergeItems(records []*ObjectRecord, remoteID string) 
 			current, inExisting := existing[rid]
 			if inExisting && current.CreatedAt < record.CreatedAt {
 				if _, err := dst.Exec(current.Rowid); err != nil {
+					if common.IsCorruptDBError(err) {
+						return fmt.Errorf("Failed to MergeItems DELETE: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+					}
 					return err
 				}
 				delete(existing, rid)
@@ -303,6 +333,9 @@ func (db *sqliteContainer) MergeItems(records []*ObjectRecord, remoteID string) 
 
 	for _, record := range toAdd {
 		if _, err := ast.Exec(record.Name, record.CreatedAt, record.Size, record.ContentType, record.ETag, record.Deleted, record.StoragePolicyIndex); err != nil {
+			if common.IsCorruptDBError(err) {
+				return fmt.Errorf("Failed to MergeItems INSERT: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+			}
 			return err
 		}
 	}
@@ -311,12 +344,21 @@ func (db *sqliteContainer) MergeItems(records []*ObjectRecord, remoteID string) 
 		if _, err := tx.Exec(`UPDATE incoming_sync SET sync_point = ? WHERE remote_id = ?;
 							  INSERT INTO incoming_sync (remote_id, sync_point) SELECT ?, ? WHERE changes() == 0;`,
 			maxRowid, remoteID, remoteID, maxRowid); err != nil {
+			if common.IsCorruptDBError(err) {
+				return fmt.Errorf("Failed to MergeItems UPDATE: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+			}
 			return err
 		}
 	}
 
 	defer db.invalidateCache()
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		if common.IsCorruptDBError(err) {
+			return fmt.Errorf("Failed to MergeItems Commit: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
+		return err
+	}
+	return nil
 }
 
 func indexAfter(s, sep string, after int) int {
@@ -397,6 +439,9 @@ func (db *sqliteContainer) ListObjects(limit int, marker string, endMarker strin
 		rows, err := db.Query(queryStart+" "+strings.Join(wheres, " AND ")+" "+queryTail,
 			append(queryArgs, limit-len(results))...)
 		if err != nil {
+			if common.IsCorruptDBError(err) {
+				return nil, fmt.Errorf("Failed to ListObjects SELECT: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+			}
 			return nil, err
 		}
 		gotResults = false
@@ -404,6 +449,9 @@ func (db *sqliteContainer) ListObjects(limit int, marker string, endMarker strin
 			gotResults = true
 			record := &ObjectListingRecord{}
 			if err := rows.Scan(&record.Name, &record.LastModified, &record.Size, &record.ContentType, &record.ETag); err != nil {
+				if common.IsCorruptDBError(err) {
+					return nil, fmt.Errorf("Failed to ListObjects Scan: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+				}
 				return nil, err
 			}
 			point = record.Name
@@ -431,6 +479,9 @@ func (db *sqliteContainer) ListObjects(limit int, marker string, endMarker strin
 			results = append(results, record)
 		}
 		if err := rows.Err(); err != nil {
+			if common.IsCorruptDBError(err) {
+				return nil, fmt.Errorf("Failed to ListObjects Err: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+			}
 			return nil, err
 		}
 		rows.Close()
@@ -470,16 +521,25 @@ func (db *sqliteContainer) ItemsSince(start int64, count int) ([]*ObjectRecord, 
 	rows, err := db.Query(`SELECT ROWID, name, created_at, size, content_type, etag, deleted, storage_policy_index
 						   FROM object WHERE ROWID > ? ORDER BY ROWID ASC LIMIT ?`, start, count)
 	if err != nil {
+		if common.IsCorruptDBError(err) {
+			return nil, fmt.Errorf("Failed to ItemsSince SELECT: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
 		return nil, err
 	}
 	for rows.Next() {
 		r := &ObjectRecord{}
 		if err := rows.Scan(&r.Rowid, &r.Name, &r.CreatedAt, &r.Size, &r.ContentType, &r.ETag, &r.Deleted, &r.StoragePolicyIndex); err != nil {
+			if common.IsCorruptDBError(err) {
+				return nil, fmt.Errorf("Failed to ItemsSince Scan: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+			}
 			return nil, err
 		}
 		records = append(records, r)
 	}
 	if err := rows.Err(); err != nil {
+		if common.IsCorruptDBError(err) {
+			return nil, fmt.Errorf("Failed to ItemsSince Err: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
 		return nil, err
 	}
 	rows.Close()
@@ -551,6 +611,9 @@ func (db *sqliteContainer) UpdateMetadata(newMetadata map[string][]string, times
 	defer tx.Rollback()
 	var metadataValue, deleteTimestamp string
 	if err := tx.QueryRow("SELECT metadata, delete_timestamp FROM container_info").Scan(&metadataValue, &deleteTimestamp); err != nil {
+		if common.IsCorruptDBError(err) {
+			return fmt.Errorf("Failed to UpdateMetadata SELECT: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
 		return err
 	}
 	var existingMetadata map[string][]string
@@ -564,10 +627,19 @@ func (db *sqliteContainer) UpdateMetadata(newMetadata map[string][]string, times
 		return err
 	}
 	if _, err = tx.Exec("UPDATE container_info SET metadata=?, put_timestamp=MAX(put_timestamp, ?)", metastr, timestamp); err != nil {
+		if common.IsCorruptDBError(err) {
+			return fmt.Errorf("Failed to UpdateMetadata UPDATE: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
 		return err
 	}
 	defer db.invalidateCache()
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		if common.IsCorruptDBError(err) {
+			return fmt.Errorf("Failed to UpdateMetadata Commit: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
+		return err
+	}
+	return nil
 }
 
 // MergeSyncTable updates the container's current incoming_sync table records.
@@ -584,10 +656,19 @@ func (db *sqliteContainer) MergeSyncTable(records []*SyncRecord) error {
 		if _, err := tx.Exec(`UPDATE incoming_sync SET sync_point = ? WHERE remote_id = ?;
 							  INSERT INTO incoming_sync (remote_id, sync_point) SELECT ?, ? WHERE changes() == 0;`,
 			record.SyncPoint, record.RemoteID, record.RemoteID, record.SyncPoint); err != nil {
+			if common.IsCorruptDBError(err) {
+				return fmt.Errorf("Failed to MergeSyncTable UPDATE: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+			}
 			return err
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		if common.IsCorruptDBError(err) {
+			return fmt.Errorf("Failed to MergeSyncTable Commit: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
+		return err
+	}
+	return nil
 }
 
 // CleanupTombstones removes any expired tombstoned objects or metadata.
@@ -604,10 +685,16 @@ func (db *sqliteContainer) CleanupTombstones(reclaimAge int64) error {
 	}
 	defer tx.Rollback()
 	if _, err = tx.Exec("DELETE FROM object WHERE deleted=1 AND created_at < ?", reclaimTimestamp); err != nil {
+		if common.IsCorruptDBError(err) {
+			return fmt.Errorf("Failed to CleanupTombstones DELETE: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
 		return err
 	}
 	var metastr string
 	if err := tx.QueryRow("SELECT metadata FROM container_info").Scan(&metastr); err != nil {
+		if common.IsCorruptDBError(err) {
+			return fmt.Errorf("Failed to CleanupTombstones SELECT: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
 		return err
 	}
 	var metadata map[string][]string
@@ -632,11 +719,20 @@ func (db *sqliteContainer) CleanupTombstones(reclaimAge int64) error {
 		if mb, err := json.Marshal(metadata); err != nil {
 			return err
 		} else if _, err = tx.Exec("UPDATE container_info SET metadata = ?", string(mb)); err != nil {
+			if common.IsCorruptDBError(err) {
+				return fmt.Errorf("Failed to CleanupTombstones UPDATE: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+			}
 			return err
 		}
 	}
 	defer db.invalidateCache()
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		if common.IsCorruptDBError(err) {
+			return fmt.Errorf("Failed to CleanupTombstones Commit: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
+		return err
+	}
+	return nil
 }
 
 // SyncTable returns the container's current incoming_sync table, and also includes the current container's id and max row as an entry.
@@ -651,16 +747,25 @@ func (db *sqliteContainer) SyncTable() ([]*SyncRecord, error) {
 						   SELECT maxrowid.max AS sync_point, container_info.id AS remote_id
 						   FROM container_info, maxrowid`)
 	if err != nil {
+		if common.IsCorruptDBError(err) {
+			return nil, fmt.Errorf("Failed to SyncTable SELECT: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
 		return nil, err
 	}
 	for rows.Next() {
 		rec := &SyncRecord{}
 		if err := rows.Scan(&rec.SyncPoint, &rec.RemoteID); err != nil {
+			if common.IsCorruptDBError(err) {
+				return nil, fmt.Errorf("Failed to SyncTable Scan: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+			}
 			return nil, err
 		}
 		records = append(records, rec)
 	}
 	if err := rows.Err(); err != nil {
+		if common.IsCorruptDBError(err) {
+			return nil, fmt.Errorf("Failed to SyncTable Err: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
 		return nil, err
 	}
 	rows.Close()
@@ -680,6 +785,9 @@ func (db *sqliteContainer) SyncRemoteData(maxRow int64, hash, id, createdAt, put
 	var localMeta, localHash, localDeleteTimestamp string
 	var localPoint int64
 	if err := tx.QueryRow("SELECT hash, metadata, delete_timestamp FROM container_info").Scan(&localHash, &localMeta, &localDeleteTimestamp); err != nil {
+		if common.IsCorruptDBError(err) {
+			return nil, fmt.Errorf("Failed to SyncRemoteData SELECT: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
 		return nil, err
 	}
 	var lm, rm map[string][]string
@@ -696,18 +804,30 @@ func (db *sqliteContainer) SyncRemoteData(maxRow int64, hash, id, createdAt, put
 	if _, err = tx.Exec(`UPDATE container_info SET created_at=MIN(?, created_at), put_timestamp=MAX(?, put_timestamp),
 	  					 delete_timestamp=MAX(?, delete_timestamp), metadata=?`,
 		createdAt, putTimestamp, deleteTimestamp, metastr); err != nil {
+		if common.IsCorruptDBError(err) {
+			return nil, fmt.Errorf("Failed to SyncRemoteData UPDATE: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
 		return nil, err
 	}
 	if err := tx.QueryRow("SELECT IFNULL(MAX(sync_point), -1) FROM incoming_sync WHERE remote_id = ?", id).Scan(&localPoint); err != nil {
+		if common.IsCorruptDBError(err) {
+			return nil, fmt.Errorf("Failed to SyncRemoteData SELECT2: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
 		return nil, err
 	}
 	if localHash == hash && maxRow > localPoint {
 		localPoint = maxRow
 		if _, err = tx.Exec("INSERT OR REPLACE INTO incoming_sync (remote_id, sync_point) VALUES (?, ?)", id, localPoint); err != nil {
+			if common.IsCorruptDBError(err) {
+				return nil, fmt.Errorf("Failed to SyncRemoteData INSERT: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+			}
 			return nil, err
 		}
 	}
 	if err := tx.Commit(); err != nil {
+		if common.IsCorruptDBError(err) {
+			return nil, fmt.Errorf("Failed to SyncRemoteData Commit: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
 		return nil, err
 	}
 	db.invalidateCache()
@@ -759,6 +879,9 @@ func (db *sqliteContainer) OpenDatabaseFile() (*os.File, func(), error) {
 		SELECT 1 FROM container_info LIMIT 1; -- it doesn't actually lock until you hit the database
 		PRAGMA wal_checkpoint(TRUNCATE);      -- truncate the wal file, if it exists`,
 	); err != nil {
+		if common.IsCorruptDBError(err) {
+			return nil, nil, fmt.Errorf("Failed to OpenDatabaseFile: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
 		return nil, nil, fmt.Errorf("Error locking database%s: %v", db.containerFile, err)
 	}
 	cleanup := func() {
@@ -928,6 +1051,9 @@ func sqliteCreateExistingContainer(db Container, putTimestamp string, newMetadat
 	var cPolicyIndex int
 	row := tx.QueryRow("SELECT put_timestamp, delete_timestamp, storage_policy_index, metadata FROM container_info")
 	if err := row.Scan(&cPutTimestamp, &cDeleteTimestamp, &cPolicyIndex, &cMetadata); err != nil {
+		if common.IsCorruptDBError(err) {
+			return false, fmt.Errorf("Failed to sqliteCreateExistingContainer SELECT: %v; %v", err, common.QuarantineDir(path.Dir(cdb.containerFile), 4, "containers"))
+		}
 		return false, err
 	}
 	if cDeleteTimestamp <= cPutTimestamp { // not deleted
@@ -953,10 +1079,16 @@ func sqliteCreateExistingContainer(db Container, putTimestamp string, newMetadat
 	}
 	if _, err := tx.Exec("UPDATE container_info SET put_timestamp = ?, storage_policy_index = ?, metadata = ?",
 		putTimestamp, policyIndex, metastr); err != nil {
+		if common.IsCorruptDBError(err) {
+			return false, fmt.Errorf("Failed to sqliteCreateExistingContainer UPDATE: %v; %v", err, common.QuarantineDir(path.Dir(cdb.containerFile), 4, "containers"))
+		}
 		return false, err
 	}
 	defer cdb.invalidateCache()
 	if err := tx.Commit(); err != nil {
+		if common.IsCorruptDBError(err) {
+			return false, fmt.Errorf("Failed to sqliteCreateExistingContainer Commit: %v; %v", err, common.QuarantineDir(path.Dir(cdb.containerFile), 4, "containers"))
+		}
 		return false, err
 	}
 	return (cDeleteTimestamp > cPutTimestamp && putTimestamp > cDeleteTimestamp), nil
@@ -1050,8 +1182,17 @@ func (db *sqliteContainer) Reported(putTimestamp, deleteTimestamp string, object
 	}
 	defer tx.Rollback()
 	if _, err = tx.Exec("UPDATE container_info SET reported_put_timestamp = ?, reported_delete_timestamp = ?, reported_object_count = ?, reported_bytes_used = ?", putTimestamp, deleteTimestamp, objectCount, bytesUsed); err != nil {
+		if common.IsCorruptDBError(err) {
+			return fmt.Errorf("Failed to Reported UPDATE: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
 		return err
 	}
 	defer db.invalidateCache()
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		if common.IsCorruptDBError(err) {
+			return fmt.Errorf("Failed to Reported Commit: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
+		}
+		return err
+	}
+	return nil
 }
