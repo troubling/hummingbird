@@ -190,13 +190,13 @@ func (server *ObjectServer) containerUpdates(writer http.ResponseWriter, request
 		go server.updateDeleteAt(request.Context(), request.Method, request.Header, deleteAtTime, vars, logger)
 	}
 
-	firstDone := make(chan struct{}, 1)
+	done := make(chan struct{}, 1)
 	go func() {
 		server.updateContainer(request.Context(), metadata, request, vars, logger)
-		firstDone <- struct{}{}
+		done <- struct{}{}
 	}()
 	select {
-	case <-firstDone:
+	case <-done:
 	case <-time.After(server.updateTimeout):
 	}
 }

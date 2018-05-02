@@ -59,6 +59,24 @@ func serverInfoDump() ([]byte, error) {
 	return data, err
 }
 
+// Used to capture response from a subrequest
+type captureWriter struct {
+	status int
+	body   []byte
+	header http.Header
+}
+
+func (x *captureWriter) Header() http.Header    { return x.header }
+func (x *captureWriter) WriteHeader(status int) { x.status = status }
+func (x *captureWriter) Write(b []byte) (int, error) {
+	x.body = append(x.body, b...)
+	return len(b), nil
+}
+
+func NewCaptureWriter() *captureWriter {
+	return &captureWriter{header: make(http.Header)}
+}
+
 type AccountInfo struct {
 	ContainerCount int64
 	ObjectCount    int64

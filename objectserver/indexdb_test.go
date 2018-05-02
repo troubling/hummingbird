@@ -32,7 +32,7 @@ func newTestIndexDB(t *testing.T, pth string) *IndexDB {
 }
 
 func TestNewIndexDB_notExistsAndAlreadyExists(t *testing.T) {
-	pth := "testdata/tmp/TestNewIndexDB_notExistsAndAlreadyExists"
+	pth, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(pth)
 	ot := newTestIndexDB(t, pth)
 	ot.Close()
@@ -40,7 +40,7 @@ func TestNewIndexDB_notExistsAndAlreadyExists(t *testing.T) {
 }
 
 func TestIndexDB_Commit(t *testing.T) {
-	pth := "testdata/tmp/TestIndexDB_Commit"
+	pth, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(pth)
 	ot := newTestIndexDB(t, pth)
 	defer ot.Close()
@@ -149,7 +149,7 @@ func TestIndexDB_Commit(t *testing.T) {
 }
 
 func TestIndexDB_Lookup(t *testing.T) {
-	pth := "testdata/tmp/TestIndexDB_Lookup"
+	pth, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(pth)
 	ot := newTestIndexDB(t, pth)
 	defer ot.Close()
@@ -197,7 +197,7 @@ func TestIndexDB_Lookup(t *testing.T) {
 }
 
 func TestIndexDB_Lookup_withOverwrite(t *testing.T) {
-	pth := "testdata/tmp/TestIndexDB_Lookup_withOverwrite"
+	pth, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(pth)
 	ot := newTestIndexDB(t, pth)
 	defer ot.Close()
@@ -253,7 +253,7 @@ func TestIndexDB_Lookup_withOverwrite(t *testing.T) {
 }
 
 func TestIndexDB_Lookup_withUnderwrite(t *testing.T) {
-	pth := "testdata/tmp/TestIndexDB_Lookup_withUnderwrite"
+	pth, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(pth)
 	ot := newTestIndexDB(t, pth)
 	defer ot.Close()
@@ -310,7 +310,7 @@ func TestIndexDB_Lookup_withUnderwrite(t *testing.T) {
 }
 
 func TestIndexDB_List(t *testing.T) {
-	pth := "testdata/tmp/TestIndexDB_List"
+	pth, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(pth)
 	ot := newTestIndexDB(t, pth)
 	defer ot.Close()
@@ -384,7 +384,7 @@ func TestIndexDB_List(t *testing.T) {
 }
 
 func TestIndexDB_ListRange(t *testing.T) {
-	pth := "testdata/tmp/TestIndexDB_List"
+	pth, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(pth)
 	ot := newTestIndexDB(t, pth)
 	defer ot.Close()
@@ -472,7 +472,7 @@ func TestIndexDB_ListRange(t *testing.T) {
 }
 
 func TestIndexDB_ListMarker(t *testing.T) {
-	pth := "testdata/tmp/TestIndexDB_ListMarker"
+	pth, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(pth)
 	ot := newTestIndexDB(t, pth)
 	defer ot.Close()
@@ -530,7 +530,7 @@ func TestIndexDB_ListMarker(t *testing.T) {
 }
 
 func TestIndexDB_ListDefaults(t *testing.T) {
-	pth := "testdata/tmp/TestIndexDB_ListDefaults"
+	pth, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(pth)
 	ot := newTestIndexDB(t, pth)
 	defer ot.Close()
@@ -565,7 +565,7 @@ func TestIndexDB_ListDefaults(t *testing.T) {
 }
 
 func TestIndexDB_RingPartRange(t *testing.T) {
-	pth := "testdata/tmp/TestIndexDB_partitionRange"
+	pth, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(pth)
 	ot, err := NewIndexDB(pth, pth, pth, 4, 1, 1, 0, zap.L())
 	errnil(t, err)

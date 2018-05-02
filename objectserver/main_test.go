@@ -74,6 +74,7 @@ func makeObjectServer(confLoader *srv.TestConfigLoader, settings ...string) (*Te
 	if err != nil {
 		return nil, err
 	}
+	defer os.RemoveAll(driveRoot)
 	configString := fmt.Sprintf("[app:object-server]\ndevices=%s\nmount_check=false\n", driveRoot)
 	for i := 0; i < len(settings); i += 2 {
 		configString += fmt.Sprintf("%s=%s\n", settings[i], settings[i+1])

@@ -317,7 +317,11 @@ func (server *AccountServer) AccountDeleteHandler(writer http.ResponseWriter, re
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
-	info, err = db.GetInfo()
+	if _, err = db.GetInfo(); err != nil {
+		srv.GetLogger(request).Error("Unable to update cache after delete database", zap.Error(err))
+		srv.StandardResponse(writer, http.StatusInternalServerError)
+		return
+	}
 	writer.WriteHeader(http.StatusNoContent)
 	writer.Write([]byte(""))
 }
@@ -357,6 +361,7 @@ func (server *AccountServer) AccountPostHandler(writer http.ResponseWriter, requ
 	if err := db.UpdateMetadata(updates); err == ErrorInvalidMetadata {
 		srv.StandardResponse(writer, http.StatusBadRequest)
 	} else if err != nil {
+		srv.GetLogger(request).Error("Unable to update account metadata.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 	} else {
 		writer.WriteHeader(http.StatusNoContent)

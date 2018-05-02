@@ -277,6 +277,7 @@ func makeReplicatorWebServerWithFlags(confLoader *srv.TestConfigLoader, settings
 	if err != nil {
 		return nil, err
 	}
+	defer os.RemoveAll(deviceRoot)
 	replicator, conf, err := newTestReplicatorWithFlags(confLoader, settings, flags)
 	if err != nil {
 		return nil, err

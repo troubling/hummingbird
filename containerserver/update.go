@@ -41,9 +41,9 @@ func splitHeader(header string) []string {
 }
 
 func (server *ContainerServer) accountUpdate(writer http.ResponseWriter, request *http.Request, vars map[string]string, info *ContainerInfo, logger srv.LowLevelLogger) {
-	firstDone := make(chan struct{}, 1)
+	done := make(chan struct{}, 1)
 	go func() {
-		defer func() { firstDone <- struct{}{} }()
+		defer func() { done <- struct{}{} }()
 		defer middleware.Recover(writer, request, "PANIC WHILE UPDATING ACCOUNT")
 		accpartition := request.Header.Get("X-Account-Partition")
 		if accpartition == "" {
@@ -74,7 +74,7 @@ func (server *ContainerServer) accountUpdate(writer http.ResponseWriter, request
 	}()
 	select {
 	case <-time.After(waitForAccountUpdate):
-	case <-firstDone:
+	case <-done:
 	}
 }
 
