@@ -154,12 +154,12 @@ func tempurl(requestsMetric tally.Counter) func(http.Handler) http.Handler {
 			}
 
 			scope := SCOPE_INVALID
-			if ai, err := ctx.GetAccountInfo(account); err == nil {
+			if ai, err := ctx.GetAccountInfo(request.Context(), account); err == nil {
 				if key, ok := ai.Metadata["Temp-Url-Key"]; ok && checkhmac([]byte(key), sigb, request.Method, path, expires) {
 					scope = SCOPE_ACCOUNT
 				} else if key, ok := ai.Metadata["Temp-Url-Key-2"]; ok && checkhmac([]byte(key), sigb, request.Method, path, expires) {
 					scope = SCOPE_ACCOUNT
-				} else if ci, err := ctx.C.GetContainerInfo(account, container); err == nil {
+				} else if ci, err := ctx.C.GetContainerInfo(request.Context(), account, container); err == nil {
 					if key, ok := ci.Metadata["Temp-Url-Key"]; ok && checkhmac([]byte(key), sigb, request.Method, path, expires) {
 						scope = SCOPE_CONTAINER
 					} else if key, ok := ci.Metadata["Temp-Url-Key-2"]; ok && checkhmac([]byte(key), sigb, request.Method, path, expires) {

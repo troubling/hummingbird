@@ -36,6 +36,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
@@ -213,6 +215,7 @@ type LowLevelLogger interface {
 	Info(msg string, fields ...zapcore.Field)
 	Debug(msg string, fields ...zapcore.Field)
 	With(fields ...zapcore.Field) *zap.Logger
+	Sugar() *zap.SugaredLogger
 }
 
 func LogPanics(logger LowLevelLogger, msg string) {
@@ -334,6 +337,24 @@ func LogRequestLine(logger *zap.Logger, request *http.Request, start time.Time, 
 			zap.Float64("requestTimeToHeaderSeconds", newWriter.ResponseStarted.Sub(start).Seconds()),
 			zap.String("extraInfo", extraInfo),
 		)
+		if span := opentracing.SpanFromContext(request.Context()); span != nil {
+			span.LogKV("remoteAddr", common.GetDefault(request.Header, "X-Forwarded-For", request.RemoteAddr),
+				"eventTime", time.Now().Format("02/Jan/2006:15:04:05 -0700"),
+				"method", request.Method,
+				"urlPath", common.Urlencode(request.URL.Path),
+				"status", newWriter.Status,
+				"contentBytesIn", newReader.ByteCount,
+				"contentBytesOut", newWriter.ByteCount,
+				"contentLengthIn", common.GetDefault(request.Header, "Content-Length", "-"),
+				"contentLengthOut", common.GetDefault(newWriter.Header(), "Content-Length", "-"),
+				"referer", common.GetDefault(request.Header, "Referer", "-"),
+				"userAgent", common.GetDefault(request.Header, "User-Agent", "-"),
+				"requestTimeSeconds", time.Since(start).Seconds(),
+				"requestTimeToHeaderSeconds", newWriter.ResponseStarted.Sub(start).Seconds(),
+				"txn", request.Header.Get("X-Trans-Id"),
+				"extraInfo", extraInfo)
+			ext.HTTPStatusCode.Set(span, uint16(newWriter.Status))
+		}
 	}
 }
 

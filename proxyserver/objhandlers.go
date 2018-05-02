@@ -35,7 +35,7 @@ func (server *ProxyServer) ObjectGetHandler(writer http.ResponseWriter, request 
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	containerInfo, err := ctx.C.GetContainerInfo(vars["account"], vars["container"])
+	containerInfo, err := ctx.C.GetContainerInfo(request.Context(), vars["account"], vars["container"])
 	if err != nil {
 		ctx.ACL = ""
 		if ctx.Authorize != nil {
@@ -55,7 +55,7 @@ func (server *ProxyServer) ObjectGetHandler(writer http.ResponseWriter, request 
 			return
 		}
 	}
-	resp := ctx.C.GetObject(vars["account"], vars["container"], vars["obj"], request.Header)
+	resp := ctx.C.GetObject(request.Context(), vars["account"], vars["container"], vars["obj"], request.Header)
 	for k := range resp.Header {
 		writer.Header().Set(k, resp.Header.Get(k))
 	}
@@ -71,7 +71,7 @@ func (server *ProxyServer) ObjectHeadHandler(writer http.ResponseWriter, request
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	containerInfo, err := ctx.C.GetContainerInfo(vars["account"], vars["container"])
+	containerInfo, err := ctx.C.GetContainerInfo(request.Context(), vars["account"], vars["container"])
 	if err != nil {
 		ctx.ACL = ""
 		if ctx.Authorize != nil {
@@ -90,7 +90,7 @@ func (server *ProxyServer) ObjectHeadHandler(writer http.ResponseWriter, request
 			return
 		}
 	}
-	resp := ctx.C.HeadObject(vars["account"], vars["container"], vars["obj"], request.Header)
+	resp := ctx.C.HeadObject(request.Context(), vars["account"], vars["container"], vars["obj"], request.Header)
 	for k := range resp.Header {
 		writer.Header().Set(k, resp.Header.Get(k))
 	}
@@ -105,7 +105,7 @@ func (server *ProxyServer) ObjectDeleteHandler(writer http.ResponseWriter, reque
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	containerInfo, err := ctx.C.GetContainerInfo(vars["account"], vars["container"])
+	containerInfo, err := ctx.C.GetContainerInfo(request.Context(), vars["account"], vars["container"])
 	if err != nil {
 		ctx.ACL = ""
 		if ctx.Authorize != nil {
@@ -124,7 +124,7 @@ func (server *ProxyServer) ObjectDeleteHandler(writer http.ResponseWriter, reque
 			return
 		}
 	}
-	resp := ctx.C.DeleteObject(vars["account"], vars["container"], vars["obj"], request.Header)
+	resp := ctx.C.DeleteObject(request.Context(), vars["account"], vars["container"], vars["obj"], request.Header)
 	resp.Body.Close()
 	srv.StandardResponse(writer, resp.StatusCode)
 }
@@ -136,7 +136,7 @@ func (server *ProxyServer) ObjectPostHandler(writer http.ResponseWriter, request
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	containerInfo, err := ctx.C.GetContainerInfo(vars["account"], vars["container"])
+	containerInfo, err := ctx.C.GetContainerInfo(request.Context(), vars["account"], vars["container"])
 	if err != nil {
 		ctx.ACL = ""
 		if ctx.Authorize != nil {
@@ -161,7 +161,7 @@ func (server *ProxyServer) ObjectPostHandler(writer http.ResponseWriter, request
 		writer.Write([]byte(str))
 		return
 	}
-	resp := ctx.C.PostObject(vars["account"], vars["container"], vars["obj"], request.Header)
+	resp := ctx.C.PostObject(request.Context(), vars["account"], vars["container"], vars["obj"], request.Header)
 	resp.Body.Close()
 	srv.StandardResponse(writer, resp.StatusCode)
 }
@@ -178,7 +178,7 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 		srv.SimpleErrorResponse(writer, 400, "If-None-Match only supports *")
 		return
 	}
-	containerInfo, err := ctx.C.GetContainerInfo(vars["account"], vars["container"])
+	containerInfo, err := ctx.C.GetContainerInfo(request.Context(), vars["account"], vars["container"])
 	if err != nil {
 		ctx.ACL = ""
 		if ctx.Authorize != nil {
@@ -211,7 +211,7 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 		writer.Write([]byte(str))
 		return
 	}
-	resp := ctx.C.PutObject(vars["account"], vars["container"], vars["obj"], request.Header, request.Body)
+	resp := ctx.C.PutObject(request.Context(), vars["account"], vars["container"], vars["obj"], request.Header, request.Body)
 	resp.Body.Close()
 	writer.Header().Set("Etag", resp.Header.Get("Etag"))
 	if modified, err := common.ParseDate(request.Header.Get("X-Timestamp")); err == nil {

@@ -1,8 +1,7 @@
 package containerserver
 
 import (
-	"net/http"
-
+	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/ring"
 )
 
@@ -13,6 +12,6 @@ type PriorityRepJob struct {
 }
 
 // TODO
-func SendPriRepJob(job *PriorityRepJob, client *http.Client) (string, bool) {
+func SendPriRepJob(job *PriorityRepJob, client common.HTTPClient) (string, bool) {
 	return "pretending to do priority replication; normal replication should be fast enough for now", true
 }

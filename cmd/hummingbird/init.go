@@ -183,6 +183,14 @@ func initCommand(args []string) error {
 	print(`[filter:staticweb]`)
 	print(``)
 	print(`[filter:copy]`)
+	print(``)
+	print(`#[tracing]`)
+	print(`#disabled = false`)
+	print(`#sampler_type = const`)
+	print(`#sampler_param = 1`)
+	print(`#reporter_log_spans = false`)
+	print(`#agent_host_port = 127.0.0.1:6831`)
+	print(`#enable_httptrace = true`)
 	print(`EOF`)
 	if subcmd != "deb" {
 		print(`sudo chown %s: %s/etc/hummingbird/proxy-server.conf`, username, prefix)
@@ -228,6 +236,14 @@ func initCommand(args []string) error {
 		if repport != 0 {
 			print(`bind_port = %d`, repport)
 		}
+		print(``)
+		print(`#[tracing]`)
+		print(`#disabled = false`)
+		print(`#sampler_type = const`)
+		print(`#sampler_param = 1`)
+		print(`#reporter_log_spans = false`)
+		print(`#agent_host_port = 127.0.0.1:6831`)
+		print(`#enable_httptrace = true`)
 		print(`EOF`)
 		if subcmd != "deb" {
 			print(`sudo chown %s: %s`, username, pth)
@@ -273,6 +289,14 @@ func initCommand(args []string) error {
 		if repport != 0 {
 			print(`bind_port = %d`, repport)
 		}
+		print(``)
+		print(`#[tracing]`)
+		print(`#disabled = false`)
+		print(`#sampler_type = const`)
+		print(`#sampler_param = 1`)
+		print(`#reporter_log_spans = false`)
+		print(`#agent_host_port = 127.0.0.1:6831`)
+		print(`#enable_httptrace = true`)
 		print(`EOF`)
 		if subcmd != "deb" {
 			print(`sudo chown %s: %s`, username, pth)
@@ -321,6 +345,14 @@ func initCommand(args []string) error {
 		}
 		print(``)
 		print(`[object-auditor]`)
+		print(``)
+		print(`#[tracing]`)
+		print(`#disabled = false`)
+		print(`#sampler_type = const`)
+		print(`#sampler_param = 1`)
+		print(`#reporter_log_spans = false`)
+		print(`#agent_host_port = 127.0.0.1:6831`)
+		print(`#enable_httptrace = true`)
 		print(`EOF`)
 		if subcmd != "deb" {
 			print(`sudo chown %s: %s`, username, pth)

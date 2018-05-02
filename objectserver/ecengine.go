@@ -36,11 +36,13 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/common/tracing"
 	"golang.org/x/net/http2"
 )
 
@@ -58,7 +60,7 @@ type ecEngine struct {
 	dataShards      int
 	parityShards    int
 	chunkSize       int
-	client          *http.Client
+	client          common.HTTPClient
 	nurseryReplicas int
 	dbPartPower     int
 	numSubDirs      int
@@ -620,6 +622,10 @@ func ecEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.Fl
 		}
 	}
 	logger, _ := zap.NewProduction()
+	httpClient := &http.Client{
+		Timeout:   120 * time.Minute,
+		Transport: transport,
+	}
 	engine := &ecEngine{
 		driveRoot:      driveRoot,
 		hashPathPrefix: hashPathPrefix,
@@ -631,10 +637,18 @@ func ecEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.Fl
 		idbs:           map[string]*IndexDB{},
 		dbPartPower:    dbPartPower,
 		numSubDirs:     subdirs,
-		client: &http.Client{
-			Timeout:   120 * time.Minute,
-			Transport: transport,
-		},
+		client:         httpClient,
+	}
+	if config.HasSection("tracing") {
+		clientTracer, _, err := tracing.Init("ecengine-client", logger, config.GetSection("tracing"))
+		if err != nil {
+			return nil, fmt.Errorf("Error setting up tracer: %v", err)
+		}
+		enableHTTPTrace := config.GetBool("tracing", "enable_httptrace", true)
+		engine.client, err = client.NewTracingClient(clientTracer, httpClient, enableHTTPTrace)
+		if err != nil {
+			return nil, fmt.Errorf("Error setting up tracing client: %v", err)
+		}
 	}
 	if engine.dataShards, err = strconv.Atoi(policy.Config["data_shards"]); err != nil {
 		return nil, err

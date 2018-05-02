@@ -51,7 +51,7 @@ func containerQuota(metric tally.Counter) func(http.Handler) http.Handler {
 					}
 				}
 			} else if obj != "" && request.Method == "PUT" {
-				ci, err := ctx.C.GetContainerInfo(account, container)
+				ci, err := ctx.C.GetContainerInfo(request.Context(), account, container)
 				if err != nil {
 					next.ServeHTTP(writer, request)
 					return

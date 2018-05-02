@@ -70,7 +70,7 @@ func accountQuota(metric tally.Counter) func(http.Handler) http.Handler {
 				return
 			}
 
-			ai, err := ctx.GetAccountInfo(account)
+			ai, err := ctx.GetAccountInfo(request.Context(), account)
 			if err != nil {
 				next.ServeHTTP(writer, request)
 				return

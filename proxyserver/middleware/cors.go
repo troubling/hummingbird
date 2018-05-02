@@ -81,7 +81,7 @@ func (cm *corsMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Re
 		cm.next.ServeHTTP(writer, request)
 		return
 	}
-	if ci, err := ctx.C.GetContainerInfo(pathParts["account"], pathParts["container"]); err == nil {
+	if ci, err := ctx.C.GetContainerInfo(request.Context(), pathParts["account"], pathParts["container"]); err == nil {
 		cHandler := &cors{origin: origin, ci: ci}
 		w := srv.NewCustomWriter(writer, cHandler.HandleCors)
 		cm.next.ServeHTTP(w, request)

@@ -53,7 +53,7 @@ func TestReconReportTimeFail(t *testing.T) {
 	port, _ := strconv.Atoi(ports)
 
 	servers := []*ipPort{{ip: host, port: port}}
-	client := http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second}
 	require.Equal(t, false, getTimeReport(client, servers).Passed())
 }
 
@@ -80,7 +80,7 @@ func TestReconReportTimePass(t *testing.T) {
 	port, _ := strconv.Atoi(ports)
 
 	servers := []*ipPort{{ip: host, port: port, scheme: "http"}}
-	client := http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second}
 	require.Equal(t, true, getTimeReport(client, servers).Passed())
 }
 
@@ -107,7 +107,7 @@ func TestReconReportRingMd5Fail(t *testing.T) {
 	port, _ := strconv.Atoi(ports)
 
 	servers := []*ipPort{{ip: host, port: port, scheme: "http"}}
-	client := http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second}
 	require.Equal(t, false, getRingMD5Report(
 		client, servers, map[string]string{"/a/object.ring.gz": "abcdf"}).Passed())
 }
@@ -135,7 +135,7 @@ func TestReconReportRingMd5Pass(t *testing.T) {
 	port, _ := strconv.Atoi(ports)
 
 	servers := []*ipPort{{ip: host, port: port, scheme: "http"}}
-	client := http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second}
 	require.Equal(t, true, getRingMD5Report(
 		client, servers, map[string]string{"/a/object.ring.gz": "abcde"}).Passed())
 }
@@ -181,7 +181,7 @@ func TestReconReportQuarantine(t *testing.T) {
 	port1, _ := strconv.Atoi(ports1)
 
 	servers := []*ipPort{{ip: host, port: port, scheme: "http"}, {ip: host1, port: port1, scheme: "http"}}
-	client := http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second}
 	report := getQuarantineReport(client, servers)
 	require.Equal(t, true, report.Passed())
 	out := report.String()
@@ -289,7 +289,7 @@ func TestReconQuarantineDetailReport(t *testing.T) {
 	port1, _ := strconv.Atoi(ports1)
 
 	servers := []*ipPort{{ip: host, port: port, scheme: "http"}, {ip: host1, port: port1, scheme: "http"}}
-	client := http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second}
 	report := getQuarantineDetailReport(client, servers)
 	require.Equal(t, true, report.Passed(), report.String())
 	out := report.String()
@@ -359,7 +359,7 @@ func TestReconReportAsync(t *testing.T) {
 	port1, _ := strconv.Atoi(ports1)
 
 	servers := []*ipPort{{ip: host, port: port, scheme: "http"}, {ip: host1, port: port1, scheme: "http"}}
-	client := http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second}
 	report := getAsyncReport(client, servers)
 	require.Equal(t, true, report.Passed())
 	out := report.String()

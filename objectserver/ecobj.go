@@ -49,7 +49,7 @@ type ecObject struct {
 	dataShards      int
 	parityShards    int
 	chunkSize       int
-	client          *http.Client
+	client          common.HTTPClient
 	nurseryReplicas int
 	txnId           string
 }

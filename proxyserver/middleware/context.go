@@ -159,11 +159,11 @@ func getPathSegments(requestPath string) (string, string, string, string) {
 	}
 }
 
-func (ctx *ProxyContext) GetAccountInfo(account string) (*AccountInfo, error) {
+func (pc *ProxyContext) GetAccountInfo(ctx context.Context, account string) (*AccountInfo, error) {
 	key := fmt.Sprintf("account/%s", account)
-	ai := ctx.accountInfoCache[key]
+	ai := pc.accountInfoCache[key]
 	if ai == nil {
-		if err := ctx.Cache.GetStructured(key, &ai); err != nil {
+		if err := pc.Cache.GetStructured(key, &ai); err != nil {
 			ai = nil
 		}
 	}
@@ -171,10 +171,10 @@ func (ctx *ProxyContext) GetAccountInfo(account string) (*AccountInfo, error) {
 		return nil, fmt.Errorf("%d error retrieving info for account %s", ai.StatusCode, account)
 	}
 	if ai == nil {
-		resp := ctx.C.HeadAccount(account, nil)
+		resp := pc.C.HeadAccount(ctx, account, nil)
 		resp.Body.Close()
 		if resp.StatusCode/100 != 2 {
-			ctx.Cache.Set(key, &AccountInfo{StatusCode: resp.StatusCode}, 30)
+			pc.Cache.Set(key, &AccountInfo{StatusCode: resp.StatusCode}, 30)
 			return nil, fmt.Errorf("%d error retrieving info for account %s", resp.StatusCode, account)
 		}
 		ai = &AccountInfo{
@@ -199,32 +199,32 @@ func (ctx *ProxyContext) GetAccountInfo(account string) (*AccountInfo, error) {
 				ai.SysMetadata[k[18:]] = resp.Header.Get(k)
 			}
 		}
-		ctx.Cache.Set(key, ai, 30)
+		pc.Cache.Set(key, ai, 30)
 	}
 	return ai, nil
 }
 
-func (ctx *ProxyContext) InvalidateAccountInfo(account string) {
+func (pc *ProxyContext) InvalidateAccountInfo(account string) {
 	key := fmt.Sprintf("account/%s", account)
-	delete(ctx.accountInfoCache, key)
-	ctx.Cache.Delete(key)
+	delete(pc.accountInfoCache, key)
+	pc.Cache.Delete(key)
 }
 
-func (ctx *ProxyContext) AutoCreateAccount(account string, headers http.Header) {
+func (pc *ProxyContext) AutoCreateAccount(ctx context.Context, account string, headers http.Header) {
 	h := http.Header{"X-Timestamp": []string{common.GetTimestamp()},
-		"X-Trans-Id": []string{ctx.TxId}}
+		"X-Trans-Id": []string{pc.TxId}}
 	for key := range headers {
 		if strings.HasPrefix(key, "X-Account-Sysmeta-") {
 			h[key] = []string{headers.Get(key)}
 		}
 	}
-	resp := ctx.C.PutAccount(account, h)
+	resp := pc.C.PutAccount(ctx, account, h)
 	if resp.StatusCode/100 == 2 {
-		ctx.InvalidateAccountInfo(account)
+		pc.InvalidateAccountInfo(account)
 	}
 }
 
-func (ctx *ProxyContext) newSubrequest(method, urlStr string, body io.Reader, req *http.Request, source string) (*http.Request, error) {
+func (pc *ProxyContext) newSubrequest(method, urlStr string, body io.Reader, req *http.Request, source string) (*http.Request, error) {
 	if source == "" {
 		panic("Programmer error: You must supply the source with newSubrequest. If you want the subrequest to be treated a user request (billing, quotas, etc.) you can set the source to \"-\"")
 	}
@@ -236,16 +236,16 @@ func (ctx *ProxyContext) newSubrequest(method, urlStr string, body io.Reader, re
 		return nil, err
 	}
 	subctx := &ProxyContext{
-		ProxyContextMiddleware: ctx.ProxyContextMiddleware,
-		Authorize:              ctx.Authorize,
-		RemoteUsers:            ctx.RemoteUsers,
-		subrequestCopy:         ctx.subrequestCopy,
-		Logger:                 ctx.Logger.With(zap.String("src", source)),
-		C:                      ctx.C,
-		TxId:                   ctx.TxId,
-		accountInfoCache:       ctx.accountInfoCache,
+		ProxyContextMiddleware: pc.ProxyContextMiddleware,
+		Authorize:              pc.Authorize,
+		RemoteUsers:            pc.RemoteUsers,
+		subrequestCopy:         pc.subrequestCopy,
+		Logger:                 pc.Logger.With(zap.String("src", source)),
+		C:                      pc.C,
+		TxId:                   pc.TxId,
+		accountInfoCache:       pc.accountInfoCache,
 		status:                 500,
-		depth:                  ctx.depth + 1,
+		depth:                  pc.depth + 1,
 		Source:                 source,
 	}
 	subreq = subreq.WithContext(context.WithValue(req.Context(), "proxycontext", subctx))
@@ -260,7 +260,7 @@ func (ctx *ProxyContext) newSubrequest(method, urlStr string, body io.Reader, re
 	return subreq, nil
 }
 
-func (ctx *ProxyContext) serveHTTPSubrequest(writer http.ResponseWriter, subreq *http.Request) {
+func (pc *ProxyContext) serveHTTPSubrequest(writer http.ResponseWriter, subreq *http.Request) {
 	subctx := GetProxyContext(subreq)
 	// TODO: check subctx.depth
 	subwriter := srv.NewCustomWriter(writer, func(w http.ResponseWriter, status int) int {
@@ -269,7 +269,7 @@ func (ctx *ProxyContext) serveHTTPSubrequest(writer http.ResponseWriter, subreq 
 		return status
 	})
 	subwriter.Header().Set("X-Trans-Id", subctx.TxId)
-	ctx.next.ServeHTTP(subwriter, subreq)
+	pc.next.ServeHTTP(subwriter, subreq)
 }
 
 func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -319,7 +319,7 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 	writer.Header().Set("X-Openstack-Request-Id", transId)
 	request.Header.Set("X-Timestamp", common.GetTimestamp())
 	logr := m.log.With(zap.String("txn", transId))
-	ctx := &ProxyContext{
+	pc := &ProxyContext{
 		ProxyContextMiddleware: m,
 		Authorize:              nil,
 		Logger:                 logr,
@@ -335,13 +335,13 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			ctx.GetAccountInfo(account)
+			pc.GetAccountInfo(request.Context(), account)
 		}()
 		if container != "" {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				ctx.C.GetContainerInfo(account, container)
+				pc.C.GetContainerInfo(request.Context(), account, container)
 			}()
 		}
 		wg.Wait()
@@ -371,11 +371,11 @@ func (m *ProxyContextMiddleware) ServeHTTP(writer http.ResponseWriter, request *
 			w.Header().Set("X-Source-Code", string(buf))
 		}
 
-		ctx.responseSent = time.Now()
-		ctx.status = status
+		pc.responseSent = time.Now()
+		pc.status = status
 		return status
 	})
-	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", ctx))
+	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", pc))
 	m.next.ServeHTTP(newWriter, request)
 }
 

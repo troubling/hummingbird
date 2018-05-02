@@ -22,11 +22,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"golang.org/x/net/http2"
-
 	"go.uber.org/zap"
 
-	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
 )
@@ -70,7 +67,6 @@ type nurseryDevice struct {
 	policy    int
 	oring     ring.Ring
 	canchan   chan struct{}
-	client    http.Client
 	objEngine NurseryObjectEngine
 }
 
@@ -175,20 +171,6 @@ func (nrd *nurseryDevice) PriorityReplicate(w http.ResponseWriter, pri PriorityR
 }
 
 func GetNurseryDevice(oring ring.Ring, dev *ring.Device, policy int, r *Replicator, f NurseryObjectEngine) (ReplicationDevice, error) {
-	transport := &http.Transport{
-		MaxIdleConnsPerHost: 100,
-		MaxIdleConns:        0,
-	}
-	if r.CertFile != "" && r.KeyFile != "" {
-		tlsConf, err := common.NewClientTLSConfig(r.CertFile, r.KeyFile)
-		if err != nil {
-			return nil, fmt.Errorf("Error getting TLS config: %v", err)
-		}
-		transport.TLSClientConfig = tlsConf
-		if err = http2.ConfigureTransport(transport); err != nil {
-			return nil, fmt.Errorf("Error setting up http2: %v", err)
-		}
-	}
 	return &nurseryDevice{
 		r:         r,
 		dev:       dev,
@@ -196,7 +178,6 @@ func GetNurseryDevice(oring ring.Ring, dev *ring.Device, policy int, r *Replicat
 		oring:     oring,
 		passStart: time.Now(),
 		canchan:   make(chan struct{}),
-		client:    http.Client{Timeout: 10 * time.Second, Transport: transport},
 		objEngine: f,
 	}, nil
 }

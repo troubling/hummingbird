@@ -34,11 +34,13 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/common/tracing"
 	"golang.org/x/net/http2"
 )
 
@@ -122,7 +124,7 @@ type nurseryObject struct {
 	reclaimAge     int64
 	cacheHashDirs  bool
 	asyncWG        *sync.WaitGroup // Used to keep track of async goroutines
-	client         *http.Client
+	client         common.HTTPClient
 }
 
 // Metadata returns the object's metadata.
@@ -396,7 +398,7 @@ type nurseryEngine struct {
 	logger         srv.LowLevelLogger
 	policy         int
 	cacheHashDirs  bool
-	client         *http.Client
+	client         common.HTTPClient
 }
 
 func neObjectFiles(nurseryDir, stableDir string) (string, string, bool) {
@@ -743,6 +745,24 @@ func nurseryEngineConstructor(config conf.Config, policy *conf.Policy, flags *fl
 			return nil, err
 		}
 	}
+	var c common.HTTPClient
+	httpClient := &http.Client{
+		Timeout:   120 * time.Minute,
+		Transport: transport,
+	}
+	c = httpClient
+	if config.HasSection("tracing") {
+		clientTracer, _, err := tracing.Init("nurseryengine-client", logger, config.GetSection("tracing"))
+		if err != nil {
+			return nil, fmt.Errorf("Error setting up tracer: %v", err)
+		}
+		enableHTTPTrace := config.GetBool("tracing", "enable_httptrace", true)
+		c, err = client.NewTracingClient(clientTracer, httpClient, enableHTTPTrace)
+		if err != nil {
+			return nil, fmt.Errorf("Error setting up tracing client: %v", err)
+		}
+	}
+
 	return &nurseryEngine{
 		driveRoot:      driveRoot,
 		hashPathPrefix: hashPathPrefix,
@@ -751,11 +771,8 @@ func nurseryEngineConstructor(config conf.Config, policy *conf.Policy, flags *fl
 		reclaimAge:     reclaimAge,
 		logger:         logger,
 		cacheHashDirs:  cacheHashDirs,
-		client: &http.Client{
-			Timeout:   120 * time.Minute,
-			Transport: transport,
-		},
-		policy: policy.Index}, nil
+		client:         c,
+		policy:         policy.Index}, nil
 }
 
 func init() {

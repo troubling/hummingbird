@@ -68,7 +68,7 @@ func (ka *keystoneAuth) accountMatchesTenant(account string, tenantID string) bo
 
 func (ka *keystoneAuth) getProjectDomainID(r *http.Request, account string) string {
 	ctx := GetProxyContext(r)
-	ai, err := ctx.GetAccountInfo(account)
+	ai, err := ctx.GetAccountInfo(r.Context(), account)
 	if err != nil {
 		return "" // TODO: I assume this is what we want here
 	}
