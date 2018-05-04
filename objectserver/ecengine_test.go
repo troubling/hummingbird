@@ -256,7 +256,10 @@ func TestGetObjectsToReplicateRemoteHasSome(t *testing.T) {
 }
 
 func TestEcShardDelete(t *testing.T) {
-	ece, err := getTestEce()
+	ece, dr, err := getTestEce()
+	if dr != "" {
+		defer os.RemoveAll(dr)
+	}
 	require.Nil(t, err)
 	idb, err := ece.getDB("sdb1")
 	require.Nil(t, err)
