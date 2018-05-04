@@ -192,12 +192,16 @@ func (rs *ringScan) runOnce() time.Duration {
 				policy, err = strconv.Atoi(parts[1])
 				if err != nil {
 					getLogger.Error("policy parsing error", zap.String("ring path", ringPath), zap.Error(err))
+					atomic.AddInt64(&errors, 1)
+					continue
 				}
 			}
 			getLogger.Debug("parsed", zap.String("type", typ), zap.Int("policy", policy), zap.String("md5", md5))
 			ryng, err := rs.GetRingMD5(typ, policy)
 			if err != nil {
 				getLogger.Error("error getting ring", zap.String("type", typ), zap.Int("policy", policy), zap.String("md5", md5), zap.Error(err))
+				atomic.AddInt64(&errors, 1)
+				continue
 			}
 			if md5 != ryng.MD5() {
 				getLogger.Debug("pushing ring", zap.String("type", typ), zap.Int("policy", policy), zap.String("previous md5", md5), zap.String("new md5", ryng.MD5()))
