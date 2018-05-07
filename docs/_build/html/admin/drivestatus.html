@@ -1,0 +1,354 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Drive Status Report &mdash; Hummingbird v.PR documentation</title>
+  
+
+  
+  
+    <link rel="shortcut icon" href="../_static/privatecloud.ico"/>
+  
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="../_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="../_static/bespoke.css" type="text/css" />
+  
+    <link rel="stylesheet" href="../_static/bolditalic.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="../genindex.html"/>
+        <link rel="search" title="Search" href="../search.html"/>
+    <link rel="top" title="Hummingbird v.PR documentation" href="../index.html"/>
+        <link rel="up" title="Hummingbird Cluster Health" href="index.html"/>
+        <link rel="next" title="Async Pending Report" href="async.html"/>
+        <link rel="prev" title="Hummingbird Monitoring" href="monitoring.html"/> 
+
+  
+  <script src="../_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="../index.html" class="icon icon-home"> Hummingbird
+          
+
+          
+            
+            <img src="../_static/privatecloud.png" class="logo" />
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                v.PR
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../index.html">Hummingbird</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../arch/index.html">Hummingbird Architecture</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">Hummingbird Cluster Health</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="rings.html">Ring Managment 101</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rings.html#ring-best-practices">Ring Best Practices</a></li>
+<li class="toctree-l2"><a class="reference internal" href="monitoring.html">Hummingbird Monitoring</a></li>
+<li class="toctree-l2"><a class="reference internal" href="monitoring.html#metrics-exposed-by-hummingbird-services">Metrics exposed by Hummingbird services</a></li>
+<li class="toctree-l2"><a class="reference internal" href="monitoring.html#prometheus-grafana-alertmanager-installation">Prometheus, Grafana &amp; Alertmanager Installation.</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Drive Status Report</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#drive-failures">Drive Failures</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="async.html">Async Pending Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="dispersion.html">Dispersion Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ringmd5.html">MD5 Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="quarantine.html">Quarantine Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="stalledreplicators.html">Stalled Replicators Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="replicationstats.html">Replication Partitions Per Second Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="replicationduration.html">Replication Duration Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="timesync.html">Time Sync Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="replication-tools.html">Hummingbird Priority Replication Tools</a></li>
+<li class="toctree-l2"><a class="reference internal" href="debug-single.html">Debugging a single account, container, or object</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../deployment.html">So You Want to Deploy Hummingbird</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../dev/index.html">Hummingbird Development</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Hummingbird</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html">Docs</a> &raquo;</li>
+        
+          <li><a href="index.html">Hummingbird Cluster Health</a> &raquo;</li>
+        
+      <li>Drive Status Report</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="../_sources/admin/drivestatus.md.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="drive-status-report">
+<h1>Drive Status Report<a class="headerlink" href="#drive-status-report" title="Permalink to this headline">#</a></h1>
+<p>The Drive Status Report is gathered from information recorded by
+andrewd, and so this recon report needs to be run where andrewd is
+running. It lists the drives that are unmounted or unreachable, usually
+indicating drive or server failures that need to be corrected.</p>
+<div class="highlight-default"><div class="highlight"><pre><span></span>$ hummingbird recon -ds
+[2018-01-16 17:31:05] Drive Report
+Weighted / Unmounted / Unreachable devices report for Policy 1
+Last successful recon run was 0.19 hours ago.
+No weighted drives are currently reported as unmounted or unreachable.
+Weighted / Unmounted / Unreachable devices report for Policy 0
+Last successful recon run was 0.19 hours ago.
+No weighted drives are currently reported as unmounted or unreachable.
+</pre></div>
+</div>
+<div class="highlight-default"><div class="highlight"><pre><span></span>$ hummingbird recon -ds -json
+{
+    &quot;Name&quot;: &quot;Drive Report&quot;,
+    &quot;Time&quot;: &quot;2018-01-16T17:31:09.66558933Z&quot;,
+    &quot;Pass&quot;: true,
+    &quot;Errors&quot;: null,
+    &quot;PolicyReports&quot;: [
+        {
+            &quot;Policy&quot;: 0,
+            &quot;Time&quot;: &quot;2018-01-16T17:19:53Z&quot;,
+            &quot;SingleReports&quot;: null
+        },
+        {
+            &quot;Policy&quot;: 1,
+            &quot;Time&quot;: &quot;2018-01-16T17:19:53Z&quot;,
+            &quot;SingleReports&quot;: null
+        }
+    ],
+    &quot;MaxBadDevAge&quot;: 604800000000000
+}
+</pre></div>
+</div>
+<div class="section" id="drive-failures">
+<h2>Drive Failures<a class="headerlink" href="#drive-failures" title="Permalink to this headline">#</a></h2>
+<p>The most common failure you will get running a hummingbird cluster is
+drive failures. Here are a couple tools / methods to consider on how to
+fix these.</p>
+<div class="highlight-default"><div class="highlight"><pre><span></span><span class="n">hummingbird</span> <span class="n">recon</span> <span class="o">-</span><span class="n">ds</span>
+<span class="n">Weighted</span> <span class="o">/</span> <span class="n">Unmounted</span> <span class="o">/</span> <span class="n">Unreachable</span> <span class="n">devices</span> <span class="n">report</span> <span class="k">for</span> <span class="n">Policy</span> <span class="mi">0</span>
+<span class="n">Last</span> <span class="n">successful</span> <span class="n">recon</span> <span class="n">run</span> <span class="n">was</span> <span class="mf">0.50</span> <span class="n">hours</span> <span class="n">ago</span><span class="o">.</span>
+<span class="o">+--------+------------+------+--------+--------+---------+-----------+------------------------------+------------------+</span>
+<span class="o">|</span> <span class="n">POLICY</span> <span class="o">|</span> <span class="n">IP</span> <span class="n">ADDRESS</span> <span class="o">|</span> <span class="n">PORT</span> <span class="o">|</span> <span class="n">DEVICE</span> <span class="o">|</span> <span class="n">WEIGHT</span> <span class="o">|</span> <span class="n">MOUNTED</span> <span class="o">|</span> <span class="n">REACHABLE</span> <span class="o">|</span> <span class="n">LAST</span> <span class="n">STATE</span> <span class="n">CHANGE</span>            <span class="o">|</span> <span class="n">SHOULD</span> <span class="n">BE</span> <span class="n">ZEROED</span> <span class="o">|</span>
+<span class="o">|</span> <span class="mi">0</span>      <span class="o">|</span> <span class="mf">10.0</span><span class="o">.</span><span class="mf">0.1</span>   <span class="o">|</span> <span class="mi">6000</span> <span class="o">|</span> <span class="n">sdb1</span>   <span class="o">|</span> <span class="mf">100.00</span> <span class="o">|</span> <span class="n">false</span>   <span class="o">|</span> <span class="n">true</span>      <span class="o">|</span> <span class="n">Wed</span> <span class="n">Jan</span> <span class="mi">17</span> <span class="mi">21</span><span class="p">:</span><span class="mi">26</span><span class="p">:</span><span class="mi">09</span> <span class="n">UTC</span> <span class="mi">2018</span> <span class="o">|</span> <span class="n">false</span>            <span class="o">|</span>
+<span class="o">+--------+------------+------+--------+--------+---------+-----------+------------------------------+------------------+</span>
+</pre></div>
+</div>
+<p>shows that sdb1 on 10.0.0.1 has been unmounted since Wed Jan 17 21:26.</p>
+<p>(If reachable was false that means the the recon request to that object
+server failed- every drive on the server would have reachable false.)</p>
+<p>You should investigate what is wrong with that drive.</p>
+<div class="highlight-default"><div class="highlight"><pre><span></span><span class="o">*</span> <span class="n">If</span> <span class="n">the</span> <span class="n">drive</span> <span class="n">can</span> <span class="n">be</span> <span class="n">recovered</span><span class="o">/</span><span class="n">remounted</span> <span class="n">then</span> <span class="n">do</span> <span class="n">that</span> <span class="ow">and</span> <span class="n">you</span><span class="s1">&#39;re done.</span>
+</pre></div>
+</div>
+<p>Replication will resend all the writes that should have gone to that
+drive while it was down.</p>
+<div class="highlight-default"><div class="highlight"><pre><span></span><span class="o">*</span> <span class="n">If</span> <span class="n">the</span> <span class="n">drive</span> <span class="n">can</span> <span class="ow">not</span> <span class="n">be</span> <span class="n">recovered</span> <span class="n">but</span> <span class="n">can</span> <span class="n">be</span> <span class="n">replaced</span> <span class="ow">in</span> <span class="n">a</span> <span class="n">relatively</span> <span class="n">short</span>
+</pre></div>
+</div>
+<p>period of time (see below)- then just do that. Once the (new) drive is
+remounted, replication will fill that drive with all the data that
+should be there from other servers in the cluster. In the mean time
+writes will be redirected to other nodes in the cluster.</p>
+<div class="highlight-default"><div class="highlight"><pre><span></span><span class="o">*</span> <span class="n">If</span> <span class="n">the</span> <span class="n">drive</span> <span class="n">can</span> <span class="ow">not</span> <span class="n">be</span> <span class="n">replaced</span> <span class="n">within</span> <span class="n">a</span> <span class="n">short</span> <span class="n">period</span> <span class="n">of</span> <span class="n">time</span> <span class="n">it</span> <span class="n">should</span> <span class="n">be</span>
+</pre></div>
+</div>
+<p>removed from the ring. All the data that used to belong on the drive
+will be remapped to other drives in the cluster by the replicator. No
+new requests will be directed to that drive. The main problem with
+removing drives from your ring is it lowers the amount of capacity in
+your cluster, and it causes extra backend replication traffic.</p>
+<p>What is a “relatively short period of time”? It mostly depends on how
+long your replication pass times are (which you can see with
+<code class="docutils literal"><span class="pre">hummingbird</span> <span class="pre">recon</span> <span class="pre">-rd</span></code>). If you have replication pass times of 1 day
+and you know you won’t get new drives for atleast a week then you might
+want to change the ring. If your replication passes are a week and
+you’ll get a new drive in a day- then just wait.</p>
+</div>
+</div>
+
+
+           </div>
+           <div class="articleComments">
+            
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="async.html" class="btn btn-neutral float-right" title="Async Pending Report" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="monitoring.html" class="btn btn-neutral" title="Hummingbird Monitoring" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2018, Rackspace.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'../',
+            VERSION:'v.PR',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="../_static/jquery.js"></script>
+      <script type="text/javascript" src="../_static/underscore.js"></script>
+      <script type="text/javascript" src="../_static/doctools.js"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

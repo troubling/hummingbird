@@ -1,0 +1,391 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Hummingbird Priority Replication Tools &mdash; Hummingbird v.PR documentation</title>
+  
+
+  
+  
+    <link rel="shortcut icon" href="../_static/privatecloud.ico"/>
+  
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="../_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="../_static/bespoke.css" type="text/css" />
+  
+    <link rel="stylesheet" href="../_static/bolditalic.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="../genindex.html"/>
+        <link rel="search" title="Search" href="../search.html"/>
+    <link rel="top" title="Hummingbird v.PR documentation" href="../index.html"/>
+        <link rel="up" title="Hummingbird Cluster Health" href="index.html"/>
+        <link rel="next" title="Debugging a single account, container, or object" href="debug-single.html"/>
+        <link rel="prev" title="Time Sync Report" href="timesync.html"/> 
+
+  
+  <script src="../_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="../index.html" class="icon icon-home"> Hummingbird
+          
+
+          
+            
+            <img src="../_static/privatecloud.png" class="logo" />
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                v.PR
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../index.html">Hummingbird</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../arch/index.html">Hummingbird Architecture</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">Hummingbird Cluster Health</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="rings.html">Ring Managment 101</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rings.html#ring-best-practices">Ring Best Practices</a></li>
+<li class="toctree-l2"><a class="reference internal" href="monitoring.html">Hummingbird Monitoring</a></li>
+<li class="toctree-l2"><a class="reference internal" href="monitoring.html#metrics-exposed-by-hummingbird-services">Metrics exposed by Hummingbird services</a></li>
+<li class="toctree-l2"><a class="reference internal" href="monitoring.html#prometheus-grafana-alertmanager-installation">Prometheus, Grafana &amp; Alertmanager Installation.</a></li>
+<li class="toctree-l2"><a class="reference internal" href="drivestatus.html">Drive Status Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="async.html">Async Pending Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="dispersion.html">Dispersion Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ringmd5.html">MD5 Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="quarantine.html">Quarantine Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="stalledreplicators.html">Stalled Replicators Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="replicationstats.html">Replication Partitions Per Second Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="replicationduration.html">Replication Duration Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="timesync.html">Time Sync Report</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Hummingbird Priority Replication Tools</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#hummingbird-nodes-p-partition">hummingbird nodes -p &lt;partition&gt;</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#moveparts">moveparts</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#restoredevice">restoredevice</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="debug-single.html">Debugging a single account, container, or object</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../deployment.html">So You Want to Deploy Hummingbird</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../dev/index.html">Hummingbird Development</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Hummingbird</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html">Docs</a> &raquo;</li>
+        
+          <li><a href="index.html">Hummingbird Cluster Health</a> &raquo;</li>
+        
+      <li>Hummingbird Priority Replication Tools</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="../_sources/admin/replication-tools.md.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="hummingbird-priority-replication-tools">
+<h1>Hummingbird Priority Replication Tools<a class="headerlink" href="#hummingbird-priority-replication-tools" title="Permalink to this headline">#</a></h1>
+<div class="section" id="hummingbird-nodes-p-partition">
+<h2>hummingbird nodes -p &lt;partition&gt;<a class="headerlink" href="#hummingbird-nodes-p-partition" title="Permalink to this headline">#</a></h2>
+<p>If you’d like to know where the cluster is storing a given partition,
+you can use the <code class="docutils literal"><span class="pre">hummingbird</span> <span class="pre">nodes</span> <span class="pre">-p</span> <span class="pre">&lt;partition&gt;</span></code> command. For
+example:</p>
+<div class="highlight-default"><div class="highlight"><pre><span></span>$ hummingbird nodes -p 365
+
+Account
+Container
+Object
+Partition       365
+Hash
+
+Server:Port Device      127.0.0.1:6030 sdb3
+Server:Port Device      127.0.0.1:6020 sdb2
+Server:Port Device      127.0.0.1:6040 sdb4
+Server:Port Device      127.0.0.1:6010 sdb1      [Handoff]
+
+
+curl -g -I -XHEAD &quot;http://127.0.0.1:6030/sdb3/365/&quot;
+curl -g -I -XHEAD &quot;http://127.0.0.1:6020/sdb2/365/&quot;
+curl -g -I -XHEAD &quot;http://127.0.0.1:6040/sdb4/365/&quot;
+curl -g -I -XHEAD &quot;http://127.0.0.1:6010/sdb1/365/&quot; # [Handoff]
+
+
+Use your own device location of servers:
+such as &quot;export DEVICE=/srv/node&quot;
+ssh 127.0.0.1 &quot;ls -lah ${DEVICE:-/srv/node*}/sdb3/objects/365&quot;
+ssh 127.0.0.1 &quot;ls -lah ${DEVICE:-/srv/node*}/sdb2/objects/365&quot;
+ssh 127.0.0.1 &quot;ls -lah ${DEVICE:-/srv/node*}/sdb4/objects/365&quot;
+ssh 127.0.0.1 &quot;ls -lah ${DEVICE:-/srv/node*}/sdb1/objects/365&quot; # [Handoff]
+
+note: `/srv/node*` is used as default value of `devices`, the real value is set in the config file on each storage node.
+</pre></div>
+</div>
+<p>This shows that the partition #365 was primarily stored on the
+127.0.0.1:6030/sdb3, 127.0.0.1:6020/sdb2, and 127.0.0.1:6040/sdb4
+devices (this was an all-in-one development cluster.) Using this
+information, you can directly check if the devices actually have that
+partition’s information, or double-check the devices are online and
+receiving writes etc.</p>
+</div>
+<div class="section" id="moveparts">
+<h2>moveparts<a class="headerlink" href="#moveparts" title="Permalink to this headline">#</a></h2>
+<p>After a ring rebalance / deployment, the swift cluster will heal itself
+/ fill up new capacity via the replicator. What will happen is as the
+replicator (in the rest of the cluster) walks its partitions normally,
+some of them will belong to the new capacity and will be moved over
+there. This can take a while. <strong>moveparts</strong> will speed this up. It
+compares the previous ring to the current ring, finds the partitions
+that need to be moved, and prioritizes those movements. Say partition 78
+was living:</p>
+<div class="highlight-default"><div class="highlight"><pre><span></span><span class="mf">1.1</span><span class="o">.</span><span class="mf">1.4</span><span class="o">/</span><span class="n">sdb1</span><span class="o">/</span><span class="mi">78</span>
+<span class="mf">1.1</span><span class="o">.</span><span class="mf">1.5</span><span class="o">/</span><span class="n">sdb2</span><span class="o">/</span><span class="mi">78</span>
+<span class="mf">1.1</span><span class="o">.</span><span class="mf">1.6</span><span class="o">/</span><span class="n">sdb3</span><span class="o">/</span><span class="mi">78</span>
+</pre></div>
+</div>
+<p>and after a rebalance was changed to:</p>
+<div class="highlight-default"><div class="highlight"><pre><span></span><span class="mf">1.1</span><span class="o">.</span><span class="mf">1.4</span><span class="o">/</span><span class="n">sdb1</span><span class="o">/</span><span class="mi">78</span>
+<span class="mf">1.1</span><span class="o">.</span><span class="mf">1.5</span><span class="o">/</span><span class="n">sdb2</span><span class="o">/</span><span class="mi">78</span>
+<span class="mf">1.1</span><span class="o">.</span><span class="mf">1.8</span><span class="o">/</span><span class="n">sdb4</span><span class="o">/</span><span class="mi">78</span>
+</pre></div>
+</div>
+<p><strong>moveparts</strong> would send a priority replication call to 1.1.1.6 and tell
+it to move <em>sdb3/78</em> to <em>1.1.1.8/sdb4/78</em>.</p>
+<p>This helps in 2 ways: * <em>1.1.1.8/sdb4</em> will fill up quicker. *
+<em>1.1.1.6/sdb3</em> will drain faster. Once partition 78 is moved to the new
+node it will be removed from <em>1.1.1.6/sdb3</em> even if <em>1.1.1.4/sdb1</em>
+(another primary) is temporarily unavailible. Normal replication
+requires all primaries to respond with success before it removes
+out-of-place partitions. This can be very helpful in clusters under
+heavy load and adding capacity to handle the strain.</p>
+<p>If 1.1.1.6/sdb3 was set to zero weight, the priority replication call
+would still be made to that node. This will allow for draining nodes
+when slowly decommissioning gear.</p>
+<p>If 1.1.1.6/sdb3 was completely removed from the new ring then priority
+replication calls would be made to the “next” primary. In the above case
+from 1.1.1.4/sdb1/78 -&gt; 1.1.1.8/sdb4/78.</p>
+<p>It also does this in a coordinated fashion to avoid stampeding
+<em>1.1.1.8/sdb3</em> with a ton of replication calls.</p>
+<p>Run it like:</p>
+<div class="highlight-default"><div class="highlight"><pre><span></span><span class="n">hummingbird</span> <span class="n">moveparts</span> <span class="o">/</span><span class="n">path</span><span class="o">/</span><span class="n">to</span><span class="o">/</span><span class="n">old</span><span class="o">/</span><span class="nb">object</span><span class="o">.</span><span class="n">ring</span><span class="o">.</span><span class="n">gz</span>
+</pre></div>
+</div>
+<p>the current ring must be in the <em>normal</em> spot. (i.e.
+<em>/etc/hummingbird/object.ring.gz</em>) and it is important that that is the
+deployed ring in the cluster.</p>
+<p>If you are using storage policies, use <em>-p policy_id</em> so it can find the
+correct current ring.</p>
+<p>This should be run after every ring change to heal your cluster asap.</p>
+</div>
+<div class="section" id="restoredevice">
+<h2>restoredevice<a class="headerlink" href="#restoredevice" title="Permalink to this headline">#</a></h2>
+<p>When a device fails in the cluster and has to be replaced, and can be
+replaced quickly, it is best to just remove / replace it without
+removing it from the ring. When the new empty device is back online,
+replication will fill it back up with partitions. This happens as the
+replicator walks the rest of the drives in the cluster and notices that
+a partition is missing from the new device. This process can be sped up
+using <strong>restoredevice</strong>. This will query the ring, find the partitions
+that belong to the given device, and send priority replication commands
+to the other primary devices for each partition to push their data to
+the new device.</p>
+<p>After the new device is online run:</p>
+<div class="highlight-default"><div class="highlight"><pre><span></span><span class="n">hummingbird</span> <span class="n">restoredevice</span> <span class="mf">1.1</span><span class="o">.</span><span class="mf">1.9</span> <span class="n">sdb2</span>
+</pre></div>
+</div>
+<p>The IP and device name must match what is stored in the ring. The
+current ring must be in the <em>normal</em> spot. (i.e.
+<em>/etc/hummingbird/object.ring.gz</em>) and it is important that that is the
+deployed ring in the cluster.</p>
+<p>If you are using storage policies, use <em>-p policy_id</em> so it can find the
+correct current ring.</p>
+<p>This can be run after every device replacement to heal your cluster
+asap.</p>
+</div>
+</div>
+
+
+           </div>
+           <div class="articleComments">
+            
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="debug-single.html" class="btn btn-neutral float-right" title="Debugging a single account, container, or object" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="timesync.html" class="btn btn-neutral" title="Time Sync Report" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2018, Rackspace.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'../',
+            VERSION:'v.PR',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="../_static/jquery.js"></script>
+      <script type="text/javascript" src="../_static/underscore.js"></script>
+      <script type="text/javascript" src="../_static/doctools.js"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>
