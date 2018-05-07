@@ -1,0 +1,340 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>So You Want to Deploy Hummingbird &mdash; Hummingbird v.PR documentation</title>
+  
+
+  
+  
+    <link rel="shortcut icon" href="_static/privatecloud.ico"/>
+  
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/bespoke.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/bolditalic.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Hummingbird v.PR documentation" href="index.html"/>
+        <link rel="next" title="Hummingbird Development" href="dev/index.html"/>
+        <link rel="prev" title="Debugging a single account, container, or object" href="admin/debug-single.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Hummingbird
+          
+
+          
+            
+            <img src="_static/privatecloud.png" class="logo" />
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                v.PR
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="index.html">Hummingbird</a></li>
+<li class="toctree-l1"><a class="reference internal" href="arch/index.html">Hummingbird Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="admin/index.html">Hummingbird Cluster Health</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">So You Want to Deploy Hummingbird</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#concepts">Concepts</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#the-ring">The Ring</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#replicas">Replicas</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#partitions">Partitions</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#minimum-partition-hours">Minimum Partition Hours</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#zones">Zones</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#hardware-considerations">Hardware Considerations</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#storage-nodes">Storage Nodes</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#load-balancing">Load Balancing</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#networking">Networking</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="dev/index.html">Hummingbird Development</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Hummingbird</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+      <li>So You Want to Deploy Hummingbird</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/deployment.md.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="so-you-want-to-deploy-hummingbird">
+<h1>So You Want to Deploy Hummingbird<a class="headerlink" href="#so-you-want-to-deploy-hummingbird" title="Permalink to this headline">#</a></h1>
+<div class="section" id="concepts">
+<h2>Concepts<a class="headerlink" href="#concepts" title="Permalink to this headline">#</a></h2>
+<div class="section" id="the-ring">
+<h3>The Ring<a class="headerlink" href="#the-ring" title="Permalink to this headline">#</a></h3>
+<p>The ring is a datastructure that keeps track of the which devices are in
+the cluster, and is used to determine which of those devices an object
+should be stored on.</p>
+<div class="section" id="replicas">
+<h4>Replicas<a class="headerlink" href="#replicas" title="Permalink to this headline">#</a></h4>
+<p>The replica count in the ring defines the number of copies of an object
+and is typlicaly set to 3.</p>
+</div>
+<div class="section" id="partitions">
+<h4>Partitions<a class="headerlink" href="#partitions" title="Permalink to this headline">#</a></h4>
+<p>Partitions are abstract buckets that objects are assigned to. The ring
+evenly distributes these partitions to each storage device in the
+cluster. The number of partitions is typically represented by a power of
+2 and is typically set to 22 which would mean that there are 2^22
+(4,194,304) * (# of replicas) partitions in the cluster.</p>
+</div>
+<div class="section" id="minimum-partition-hours">
+<h4>Minimum Partition Hours<a class="headerlink" href="#minimum-partition-hours" title="Permalink to this headline">#</a></h4>
+<p>When changes to the ring are made, it will only move 1 of the replicas
+at a time. This helps ensure that data remains available in the cluster.
+Once a partition has been moved, it can not move again until Minimum
+Partition Hours has elapsed. This value should be set at a minimum of
+the maximum time a successful replication pass takes in the cluster. It
+is typically set to something higher like 168 hours (1 week) to be safe.</p>
+</div>
+</div>
+<div class="section" id="zones">
+<h3>Zones<a class="headerlink" href="#zones" title="Permalink to this headline">#</a></h3>
+<p>Hummingbird uses zones as an abstract concept that allows the deployer
+to define failure domains. When objects are stored in Hummingbird it
+will store each replica in a different zone. In a small deployment, a
+zone could be each server, and in a larger deployment, it could be each
+cabinet.</p>
+</div>
+</div>
+<div class="section" id="hardware-considerations">
+<h2>Hardware Considerations<a class="headerlink" href="#hardware-considerations" title="Permalink to this headline">#</a></h2>
+<p>The recommendations made below are made based on average use cases, and
+should be considered as a good starting point, but should be tailored
+for each cluster’s use case.</p>
+<div class="section" id="storage-nodes">
+<h3>Storage Nodes<a class="headerlink" href="#storage-nodes" title="Permalink to this headline">#</a></h3>
+<p>All hummingbird services run on each storage node. SATA drives are
+recommended to store object data and SSD drives are recommended for
+account/container data. Typically 5% of the total storage should be SSD
+drives. It is not recommended to use parity based RAID (like RAID 5)
+with the storage drives. A RAID or HBA card with battery backed caching
+will improve performance though. Modern Intel Xeon CPUs are recommended
+and typical servers will have 2 multi core processors. Each server
+should have at least two 10Gb Ethernet ports, and 64GB is recommended as
+a minimum.</p>
+</div>
+<div class="section" id="load-balancing">
+<h3>Load Balancing<a class="headerlink" href="#load-balancing" title="Permalink to this headline">#</a></h3>
+<p>Each storage node is capable of serving API requests, and it is
+recommended to have a load balancer in front of the cluster. HA Proxy is
+a capable open source load ballancer that works well with hummingbird.</p>
+</div>
+<div class="section" id="networking">
+<h3>Networking<a class="headerlink" href="#networking" title="Permalink to this headline">#</a></h3>
+<p>When designing your network, here are some general considerations:</p>
+<div class="highlight-default"><div class="highlight"><pre><span></span><span class="o">*</span>  <span class="n">Each</span> <span class="n">storage</span> <span class="n">node</span> <span class="n">needs</span> <span class="n">full</span> <span class="n">connectivity</span> <span class="n">to</span> <span class="n">each</span> <span class="n">other</span> <span class="n">storage</span> <span class="n">node</span><span class="o">.</span>
+<span class="o">*</span>  <span class="n">Each</span> <span class="n">incoming</span> <span class="nb">object</span> <span class="n">sent</span> <span class="n">will</span> <span class="n">fan</span> <span class="n">out</span> <span class="n">to</span> <span class="p">(</span><span class="c1"># of replicas) storage servers, so intra cluster bandwith will be (# of replicas)x the overall throughput for incoming requests.</span>
+<span class="o">*</span>  <span class="n">All</span> <span class="n">other</span> <span class="n">requests</span> <span class="n">only</span> <span class="n">require</span> <span class="n">a</span> <span class="n">single</span> <span class="n">storage</span> <span class="n">node</span><span class="o">.</span>
+<span class="o">*</span>  <span class="n">For</span> <span class="n">larger</span><span class="o">/</span><span class="n">busier</span> <span class="n">clusters</span><span class="p">,</span> <span class="n">consideration</span> <span class="n">will</span> <span class="n">need</span> <span class="n">to</span> <span class="n">be</span> <span class="n">made</span> <span class="k">for</span> <span class="n">bandwidth</span> <span class="n">between</span> <span class="n">zones</span><span class="o">.</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+
+
+           </div>
+           <div class="articleComments">
+            
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="dev/index.html" class="btn btn-neutral float-right" title="Hummingbird Development" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="admin/debug-single.html" class="btn btn-neutral" title="Debugging a single account, container, or object" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2018, Rackspace.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'v.PR',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>
