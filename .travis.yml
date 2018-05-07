@@ -31,6 +31,7 @@ install:
     fi
   - virtualenv ~/swift-venv
   - ~/swift-venv/bin/pip install -U pip setuptools python-subunit nose-htmloutput nose-exclude
+  - sed -i 's/^eventlet.*$/eventlet=0.20.0/' ~/swift/requirements.txt # Temp since newer Eventlets blew up
   - ~/swift-venv/bin/pip install -r ~/swift/requirements.txt
   - ~/swift-venv/bin/pip install -r ~/swift/test-requirements.txt
   - sudo mkdir -p /etc/swift /var/run/swift
