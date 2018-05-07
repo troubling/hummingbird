@@ -51,7 +51,7 @@ script:
       hummingbird start object
       hummingbird start container
       hummingbird start account
-      PATH=$PATH:~/swift-venv/bin swift-init no-daemon proxy &
+      PATH=$PATH:~/swift-venv/bin swift-init start proxy
       PATH=$PATH:~/swift-venv/bin nosetests -e test_unicode_metadata --with-html --html-file=/tmp/output/functional_swiftproxy.html ~/swift/test/functional
     else
       test -z "$(find . -name '*.go' | xargs gofmt -l -s)" || (echo "You need to run 'make fmt'"; exit 1)
