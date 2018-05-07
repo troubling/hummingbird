@@ -605,7 +605,7 @@ func (rd *swiftDevice) listPartitions() ([]string, []string, error) {
 	return partitionList, handoffList, nil
 }
 
-func (rd *swiftDevice) Replicate() {
+func (rd *swiftDevice) Scan() {
 	defer srv.LogPanics(rd.r.logger, fmt.Sprintf("PANIC REPLICATING DEVICE: %s", rd.dev.Device))
 	rd.UpdateStat("startRun", 1)
 	if mounted, err := fs.IsMount(filepath.Join(rd.r.deviceRoot, rd.dev.Device)); rd.r.checkMounts && (err != nil || mounted != true) {
@@ -679,13 +679,13 @@ func (rd *swiftDevice) Cancel() {
 	close(rd.cancel)
 }
 
-func (rd *swiftDevice) ReplicateLoop() {
+func (rd *swiftDevice) ScanLoop() {
 	for {
 		select {
 		case <-rd.cancel:
 			return
 		default:
-			rd.Replicate()
+			rd.Scan()
 		}
 		time.Sleep(replicateLoopSleepTime)
 	}

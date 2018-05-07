@@ -1,15 +1,19 @@
 package objectserver
 
 import (
+	"crypto/md5"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path"
 	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/fs"
 	"go.uber.org/zap"
 )
@@ -374,7 +378,7 @@ func (ot *IndexDB) Commit(f fs.AtomicFileWriter, hsh string, shard int, timestam
 	return err
 }
 
-func (ot *IndexDB) SetRestablized(hsh string, shard int, timestamp int64) error {
+func (ot *IndexDB) SetStabilized(hsh string, shard int, timestamp int64, stabilizePath bool) error {
 	hsh, _, dbPart, _, err := ot.validateHash(hsh)
 	if err != nil {
 		return err
@@ -386,11 +390,22 @@ func (ot *IndexDB) SetRestablized(hsh string, shard int, timestamp int64) error 
 		return err
 	}
 	_, err = tx.Exec(`
-	    UPDATE objects SET restabilize = 0
+	    UPDATE objects SET nursery = 0, restabilize = 0
 		WHERE hash = ? AND shard = ? AND timestamp = ?
 		`, hsh, shard, timestamp)
 	if err != nil {
 		return err
+	}
+	if stabilizePath {
+		var wasPath, toPath string
+		if wasPath, err = ot.WholeObjectPath(hsh, shard, timestamp, true); err == nil {
+			if toPath, err = ot.WholeObjectPath(hsh, shard, timestamp, false); err == nil {
+				err = os.Rename(wasPath, toPath)
+			}
+		}
+		if err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
@@ -522,6 +537,8 @@ func (ot *IndexDB) ListObjectsToStabilize() ([]*IndexDBItem, error) {
 // List returns the items for the ringPart given.
 //
 // This is for replication, auditing, that sort of thing.
+// NOTE: List does not populate item.Path for some reason- maybe
+// size of listing? Maybe we should change that later.
 func (ot *IndexDB) List(startHash, stopHash, marker string, limit int) ([]*IndexDBItem, error) {
 	if startHash == "" {
 		startHash = "00000000000000000000000000000000"
@@ -592,4 +609,85 @@ func (ot *IndexDB) RingPartRange(ringPart int) (string, string) {
 	start := uint64(ringPart << (64 - ot.RingPartPower))
 	stop := uint64((ringPart+1)<<(64-ot.RingPartPower)) - 1
 	return fmt.Sprintf("%016x0000000000000000", start), fmt.Sprintf("%016xffffffffffffffff", stop)
+}
+
+func (ot *IndexDB) StablePut(hsh string, shardIndex int, request *http.Request) (int, error) {
+
+	timestampTime, err := common.ParseDate(request.Header.Get("Meta-X-Timestamp"))
+	if err != nil {
+		return http.StatusBadRequest, err
+	}
+	timestamp := timestampTime.UnixNano()
+	atm, err := ot.TempFile(hsh, shardIndex, timestamp, request.ContentLength, false)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+	if atm == nil {
+		return http.StatusCreated, fmt.Errorf("could not make a tempfile")
+	}
+	defer atm.Abandon()
+	metadata := make(map[string]string)
+	for key := range request.Header {
+		if strings.HasPrefix(key, "Meta-") {
+			if key == "Meta-Name" {
+				metadata["name"] = request.Header.Get(key)
+			} else if key == "Meta-Etag" {
+				metadata["ETag"] = request.Header.Get(key)
+			} else {
+				metadata[http.CanonicalHeaderKey(key[5:])] = request.Header.Get(key)
+			}
+		}
+	}
+
+	sHash := md5.New() // TODO: this is wasteful to calc this for whole objects
+	n, err := common.Copy(request.Body, atm, sHash)
+	if err == io.ErrUnexpectedEOF || (request.ContentLength >= 0 && n != request.ContentLength) {
+		return 499, err
+	} else if err != nil {
+		return http.StatusInternalServerError, err
+	}
+	shardHash := hex.EncodeToString(sHash.Sum(nil))
+	metabytes, err := json.Marshal(metadata)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+	if err := ot.Commit(atm, hsh, shardIndex, timestamp, "PUT", MetadataHash(metadata), metabytes, false, shardHash); err != nil {
+		return http.StatusInternalServerError, err
+	}
+	return http.StatusCreated, nil
+}
+
+func (ot *IndexDB) StablePost(hsh string, shardIndex int, request *http.Request) (int, error) {
+	item, err := ot.Lookup(hsh, shardIndex, false)
+	if err != nil || item == nil || item.Deletion {
+		return http.StatusNotFound, err
+	}
+	timestampTime, err := common.ParseDate(request.Header.Get("X-Timestamp"))
+	if err != nil {
+		return http.StatusBadRequest, fmt.Errorf("invalid timestamp")
+	}
+	timestamp := timestampTime.UnixNano()
+	if timestamp <= item.Timestamp {
+		return http.StatusConflict, nil
+	}
+	metadata := make(map[string]string)
+	for key := range request.Header {
+		if strings.HasPrefix(key, "Meta-") {
+			if key == "Meta-Name" {
+				metadata["name"] = request.Header.Get(key)
+			} else if key == "Meta-Etag" {
+				metadata["ETag"] = request.Header.Get(key)
+			} else {
+				metadata[http.CanonicalHeaderKey(key[5:])] = request.Header.Get(key)
+			}
+		}
+	}
+	metabytes, err := json.Marshal(metadata)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+	if err = ot.Commit(nil, hsh, shardIndex, timestamp, "POST", MetadataHash(metadata), metabytes, false, ""); err != nil {
+		return http.StatusInternalServerError, err
+	}
+	return http.StatusAccepted, nil
 }
