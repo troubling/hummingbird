@@ -1,7 +1,6 @@
 package objectserver
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -119,11 +118,7 @@ func (ro *repObject) commit(metadata map[string]string, method string, nursery b
 		return err
 	}
 	timestamp = timestampTime.UnixNano()
-	metabytes, err := json.Marshal(metadata)
-	if err != nil {
-		return err
-	}
-	err = ro.idb.Commit(ro.atomicFileWriter, ro.Hash, roShard, timestamp, method, MetadataHash(metadata), metabytes, nursery, "")
+	err = ro.idb.Commit(ro.atomicFileWriter, ro.Hash, roShard, timestamp, method, metadata, nursery, "")
 	ro.atomicFileWriter = nil
 	return err
 }
