@@ -297,6 +297,14 @@ func TestReplicateCanStabilizeFail(t *testing.T) {
 		"X-Object-Meta-Hey": "there",
 		"X-Timestamp":       "1000.000",
 	}
+	rng := &test.FakeRing{
+		MockDevices: []*ring.Device{
+			{Id: 2, Scheme: u.Scheme, Ip: u.Hostname(), Port: port, Device: "sdc"},
+			{Id: 3, Scheme: u.Scheme, Ip: u.Hostname(), Port: port, Device: "sdd"},
+			{Id: 4, Scheme: u.Scheme, Ip: u.Hostname(), Port: port, Device: "sda"},
+		},
+		MockGetJobNodesHandoff: false,
+	}
 	ro := &repObject{
 		IndexDBItem: IndexDBItem{
 			Hash:    hsh,
@@ -306,16 +314,9 @@ func TestReplicateCanStabilizeFail(t *testing.T) {
 		client:   http.DefaultClient,
 		metadata: metad,
 		idb:      ot,
+		rng:      rng,
 	}
 	node := &ring.Device{Scheme: u.Scheme, Ip: u.Hostname(), Port: port, Device: "sda"}
-	rng := &test.FakeRing{
-		MockDevices: []*ring.Device{
-			{Id: 2, Scheme: u.Scheme, Ip: u.Hostname(), Port: port, Device: "sdc"},
-			{Id: 3, Scheme: u.Scheme, Ip: u.Hostname(), Port: port, Device: "sdd"},
-			{Id: 4, Scheme: u.Scheme, Ip: u.Hostname(), Port: port, Device: "sda"},
-		},
-		MockGetJobNodesHandoff: false,
-	}
 	afw, err := ot.TempFile(hsh, roShard, 10000, 10, true)
 	require.Nil(t, err)
 	md, err := json.Marshal(metad)
@@ -327,7 +328,7 @@ func TestReplicateCanStabilizeFail(t *testing.T) {
 	require.Nil(t, err)
 	_, err = os.Stat(nurseryPath)
 	require.Nil(t, err)
-	require.Nil(t, ro.Stabilize(rng, node, 1))
+	require.NotNil(t, ro.Stabilize(rng, node, 1))
 	_, err = os.Stat(nurseryPath)
 	require.Nil(t, err)
 	stablePath, err := ot.WholeObjectPath(hsh, roShard, 0, false)
