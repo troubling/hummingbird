@@ -27,13 +27,14 @@ import (
 	"strings"
 	"time"
 
+	"context"
+
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/pickle"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/middleware"
 	"go.uber.org/zap"
-	"golang.org/x/net/context"
 )
 
 /*This hash is used to represent a zero byte async file that is

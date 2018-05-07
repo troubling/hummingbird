@@ -175,7 +175,7 @@ func (c *ProxyDirectClient) quorumResponse(r ringFilter, partition uint64, devTo
 			var firstResp *http.Response
 			for dev := devs[index]; dev != nil; dev = more.Next() {
 				if req, err := devToRequest(index, dev); err != nil {
-					c.Logger.Error("unable to get response", zap.Error(err))
+					c.Logger.Error("unable to create request", zap.Error(err))
 					resp = nectarutil.ResponseStub(http.StatusInternalServerError, err.Error())
 				} else if r, err := c.client.Do(req); err != nil {
 					c.Logger.Error("unable to get response", zap.Error(err))
