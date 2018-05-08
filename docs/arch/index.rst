@@ -1,7 +1,12 @@
+:deconsttitle: Hummingbird Architecture
+
+========================
 Hummingbird Architecture
 ========================
 
-Overall, the Hummingbird architecture is much like the OpenStack Swift architecture. Below are the main differences from what you may be used to with OpenStack Swift:
+Overall, the Hummingbird architecture is much like the `OpenStack Swift architecture`_. Below are the main differences from what you may be used to with OpenStack Swift:
+
+.. _`OpenStack Swift architecture`: https://docs.openstack.org/swift/latest/overview_architecture.html
 
 All executables are folded into a single hummingbird executable with subcommands, including smaller tools like nodes, oinfo, etc. Packaging and deployment scripts may create multiple scripts or service files, but these simply wrap calls to the single hummingbird executable.
 
@@ -22,3 +27,6 @@ No support for Swift's EC feature. Hummingbird will support erasure coding, but 
 No support for Swift's Modifying Ring Partition Power feature, therefore no equivalent of the swift-object-relinker.
 
 No support for Swift's Symbolic Linking feature at this time.
+
+.. image:: hummingbird_architecture.png
+
