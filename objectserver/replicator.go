@@ -436,7 +436,7 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 	}
 	concurrency := int(serverconf.GetInt("object-replicator", "concurrency", 1))
 	updaterConcurrency := int(serverconf.GetInt("object-updater", "concurrency", 2))
-	nurseryConcurrency := int(serverconf.GetInt("object-nursery", "concurrency", 10))
+	nurseryConcurrency := int(serverconf.GetInt("object-nursery", "concurrency", 2))
 
 	logLevelString := serverconf.GetDefault("object-replicator", "log_level", "INFO")
 	logLevel := zap.NewAtomicLevel()
