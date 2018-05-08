@@ -349,7 +349,7 @@ func (server *ObjectServer) ObjPutHandler(writer http.ResponseWriter, request *h
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
-	server.containerUpdates(writer, request, metadata, request.Header.Get("X-Delete-At"), vars, srv.GetLogger(request))
+	server.containerUpdates(writer, request, metadata, vars, srv.GetLogger(request))
 	srv.StandardResponse(writer, http.StatusCreated)
 }
 
@@ -366,7 +366,6 @@ func (server *ObjectServer) ObjPostHandler(writer http.ResponseWriter, request *
 		http.Error(writer, fmt.Sprintf("Invalid path: %s", request.URL.Path), http.StatusBadRequest)
 		return
 	}
-	var deleteAtTime time.Time
 	if deleteAt := request.Header.Get("X-Delete-At"); deleteAt != "" {
 		if deleteAtTime, err := common.ParseDate(deleteAt); err != nil || deleteAtTime.Before(time.Now()) {
 			http.Error(writer, "X-Delete-At in past", 400)
@@ -399,6 +398,11 @@ func (server *ObjectServer) ObjPostHandler(writer http.ResponseWriter, request *
 		return
 	}
 
+	if xda := request.Header.Get("X-Delete-At"); xda != "" && xda != origMetadata["X-Delete-AT"] {
+		http.Error(writer, fmt.Sprintf("X-Delete-At may not be sent with object POST: %q", xda), http.StatusConflict)
+		return
+	}
+
 	metadata := make(map[string]string)
 	if v, ok := origMetadata["X-Static-Large-Object"]; ok {
 		metadata["X-Static-Large-Object"] = v
@@ -420,20 +424,6 @@ func (server *ObjectServer) ObjPostHandler(writer http.ResponseWriter, request *
 	}
 	metadata["name"] = "/" + vars["account"] + "/" + vars["container"] + "/" + vars["obj"]
 	metadata["X-Timestamp"] = requestTimestamp
-	var origDeleteAtTime time.Time
-	if origDeleteAt := origMetadata["X-Delete-At"]; origDeleteAt != "" {
-		if origDeleteAtTime, err = common.ParseDate(origDeleteAt); err != nil {
-			origDeleteAtTime = time.Time{}
-		}
-	}
-	if !deleteAtTime.Equal(origDeleteAtTime) {
-		if !deleteAtTime.IsZero() {
-			server.updateDeleteAt(request.Context(), "PUT", request.Header, deleteAtTime, vars, srv.GetLogger(request))
-		}
-		if !origDeleteAtTime.IsZero() {
-			server.updateDeleteAt(request.Context(), "DELETE", request.Header, origDeleteAtTime, vars, srv.GetLogger(request))
-		}
-	}
 
 	if err := obj.CommitMetadata(metadata); err != nil {
 		srv.GetLogger(request).Error("Error saving object meta file", zap.Error(err))
@@ -484,13 +474,9 @@ func (server *ObjectServer) ObjDeleteHandler(writer http.ResponseWriter, request
 		}
 	}
 
-	deleteAt := ""
 	if obj.Exists() {
 		responseStatus = http.StatusNoContent
 		metadata := obj.Metadata()
-		if xda, ok := metadata["X-Delete-At"]; ok {
-			deleteAt = xda
-		}
 		if origTimestamp, ok := metadata["X-Timestamp"]; ok && origTimestamp >= requestTimestamp {
 			headers.Set("X-Backend-Timestamp", origTimestamp)
 			srv.StandardResponse(writer, http.StatusConflict)
@@ -514,7 +500,7 @@ func (server *ObjectServer) ObjDeleteHandler(writer http.ResponseWriter, request
 		return
 	}
 	headers.Set("X-Backend-Timestamp", metadata["X-Timestamp"])
-	server.containerUpdates(writer, request, metadata, deleteAt, vars, srv.GetLogger(request))
+	server.containerUpdates(writer, request, metadata, vars, srv.GetLogger(request))
 	srv.StandardResponse(writer, responseStatus)
 }
 

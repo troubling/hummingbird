@@ -233,6 +233,34 @@ func TestBasicPutPostGet(t *testing.T) {
 	assert.Equal(t, "Hi!", resp.Header.Get("X-Object-Meta-TestPutPostGet"))
 }
 
+func TestPostXDA(t *testing.T) {
+	testRing := &test.FakeRing{}
+	confLoader := srv.NewTestConfigLoader(testRing)
+	ts, err := makeObjectServer(confLoader)
+	assert.Nil(t, err)
+	defer ts.Close()
+
+	timestamp := common.GetTimestamp()
+	req, err := http.NewRequest("PUT", fmt.Sprintf("http://%s:%d/sda/0/a/c/o", ts.host, ts.port), bytes.NewBuffer([]byte("SOME DATA")))
+	assert.Nil(t, err)
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("Content-Length", "9")
+	req.Header.Set("X-Timestamp", timestamp)
+	resp, err := http.DefaultClient.Do(req)
+	assert.Nil(t, err)
+	assert.Equal(t, 201, resp.StatusCode)
+
+	timestamp = common.GetTimestamp()
+	req, err = http.NewRequest("POST", fmt.Sprintf("http://%s:%d/sda/0/a/c/o", ts.host, ts.port), nil)
+	assert.Nil(t, err)
+	req.Header.Set("X-Object-Meta-TestPutPostGet", "Hi!")
+	req.Header.Set("X-Timestamp", timestamp)
+	req.Header.Set("X-Delete-At", common.CanonicalTimestampFromTime(time.Now().Add(time.Second*5)))
+	resp, err = http.DefaultClient.Do(req)
+	assert.Nil(t, err)
+	assert.Equal(t, 409, resp.StatusCode)
+}
+
 func TestPostContentType(t *testing.T) {
 	testRing := &test.FakeRing{}
 	confLoader := srv.NewTestConfigLoader(testRing)
