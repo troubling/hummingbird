@@ -590,16 +590,12 @@ func (c *ProxyDirectClient) SetContainerInfo(ctx context.Context, account, conta
 			ci.SyncKey = resp.Header.Get(k)
 		}
 	}
-	setMemcache := true // somebody else might have set memcache during HEAD
 	if lc != nil && ci != nil {
 		c.lcm.Lock()
-		if _, ok := lc[key]; ok { // could check for equality but prob not worth it
-			setMemcache = false
-		}
 		lc[key] = ci
 		c.lcm.Unlock()
 	}
-	if setMemcache && mc != nil {
+	if mc != nil {
 		mc.Set(key, ci, 10) // throwing away error here..
 	}
 	return ci, nil
@@ -626,10 +622,13 @@ func (c *ProxyDirectClient) GetContainerInfo(ctx context.Context, account string
 		return nil, ContainerNotFound
 	}
 	if !contInCache && mc != nil {
-		if err := mc.GetStructured(key, &ci); err != nil {
-			ci = nil
-		} else {
+		if err := mc.GetStructured(key, &ci); err == nil {
+			c.lcm.RLock()
+			lc[key] = ci
+			c.lcm.RUnlock()
 			contInCache = true
+		} else {
+			ci = nil
 		}
 	}
 	if !contInCache {
