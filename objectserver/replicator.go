@@ -223,7 +223,7 @@ func (r *Replicator) verifyRunningDevices() {
 						LastCheckin: time.Now(), DeviceStarted: time.Now(),
 						Stats: map[string]int64{},
 					}
-					go r.runningDevices[key].ReplicateLoop()
+					go r.runningDevices[key].ScanLoop()
 				} else {
 					r.logger.Error("building replication device", zap.String("device", key), zap.Int("policy", policy), zap.Error(err))
 				}
@@ -411,7 +411,7 @@ func (r *Replicator) Run() {
 			key := rd.Key()
 			r.runningDevices[key] = rd
 			go func(rd ReplicationDevice) {
-				rd.Replicate()
+				rd.Scan()
 				r.onceDone <- struct{}{}
 			}(rd)
 
@@ -436,7 +436,7 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 	}
 	concurrency := int(serverconf.GetInt("object-replicator", "concurrency", 1))
 	updaterConcurrency := int(serverconf.GetInt("object-updater", "concurrency", 2))
-	nurseryConcurrency := int(serverconf.GetInt("object-nursery", "concurrency", 10))
+	nurseryConcurrency := int(serverconf.GetInt("object-nursery", "concurrency", 2))
 
 	logLevelString := serverconf.GetDefault("object-replicator", "log_level", "INFO")
 	logLevel := zap.NewAtomicLevel()
@@ -503,9 +503,6 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 		return ipPort, nil, nil, err
 	}
 	for _, policy := range replicator.policies {
-		if !(policy.Type == "replication" || policy.Type == "replication-nursery" || policy.Type == "hec") {
-			continue
-		}
 		if replicator.objectRings[policy.Index], err = cnf.GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index); err != nil {
 			return ipPort, nil, nil, fmt.Errorf("Unable to load ring for Policy %d: %s", policy.Index, err)
 		}

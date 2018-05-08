@@ -28,36 +28,6 @@ import (
 	"github.com/troubling/hummingbird/common/ring"
 )
 
-// walk through the nursery and check every object (and tombstone) if it is
-// fully replicated.  that means HEAD other primaries for the object. if the
-// ALL other primaries return 2xx/matching x-timestamp then mv local copy to
-// stable directory. the other servers will mv their own copies as they find
-// them. That means the remote copies can be either in nursery or stable as
-// HEAD requests always check both
-
-// if the object is not on one of the other primaries or has mismatched
-// timestamps then leave the object alone and wait for existing replicator
-// daemon to fully replicate it.
-
-// the existing replicator will not really be changed. but it only walks the
-// nursery. the stable objects dir will only be affected by priority
-// replication calls sent to it by andrewd (or ops). these calls will happen
-// within the existing framework except that they will reference the stable
-// dirs.  these priority rep calls will be triggered by ring changes,
-// manually by ops, in response to dispersion scan missing objects.  since
-// long unmounted drives are zeroed out in ring by the andrewd/drivewatch
-// these are also handled once the ring is changed
-
-// PUTs / POST / DELETE will only write to nursery GET / HEAD will check
-// nursery and stable on every request. i think it has to check both. it
-// seems possible that a more recent copy could be in stable with all the
-// handoffs / replication going on in the nursery
-
-// once tombstones get put into stable they can set there indefinitely- i
-// guess auditor can clean them up?
-
-//TODO: dfg the prob where a stable obejct gets quarantined and replication doesnt
-// know to fix it
 const nurseryObjectSleep = 10 * time.Millisecond
 
 type nurseryDevice struct {
@@ -82,7 +52,7 @@ func (nrd *nurseryDevice) UpdateStat(stat string, amount int64) {
 	nrd.r.updateStat <- statUpdate{"object-nursery", key, stat, amount}
 }
 
-func (nrd *nurseryDevice) Replicate() {
+func (nrd *nurseryDevice) Scan() {
 	nrd.UpdateStat("startRun", 1)
 	if mounted, err := fs.IsMount(filepath.Join(nrd.r.deviceRoot, nrd.dev.Device)); nrd.r.checkMounts && (err != nil || mounted != true) {
 		nrd.r.logger.Error("[stabilizeDevice] Drive not mounted", zap.String("Device", nrd.dev.Device), zap.Error(err))
@@ -115,14 +85,14 @@ func (nrd *nurseryDevice) Replicate() {
 	nrd.r.logger.Info("[stabilizeDevice] Pass complete.")
 }
 
-func (nrd *nurseryDevice) ReplicateLoop() {
+func (nrd *nurseryDevice) ScanLoop() {
 	// TODO: somehow i'm going to have to call replication on the 3repl nursery things
 	for {
 		select {
 		case <-nrd.canchan:
 			return
 		default:
-			nrd.Replicate()
+			nrd.Scan()
 			time.Sleep(10 * time.Second)
 		}
 	}
