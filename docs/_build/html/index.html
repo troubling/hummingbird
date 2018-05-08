@@ -1,0 +1,281 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Welcome to Hummingbird’s documentation! &mdash; Hummingbird v.PR documentation</title>
+  
+
+  
+  
+    <link rel="shortcut icon" href="_static/privatecloud.ico"/>
+  
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/bespoke.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/bolditalic.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Hummingbird v.PR documentation" href="#"/>
+        <link rel="next" title="Hummingbird Architecture" href="arch/index.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="#" class="icon icon-home"> Hummingbird
+          
+
+          
+            
+            <img src="_static/privatecloud.png" class="logo" />
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                v.PR
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Hummingbird</a></li>
+<li class="toctree-l1"><a class="reference internal" href="arch/index.html">Hummingbird Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="admin/index.html">Hummingbird Cluster Health</a></li>
+<li class="toctree-l1"><a class="reference internal" href="deployment.html">So You Want to Deploy Hummingbird</a></li>
+<li class="toctree-l1"><a class="reference internal" href="dev/index.html">Hummingbird Development</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="#">Hummingbird</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="#">Docs</a> &raquo;</li>
+        
+      <li>Welcome to Hummingbird’s documentation!</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/index.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="welcome-to-hummingbird-s-documentation">
+<h1>Welcome to Hummingbird’s documentation!<a class="headerlink" href="#welcome-to-hummingbird-s-documentation" title="Permalink to this headline">#</a></h1>
+<div class="toctree-wrapper compound">
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Hummingbird</a></li>
+<li class="toctree-l1"><a class="reference internal" href="arch/index.html">Hummingbird Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="admin/index.html">Hummingbird Cluster Health</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="admin/rings.html">Ring Managment 101</a></li>
+<li class="toctree-l2"><a class="reference internal" href="admin/rings.html#ring-best-practices">Ring Best Practices</a></li>
+<li class="toctree-l2"><a class="reference internal" href="admin/monitoring.html">Hummingbird Monitoring</a></li>
+<li class="toctree-l2"><a class="reference internal" href="admin/monitoring.html#metrics-exposed-by-hummingbird-services">Metrics exposed by Hummingbird services</a></li>
+<li class="toctree-l2"><a class="reference internal" href="admin/monitoring.html#prometheus-grafana-alertmanager-installation">Prometheus, Grafana &amp; Alertmanager Installation.</a></li>
+<li class="toctree-l2"><a class="reference internal" href="admin/drivestatus.html">Drive Status Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="admin/async.html">Async Pending Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="admin/dispersion.html">Dispersion Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="admin/ringmd5.html">MD5 Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="admin/quarantine.html">Quarantine Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="admin/stalledreplicators.html">Stalled Replicators Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="admin/replicationstats.html">Replication Partitions Per Second Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="admin/replicationduration.html">Replication Duration Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="admin/timesync.html">Time Sync Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="admin/replication-tools.html">Hummingbird Priority Replication Tools</a></li>
+<li class="toctree-l2"><a class="reference internal" href="admin/debug-single.html">Debugging a single account, container, or object</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="deployment.html">So You Want to Deploy Hummingbird</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="deployment.html#concepts">Concepts</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deployment.html#hardware-considerations">Hardware Considerations</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="dev/index.html">Hummingbird Development</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="dev/tempest.html">Running tempest against HAIO</a></li>
+<li class="toctree-l2"><a class="reference internal" href="dev/tls.html">How to enable TLS for Hummingbird</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+
+           </div>
+           <div class="articleComments">
+            
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="arch/index.html" class="btn btn-neutral float-right" title="Hummingbird Architecture" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2018, Rackspace.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'v.PR',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

@@ -1,6 +1,8 @@
 How to enable TLS for Hummingbird
 =================================
 
+TODO: Clean this up and move it out of the dev section.
+
 ## Generate tls cert
 
 ```

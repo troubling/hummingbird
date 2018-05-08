@@ -1,17 +1,45 @@
-Cluster Admin
-=============
+## Drive Status Report
+
+The Drive Status Report is gathered from information recorded by andrewd, and so this recon report needs to be run where andrewd is running. It lists the drives that are unmounted or unreachable, usually indicating drive or server failures that need to be corrected.
+
+```
+$ hummingbird recon -ds
+[2018-01-16 17:31:05] Drive Report
+Weighted / Unmounted / Unreachable devices report for Policy 1
+Last successful recon run was 0.19 hours ago.
+No weighted drives are currently reported as unmounted or unreachable.
+Weighted / Unmounted / Unreachable devices report for Policy 0
+Last successful recon run was 0.19 hours ago.
+No weighted drives are currently reported as unmounted or unreachable.
+```
+
+```
+$ hummingbird recon -ds -json
+{
+    "Name": "Drive Report",
+    "Time": "2018-01-16T17:31:09.66558933Z",
+    "Pass": true,
+    "Errors": null,
+    "PolicyReports": [
+        {
+            "Policy": 0,
+            "Time": "2018-01-16T17:19:53Z",
+            "SingleReports": null
+        },
+        {
+            "Policy": 1,
+            "Time": "2018-01-16T17:19:53Z",
+            "SingleReports": null
+        }
+    ],
+    "MaxBadDevAge": 604800000000000
+}
+```
 
 Drive Failures
 ==============
 The most common failure you will get running a hummingbird cluster is drive
 failures. Here are a couple tools / methods to consider on how to fix these. 
-
-## Use recon to show unmounted drives in cluster:
-
-hummingbird's admin bot, andrewd, queries recon every hour to check if there
-are any dives that are unmounted or unreachable. You can see a report from that
-via the recon tool run on the admin server (where the andrewd dameon runs). For
-example:
 
 ```
 hummingbird recon -ds

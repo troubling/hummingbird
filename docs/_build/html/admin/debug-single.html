@@ -1,0 +1,379 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Debugging a single account, container, or object &mdash; Hummingbird v.PR documentation</title>
+  
+
+  
+  
+    <link rel="shortcut icon" href="../_static/privatecloud.ico"/>
+  
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="../_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="../_static/bespoke.css" type="text/css" />
+  
+    <link rel="stylesheet" href="../_static/bolditalic.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="../genindex.html"/>
+        <link rel="search" title="Search" href="../search.html"/>
+    <link rel="top" title="Hummingbird v.PR documentation" href="../index.html"/>
+        <link rel="up" title="Hummingbird Cluster Health" href="index.html"/>
+        <link rel="next" title="So You Want to Deploy Hummingbird" href="../deployment.html"/>
+        <link rel="prev" title="Hummingbird Priority Replication Tools" href="replication-tools.html"/> 
+
+  
+  <script src="../_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="../index.html" class="icon icon-home"> Hummingbird
+          
+
+          
+            
+            <img src="../_static/privatecloud.png" class="logo" />
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                v.PR
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../index.html">Hummingbird</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../arch/index.html">Hummingbird Architecture</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">Hummingbird Cluster Health</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="rings.html">Ring Managment 101</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rings.html#ring-best-practices">Ring Best Practices</a></li>
+<li class="toctree-l2"><a class="reference internal" href="monitoring.html">Hummingbird Monitoring</a></li>
+<li class="toctree-l2"><a class="reference internal" href="monitoring.html#metrics-exposed-by-hummingbird-services">Metrics exposed by Hummingbird services</a></li>
+<li class="toctree-l2"><a class="reference internal" href="monitoring.html#prometheus-grafana-alertmanager-installation">Prometheus, Grafana &amp; Alertmanager Installation.</a></li>
+<li class="toctree-l2"><a class="reference internal" href="drivestatus.html">Drive Status Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="async.html">Async Pending Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="dispersion.html">Dispersion Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ringmd5.html">MD5 Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="quarantine.html">Quarantine Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="stalledreplicators.html">Stalled Replicators Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="replicationstats.html">Replication Partitions Per Second Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="replicationduration.html">Replication Duration Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="timesync.html">Time Sync Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="replication-tools.html">Hummingbird Priority Replication Tools</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Debugging a single account, container, or object</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../deployment.html">So You Want to Deploy Hummingbird</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../dev/index.html">Hummingbird Development</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Hummingbird</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html">Docs</a> &raquo;</li>
+        
+          <li><a href="index.html">Hummingbird Cluster Health</a> &raquo;</li>
+        
+      <li>Debugging a single account, container, or object</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="../_sources/admin/debug-single.md.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="debugging-a-single-account-container-or-object">
+<h1>Debugging a single account, container, or object<a class="headerlink" href="#debugging-a-single-account-container-or-object" title="Permalink to this headline">#</a></h1>
+<p>At times you will want to investigate a single account, container, or
+object to ensure it exists, or was deleted, etc. There are tools that
+can be used to investigate within the cluster itself, useful when normal
+external client queries aren’t giving the full picture.</p>
+<p>As an example, we’ll walk through the information available for a single
+object. First, we need to know the account, container, and object names
+for the object we want to investigate. The container and object names
+should be easily given to the user, in this case we’ll use
+“thecontainer” and “theobject”. The account name may be a bit more
+difficult to determine, as the name we want is the name the Hummingbird
+cluster uses, not the one the authentication system uses. You can
+retrieve this information from the nectar command line client, for
+example:</p>
+<div class="highlight-default"><div class="highlight"><pre><span></span>$ nectar auth
+Account URL: http://127.0.0.1:8080/v1/AUTH_test
+Token: AUTH_f1b5ef55-c668-29ff-aac8-2e0684f8144c
+</pre></div>
+</div>
+<p>This tells us that the account name, according to the cluster, is
+<code class="docutils literal"><span class="pre">AUTH_test</span></code>.</p>
+<p>We can now use this full object name to gather cluster information about
+the object:</p>
+<div class="highlight-default"><div class="highlight"><pre><span></span>$ hummingbird nodes AUTH_test/thecontainer/theobject
+
+Account         AUTH_test
+Container       thecontainer
+Object          theobject
+Partition       365
+Hash            5b43443c7b6302922d25350ffa47d583
+
+Server:Port Device      127.0.0.1:6030 sdb3
+Server:Port Device      127.0.0.1:6020 sdb2
+Server:Port Device      127.0.0.1:6040 sdb4
+Server:Port Device      127.0.0.1:6010 sdb1      [Handoff]
+
+
+curl -g -I -XHEAD &quot;http://127.0.0.1:6030/sdb3/365/AUTH_test/thecontainer/theobject&quot;
+curl -g -I -XHEAD &quot;http://127.0.0.1:6020/sdb2/365/AUTH_test/thecontainer/theobject&quot;
+curl -g -I -XHEAD &quot;http://127.0.0.1:6040/sdb4/365/AUTH_test/thecontainer/theobject&quot;
+curl -g -I -XHEAD &quot;http://127.0.0.1:6010/sdb1/365/AUTH_test/thecontainer/theobject&quot; # [Handoff]
+
+
+Use your own device location of servers:
+such as &quot;export DEVICE=/srv/node&quot;
+ssh 127.0.0.1 &quot;ls -lah ${DEVICE:-/srv/node*}/sdb3/objects/365/583/5b43443c7b6302922d25350ffa47d583&quot;
+ssh 127.0.0.1 &quot;ls -lah ${DEVICE:-/srv/node*}/sdb2/objects/365/583/5b43443c7b6302922d25350ffa47d583&quot;
+ssh 127.0.0.1 &quot;ls -lah ${DEVICE:-/srv/node*}/sdb4/objects/365/583/5b43443c7b6302922d25350ffa47d583&quot;
+ssh 127.0.0.1 &quot;ls -lah ${DEVICE:-/srv/node*}/sdb1/objects/365/583/5b43443c7b6302922d25350ffa47d583&quot; # [Handoff]
+
+note: `/srv/node*` is used as default value of `devices`, the real value is set in the config file on each storage node.
+</pre></div>
+</div>
+<p>In this example, we have a cluster using a standard 3 replica storage
+policy. The Server:Port Device lines show where each copy of the object
+should reside. The ssh lines show a more specific on disk location of
+each object copy, assuming the standard storage policy. The curl lines
+can be useful if you want to remotely check if each server has the copy
+it should.</p>
+<p>With non-standard policies, the information may not be exact but should
+give generally good information that can be translated to work for the
+policy in use. You can use the <code class="docutils literal"><span class="pre">-P</span> <span class="pre">policy_name</span></code> option with the
+hummingbird nodes command to use the non-default policy for a cluster.</p>
+<p>You can also gather information about standard policy’s object data file
+on disk, to determine what the account, container, and object names are,
+etc. For example, let’s say I want to know what a “random” .data file
+represents on a backend server:</p>
+<div class="highlight-default"><div class="highlight"><pre><span></span>$ hummingbird oinfo /srv/hb/3/sdb3/objects/365/583/5b43443c7b6302922d25350ffa47d583/1515701148.27933.data
+Path: /AUTH_test/thecontainer/theobject
+  Account: AUTH_test
+  Container: thecontainer
+  Object: theobject
+  Object hash: 5b43443c7b6302922d25350ffa47d583
+Content-Type: application/octet-stream
+Timestamp: 2018-01-11T20:05:48Z (1515701148.27933)
+System Metadata:
+  No metadata found
+Transient System Metadata:
+  No metadata found
+User Metadata:
+  No metadata found
+Other Metadata:
+  X-Backend-Data-Timestamp: 1515701148.27933
+ETag: 764efa883dda1e11db47671c4a3bbd9e (valid)
+Content-Length: 3 (valid)
+Partition       365
+Hash            5b43443c7b6302922d25350ffa47d583
+
+Server:Port Device      127.0.0.1:6030 sdb3
+Server:Port Device      127.0.0.1:6020 sdb2
+Server:Port Device      127.0.0.1:6040 sdb4
+Server:Port Device      127.0.0.1:6010 sdb1      [Handoff]
+
+
+curl -g -I -XHEAD &quot;http://127.0.0.1:6030/sdb3/365/AUTH_test/thecontainer/theobject&quot;
+curl -g -I -XHEAD &quot;http://127.0.0.1:6020/sdb2/365/AUTH_test/thecontainer/theobject&quot;
+curl -g -I -XHEAD &quot;http://127.0.0.1:6040/sdb4/365/AUTH_test/thecontainer/theobject&quot;
+curl -g -I -XHEAD &quot;http://127.0.0.1:6010/sdb1/365/AUTH_test/thecontainer/theobject&quot; # [Handoff]
+
+
+Use your own device location of servers:
+such as &quot;export DEVICE=/srv/node&quot;
+ssh 127.0.0.1 &quot;ls -lah ${DEVICE:-/srv/node*}/sdb3/objects/365/583/5b43443c7b6302922d25350ffa47d583&quot;
+ssh 127.0.0.1 &quot;ls -lah ${DEVICE:-/srv/node*}/sdb2/objects/365/583/5b43443c7b6302922d25350ffa47d583&quot;
+ssh 127.0.0.1 &quot;ls -lah ${DEVICE:-/srv/node*}/sdb4/objects/365/583/5b43443c7b6302922d25350ffa47d583&quot;
+ssh 127.0.0.1 &quot;ls -lah ${DEVICE:-/srv/node*}/sdb1/objects/365/583/5b43443c7b6302922d25350ffa47d583&quot; # [Handoff]
+
+note: `/srv/node*` is used as default value of `devices`, the real value is set in the config file on each storage node.
+</pre></div>
+</div>
+</div>
+
+
+           </div>
+           <div class="articleComments">
+            
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="../deployment.html" class="btn btn-neutral float-right" title="So You Want to Deploy Hummingbird" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="replication-tools.html" class="btn btn-neutral" title="Hummingbird Priority Replication Tools" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2018, Rackspace.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'../',
+            VERSION:'v.PR',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="../_static/jquery.js"></script>
+      <script type="text/javascript" src="../_static/underscore.js"></script>
+      <script type="text/javascript" src="../_static/doctools.js"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

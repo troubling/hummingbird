@@ -1,0 +1,261 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Hummingbird Architecture &mdash; Hummingbird v.PR documentation</title>
+  
+
+  
+  
+    <link rel="shortcut icon" href="../_static/privatecloud.ico"/>
+  
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="../_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="../_static/bespoke.css" type="text/css" />
+  
+    <link rel="stylesheet" href="../_static/bolditalic.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="../genindex.html"/>
+        <link rel="search" title="Search" href="../search.html"/>
+    <link rel="top" title="Hummingbird v.PR documentation" href="../index.html"/>
+        <link rel="next" title="Hummingbird Cluster Health" href="../admin/index.html"/>
+        <link rel="prev" title="Welcome to Hummingbird’s documentation!" href="../index.html"/> 
+
+  
+  <script src="../_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="../index.html" class="icon icon-home"> Hummingbird
+          
+
+          
+            
+            <img src="../_static/privatecloud.png" class="logo" />
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                v.PR
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../index.html">Hummingbird</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Hummingbird Architecture</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../admin/index.html">Hummingbird Cluster Health</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../deployment.html">So You Want to Deploy Hummingbird</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../dev/index.html">Hummingbird Development</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Hummingbird</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html">Docs</a> &raquo;</li>
+        
+      <li>Hummingbird Architecture</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="../_sources/arch/index.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="hummingbird-architecture">
+<h1>Hummingbird Architecture<a class="headerlink" href="#hummingbird-architecture" title="Permalink to this headline">#</a></h1>
+<p>Overall, the Hummingbird architecture is much like the <a class="reference external" href="https://docs.openstack.org/swift/latest/overview_architecture.html">OpenStack Swift architecture</a>. Below are the main differences from what you may be used to with OpenStack Swift:</p>
+<p>All executables are folded into a single hummingbird executable with subcommands, including smaller tools like nodes, oinfo, etc. Packaging and deployment scripts may create multiple scripts or service files, but these simply wrap calls to the single hummingbird executable.</p>
+<p>Auditors and Updaters are folded into the Replicators.</p>
+<p>Dispersion Report and Drive Audit features are implemented within Andrewd.</p>
+<p>Expiring objects are supported, but not actively deleted after expiration. Active clean up may be implemented in the future.</p>
+<p>No Account Reaper, which removes the contents of deleted accounts in the background. This should be implemented in the future.</p>
+<p>No Container Reconciler, which resolves issues with conflicting policies within a single container. A tool for this may be implemented in the future.</p>
+<p>No support for Swift’s Container Sync feature.</p>
+<p>No support for Swift’s EC feature. Hummingbird will support erasure coding, but the implementation will be quite different with no plans to support Swift’s implementation.</p>
+<p>No support for Swift’s Modifying Ring Partition Power feature, therefore no equivalent of the swift-object-relinker.</p>
+<p>No support for Swift’s Symbolic Linking feature at this time.</p>
+<img alt="../_images/hummingbird_architecture.png" src="../_images/hummingbird_architecture.png" />
+</div>
+
+
+           </div>
+           <div class="articleComments">
+            
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="../admin/index.html" class="btn btn-neutral float-right" title="Hummingbird Cluster Health" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="../index.html" class="btn btn-neutral" title="Welcome to Hummingbird’s documentation!" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2018, Rackspace.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'../',
+            VERSION:'v.PR',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="../_static/jquery.js"></script>
+      <script type="text/javascript" src="../_static/underscore.js"></script>
+      <script type="text/javascript" src="../_static/doctools.js"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

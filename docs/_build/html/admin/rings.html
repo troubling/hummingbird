@@ -1,0 +1,460 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Ring Managment 101 &mdash; Hummingbird v.PR documentation</title>
+  
+
+  
+  
+    <link rel="shortcut icon" href="../_static/privatecloud.ico"/>
+  
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="../_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="../_static/bespoke.css" type="text/css" />
+  
+    <link rel="stylesheet" href="../_static/bolditalic.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="../genindex.html"/>
+        <link rel="search" title="Search" href="../search.html"/>
+    <link rel="top" title="Hummingbird v.PR documentation" href="../index.html"/>
+        <link rel="up" title="Hummingbird Cluster Health" href="index.html"/>
+        <link rel="next" title="Hummingbird Monitoring" href="monitoring.html"/>
+        <link rel="prev" title="Hummingbird Cluster Health" href="index.html"/> 
+
+  
+  <script src="../_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="../index.html" class="icon icon-home"> Hummingbird
+          
+
+          
+            
+            <img src="../_static/privatecloud.png" class="logo" />
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                v.PR
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../index.html">Hummingbird</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../arch/index.html">Hummingbird Architecture</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">Hummingbird Cluster Health</a><ul class="current">
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Ring Managment 101</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#ring-overview">Ring Overview</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#zones">Zones</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#partitions">Partitions</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#ring-creation">Ring Creation</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#ring-replicas">Ring Replicas</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#partition-power">Partition Power</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#min-partition-hours">Min Partition Hours</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#adding-devices">Adding Devices</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rebalancing-the-ring">Rebalancing the Ring</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#ring-best-practices">Ring Best Practices</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#creating-the-initial-rings">Creating the Initial Rings</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#handling-a-device-failure">Handling a Device failure</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#adding-or-removing-large-numbers-of-devices">Adding or Removing Large Numbers of Devices</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="monitoring.html">Hummingbird Monitoring</a></li>
+<li class="toctree-l2"><a class="reference internal" href="monitoring.html#metrics-exposed-by-hummingbird-services">Metrics exposed by Hummingbird services</a></li>
+<li class="toctree-l2"><a class="reference internal" href="monitoring.html#prometheus-grafana-alertmanager-installation">Prometheus, Grafana &amp; Alertmanager Installation.</a></li>
+<li class="toctree-l2"><a class="reference internal" href="drivestatus.html">Drive Status Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="async.html">Async Pending Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="dispersion.html">Dispersion Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ringmd5.html">MD5 Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="quarantine.html">Quarantine Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="stalledreplicators.html">Stalled Replicators Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="replicationstats.html">Replication Partitions Per Second Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="replicationduration.html">Replication Duration Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="timesync.html">Time Sync Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="replication-tools.html">Hummingbird Priority Replication Tools</a></li>
+<li class="toctree-l2"><a class="reference internal" href="debug-single.html">Debugging a single account, container, or object</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../deployment.html">So You Want to Deploy Hummingbird</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../dev/index.html">Hummingbird Development</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Hummingbird</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html">Docs</a> &raquo;</li>
+        
+          <li><a href="index.html">Hummingbird Cluster Health</a> &raquo;</li>
+        
+      <li>Ring Managment 101</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="../_sources/admin/rings.md.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="ring-managment-101">
+<h1>Ring Managment 101<a class="headerlink" href="#ring-managment-101" title="Permalink to this headline">#</a></h1>
+<div class="section" id="ring-overview">
+<h2>Ring Overview<a class="headerlink" href="#ring-overview" title="Permalink to this headline">#</a></h2>
+<p>The hummingbird rings are responsible for mapping data to devices. There
+is a separate ring for the objects, containers, and accounts. Rings are
+created when you build a new cluster and updated when changes to the
+cluster need to be made, for example, adding or removing nodes or
+devices to the storage cluster. It is important that all servers in the
+cluster have the same and most current version of the rings.</p>
+<div class="section" id="zones">
+<h3>Zones<a class="headerlink" href="#zones" title="Permalink to this headline">#</a></h3>
+<p>A Zone is an abstract concept in the ring that allows you to define
+failure domains within the cluster. Each copy of an object will be
+stored in a device in a different zone. It is recommended to choose the
+highest level of isolation that makes sense for the cluster size. For
+example for a small cluster, with a handful of machines, each server
+might be a zone. For a larger cluster, it might be each rack of servers.</p>
+</div>
+<div class="section" id="partitions">
+<h3>Partitions<a class="headerlink" href="#partitions" title="Permalink to this headline">#</a></h3>
+<p>When an object is stored in the cluster, the ring maps the object to a
+partition using a hash. The partitions are evenly distributed across all
+of the devices in the cluster.</p>
+</div>
+</div>
+<div class="section" id="ring-creation">
+<h2>Ring Creation<a class="headerlink" href="#ring-creation" title="Permalink to this headline">#</a></h2>
+<p>Before a ring can be created, there are a few parameters that need to be
+decided upon.</p>
+<div class="section" id="ring-replicas">
+<h3>Ring Replicas<a class="headerlink" href="#ring-replicas" title="Permalink to this headline">#</a></h3>
+<p>The replica count determines how many copies of each object will be
+stored in the cluster. A typical cluster will have 3 replicas, which
+means that the cluster will store 3 copies of the object on 3 different
+devices.</p>
+</div>
+<div class="section" id="partition-power">
+<h3>Partition Power<a class="headerlink" href="#partition-power" title="Permalink to this headline">#</a></h3>
+<p>The Partition Power is the number of partitions used by the ring. A
+typical cluster will have a 4,194,304 (2^22) partitions and thus a
+partition power of 22.</p>
+</div>
+<div class="section" id="min-partition-hours">
+<h3>Min Partition Hours<a class="headerlink" href="#min-partition-hours" title="Permalink to this headline">#</a></h3>
+<p>When the state of the cluster changes, and data needs to be moved, it
+will try to only move 1 replica at a time (in a 3 replica cluster) to
+ensure that objects in the cluster remain available. When a ring change
+is issued, the ring will not move partitions that have moved more
+recently than Min Partition Hours. This helps prevent the cluster from
+getting into a bad state through a series of ring changes. A typical
+cluster will set the Min Partition Hours to 168 (1 week).</p>
+<p>A ring can be generated with the command
+<code class="docutils literal"><span class="pre">hummingbird</span> <span class="pre">ring</span> <span class="pre">&lt;builder_file&gt;</span> <span class="pre">create</span> <span class="pre">&lt;part_power&gt;</span> <span class="pre">&lt;replicas&gt;</span> <span class="pre">&lt;min_part_hours&gt;</span></code>
+and an example object ring with the typical settings can be created with
+<code class="docutils literal"><span class="pre">hummingbird</span> <span class="pre">ring</span> <span class="pre">object.builder</span> <span class="pre">create</span> <span class="pre">22</span> <span class="pre">3</span> <span class="pre">168</span></code>.</p>
+<p>The builder file contains extra information needed for building the
+rings and care should be taken to backup and not lose these files.</p>
+</div>
+</div>
+<div class="section" id="adding-devices">
+<h2>Adding Devices<a class="headerlink" href="#adding-devices" title="Permalink to this headline">#</a></h2>
+<p>Each individual storage device is stored in the ring. Before adding the
+device, you will need to know the zone, server ip address and port,
+device name, and weight of the device. The server ip address and port
+should be the address and port that the server for that ring is running
+on. The device name should be the name of the partitioned device. The
+weight should be the number of Gigabytes the device can store.</p>
+<p>A device can be added with the command
+<code class="docutils literal"><span class="pre">hummingbird</span> <span class="pre">ring</span> <span class="pre">&lt;builder_file&gt;</span> <span class="pre">add</span> <span class="pre">add</span> <span class="pre">z&lt;zone&gt;-&lt;ip&gt;:&lt;port&gt;/&lt;device_name&gt;</span></code>
+and an example device added to the object ring might look like
+<code class="docutils literal"><span class="pre">hummingbird</span> <span class="pre">ring</span> <span class="pre">object.builder</span> <span class="pre">add</span> <span class="pre">z1-10.0.0.1:6000/xvdd</span> <span class="pre">1000</span></code> for a
+1TB device.</p>
+<p>Note: As devices are added to the ring, the actual mappings do not
+change until you run the rebalance command. It is best to make all the
+changes you want to make before rebalancing.</p>
+</div>
+<div class="section" id="rebalancing-the-ring">
+<h2>Rebalancing the Ring<a class="headerlink" href="#rebalancing-the-ring" title="Permalink to this headline">#</a></h2>
+<p>The <code class="docutils literal"><span class="pre">hummingbird</span> <span class="pre">ring</span> <span class="pre">&lt;builder_file&gt;</span> <span class="pre">rebalance</span></code> command will take the
+information in the ring builder file and build a compressed ring file
+that can be used by the servers. When done, the comannd will return how
+many partitions moved and the balance of the new ring.</p>
+</div>
+</div>
+<div class="section" id="ring-best-practices">
+<h1>Ring Best Practices<a class="headerlink" href="#ring-best-practices" title="Permalink to this headline">#</a></h1>
+<div class="section" id="creating-the-initial-rings">
+<h2>Creating the Initial Rings<a class="headerlink" href="#creating-the-initial-rings" title="Permalink to this headline">#</a></h2>
+<p>It is a good idea to create a bash script that creates your initial
+rings. An example <code class="docutils literal"><span class="pre">make_rings.sh</span></code> script could look something like:</p>
+<div class="highlight-default"><div class="highlight"><pre><span></span><span class="ch">#!/bin/bash</span>
+
+<span class="n">cd</span> <span class="o">/</span><span class="n">etc</span><span class="o">/</span><span class="n">hummingbird</span>
+
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="nb">object</span><span class="o">.</span><span class="n">builder</span> <span class="n">create</span> <span class="mi">22</span> <span class="mi">3</span> <span class="mi">168</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="nb">object</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z1</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.10</span><span class="p">:</span><span class="mi">6000</span><span class="o">/</span><span class="n">sdd1</span> <span class="mi">2000</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="nb">object</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z1</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.10</span><span class="p">:</span><span class="mi">6000</span><span class="o">/</span><span class="n">sde1</span> <span class="mi">2000</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="nb">object</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z1</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.10</span><span class="p">:</span><span class="mi">6000</span><span class="o">/</span><span class="n">sdf1</span> <span class="mi">2000</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="nb">object</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z1</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.10</span><span class="p">:</span><span class="mi">6000</span><span class="o">/</span><span class="n">sdg1</span> <span class="mi">2000</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="nb">object</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z2</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.11</span><span class="p">:</span><span class="mi">6000</span><span class="o">/</span><span class="n">sdd1</span> <span class="mi">2000</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="nb">object</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z2</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.11</span><span class="p">:</span><span class="mi">6000</span><span class="o">/</span><span class="n">sde1</span> <span class="mi">2000</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="nb">object</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z2</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.11</span><span class="p">:</span><span class="mi">6000</span><span class="o">/</span><span class="n">sdf1</span> <span class="mi">2000</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="nb">object</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z2</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.11</span><span class="p">:</span><span class="mi">6000</span><span class="o">/</span><span class="n">sdg1</span> <span class="mi">2000</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="nb">object</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z3</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.12</span><span class="p">:</span><span class="mi">6000</span><span class="o">/</span><span class="n">sdd1</span> <span class="mi">2000</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="nb">object</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z3</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.12</span><span class="p">:</span><span class="mi">6000</span><span class="o">/</span><span class="n">sde1</span> <span class="mi">2000</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="nb">object</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z3</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.12</span><span class="p">:</span><span class="mi">6000</span><span class="o">/</span><span class="n">sdf1</span> <span class="mi">2000</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="nb">object</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z3</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.12</span><span class="p">:</span><span class="mi">6000</span><span class="o">/</span><span class="n">sdg1</span> <span class="mi">2000</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="nb">object</span><span class="o">.</span><span class="n">builder</span> <span class="n">rebalance</span>
+
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="n">container</span><span class="o">.</span><span class="n">builder</span> <span class="n">create</span> <span class="mi">22</span> <span class="mi">3</span> <span class="mi">168</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="n">container</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z1</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.10</span><span class="p">:</span><span class="mi">6001</span><span class="o">/</span><span class="n">sdb1</span> <span class="mi">500</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="n">container</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z1</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.10</span><span class="p">:</span><span class="mi">6001</span><span class="o">/</span><span class="n">sdc1</span> <span class="mi">500</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="n">container</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z2</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.11</span><span class="p">:</span><span class="mi">6001</span><span class="o">/</span><span class="n">sdb1</span> <span class="mi">500</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="n">container</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z2</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.11</span><span class="p">:</span><span class="mi">6001</span><span class="o">/</span><span class="n">sdc1</span> <span class="mi">500</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="n">container</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z3</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.12</span><span class="p">:</span><span class="mi">6001</span><span class="o">/</span><span class="n">sdb1</span> <span class="mi">500</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="n">container</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z3</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.12</span><span class="p">:</span><span class="mi">6001</span><span class="o">/</span><span class="n">sdc1</span> <span class="mi">500</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="n">container</span><span class="o">.</span><span class="n">builder</span> <span class="n">rebalance</span>
+
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="n">account</span><span class="o">.</span><span class="n">builder</span> <span class="n">create</span> <span class="mi">22</span> <span class="mi">3</span> <span class="mi">168</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="n">account</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z1</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.10</span><span class="p">:</span><span class="mi">6002</span><span class="o">/</span><span class="n">sdb1</span> <span class="mi">500</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="n">account</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z1</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.10</span><span class="p">:</span><span class="mi">6002</span><span class="o">/</span><span class="n">sdc1</span> <span class="mi">500</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="n">account</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z2</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.11</span><span class="p">:</span><span class="mi">6002</span><span class="o">/</span><span class="n">sdb1</span> <span class="mi">500</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="n">account</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z2</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.11</span><span class="p">:</span><span class="mi">6002</span><span class="o">/</span><span class="n">sdc1</span> <span class="mi">500</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="n">account</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z3</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.12</span><span class="p">:</span><span class="mi">6002</span><span class="o">/</span><span class="n">sdb1</span> <span class="mi">500</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="n">account</span><span class="o">.</span><span class="n">builder</span> <span class="n">add</span> <span class="n">r1z3</span><span class="o">-</span><span class="mf">10.1</span><span class="o">.</span><span class="mf">1.12</span><span class="p">:</span><span class="mi">6002</span><span class="o">/</span><span class="n">sdc1</span> <span class="mi">500</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="n">account</span><span class="o">.</span><span class="n">builder</span> <span class="n">rebalance</span>
+</pre></div>
+</div>
+<p>It is <em>very</em> important that you add all nodes and devices to the ring
+before running the rebalance command.</p>
+</div>
+<div class="section" id="handling-a-device-failure">
+<h2>Handling a Device failure<a class="headerlink" href="#handling-a-device-failure" title="Permalink to this headline">#</a></h2>
+<p>If a device has failed and will be replaced in the near future, then no
+ring changes are neccesary. The system will work around the failure and
+replication will copy the data over when the drive is replaced. Note
+that there will be some degradation in performance until the device is
+replaced and fully replicated.</p>
+<p>If a device has failed and it will either not be replaced or will be a
+while before being replaced, then it would be a good idea to set the
+device’s weight to 0. The ring will spread the partitions that the
+device was responsible for to other devices in the cluster. For example
+if device sde1 failed on node 10.1.1.11, the following commands would be
+issued:</p>
+<div class="highlight-default"><div class="highlight"><pre><span></span><span class="n">hummingbird</span> <span class="n">ring</span> <span class="nb">object</span><span class="o">.</span><span class="n">builder</span> <span class="n">set_weight</span> <span class="o">-</span><span class="n">ip</span> <span class="mf">10.1</span><span class="o">.</span><span class="mf">1.11</span> <span class="o">-</span><span class="n">device</span> <span class="n">sde1</span> <span class="mi">0</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="nb">object</span><span class="o">.</span><span class="n">builder</span> <span class="n">rebalance</span>
+</pre></div>
+</div>
+<p>When the device is replaced, you can set the weight back to its original
+value. The ring will reassign partitions to the device, and Hummingbird
+will replicate data back to the device. For example:</p>
+<div class="highlight-default"><div class="highlight"><pre><span></span><span class="n">hummingbird</span> <span class="n">ring</span> <span class="nb">object</span><span class="o">.</span><span class="n">builder</span> <span class="n">set_weight</span> <span class="o">-</span><span class="n">ip</span> <span class="mf">10.1</span><span class="o">.</span><span class="mf">1.11</span> <span class="o">-</span><span class="n">device</span> <span class="n">sde1</span> <span class="mi">2000</span>
+<span class="n">hummingbird</span> <span class="n">ring</span> <span class="nb">object</span><span class="o">.</span><span class="n">builder</span> <span class="n">rebalance</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="adding-or-removing-large-numbers-of-devices">
+<h2>Adding or Removing Large Numbers of Devices<a class="headerlink" href="#adding-or-removing-large-numbers-of-devices" title="Permalink to this headline">#</a></h2>
+<p>If a large number of devices are added or removed in a cluster at full
+weight, the cluster could get overwhelmed trying to replicate a lot of
+data at once. If the device changes are made with a fraction of the
+final intended weight, then it is easier to control how much data is
+moved around the cluster. For example if the size of the cluster is
+being expanded, add the new devices with a weight of 20% their intended
+final weight, rebalance and wait for replication to move most of that
+data. Then, adjust the weight to 40%, and wait again. Continue repeating
+this until the weight is at 100%. Do the reverse if you intend on
+removing a large number of devices from the cluster at the same time.</p>
+<p>Note: It is important that you do all of your ring changes before
+running the rebalance command.</p>
+</div>
+</div>
+
+
+           </div>
+           <div class="articleComments">
+            
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="monitoring.html" class="btn btn-neutral float-right" title="Hummingbird Monitoring" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="index.html" class="btn btn-neutral" title="Hummingbird Cluster Health" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2018, Rackspace.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'../',
+            VERSION:'v.PR',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="../_static/jquery.js"></script>
+      <script type="text/javascript" src="../_static/underscore.js"></script>
+      <script type="text/javascript" src="../_static/doctools.js"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

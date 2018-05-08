@@ -1,0 +1,1005 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Hummingbird Monitoring &mdash; Hummingbird v.PR documentation</title>
+  
+
+  
+  
+    <link rel="shortcut icon" href="../_static/privatecloud.ico"/>
+  
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="../_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="../_static/bespoke.css" type="text/css" />
+  
+    <link rel="stylesheet" href="../_static/bolditalic.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="../genindex.html"/>
+        <link rel="search" title="Search" href="../search.html"/>
+    <link rel="top" title="Hummingbird v.PR documentation" href="../index.html"/>
+        <link rel="up" title="Hummingbird Cluster Health" href="index.html"/>
+        <link rel="next" title="Drive Status Report" href="drivestatus.html"/>
+        <link rel="prev" title="Ring Managment 101" href="rings.html"/> 
+
+  
+  <script src="../_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="../index.html" class="icon icon-home"> Hummingbird
+          
+
+          
+            
+            <img src="../_static/privatecloud.png" class="logo" />
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                v.PR
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../index.html">Hummingbird</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../arch/index.html">Hummingbird Architecture</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">Hummingbird Cluster Health</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="rings.html">Ring Managment 101</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rings.html#ring-best-practices">Ring Best Practices</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Hummingbird Monitoring</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#metrics-exposed-by-hummingbird-services">Metrics exposed by Hummingbird services</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#hummingbird-specific-metrics">Hummingbird specific metrics</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#prometheus-grafana-alertmanager-installation">Prometheus, Grafana &amp; Alertmanager Installation.</a></li>
+<li class="toctree-l2"><a class="reference internal" href="drivestatus.html">Drive Status Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="async.html">Async Pending Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="dispersion.html">Dispersion Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ringmd5.html">MD5 Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="quarantine.html">Quarantine Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="stalledreplicators.html">Stalled Replicators Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="replicationstats.html">Replication Partitions Per Second Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="replicationduration.html">Replication Duration Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="timesync.html">Time Sync Report</a></li>
+<li class="toctree-l2"><a class="reference internal" href="replication-tools.html">Hummingbird Priority Replication Tools</a></li>
+<li class="toctree-l2"><a class="reference internal" href="debug-single.html">Debugging a single account, container, or object</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../deployment.html">So You Want to Deploy Hummingbird</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../dev/index.html">Hummingbird Development</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Hummingbird</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html">Docs</a> &raquo;</li>
+        
+          <li><a href="index.html">Hummingbird Cluster Health</a> &raquo;</li>
+        
+      <li>Hummingbird Monitoring</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="../_sources/admin/monitoring.md.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="hummingbird-monitoring">
+<h1>Hummingbird Monitoring<a class="headerlink" href="#hummingbird-monitoring" title="Permalink to this headline">#</a></h1>
+<p>Each of the hummingbird services uses Prometheus to instrument the
+application code. All the Hummingbird services except proxy server
+expose their metrics at <code class="docutils literal"><span class="pre">/metrics</span></code> endpoint. Just doing a curl request
+against the /metrics path for them will give you all the data for that
+moment.</p>
+<p>For privacy reason we don’t expose metrics from proxy server by default.
+If you want to expose metrics from proxy server, you will need add the
+obfuscated_prefix in Hummingbird proxy config
+(/etc/hummingbird/proxy-server.conf).</p>
+<div class="highlight-default"><div class="highlight"><pre><span></span><span class="p">[</span><span class="n">DEFAULT</span><span class="p">]</span>
+<span class="n">obfuscated_prefix</span> <span class="o">=</span> <span class="o">&lt;</span><span class="n">prefix_of_your_choice</span><span class="o">&gt;</span>
+</pre></div>
+</div>
+<p>After this you can access the proxy server metrics at
+<code class="docutils literal"><span class="pre">&lt;prefix_of_your_choice&gt;/metrics</span></code> endpoint.</p>
+</div>
+<div class="section" id="metrics-exposed-by-hummingbird-services">
+<h1>Metrics exposed by Hummingbird services<a class="headerlink" href="#metrics-exposed-by-hummingbird-services" title="Permalink to this headline">#</a></h1>
+<table border="1" class="docutils">
+<colgroup>
+<col width="31%" />
+<col width="10%" />
+<col width="59%" />
+</colgroup>
+<thead valign="bottom">
+<tr class="row-odd"><th class="head">Golang related
+Metrics</th>
+<th class="head">Metri
+cs
+Type</th>
+<th class="head">Description</th>
+</tr>
+</thead>
+<tbody valign="top">
+<tr class="row-even"><td>go_gc_duration_seco
+nds</td>
+<td>summa
+ry</td>
+<td>A summary of the GC invocation
+durations.</td>
+</tr>
+<tr class="row-odd"><td>go_goroutines</td>
+<td>gauge</td>
+<td>Number of goroutines that currently
+exist.</td>
+</tr>
+<tr class="row-even"><td>go_memstats_alloc_b
+ytes</td>
+<td>gauge</td>
+<td>Number of bytes allocated and still in
+use.</td>
+</tr>
+<tr class="row-odd"><td>go_memstats_alloc_b
+ytes_total</td>
+<td>count
+er</td>
+<td>Total number of bytes allocated, even
+if freed.</td>
+</tr>
+<tr class="row-even"><td>go_memstats_buck_ha
+sh_sys_bytes</td>
+<td>gauge</td>
+<td>Number of bytes used by the profiling
+bucket hash table.</td>
+</tr>
+<tr class="row-odd"><td>go_memstats_frees_t
+otal</td>
+<td>count
+er</td>
+<td>Total number of frees.</td>
+</tr>
+<tr class="row-even"><td><a href="#id1"><span class="problematic" id="id2">go_memstats_gc_sys_</span></a>
+bytes</td>
+<td>gauge</td>
+<td>Number of bytes used for garbage
+collection system metadata.</td>
+</tr>
+<tr class="row-odd"><td>go_memstats_heap_al
+loc_bytes</td>
+<td>gauge</td>
+<td>Number of heap bytes allocated and
+still in use.</td>
+</tr>
+<tr class="row-even"><td>go_memstats_heap_id
+le_bytes</td>
+<td>gauge</td>
+<td>Number of heap bytes waiting to be
+used.</td>
+</tr>
+<tr class="row-odd"><td>go_memstats_heap_in
+use_bytes</td>
+<td>gauge</td>
+<td>Number of heap bytes that are in use.</td>
+</tr>
+<tr class="row-even"><td>go_memstats_heap_ob
+jects</td>
+<td>gauge</td>
+<td>Number of allocated objects.</td>
+</tr>
+<tr class="row-odd"><td>go_memstats_heap_re
+leased_bytes_total</td>
+<td>count
+er</td>
+<td>Total number of heap bytes released to
+OS.</td>
+</tr>
+<tr class="row-even"><td>go_memstats_heap_sy
+s_bytes</td>
+<td>gauge</td>
+<td>Number of heap bytes obtained from
+system.</td>
+</tr>
+<tr class="row-odd"><td>go_memstats_last_gc
+_time_seconds</td>
+<td>gauge</td>
+<td>Number of seconds since 1970 of last
+garbage collection.</td>
+</tr>
+<tr class="row-even"><td>go_memstats_lookups
+_total</td>
+<td>count
+er</td>
+<td>Total number of pointer lookups.</td>
+</tr>
+<tr class="row-odd"><td>go_memstats_mallocs
+_total</td>
+<td>count
+er</td>
+<td>Total number of mallocs.</td>
+</tr>
+<tr class="row-even"><td><a href="#id3"><span class="problematic" id="id4">go_memstats_mcache_</span></a>
+inuse_bytes</td>
+<td>gauge</td>
+<td>Number of bytes in use by mcache
+structures.</td>
+</tr>
+<tr class="row-odd"><td><a href="#id5"><span class="problematic" id="id6">go_memstats_mcache_</span></a>
+sys_bytes</td>
+<td>gauge</td>
+<td>Number of bytes used for mcache
+structures obtained from system.</td>
+</tr>
+<tr class="row-even"><td>go_memstats_mspan_i
+nuse_bytes</td>
+<td>gauge</td>
+<td>Number of bytes in use by mspan
+structures.</td>
+</tr>
+<tr class="row-odd"><td>go_memstats_mspan_s
+ys_bytes</td>
+<td>gauge</td>
+<td>Number of bytes used for mspan
+structures obtained from system.</td>
+</tr>
+<tr class="row-even"><td>go_memstats_next_gc
+_bytes</td>
+<td>gauge</td>
+<td>Number of heap bytes when next garbage
+collection will take place.</td>
+</tr>
+<tr class="row-odd"><td>go_memstats_other_s
+ys_bytes</td>
+<td>gauge</td>
+<td>Number of bytes used for other system
+allocations.</td>
+</tr>
+<tr class="row-even"><td>go_memstats_stack_i
+nuse_bytes</td>
+<td>gauge</td>
+<td>Number of bytes in use by the stack
+allocator.</td>
+</tr>
+<tr class="row-odd"><td>go_memstats_stack_s
+ys_bytes</td>
+<td>gauge</td>
+<td>Number of bytes obtained from system
+for stack allocator.</td>
+</tr>
+<tr class="row-even"><td>go_memstats_sys_byt
+es</td>
+<td>gauge</td>
+<td>Number of bytes obtained by system.
+Sum of all system allocations.</td>
+</tr>
+<tr class="row-odd"><td>http_request_durati
+on_microseconds</td>
+<td>summa
+ry</td>
+<td>The HTTP request latencies in
+microseconds.</td>
+</tr>
+<tr class="row-even"><td>http_request_size_b
+ytes</td>
+<td>summa
+ry</td>
+<td>The HTTP request sizes in bytes.</td>
+</tr>
+<tr class="row-odd"><td>http_requests_total</td>
+<td>count
+er</td>
+<td>Total number of HTTP requests made.</td>
+</tr>
+<tr class="row-even"><td><a href="#id7"><span class="problematic" id="id8">http_response_size_</span></a>
+bytes</td>
+<td>summa
+ry</td>
+<td>The HTTP response sizes in bytes.</td>
+</tr>
+<tr class="row-odd"><td>process_cpu_seconds
+_total</td>
+<td>count
+er</td>
+<td>Total user and system CPU time spent
+in seconds.</td>
+</tr>
+<tr class="row-even"><td>process_max_fds</td>
+<td>gauge</td>
+<td>Maximum number of open file
+descriptors.</td>
+</tr>
+<tr class="row-odd"><td>process_open_fds</td>
+<td>gauge</td>
+<td>Number of open file descriptors.</td>
+</tr>
+<tr class="row-even"><td>process_resident_me
+mory_bytes</td>
+<td>gauge</td>
+<td>Resident memory size in bytes</td>
+</tr>
+<tr class="row-odd"><td><a href="#id9"><span class="problematic" id="id10">process_start_time_</span></a>
+seconds</td>
+<td>gauge</td>
+<td>Start time of the process since unix
+epoch in seconds.</td>
+</tr>
+<tr class="row-even"><td>process_virtual_mem
+ory_bytes</td>
+<td>gauge</td>
+<td>Virtual memory size in bytes.</td>
+</tr>
+</tbody>
+</table>
+<div class="section" id="hummingbird-specific-metrics">
+<h2>Hummingbird specific metrics<a class="headerlink" href="#hummingbird-specific-metrics" title="Permalink to this headline">#</a></h2>
+<p>Each hummingbird service expose its metrics using separate prefix(hb_).</p>
+<table border="1" class="docutils">
+<colgroup>
+<col width="31%" />
+<col width="10%" />
+<col width="59%" />
+</colgroup>
+<thead valign="bottom">
+<tr class="row-odd"><th class="head">Object Server
+Metrics</th>
+<th class="head">Metri
+cs
+Type</th>
+<th class="head">Description</th>
+</tr>
+</thead>
+<tbody valign="top">
+<tr class="row-even"><td>hb_object_201_respo
+nses</td>
+<td>count
+er</td>
+<td>Total number of 201 response by object
+server</td>
+</tr>
+<tr class="row-odd"><td>hb_object_204_respo
+nses</td>
+<td>count
+er</td>
+<td>Total number of 204 response by object
+server</td>
+</tr>
+<tr class="row-even"><td>hb_object_500_respo
+nses</td>
+<td>count
+er</td>
+<td>Total number of 500 response by object
+server</td>
+</tr>
+<tr class="row-odd"><td>hb_object_DELETE_re
+quests</td>
+<td>count
+er</td>
+<td>Total number of DELETE requests
+received by object server</td>
+</tr>
+<tr class="row-even"><td>hb_object_GET_reque
+sts</td>
+<td>count
+er</td>
+<td>Total number of GET requests received
+by object server</td>
+</tr>
+<tr class="row-odd"><td>hb_object_HEAD_requ
+ests</td>
+<td>count
+er</td>
+<td>Total number of HEAD requests received
+by object server</td>
+</tr>
+<tr class="row-even"><td>hb_object_PUT_reque
+sts</td>
+<td>count
+er</td>
+<td>Total number of PUT requests received
+by object server</td>
+</tr>
+<tr class="row-odd"><td>hb_object_POST_requ
+ests</td>
+<td>count
+er</td>
+<td>Total number of POST requests received
+by object server</td>
+</tr>
+<tr class="row-even"><td>hb_object_OPTIONS_r
+equests</td>
+<td>count
+er</td>
+<td>Total number of OPTIONS requests
+received by object server.</td>
+</tr>
+<tr class="row-odd"><td>hb_object_requests</td>
+<td>count
+er</td>
+<td>Total number of requests received by
+object server</td>
+</tr>
+</tbody>
+</table>
+<table border="1" class="docutils">
+<colgroup>
+<col width="32%" />
+<col width="10%" />
+<col width="57%" />
+</colgroup>
+<thead valign="bottom">
+<tr class="row-odd"><th class="head">Object Replicator
+Metrics</th>
+<th class="head">Metri
+cs
+Type</th>
+<th class="head">Description</th>
+</tr>
+</thead>
+<tbody valign="top">
+<tr class="row-even"><td>hb_object_replicator
+_200_responses</td>
+<td>count
+er</td>
+<td>Total number of 200 response by
+object replicator</td>
+</tr>
+<tr class="row-odd"><td>hb_object_replicator
+_404_responses</td>
+<td>count
+er</td>
+<td>Total number of 404 response by
+object replicator</td>
+</tr>
+<tr class="row-even"><td>hb_object_replicator
+_500_responses</td>
+<td>count
+er</td>
+<td>Total number of 500 response by
+object replicator</td>
+</tr>
+<tr class="row-odd"><td>hb_object_replicator
+_GET_requests</td>
+<td>count
+er</td>
+<td>Total number of GET requests received
+by object replicator</td>
+</tr>
+<tr class="row-even"><td>hb_object_replicator
+_PUT_requests</td>
+<td>count
+er</td>
+<td>Total number of PUT requests received
+by object replicator</td>
+</tr>
+<tr class="row-odd"><td>hb_object_replicator
+_POST_requests</td>
+<td>count
+er</td>
+<td>Total number of POST requests
+received by object replicator</td>
+</tr>
+<tr class="row-even"><td>hb_object_replicator
+_REPCONN_requests</td>
+<td>count
+er</td>
+<td>Total number of REPCONN requests
+received by object replicator</td>
+</tr>
+<tr class="row-odd"><td>hb_object_replicator
+_REPLICATE_requests</td>
+<td>count
+er</td>
+<td>Total number of REPLICATE requests
+received by object replicator</td>
+</tr>
+<tr class="row-even"><td>hb_object_replicator
+_requests</td>
+<td>count
+er</td>
+<td>Total number of requests received by
+object replicator</td>
+</tr>
+</tbody>
+</table>
+<table border="1" class="docutils">
+<colgroup>
+<col width="31%" />
+<col width="10%" />
+<col width="59%" />
+</colgroup>
+<thead valign="bottom">
+<tr class="row-odd"><th class="head">Container Server
+Specific Metrics</th>
+<th class="head">Metri
+cs
+Type</th>
+<th class="head">Description</th>
+</tr>
+</thead>
+<tbody valign="top">
+<tr class="row-even"><td>hb_container_200_re
+sponses</td>
+<td>count
+er</td>
+<td>Total number of 200 response by
+container server</td>
+</tr>
+<tr class="row-odd"><td>hb_container_201_re
+sponses</td>
+<td>count
+er</td>
+<td>Total number of 201 response by
+container server</td>
+</tr>
+<tr class="row-even"><td>hb_container_204_re
+sponses</td>
+<td>count
+er</td>
+<td>Total number of 204 response by
+container server</td>
+</tr>
+<tr class="row-odd"><td>hb_container_404_re
+sponses</td>
+<td>count
+er</td>
+<td>Total number of 404 response by
+container server</td>
+</tr>
+<tr class="row-even"><td>hb_container_DELETE
+_requests</td>
+<td>count
+er</td>
+<td>Total number of DELETE requests
+received by container server</td>
+</tr>
+<tr class="row-odd"><td>hb_container_GET_re
+quests</td>
+<td>count
+er</td>
+<td>Total number of GET requests received
+by container server</td>
+</tr>
+<tr class="row-even"><td>hb_container_HEAD_r
+equests</td>
+<td>count
+er</td>
+<td>Total number of HEAD requests received
+by container server</td>
+</tr>
+<tr class="row-odd"><td>hb_container_PUT_re
+quests</td>
+<td>count
+er</td>
+<td>Total number of PUT requests received
+by container server</td>
+</tr>
+<tr class="row-even"><td>hb_container_POST_r
+equests</td>
+<td>count
+er</td>
+<td>Total number of POST requests received
+by container server</td>
+</tr>
+<tr class="row-odd"><td>hb_container_REPLIC
+ATE_requests</td>
+<td>count
+er</td>
+<td>Total number of REPLICATE requests
+received by container server.</td>
+</tr>
+<tr class="row-even"><td>hb_container_OPTION
+S_requests</td>
+<td>count
+er</td>
+<td>Total number of OPTIONS requests
+received by container server.</td>
+</tr>
+<tr class="row-odd"><td>hb_container_reques
+ts</td>
+<td>count
+er</td>
+<td>Total number of requests received by
+container server</td>
+</tr>
+</tbody>
+</table>
+<table border="1" class="docutils">
+<colgroup>
+<col width="31%" />
+<col width="10%" />
+<col width="59%" />
+</colgroup>
+<thead valign="bottom">
+<tr class="row-odd"><th class="head">Account Server
+Specific Metrics</th>
+<th class="head">Metri
+cs
+Type</th>
+<th class="head">Description</th>
+</tr>
+</thead>
+<tbody valign="top">
+<tr class="row-even"><td>hb_account_200_resp
+onses</td>
+<td>count
+er</td>
+<td>Total number of 200 response by
+account server</td>
+</tr>
+<tr class="row-odd"><td>hb_account_201_resp
+onses</td>
+<td>count
+er</td>
+<td>Total number of 201 response by
+account server</td>
+</tr>
+<tr class="row-even"><td>hb_account_DELETE_r
+equests</td>
+<td>count
+er</td>
+<td>Total number of DELETE requests
+received by account server</td>
+</tr>
+<tr class="row-odd"><td>hb_account_GET_requ
+ests</td>
+<td>count
+er</td>
+<td>Total number of GET requests received
+by account server</td>
+</tr>
+<tr class="row-even"><td>hb_account_HEAD_req
+uests</td>
+<td>count
+er</td>
+<td>Total number of HEAD requests received
+by account server</td>
+</tr>
+<tr class="row-odd"><td>hb_account_PUT_requ
+ests</td>
+<td>count
+er</td>
+<td>Total number of PUT requests received
+by account server</td>
+</tr>
+<tr class="row-even"><td>hb_account_POST_req
+uests</td>
+<td>count
+er</td>
+<td>Total number of POST requests received
+by account server</td>
+</tr>
+<tr class="row-odd"><td>hb_account_REPLICAT
+E_requests</td>
+<td>count
+er</td>
+<td>Total number of REPLICATE requests
+received by account server.</td>
+</tr>
+<tr class="row-even"><td><a href="#id11"><span class="problematic" id="id12">hb_account_OPTIONS_</span></a>
+requests</td>
+<td>count
+er</td>
+<td>Total number of OPTIONS requests
+received by account server.</td>
+</tr>
+</tbody>
+</table>
+<table border="1" class="docutils">
+<colgroup>
+<col width="31%" />
+<col width="10%" />
+<col width="59%" />
+</colgroup>
+<thead valign="bottom">
+<tr class="row-odd"><th class="head">Proxy Server
+Specific Metrics</th>
+<th class="head">Metri
+cs
+Type</th>
+<th class="head">Description</th>
+</tr>
+</thead>
+<tbody valign="top">
+<tr class="row-even"><td>hb_proxy_200_respon
+ses</td>
+<td>count
+er</td>
+<td>Total number of 200 response by proxy
+server</td>
+</tr>
+<tr class="row-odd"><td>hb_proxy_201_respon
+ses</td>
+<td>count
+er</td>
+<td>Total number of 201 response by proxy
+server</td>
+</tr>
+<tr class="row-even"><td>hb_proxy_204_respon
+ses</td>
+<td>count
+er</td>
+<td>Total number of 204 response by proxy
+server</td>
+</tr>
+<tr class="row-odd"><td>hb_proxy_404_respon
+ses</td>
+<td>count
+er</td>
+<td>Total number of 404 response by proxy
+server</td>
+</tr>
+<tr class="row-even"><td>hb_proxy_DELETE_req
+uests</td>
+<td>count
+er</td>
+<td>Total number of DELETE requests
+received by proxy server</td>
+</tr>
+<tr class="row-odd"><td>hb_proxy_GET_reques
+ts</td>
+<td>count
+er</td>
+<td>Total number of GET requests received
+by proxy server</td>
+</tr>
+<tr class="row-even"><td>hb_proxy_HEAD_reque
+sts</td>
+<td>count
+er</td>
+<td>Total number of HEAD requests received
+by proxy server</td>
+</tr>
+<tr class="row-odd"><td>hb_proxy_PUT_reques
+ts</td>
+<td>count
+er</td>
+<td>Total number of PUT requests received
+by proxy server</td>
+</tr>
+<tr class="row-even"><td>hb_proxy_POST_reque
+sts</td>
+<td>count
+er</td>
+<td>Total number of POST requests received
+by proxy server</td>
+</tr>
+<tr class="row-odd"><td>hb_proxy_OPTIONS_re
+quests</td>
+<td>count
+er</td>
+<td>Total number of OPTIONS requests
+received by proxy server.</td>
+</tr>
+<tr class="row-even"><td>hb_proxy_requests</td>
+<td>count
+er</td>
+<td>Total number of requests received by
+proxy server</td>
+</tr>
+<tr class="row-odd"><td>hb_proxy_tempurl_re
+quests</td>
+<td>count
+er</td>
+<td>Total number of tempurl requests
+received by proxy server.</td>
+</tr>
+<tr class="row-even"><td><a href="#id13"><span class="problematic" id="id14">hb_proxy_staticweb_</span></a>
+requests</td>
+<td>count
+er</td>
+<td>Total number of staticweb requests
+received by proxy server.</td>
+</tr>
+<tr class="row-odd"><td>hb_proxy_slo_DELETE
+_requests</td>
+<td>count
+er</td>
+<td>Total number of SLO DELETE requests
+received by proxy server.</td>
+</tr>
+<tr class="row-even"><td>hb_proxy_slo_GET_re
+quests</td>
+<td>count
+er</td>
+<td>Total number of SLO GET requests
+received by proxy server.</td>
+</tr>
+<tr class="row-odd"><td>hb_proxy_slo_PUT_re
+quests</td>
+<td>count
+er</td>
+<td>Total number of SLO PUT requests
+received by proxy server.</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="section" id="prometheus-grafana-alertmanager-installation">
+<h1>Prometheus, Grafana &amp; Alertmanager Installation.<a class="headerlink" href="#prometheus-grafana-alertmanager-installation" title="Permalink to this headline">#</a></h1>
+<p>You can follow
+<a class="reference external" href="https://github.com/troubling/hummingbird-monitoring/blob/master/README.md">https://github.com/troubling/hummingbird-monitoring/blob/master/README.md</a>
+to setup Hummingbird monitoring using Docker.</p>
+</div>
+
+
+           </div>
+           <div class="articleComments">
+            
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="drivestatus.html" class="btn btn-neutral float-right" title="Drive Status Report" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="rings.html" class="btn btn-neutral" title="Ring Managment 101" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2018, Rackspace.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'../',
+            VERSION:'v.PR',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="../_static/jquery.js"></script>
+      <script type="text/javascript" src="../_static/underscore.js"></script>
+      <script type="text/javascript" src="../_static/doctools.js"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>
