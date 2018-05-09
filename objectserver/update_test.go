@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/pickle"
 	"github.com/troubling/hummingbird/common/srv"
@@ -56,93 +55,6 @@ func TestExpirerContainer(t *testing.T) {
 	*/
 	server.expiringDivisor = 86400
 	require.Equal(t, "1434671963", server.expirerContainer(time.Unix(1434707411, 0), "a", "c", "o"))
-}
-
-func TestUpdateDeleteAt(t *testing.T) {
-	testRing := &test.FakeRing{}
-	confLoader := srv.NewTestConfigLoader(testRing)
-	ts, err := makeObjectServer(confLoader)
-	require.Nil(t, err)
-	server := ts.objServer
-	defer ts.Close()
-	server.hashPathPrefix = ""
-	server.hashPathSuffix = "changeme"
-
-	requestSent := false
-	cs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/sdb/678/.expiring_objects/1434671963/1434707411-a/c/o", r.URL.Path)
-		requestSent = true
-	}))
-	defer cs.Close()
-	u, err := url.Parse(cs.URL)
-	require.Nil(t, err)
-	req, err := http.NewRequest("PUT", "/I/dont/think/this/matters", nil)
-	require.Nil(t, err)
-
-	req.Header.Add("X-Delete-At-Container", "1434671963")
-	req.Header.Add("X-Delete-At-Partition", "678")
-	req.Header.Add("X-Delete-At-Host", u.Host)
-	req.Header.Add("X-Delete-At-Device", "sdb")
-	req.Header.Add("X-Delete-At-Scheme", "http")
-	req.Header.Add("X-Timestamp", "12345.6789")
-
-	dl := zap.NewNop()
-
-	vars := map[string]string{"account": "a", "container": "c", "obj": "o", "device": "sda"}
-	req = srv.SetVars(req, vars)
-	deleteAtTime, err := common.ParseDate("1434707411")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server.updateDeleteAt(req.Context(), req.Method, req.Header, deleteAtTime, vars, dl)
-	require.True(t, requestSent)
-
-	cs.Close()
-	server.updateDeleteAt(req.Context(), req.Method, req.Header, deleteAtTime, vars, dl)
-	expectedFile := filepath.Join(ts.root, "sda", "async_pending", "8fc", "02cc012fe572f27e455edbea32da78fc-12345.6789")
-	require.True(t, fs.Exists(expectedFile))
-	data, err := ioutil.ReadFile(expectedFile)
-	require.Nil(t, err)
-	a, err := pickle.PickleLoads(data)
-	require.Nil(t, err)
-	asyncData := a.(map[interface{}]interface{})
-	require.Equal(t, asyncData["op"], "PUT")
-	require.Equal(t, asyncData["account"], ".expiring_objects")
-	require.Equal(t, asyncData["container"], "1434671963")
-	require.Equal(t, asyncData["obj"], "1434707411-a/c/o")
-}
-
-func TestUpdateDeleteAtNoHeaders(t *testing.T) {
-	testRing := &test.FakeRing{}
-	confLoader := srv.NewTestConfigLoader(testRing)
-	ts, err := makeObjectServer(confLoader)
-	require.Nil(t, err)
-	server := ts.objServer
-	defer ts.Close()
-	server.hashPathPrefix = ""
-	server.hashPathSuffix = "changeme"
-	req, err := http.NewRequest("PUT", "/I/dont/think/this/matters", nil)
-	require.Nil(t, err)
-	req.Header.Add("X-Timestamp", "12345.6789")
-
-	vars := map[string]string{"account": "a", "container": "c", "obj": "o", "device": "sda"}
-	req = srv.SetVars(req, vars)
-	deleteAtTime, err := common.ParseDate("1434707411")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server.updateDeleteAt(req.Context(), req.Method, req.Header, deleteAtTime, vars, zap.NewNop())
-	expectedFile := filepath.Join(ts.root, "sda", "async_pending", "8fc", "02cc012fe572f27e455edbea32da78fc-12345.6789")
-	require.True(t, fs.Exists(expectedFile))
-	data, err := ioutil.ReadFile(expectedFile)
-	require.Nil(t, err)
-	a, err := pickle.PickleLoads(data)
-	require.Nil(t, err)
-	asyncData := a.(map[interface{}]interface{})
-	require.Equal(t, asyncData["op"], "PUT")
-	require.Equal(t, asyncData["account"], ".expiring_objects")
-	require.Equal(t, asyncData["container"], "1434671963")
-	require.Equal(t, asyncData["obj"], "1434707411-a/c/o")
 }
 
 func TestUpdateContainer(t *testing.T) {
