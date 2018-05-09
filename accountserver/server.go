@@ -526,7 +526,7 @@ func (server *AccountServer) GetHandler(config conf.Config, metricsPrefix string
 	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Invalid path: %s", r.URL.Path), http.StatusBadRequest)
 	})
-	return alice.New(middleware.Metrics(metricsScope)).Append(middleware.GrepObject).Then(router)
+	return alice.New(middleware.Metrics(metricsScope), middleware.GrepObject, middleware.ServerTracer(server.tracer)).Then(router)
 }
 
 // NewServer parses configs and command-line flags, returning a configured server object and the ip and port it should bind on.
