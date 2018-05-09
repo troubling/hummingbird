@@ -23,6 +23,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/proxyserver/middleware"
@@ -32,6 +33,7 @@ func (server *ProxyServer) ObjectGetHandler(writer http.ResponseWriter, request 
 	vars := srv.GetVars(request)
 	ctx := middleware.GetProxyContext(request)
 	if ctx == nil {
+		server.logger.Error("could not get proxy context")
 		srv.StandardResponse(writer, 500)
 		return
 	}
@@ -44,8 +46,12 @@ func (server *ProxyServer) ObjectGetHandler(writer http.ResponseWriter, request 
 				return
 			}
 		}
-		ctx.Logger.Debug("object GET: container error", zap.String("container", vars["container"]), zap.Error(err))
-		srv.StandardResponse(writer, 404)
+		if err == client.ContainerNotFound {
+			srv.StandardResponse(writer, 404)
+			return
+		}
+		ctx.Logger.Error("object GET: container error", zap.String("container", vars["container"]), zap.Error(err))
+		srv.StandardResponse(writer, 500)
 		return
 	}
 	ctx.ACL = containerInfo.ReadACL
@@ -68,6 +74,7 @@ func (server *ProxyServer) ObjectHeadHandler(writer http.ResponseWriter, request
 	vars := srv.GetVars(request)
 	ctx := middleware.GetProxyContext(request)
 	if ctx == nil {
+		server.logger.Error("could not get proxy context")
 		srv.StandardResponse(writer, 500)
 		return
 	}
@@ -80,7 +87,12 @@ func (server *ProxyServer) ObjectHeadHandler(writer http.ResponseWriter, request
 				return
 			}
 		}
-		srv.StandardResponse(writer, 404)
+		if err == client.ContainerNotFound {
+			srv.StandardResponse(writer, 404)
+			return
+		}
+		ctx.Logger.Error("object HEAD: container error", zap.String("container", vars["container"]), zap.Error(err))
+		srv.StandardResponse(writer, 500)
 		return
 	}
 	ctx.ACL = containerInfo.ReadACL
@@ -102,6 +114,7 @@ func (server *ProxyServer) ObjectDeleteHandler(writer http.ResponseWriter, reque
 	vars := srv.GetVars(request)
 	ctx := middleware.GetProxyContext(request)
 	if ctx == nil {
+		server.logger.Error("could not get proxy context")
 		srv.StandardResponse(writer, 500)
 		return
 	}
@@ -114,7 +127,12 @@ func (server *ProxyServer) ObjectDeleteHandler(writer http.ResponseWriter, reque
 				return
 			}
 		}
-		srv.StandardResponse(writer, 404)
+		if err == client.ContainerNotFound {
+			srv.StandardResponse(writer, 404)
+			return
+		}
+		ctx.Logger.Error("object DELETE: container error", zap.String("container", vars["container"]), zap.Error(err))
+		srv.StandardResponse(writer, 500)
 		return
 	}
 	ctx.ACL = containerInfo.WriteACL
@@ -133,6 +151,7 @@ func (server *ProxyServer) ObjectPostHandler(writer http.ResponseWriter, request
 	vars := srv.GetVars(request)
 	ctx := middleware.GetProxyContext(request)
 	if ctx == nil {
+		server.logger.Error("could not get proxy context")
 		srv.StandardResponse(writer, 500)
 		return
 	}
@@ -145,7 +164,12 @@ func (server *ProxyServer) ObjectPostHandler(writer http.ResponseWriter, request
 				return
 			}
 		}
-		srv.StandardResponse(writer, 404)
+		if err == client.ContainerNotFound {
+			srv.StandardResponse(writer, 404)
+			return
+		}
+		ctx.Logger.Error("object POST: container error", zap.String("container", vars["container"]), zap.Error(err))
+		srv.StandardResponse(writer, 500)
 		return
 	}
 	ctx.ACL = containerInfo.WriteACL
@@ -170,6 +194,7 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 	vars := srv.GetVars(request)
 	ctx := middleware.GetProxyContext(request)
 	if ctx == nil {
+		server.logger.Error("could not get proxy context")
 		srv.StandardResponse(writer, 500)
 		return
 	}
@@ -187,7 +212,12 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 				return
 			}
 		}
-		srv.StandardResponse(writer, 404)
+		if err == client.ContainerNotFound {
+			srv.StandardResponse(writer, 404)
+			return
+		}
+		ctx.Logger.Error("object PUT: container error", zap.String("container", vars["container"]), zap.Error(err))
+		srv.StandardResponse(writer, 500)
 		return
 	}
 	ctx.ACL = containerInfo.WriteACL

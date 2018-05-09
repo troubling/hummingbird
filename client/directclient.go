@@ -590,13 +590,13 @@ func (c *ProxyDirectClient) SetContainerInfo(ctx context.Context, account, conta
 			ci.SyncKey = resp.Header.Get(k)
 		}
 	}
-	if mc != nil {
-		mc.Set(key, ci, 30)
-	}
 	if lc != nil && ci != nil {
 		c.lcm.Lock()
 		lc[key] = ci
 		c.lcm.Unlock()
+	}
+	if mc != nil {
+		mc.Set(key, ci, 10) // throwing away error here..
 	}
 	return ci, nil
 }
@@ -604,23 +604,43 @@ func (c *ProxyDirectClient) SetContainerInfo(ctx context.Context, account, conta
 // NilContainerInfo is useful for testing.
 var NilContainerInfo = &ContainerInfo{}
 
+var ContainerNotFound = errors.New("Container Not Found")
+
+// if finds container info returns: *ci, nil
+// if gets 404 on HeadContainer returns: nil, ContainerNotFound
+// if errors on getting container retuns nil, err
 func (c *ProxyDirectClient) GetContainerInfo(ctx context.Context, account string, container string, mc ring.MemcacheRing, lc map[string]*ContainerInfo) (*ContainerInfo, error) {
 	key := fmt.Sprintf("container/%s/%s", account, container)
 	var ci *ContainerInfo
+	contInCache := false
 	if lc != nil {
 		c.lcm.RLock()
-		ci = lc[key]
+		ci, contInCache = lc[key]
 		c.lcm.RUnlock()
 	}
-	if ci == nil && mc != nil {
-		if err := mc.GetStructured(key, &ci); err != nil {
+	if ci == nil && contInCache {
+		return nil, ContainerNotFound
+	}
+	if !contInCache && mc != nil {
+		if err := mc.GetStructured(key, &ci); err == nil {
+			c.lcm.RLock()
+			lc[key] = ci
+			c.lcm.RUnlock()
+			contInCache = true
+		} else {
 			ci = nil
 		}
 	}
-	if ci == nil {
+	if !contInCache {
 		resp := c.HeadContainer(ctx, account, container, nil)
 		resp.Body.Close()
 		if resp.StatusCode/100 != 2 {
+			if resp.StatusCode == 404 {
+				c.lcm.RLock()
+				lc[key] = nil
+				c.lcm.RUnlock()
+				return nil, ContainerNotFound
+			}
 			return nil, fmt.Errorf("%d error retrieving info for container %s/%s", resp.StatusCode, account, container)
 		}
 		var err error
@@ -676,7 +696,11 @@ func (c *ProxyDirectClient) DeleteContainer(ctx context.Context, account string,
 func (c *ProxyDirectClient) getObjectClient(ctx context.Context, account string, container string, mc ring.MemcacheRing, lc map[string]*ContainerInfo) proxyObjectClient {
 	ci, err := c.GetContainerInfo(ctx, account, container, mc, lc)
 	if err != nil {
-		return &erroringObjectClient{err.Error()}
+		st := http.StatusInternalServerError
+		if err == ContainerNotFound {
+			st = http.StatusNotFound
+		}
+		return &erroringObjectClient{st, err.Error()}
 	}
 	return c.objectClients[ci.StoragePolicyIndex]
 }
@@ -720,29 +744,30 @@ type proxyObjectClient interface {
 }
 
 type erroringObjectClient struct {
-	body string
+	status int
+	body   string
 }
 
 func (oc *erroringObjectClient) putObject(ctx context.Context, account, container, obj string, headers http.Header, src io.Reader) *http.Response {
-	return nectarutil.ResponseStub(http.StatusInternalServerError, oc.body)
+	return nectarutil.ResponseStub(oc.status, oc.body)
 }
 func (oc *erroringObjectClient) postObject(ctx context.Context, account, container, obj string, headers http.Header) *http.Response {
-	return nectarutil.ResponseStub(http.StatusInternalServerError, oc.body)
+	return nectarutil.ResponseStub(oc.status, oc.body)
 }
 func (oc *erroringObjectClient) getObject(ctx context.Context, account, container, obj string, headers http.Header) *http.Response {
-	return nectarutil.ResponseStub(http.StatusInternalServerError, oc.body)
+	return nectarutil.ResponseStub(oc.status, oc.body)
 }
 func (oc *erroringObjectClient) grepObject(ctx context.Context, account, container, obj string, search string) *http.Response {
-	return nectarutil.ResponseStub(http.StatusInternalServerError, oc.body)
+	return nectarutil.ResponseStub(oc.status, oc.body)
 }
 func (oc *erroringObjectClient) headObject(ctx context.Context, account, container, obj string, headers http.Header) *http.Response {
-	return nectarutil.ResponseStub(http.StatusInternalServerError, oc.body)
+	return nectarutil.ResponseStub(oc.status, oc.body)
 }
 func (oc *erroringObjectClient) deleteObject(ctx context.Context, account, container, obj string, headers http.Header) *http.Response {
-	return nectarutil.ResponseStub(http.StatusInternalServerError, oc.body)
+	return nectarutil.ResponseStub(oc.status, oc.body)
 }
 func (oc *erroringObjectClient) ring() (ring.Ring, *http.Response) {
-	return nil, nectarutil.ResponseStub(http.StatusInternalServerError, oc.body)
+	return nil, nectarutil.ResponseStub(oc.status, oc.body)
 }
 
 type standardObjectClient struct {
