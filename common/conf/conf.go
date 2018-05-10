@@ -133,6 +133,10 @@ func (s Section) GetLimit(key string, dfla int64, dflb int64) (int64, int64) {
 	return s.c.GetLimit(s.section, key, dfla, dflb)
 }
 
+func (s Section) GetConfig() Config {
+	return s.c
+}
+
 // LoadConfig loads an ini from a path.  The path should be a *.conf file or a *.conf.d directory.
 func LoadConfig(path string) (Config, error) {
 	file := Config{make(ini.File)}

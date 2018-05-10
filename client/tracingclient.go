@@ -60,7 +60,7 @@ func NewTracingClient(tracer opentracing.Tracer, httpClient *http.Client, enable
 }
 
 // Do wraps http.Client's Do with tracing using an application span.
-func (tc *TracingClient) Do(req *http.Request) (res *http.Response, err error) {
+func (tc *TracingClient) Do(req *http.Request) (*http.Response, error) {
 	var parentContext opentracing.SpanContext
 
 	if span := opentracing.SpanFromContext(req.Context()); span != nil {
@@ -72,29 +72,30 @@ func (tc *TracingClient) Do(req *http.Request) (res *http.Response, err error) {
 	ext.HTTPMethod.Set(appSpan, req.Method)
 	ext.HTTPUrl.Set(appSpan, req.URL.String())
 
-	res, err = tc.Client.Do(
+	res, err := tc.Client.Do(
 		req.WithContext(opentracing.ContextWithSpan(req.Context(), appSpan)),
 	)
 	if err != nil {
 		ext.Error.Set(appSpan, true)
 		appSpan.SetTag("error", err.Error())
 		appSpan.Finish()
-		return
+		return res, err
 	}
 
-	if res.StatusCode < 200 || res.StatusCode > 299 {
-		ext.HTTPStatusCode.Set(appSpan, uint16(res.StatusCode))
-		if res.StatusCode > 399 {
-			ext.Error.Set(appSpan, true)
+	ext.HTTPStatusCode.Set(appSpan, uint16(res.StatusCode))
+	if res.StatusCode > 399 {
+		ext.Error.Set(appSpan, true)
+	}
+	if req.Method == "HEAD" {
+		appSpan.Finish()
+	} else {
+		res.Body = &spanCloser{
+			ReadCloser:   res.Body,
+			sp:           appSpan,
+			traceEnabled: tc.httpTrace,
 		}
 	}
-
-	res.Body = &spanCloser{
-		ReadCloser:   res.Body,
-		sp:           appSpan,
-		traceEnabled: tc.httpTrace,
-	}
-	return
+	return res, nil
 }
 
 type transport struct {
@@ -108,7 +109,9 @@ func NewTransport(tracer opentracing.Tracer, rt http.RoundTripper, enableHTTPTra
 	if tracer == nil {
 		return nil, ErrValidTracerRequired
 	}
-
+	if rt == nil {
+		rt = http.DefaultTransport
+	}
 	t := &transport{
 		tracer:    tracer,
 		rt:        rt,
@@ -119,7 +122,7 @@ func NewTransport(tracer opentracing.Tracer, rt http.RoundTripper, enableHTTPTra
 }
 
 // RoundTrip satisfies the RoundTripper interface.
-func (t *transport) RoundTrip(req *http.Request) (res *http.Response, err error) {
+func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	parent := opentracing.SpanFromContext(req.Context())
 	var spanctx opentracing.SpanContext
 	if parent != nil {
@@ -173,22 +176,21 @@ func (t *transport) RoundTrip(req *http.Request) (res *http.Response, err error)
 	//TODO nadeem: check & log error
 	sp.Tracer().Inject(sp.Context(), opentracing.TextMap, carrier)
 
-	res, err = t.rt.RoundTrip(req)
+	res, err := t.rt.RoundTrip(req)
 
 	if err != nil {
 		sp.SetTag("error", err.Error())
 		sp.Finish()
-		return
+		return res, err
 	}
 
-	if res.StatusCode < 200 || res.StatusCode > 299 {
-		ext.HTTPStatusCode.Set(sp, uint16(res.StatusCode))
-		if res.StatusCode > 399 {
-			ext.Error.Set(sp, true)
-		}
+	ext.HTTPStatusCode.Set(sp, uint16(res.StatusCode))
+	if res.StatusCode > 399 {
+		ext.Error.Set(sp, true)
 	}
+
 	sp.Finish()
-	return
+	return res, nil
 }
 
 type spanTrace struct {
