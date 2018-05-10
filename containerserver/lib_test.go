@@ -171,7 +171,7 @@ func (f fakeDatabase) CleanupTombstones(reclaimAge int64) error {
 func (f fakeDatabase) CheckSyncLink() error {
 	return errors.New("")
 }
-func (f fakeDatabase) PutObject(name string, timestamp string, size int64, contentType string, etag string, storagePolicyIndex int) error {
+func (f fakeDatabase) PutObject(name string, timestamp string, size int64, contentType string, etag string, storagePolicyIndex int, expires string) error {
 	return errors.New("")
 }
 func (f fakeDatabase) DeleteObject(name string, timestamp string, storagePolicyIndex int) error {

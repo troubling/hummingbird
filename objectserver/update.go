@@ -125,7 +125,8 @@ func (server *ObjectServer) updateContainer(ctx context.Context, metadata map[st
 		"Referer":                        {common.GetDefault(request.Header, "Referer", "-")},
 		"User-Agent":                     {common.GetDefault(request.Header, "User-Agent", "-")},
 		"X-Trans-Id":                     {common.GetDefault(request.Header, "X-Trans-Id", "-")},
-		"X-Timestamp":                    {request.Header.Get("X-Timestamp")},
+		"X-Timestamp":                    request.Header["X-Timestamp"],
+		"X-Delete-At":                    request.Header["X-Delete-At"],
 	}
 	if request.Method != "DELETE" {
 		requestHeaders.Add("X-Content-Type", metadata["Content-Type"])
@@ -146,50 +147,8 @@ func (server *ObjectServer) updateContainer(ctx context.Context, metadata map[st
 	}
 }
 
-func (server *ObjectServer) updateDeleteAt(ctx context.Context, method string, header http.Header, deleteAtTime time.Time, vars map[string]string, logger srv.LowLevelLogger) {
-	container := common.GetDefault(header, "X-Delete-At-Container", "")
-	if container == "" {
-		container = server.expirerContainer(deleteAtTime, vars["account"], vars["container"], vars["obj"])
-	}
-	obj := fmt.Sprintf("%010d-%s/%s/%s", deleteAtTime.Unix(), vars["account"], vars["container"], vars["obj"])
-	partition := common.GetDefault(header, "X-Delete-At-Partition", "")
-	hosts := splitHeader(header.Get("X-Delete-At-Host"))
-	devices := splitHeader(header.Get("X-Delete-At-Device"))
-	schemes := splitHeader(header.Get("X-Delete-At-Scheme"))
-	for len(schemes) < len(hosts) {
-		schemes = append(schemes, "http")
-	}
-	requestHeaders := http.Header{
-		"X-Backend-Storage-Policy-Index": {common.GetDefault(header, "X-Backend-Storage-Policy-Index", "0")},
-		"Referer":                        {common.GetDefault(header, "Referer", "-")},
-		"User-Agent":                     {common.GetDefault(header, "User-Agent", "-")},
-		"X-Trans-Id":                     {common.GetDefault(header, "X-Trans-Id", "-")},
-		"X-Timestamp":                    {header.Get("X-Timestamp")},
-	}
-	if method != "DELETE" {
-		requestHeaders.Add("X-Content-Type", "text/plain")
-		requestHeaders.Add("X-Size", "0")
-		requestHeaders.Add("X-Etag", zeroByteHash)
-	}
-	failures := 0
-	for index := range hosts {
-		if !server.sendContainerUpdate(ctx, schemes[index], hosts[index], devices[index], method, partition, deleteAtAccount, container, obj, requestHeaders) {
-			logger.Error("ERROR container update failed with (saving for async update later)",
-				zap.String("Host", hosts[index]),
-				zap.String("Device", devices[index]))
-			failures++
-		}
-	}
-	if failures > 0 || len(hosts) == 0 {
-		server.saveAsync(method, deleteAtAccount, container, obj, vars["device"], requestHeaders, logger)
-	}
-}
-
 func (server *ObjectServer) containerUpdates(writer http.ResponseWriter, request *http.Request, metadata map[string]string, deleteAt string, vars map[string]string, logger srv.LowLevelLogger) {
 	defer middleware.Recover(writer, request, "PANIC WHILE UPDATING CONTAINER LISTINGS")
-	if deleteAtTime, err := common.ParseDate(deleteAt); err == nil {
-		go server.updateDeleteAt(request.Context(), request.Method, request.Header, deleteAtTime, vars, logger)
-	}
 
 	done := make(chan struct{}, 1)
 	go func() {

@@ -253,14 +253,7 @@ func (f *ecEngine) ecNurseryPutHandler(writer http.ResponseWriter, request *http
 			return
 		}
 	}
-	metabytes, err := json.Marshal(metadata)
-	if err != nil {
-		srv.GetLogger(request).Error("Error marshalling metadata", zap.Error(err))
-		srv.StandardResponse(writer, http.StatusInternalServerError)
-		return
-	}
-
-	if err := idb.Commit(atm, vars["hash"], 0, timestamp, method, MetadataHash(metadata), metabytes, true, ""); err != nil {
+	if err := idb.Commit(atm, vars["hash"], 0, timestamp, method, metadata, true, ""); err != nil {
 		srv.GetLogger(request).Error("Error committing object to index", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 	} else {
@@ -460,6 +453,8 @@ func (f *ecEngine) GetObjectsToStabilize(device string, c chan ObjectStabilizer,
 	if err != nil {
 		return
 	}
+
+	idb.ExpireObjects()
 
 	items, err := idb.ListObjectsToStabilize()
 	if err != nil {
