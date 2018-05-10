@@ -148,26 +148,31 @@ func (ro *repObject) Close() error {
 	return nil
 }
 
-func (ro *repObject) canStabilize(rng ring.Ring, dev *ring.Device, policy int) (bool, error) {
-	if ro.Deletion {
-		return false, fmt.Errorf("you just send deletions")
-	}
-	metadata := ro.Metadata()
-	ns := strings.SplitN(metadata["name"], "/", 4)
+func (ro *repObject) getPartition(rng ring.Ring) (uint64, error) {
+	ns := strings.SplitN(ro.metadata["name"], "/", 4)
 	if len(ns) != 4 {
-		return false, fmt.Errorf("invalid metadata name: %s", metadata["name"])
+		return 0, fmt.Errorf("invalid metadata name: %s", ro.metadata["name"])
 	}
-	partition := rng.GetPartition(ns[1], ns[2], ns[3])
-	if _, handoff := rng.GetJobNodes(partition, dev.Id); handoff {
-		return false, nil
+	return rng.GetPartition(ns[1], ns[2], ns[3]), nil
+}
+
+func (ro *repObject) isStable(rng ring.Ring, dev *ring.Device, policy int) (bool, []*ring.Device, error) {
+	if ro.Deletion {
+		return false, nil, fmt.Errorf("you just send deletions")
+	}
+	partition, err := ro.getPartition(rng)
+	if err != nil {
+		return false, nil, err
 	}
 	nodes := rng.GetNodes(partition)
 	goodNodes := uint64(0)
+	notFoundNodes := []*ring.Device{}
 	for _, node := range nodes {
 		if node.Ip == dev.Ip && node.Port == dev.Port && node.Device == dev.Device {
+			goodNodes++
 			continue
 		}
-		url := fmt.Sprintf("%s://%s:%d/%s/%d%s", node.Scheme, node.Ip, node.Port, node.Device, partition, common.Urlencode(metadata["name"]))
+		url := fmt.Sprintf("%s://%s:%d/%s/%d%s", node.Scheme, node.Ip, node.Port, node.Device, partition, common.Urlencode(ro.metadata["name"]))
 		req, err := http.NewRequest("HEAD", url, nil)
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.FormatInt(int64(policy), 10))
 		req.Header.Set("User-Agent", "nursery-stabilizer")
@@ -175,23 +180,23 @@ func (ro *repObject) canStabilize(rng ring.Ring, dev *ring.Device, policy int) (
 		if err == nil && (resp.StatusCode/100 == 2) &&
 			resp.Header.Get("X-Timestamp") != "" &&
 			resp.Header.Get("X-Timestamp") ==
-				metadata["X-Timestamp"] {
+				ro.metadata["X-Timestamp"] {
 			goodNodes++
+		} else {
+			notFoundNodes = append(notFoundNodes, node)
 		}
 		if resp != nil {
 			resp.Body.Close()
 		}
 	}
-	return goodNodes+1 == rng.ReplicaCount(), nil
+	return goodNodes == rng.ReplicaCount(), notFoundNodes, nil
 }
 
 func (ro *repObject) stabilizeDelete(rng ring.Ring, dev *ring.Device, policy int) error {
-	metadata := ro.Metadata()
-	ns := strings.SplitN(metadata["name"], "/", 4)
-	if len(ns) != 4 {
-		return fmt.Errorf("invalid metadata name: %s", metadata["name"])
+	partition, err := ro.getPartition(rng)
+	if err != nil {
+		return err
 	}
-	partition := rng.GetPartition(ns[1], ns[2], ns[3])
 	nodes := rng.GetNodes(partition)
 	var successes int64
 	wg := sync.WaitGroup{}
@@ -225,13 +230,12 @@ func (ro *repObject) stabilizeDelete(rng ring.Ring, dev *ring.Device, policy int
 }
 
 func (ro *repObject) restabilize(rng ring.Ring, dev *ring.Device, policy int) error {
-	ns := strings.SplitN(ro.metadata["name"], "/", 4)
-	if len(ns) != 4 {
-		return fmt.Errorf("invalid metadata name: %s", ro.metadata["name"])
-	}
 	wg := sync.WaitGroup{}
 	var successes int64
-	partition := rng.GetPartition(ns[1], ns[2], ns[3])
+	partition, err := ro.getPartition(rng)
+	if err != nil {
+		return err
+	}
 	nodes := rng.GetNodes(partition)
 	for _, node := range nodes {
 		if node.Ip == dev.Ip && node.Port == dev.Port && node.Device == dev.Device {
@@ -266,6 +270,10 @@ func (ro *repObject) restabilize(rng ring.Ring, dev *ring.Device, policy int) er
 }
 
 func (ro *repObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error {
+	partition, err := ro.getPartition(rng)
+	if err != nil {
+		return err
+	}
 	if ro.Restabilize {
 		return ro.restabilize(rng, dev, policy)
 	}
@@ -275,18 +283,34 @@ func (ro *repObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) erro
 	if ro.Deletion {
 		return ro.stabilizeDelete(rng, dev, policy)
 	}
-	if cs, err := ro.canStabilize(rng, dev, policy); err != nil {
+	isStable, notFoundNodes, err := ro.isStable(rng, dev, policy)
+	if err != nil {
 		return err
-	} else if !cs {
-		return nil
 	}
-	return ro.idb.SetStabilized(ro.Hash, roShard, ro.Timestamp, true)
+	if isStable {
+		if _, isHandoff := rng.GetJobNodes(partition, dev.Id); isHandoff {
+			return ro.idb.Remove(ro.Hash, ro.Shard, ro.Timestamp, ro.Nursery)
+		} else {
+			return ro.idb.SetStabilized(ro.Hash, roShard, ro.Timestamp, true)
+		}
+	}
+	errs := []error{}
+	for _, notFoundNode := range notFoundNodes {
+		// try to replicate, try to Stabilize next time
+		if err := ro.Replicate(PriorityRepJob{Partition: partition,
+			FromDevice: dev,
+			ToDevice:   notFoundNode,
+			Policy:     policy}); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) > 0 {
+		return errs[0]
+	}
+	return fmt.Errorf("could not stabilize: fixed %d nodes", len(notFoundNodes))
 }
 
 func (ro *repObject) Replicate(prirep PriorityRepJob) error {
-	if ro.Nursery {
-		return fmt.Errorf("not replicating object in nursery")
-	}
 	_, isHandoff := ro.rng.GetJobNodes(prirep.Partition, prirep.FromDevice.Id)
 	fp, err := os.Open(ro.Path)
 	if err != nil {
