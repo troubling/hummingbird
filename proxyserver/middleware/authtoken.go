@@ -17,6 +17,7 @@ package middleware
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,8 +25,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"context"
 
 	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
@@ -210,7 +209,7 @@ func (at *authToken) fetchAndValidateToken(ctx context.Context, proxyCtx *ProxyC
 		return nil, false
 	}
 	var cachedToken token
-	if err := proxyCtx.Cache.GetStructured(authToken, &cachedToken); err == nil {
+	if err := proxyCtx.Cache.GetStructured(ctx, authToken, &cachedToken); err == nil {
 		if at.preValidateDur > 0 && !cachedToken.MemcacheTtlAt.IsZero() {
 			invalidateEarlyTime := time.Now().Add(at.preValidateDur)
 			if cachedToken.MemcacheTtlAt.Before(invalidateEarlyTime) {
@@ -270,7 +269,7 @@ func (at *authToken) validate(ctx context.Context, proxyCtx *ProxyContext, authT
 			ttl = expiresIn
 		}
 		tok.MemcacheTtlAt = time.Now().Add(ttl)
-		proxyCtx.Cache.Set(authToken, *tok, int(ttl/time.Second))
+		proxyCtx.Cache.Set(ctx, authToken, *tok, int(ttl/time.Second))
 		return tok, true
 	}
 	return nil, false

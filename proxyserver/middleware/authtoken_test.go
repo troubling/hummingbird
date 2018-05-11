@@ -28,6 +28,7 @@ import (
 
 	"context"
 
+	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -123,19 +124,22 @@ type mockTokenMemcacheRing struct {
 	lock       sync.Mutex
 }
 
-func (mr *mockTokenMemcacheRing) Decr(key string, delta int64, timeout int) (int64, error) {
+func (mr *mockTokenMemcacheRing) SetTracer(tracer opentracing.Tracer) {
+}
+
+func (mr *mockTokenMemcacheRing) Decr(ctx context.Context, key string, delta int64, timeout int) (int64, error) {
 	return int64(0), nil
 }
 
-func (mr *mockTokenMemcacheRing) Delete(key string) error {
+func (mr *mockTokenMemcacheRing) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-func (mr *mockTokenMemcacheRing) Get(key string) (interface{}, error) {
+func (mr *mockTokenMemcacheRing) Get(ctx context.Context, key string) (interface{}, error) {
 	return nil, nil
 }
 
-func (mr *mockTokenMemcacheRing) GetStructured(key string, val interface{}) error {
+func (mr *mockTokenMemcacheRing) GetStructured(ctx context.Context, key string, val interface{}) error {
 	mr.lock.Lock()
 	defer mr.lock.Unlock()
 	if v, ok := mr.MockValues[key]; ok {
@@ -148,15 +152,15 @@ func (mr *mockTokenMemcacheRing) GetStructured(key string, val interface{}) erro
 	return errors.New("Some error")
 }
 
-func (mr *mockTokenMemcacheRing) GetMulti(serverKey string, keys []string) (map[string]interface{}, error) {
+func (mr *mockTokenMemcacheRing) GetMulti(ctx context.Context, serverKey string, keys []string) (map[string]interface{}, error) {
 	return nil, nil
 }
 
-func (mr *mockTokenMemcacheRing) Incr(key string, delta int64, timeout int) (int64, error) {
+func (mr *mockTokenMemcacheRing) Incr(ctx context.Context, key string, delta int64, timeout int) (int64, error) {
 	return int64(0), nil
 }
 
-func (mr *mockTokenMemcacheRing) Set(key string, value interface{}, timeout int) error {
+func (mr *mockTokenMemcacheRing) Set(ctx context.Context, key string, value interface{}, timeout int) error {
 	mr.lock.Lock()
 	defer mr.lock.Unlock()
 	serl, _ := json.Marshal(value)
@@ -164,7 +168,7 @@ func (mr *mockTokenMemcacheRing) Set(key string, value interface{}, timeout int)
 	return nil
 }
 
-func (mr *mockTokenMemcacheRing) SetMulti(serverKey string, values map[string]interface{}, timeout int) error {
+func (mr *mockTokenMemcacheRing) SetMulti(ctx context.Context, serverKey string, values map[string]interface{}, timeout int) error {
 	return nil
 }
 
@@ -470,7 +474,7 @@ func TestGetCachedToken(t *testing.T) {
 	req.Header.Set("X-Auth-Token", "abcd")
 	val := token{ExpiresAt: time.Now().Add(5 * time.Second), IssuedAt: time.Now()}
 	fakeCache := mockTokenMemcacheRing{MockValues: make(map[string]*mockValue)}
-	fakeCache.Set("abcd", val, 34343)
+	fakeCache.Set(context.Background(), "abcd", val, 34343)
 	fakeContext := &ProxyContext{
 		Logger:                 zap.NewNop(),
 		ProxyContextMiddleware: &ProxyContextMiddleware{Cache: &fakeCache},
@@ -554,7 +558,7 @@ func TestPreauthCachedToken(t *testing.T) {
 	expectedExpiry := time.Now().Add(24 * time.Hour).Round(time.Second)
 	val := token{ExpiresAt: expectedExpiry, IssuedAt: issuedAt}
 	// Cache entry expires in one second, with a 1 hour duration, it'll always prevalidate
-	fakeCache.Set("abcd", val, 1)
+	fakeCache.Set(context.Background(), "abcd", val, 1)
 	fakeContext := &ProxyContext{
 		Logger:                 zap.NewNop(),
 		ProxyContextMiddleware: &ProxyContextMiddleware{Cache: &fakeCache},
@@ -589,7 +593,7 @@ func TestPreauthCachedToken(t *testing.T) {
 	// Updates happen in the background.
 	time.Sleep(1 * time.Second)
 	var tok token
-	if err := fakeCache.GetStructured("abcd", &tok); err != nil {
+	if err := fakeCache.GetStructured(context.Background(), "abcd", &tok); err != nil {
 		t.Fatalf("fakeCache.GetStructured error: %v", err)
 	}
 	timeout := fakeCache.getTimeout("abcd")
