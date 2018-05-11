@@ -119,11 +119,11 @@ func (o *ecObject) Copy(dsts ...io.Writer) (written int64, err error) {
 	if algo != "reedsolomon" {
 		return 0, fmt.Errorf("Attempt to read EC object with unknown algorithm '%s'", algo)
 	}
-	ns := strings.SplitN(o.metadata["name"], "/", 4)
-	if len(ns) != 4 {
-		return 0, fmt.Errorf("invalid metadata name: %s", o.metadata["name"])
+	partition, err := o.ring.PartitionForHash(o.Hash)
+	if err != nil {
+		return 0, fmt.Errorf("invalid Hash: %s", o.Hash)
 	}
-	nodes := o.ring.GetNodes(o.ring.GetPartition(ns[1], ns[2], ns[3]))
+	nodes := o.ring.GetNodes(partition)
 	if len(nodes) < dataShards+parityShards {
 		return 0, fmt.Errorf("Not enough nodes (%d) for scheme (%d)", len(nodes), dataShards+parityShards)
 	}
@@ -174,11 +174,11 @@ func (o *ecObject) CopyRange(w io.Writer, start int64, end int64) (int64, error)
 		return 0, fmt.Errorf("Attempt to read EC object with unknown algorithm '%s'", algo)
 	}
 	contentLength := o.ContentLength()
-	ns := strings.SplitN(o.metadata["name"], "/", 4)
-	if len(ns) != 4 {
-		return 0, fmt.Errorf("invalid metadata name: %s", o.metadata["name"])
+	partition, err := o.ring.PartitionForHash(o.Hash)
+	if err != nil {
+		return 0, fmt.Errorf("invalid Hash: %s", o.Hash)
 	}
-	nodes := o.ring.GetNodes(o.ring.GetPartition(ns[1], ns[2], ns[3]))
+	nodes := o.ring.GetNodes(partition)
 	if len(nodes) < dataShards+parityShards {
 		return 0, fmt.Errorf("Not enough nodes (%d) for scheme (%d)", len(nodes), dataShards+parityShards)
 	}
@@ -280,11 +280,11 @@ func (o *ecObject) Reconstruct() error {
 		return fmt.Errorf("Attempt to read EC object with unknown algorithm '%s'", algo)
 	}
 	contentLength := o.ContentLength()
-	ns := strings.SplitN(o.metadata["name"], "/", 4)
-	if len(ns) != 4 {
-		return fmt.Errorf("invalid metadata name: %s", o.metadata["name"])
+	partition, err := o.ring.PartitionForHash(o.Hash)
+	if err != nil {
+		return fmt.Errorf("invalid Hash: %s", o.Hash)
 	}
-	nodes := o.ring.GetNodes(o.ring.GetPartition(ns[1], ns[2], ns[3]))
+	nodes := o.ring.GetNodes(partition)
 	if len(nodes) < dataShards+parityShards {
 		return fmt.Errorf("Not enough nodes (%d) for scheme (%d)", len(nodes), dataShards+parityShards)
 	}
@@ -507,13 +507,12 @@ func (o *ecObject) nurseryReplicate(rng ring.Ring, partition uint64, dev *ring.D
 }
 
 func (o *ecObject) restabilize(rng ring.Ring, dev *ring.Device, policy int) error {
-	ns := strings.SplitN(o.metadata["name"], "/", 4)
-	if len(ns) != 4 {
-		return fmt.Errorf("invalid metadata name: %s", o.metadata["name"])
+	partition, err := rng.PartitionForHash(o.Hash)
+	if err != nil {
+		return fmt.Errorf("invalid Hash: %s", o.Hash)
 	}
 	wg := sync.WaitGroup{}
 	var successes int64
-	partition := rng.GetPartition(ns[1], ns[2], ns[3])
 	nodes := rng.GetNodes(partition)
 	if len(nodes) != o.dataShards+o.parityShards {
 		return fmt.Errorf("Ring doesn't match EC scheme (%d != %d).", len(nodes), o.dataShards+o.parityShards)
@@ -551,11 +550,10 @@ func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error 
 	if o.Restabilize {
 		return o.restabilize(rng, dev, policy)
 	}
-	ns := strings.SplitN(o.metadata["name"], "/", 4)
-	if len(ns) != 4 {
-		return fmt.Errorf("invalid metadata name: %s", o.metadata["name"])
+	partition, err := rng.PartitionForHash(o.Hash)
+	if err != nil {
+		return fmt.Errorf("invalid Hash: %s", o.Hash)
 	}
-	partition := rng.GetPartition(ns[1], ns[2], ns[3]) //TODO: this should just get partition from o.Hash right?
 	nodes := rng.GetNodes(partition)
 	if len(nodes) != o.dataShards+o.parityShards {
 		return fmt.Errorf("Ring doesn't match EC scheme (%d != %d).", len(nodes), o.dataShards+o.parityShards)

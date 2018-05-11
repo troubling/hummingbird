@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -148,19 +147,11 @@ func (ro *repObject) Close() error {
 	return nil
 }
 
-func (ro *repObject) getPartition(rng ring.Ring) (uint64, error) {
-	ns := strings.SplitN(ro.metadata["name"], "/", 4)
-	if len(ns) != 4 {
-		return 0, fmt.Errorf("invalid metadata name: %s", ro.metadata["name"])
-	}
-	return rng.GetPartition(ns[1], ns[2], ns[3]), nil
-}
-
 func (ro *repObject) isStable(rng ring.Ring, dev *ring.Device, policy int) (bool, []*ring.Device, error) {
 	if ro.Deletion {
 		return false, nil, fmt.Errorf("you just send deletions")
 	}
-	partition, err := ro.getPartition(rng)
+	partition, err := rng.PartitionForHash(ro.Hash)
 	if err != nil {
 		return false, nil, err
 	}
@@ -193,7 +184,7 @@ func (ro *repObject) isStable(rng ring.Ring, dev *ring.Device, policy int) (bool
 }
 
 func (ro *repObject) stabilizeDelete(rng ring.Ring, dev *ring.Device, policy int) error {
-	partition, err := ro.getPartition(rng)
+	partition, err := rng.PartitionForHash(ro.Hash)
 	if err != nil {
 		return err
 	}
@@ -232,7 +223,7 @@ func (ro *repObject) stabilizeDelete(rng ring.Ring, dev *ring.Device, policy int
 func (ro *repObject) restabilize(rng ring.Ring, dev *ring.Device, policy int) error {
 	wg := sync.WaitGroup{}
 	var successes int64
-	partition, err := ro.getPartition(rng)
+	partition, err := rng.PartitionForHash(ro.Hash)
 	if err != nil {
 		return err
 	}
@@ -270,7 +261,7 @@ func (ro *repObject) restabilize(rng ring.Ring, dev *ring.Device, policy int) er
 }
 
 func (ro *repObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error {
-	partition, err := ro.getPartition(rng)
+	partition, err := rng.PartitionForHash(ro.Hash)
 	if err != nil {
 		return err
 	}
