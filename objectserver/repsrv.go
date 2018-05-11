@@ -153,7 +153,7 @@ func (r *Replicator) stabilizeHandler(w http.ResponseWriter, req *http.Request) 
 	key := deviceKeyId(vars["device"], policy)
 	if rd, ok := r.runningDevices[key]; ok {
 		if os, ok := o.(ObjectStabilizer); ok {
-			if err = os.Stabilize(oring, rdev, policy); err == nil {
+			if err = os.Stabilize(rdev, policy); err == nil {
 				rd.UpdateStat("objectsPeerStabilized", 1)
 			}
 		}

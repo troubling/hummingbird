@@ -25,7 +25,7 @@ type repObject struct {
 	reserve          int64
 	asyncWG          *sync.WaitGroup
 	idb              *IndexDB
-	rng              ring.Ring
+	ring             ring.Ring
 	loaded           bool
 	atomicFileWriter fs.AtomicFileWriter
 	metadata         map[string]string
@@ -147,15 +147,15 @@ func (ro *repObject) Close() error {
 	return nil
 }
 
-func (ro *repObject) isStable(rng ring.Ring, dev *ring.Device, policy int) (bool, []*ring.Device, error) {
+func (ro *repObject) isStable(dev *ring.Device, policy int) (bool, []*ring.Device, error) {
 	if ro.Deletion {
 		return false, nil, fmt.Errorf("you just send deletions")
 	}
-	partition, err := rng.PartitionForHash(ro.Hash)
+	partition, err := ro.ring.PartitionForHash(ro.Hash)
 	if err != nil {
 		return false, nil, err
 	}
-	nodes := rng.GetNodes(partition)
+	nodes := ro.ring.GetNodes(partition)
 	goodNodes := uint64(0)
 	notFoundNodes := []*ring.Device{}
 	for _, node := range nodes {
@@ -180,15 +180,15 @@ func (ro *repObject) isStable(rng ring.Ring, dev *ring.Device, policy int) (bool
 			resp.Body.Close()
 		}
 	}
-	return goodNodes == rng.ReplicaCount(), notFoundNodes, nil
+	return goodNodes == ro.ring.ReplicaCount(), notFoundNodes, nil
 }
 
-func (ro *repObject) stabilizeDelete(rng ring.Ring, dev *ring.Device, policy int) error {
-	partition, err := rng.PartitionForHash(ro.Hash)
+func (ro *repObject) stabilizeDelete(dev *ring.Device, policy int) error {
+	partition, err := ro.ring.PartitionForHash(ro.Hash)
 	if err != nil {
 		return err
 	}
-	nodes := rng.GetNodes(partition)
+	nodes := ro.ring.GetNodes(partition)
 	var successes int64
 	wg := sync.WaitGroup{}
 	for _, node := range nodes {
@@ -220,14 +220,14 @@ func (ro *repObject) stabilizeDelete(rng ring.Ring, dev *ring.Device, policy int
 	return ro.idb.Remove(ro.Hash, ro.Shard, ro.Timestamp, ro.Nursery)
 }
 
-func (ro *repObject) restabilize(rng ring.Ring, dev *ring.Device, policy int) error {
+func (ro *repObject) restabilize(dev *ring.Device, policy int) error {
 	wg := sync.WaitGroup{}
 	var successes int64
-	partition, err := rng.PartitionForHash(ro.Hash)
+	partition, err := ro.ring.PartitionForHash(ro.Hash)
 	if err != nil {
 		return err
 	}
-	nodes := rng.GetNodes(partition)
+	nodes := ro.ring.GetNodes(partition)
 	for _, node := range nodes {
 		if node.Ip == dev.Ip && node.Port == dev.Port && node.Device == dev.Device {
 			continue
@@ -260,26 +260,26 @@ func (ro *repObject) restabilize(rng ring.Ring, dev *ring.Device, policy int) er
 	return ro.idb.SetStabilized(ro.Hash, ro.Shard, ro.Timestamp, false)
 }
 
-func (ro *repObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error {
-	partition, err := rng.PartitionForHash(ro.Hash)
+func (ro *repObject) Stabilize(dev *ring.Device, policy int) error {
+	partition, err := ro.ring.PartitionForHash(ro.Hash)
 	if err != nil {
 		return err
 	}
 	if ro.Restabilize {
-		return ro.restabilize(rng, dev, policy)
+		return ro.restabilize(dev, policy)
 	}
 	if !ro.Nursery {
 		return nil
 	}
 	if ro.Deletion {
-		return ro.stabilizeDelete(rng, dev, policy)
+		return ro.stabilizeDelete(dev, policy)
 	}
-	isStable, notFoundNodes, err := ro.isStable(rng, dev, policy)
+	isStable, notFoundNodes, err := ro.isStable(dev, policy)
 	if err != nil {
 		return err
 	}
 	if isStable {
-		if _, isHandoff := rng.GetJobNodes(partition, dev.Id); isHandoff {
+		if _, isHandoff := ro.ring.GetJobNodes(partition, dev.Id); isHandoff {
 			return ro.idb.Remove(ro.Hash, ro.Shard, ro.Timestamp, ro.Nursery)
 		} else {
 			return ro.idb.SetStabilized(ro.Hash, roShard, ro.Timestamp, true)
@@ -302,7 +302,7 @@ func (ro *repObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) erro
 }
 
 func (ro *repObject) Replicate(prirep PriorityRepJob) error {
-	_, isHandoff := ro.rng.GetJobNodes(prirep.Partition, prirep.FromDevice.Id)
+	_, isHandoff := ro.ring.GetJobNodes(prirep.Partition, prirep.FromDevice.Id)
 	fp, err := os.Open(ro.Path)
 	if err != nil {
 		return err
