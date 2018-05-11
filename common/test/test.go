@@ -98,8 +98,8 @@ func (r *FakeRing) GetPartition(account string, container string, object string)
 	return 0
 }
 
-func (r *FakeRing) PartitionForHash(hsh uint64) uint64 {
-	return 0
+func (r *FakeRing) PartitionForHash(hsh string) (uint64, error) {
+	return 0, nil
 }
 
 func (r *FakeRing) LocalDevices(localPort int) (devs []*ring.Device, err error) {
