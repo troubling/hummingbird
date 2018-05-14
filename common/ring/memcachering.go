@@ -81,60 +81,84 @@ func (r *tracingMemcacheRing) addKey(span opentracing.Span, key string) {
 	}
 }
 
+func (r *tracingMemcacheRing) addError(span opentracing.Span, err error) {
+	if err == CacheMiss {
+		span.SetTag("CacheMiss", true)
+	} else if err != nil {
+		span.SetTag("error", true)
+	}
+}
+
 func (r *tracingMemcacheRing) Decr(ctx context.Context, key string, delta int64, timeout int) (int64, error) {
 	mcSpan := r.tracer.StartSpan("Memcache Decr", opentracing.ChildOf(r.getSpanContext(ctx)))
 	r.addKey(mcSpan, key)
 	defer mcSpan.Finish()
-	return r.MemcacheRing.Decr(ctx, key, delta, timeout)
+	ret, err := r.MemcacheRing.Decr(ctx, key, delta, timeout)
+	r.addError(mcSpan, err)
+	return ret, err
 }
 
 func (r *tracingMemcacheRing) Delete(ctx context.Context, key string) error {
 	mcSpan := r.tracer.StartSpan("Memcache Delete", opentracing.ChildOf(r.getSpanContext(ctx)))
 	r.addKey(mcSpan, key)
 	defer mcSpan.Finish()
-	return r.MemcacheRing.Delete(ctx, key)
+	err := r.MemcacheRing.Delete(ctx, key)
+	r.addError(mcSpan, err)
+	return err
 }
 
 func (r *tracingMemcacheRing) Get(ctx context.Context, key string) (interface{}, error) {
 	mcSpan := r.tracer.StartSpan("Memcache Get", opentracing.ChildOf(r.getSpanContext(ctx)))
 	r.addKey(mcSpan, key)
 	defer mcSpan.Finish()
-	return r.MemcacheRing.Get(ctx, key)
+	ret, err := r.MemcacheRing.Get(ctx, key)
+	r.addError(mcSpan, err)
+	return ret, err
 }
 
 func (r *tracingMemcacheRing) GetStructured(ctx context.Context, key string, val interface{}) error {
 	mcSpan := r.tracer.StartSpan("Memcache GetStructured", opentracing.ChildOf(r.getSpanContext(ctx)))
 	r.addKey(mcSpan, key)
 	defer mcSpan.Finish()
-	return r.MemcacheRing.GetStructured(ctx, key, val)
+	err := r.MemcacheRing.GetStructured(ctx, key, val)
+	r.addError(mcSpan, err)
+	return err
 }
 
 func (r *tracingMemcacheRing) GetMulti(ctx context.Context, serverKey string, keys []string) (map[string]interface{}, error) {
 	mcSpan := r.tracer.StartSpan("Memcache GetMulti", opentracing.ChildOf(r.getSpanContext(ctx)))
 	r.addKey(mcSpan, serverKey)
 	defer mcSpan.Finish()
-	return r.MemcacheRing.GetMulti(ctx, serverKey, keys)
+	ret, err := r.MemcacheRing.GetMulti(ctx, serverKey, keys)
+	r.addError(mcSpan, err)
+	return ret, err
 }
 
 func (r *tracingMemcacheRing) Incr(ctx context.Context, key string, delta int64, timeout int) (int64, error) {
 	mcSpan := r.tracer.StartSpan("Memcache Incr", opentracing.ChildOf(r.getSpanContext(ctx)))
 	r.addKey(mcSpan, key)
 	defer mcSpan.Finish()
-	return r.MemcacheRing.Incr(ctx, key, delta, timeout)
+	ret, err := r.MemcacheRing.Incr(ctx, key, delta, timeout)
+	r.addError(mcSpan, err)
+	return ret, err
 }
 
 func (r *tracingMemcacheRing) Set(ctx context.Context, key string, value interface{}, timeout int) error {
 	mcSpan := r.tracer.StartSpan("Memcache Set", opentracing.ChildOf(r.getSpanContext(ctx)))
 	r.addKey(mcSpan, key)
 	defer mcSpan.Finish()
-	return r.MemcacheRing.Set(ctx, key, value, timeout)
+	err := r.MemcacheRing.Set(ctx, key, value, timeout)
+	r.addError(mcSpan, err)
+	return err
 }
 
 func (r *tracingMemcacheRing) SetMulti(ctx context.Context, serverKey string, values map[string]interface{}, timeout int) error {
 	mcSpan := r.tracer.StartSpan("Memcache SetMulti", opentracing.ChildOf(r.getSpanContext(ctx)))
 	r.addKey(mcSpan, serverKey)
 	defer mcSpan.Finish()
-	return r.MemcacheRing.SetMulti(ctx, serverKey, values, timeout)
+	err := r.MemcacheRing.SetMulti(ctx, serverKey, values, timeout)
+	r.addError(mcSpan, err)
+	return err
 }
 
 type memcacheRing struct {
