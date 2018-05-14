@@ -124,9 +124,6 @@ type mockTokenMemcacheRing struct {
 	lock       sync.Mutex
 }
 
-func (mr *mockTokenMemcacheRing) SetTracer(tracer opentracing.Tracer) {
-}
-
 func (mr *mockTokenMemcacheRing) Decr(ctx context.Context, key string, delta int64, timeout int) (int64, error) {
 	return int64(0), nil
 }
