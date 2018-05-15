@@ -335,13 +335,13 @@ func NewProxyClient(pdc *ProxyDirectClient, mc ring.MemcacheRing, lc map[string]
 	return &proxyClient{pdc: pdc, mc: mc, lc: lc, Logger: logger}
 }
 
-func (c *proxyClient) invalidateContainerInfo(account string, container string) {
+func (c *proxyClient) invalidateContainerInfo(ctx context.Context, account string, container string) {
 	key := fmt.Sprintf("container/%s/%s", account, container)
 	if c.lc != nil {
 		delete(c.lc, key)
 	}
 	if c.mc != nil {
-		c.mc.Delete(key)
+		c.mc.Delete(ctx, key)
 	}
 }
 
@@ -361,11 +361,11 @@ func (c *proxyClient) DeleteAccount(ctx context.Context, account string, headers
 	return c.pdc.DeleteAccount(ctx, account, headers)
 }
 func (c *proxyClient) PutContainer(ctx context.Context, account string, container string, headers http.Header) *http.Response {
-	defer c.invalidateContainerInfo(account, container)
+	defer c.invalidateContainerInfo(ctx, account, container)
 	return c.pdc.PutContainer(ctx, account, container, headers)
 }
 func (c *proxyClient) PostContainer(ctx context.Context, account string, container string, headers http.Header) *http.Response {
-	defer c.invalidateContainerInfo(account, container)
+	defer c.invalidateContainerInfo(ctx, account, container)
 	return c.pdc.PostContainer(ctx, account, container, headers)
 }
 func (c *proxyClient) GetContainer(ctx context.Context, account string, container string, options map[string]string, headers http.Header) *http.Response {
@@ -381,7 +381,7 @@ func (c *proxyClient) HeadContainer(ctx context.Context, account string, contain
 	return c.pdc.HeadContainer(ctx, account, container, headers)
 }
 func (c *proxyClient) DeleteContainer(ctx context.Context, account string, container string, headers http.Header) *http.Response {
-	defer c.invalidateContainerInfo(account, container)
+	defer c.invalidateContainerInfo(ctx, account, container)
 	return c.pdc.DeleteContainer(ctx, account, container, headers)
 }
 func (c *proxyClient) PutObject(ctx context.Context, account string, container string, obj string, headers http.Header, src io.Reader) *http.Response {
@@ -596,7 +596,7 @@ func (c *ProxyDirectClient) SetContainerInfo(ctx context.Context, account, conta
 		c.lcm.Unlock()
 	}
 	if mc != nil {
-		mc.Set(key, ci, 10) // throwing away error here..
+		mc.Set(ctx, key, ci, 10) // throwing away error here..
 	}
 	return ci, nil
 }
@@ -622,7 +622,7 @@ func (c *ProxyDirectClient) GetContainerInfo(ctx context.Context, account string
 		return nil, ContainerNotFound
 	}
 	if !contInCache && mc != nil {
-		if err := mc.GetStructured(key, &ci); err == nil {
+		if err := mc.GetStructured(ctx, key, &ci); err == nil {
 			c.lcm.RLock()
 			lc[key] = ci
 			c.lcm.RUnlock()

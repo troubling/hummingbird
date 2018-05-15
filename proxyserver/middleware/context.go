@@ -163,7 +163,7 @@ func (pc *ProxyContext) GetAccountInfo(ctx context.Context, account string) (*Ac
 	key := fmt.Sprintf("account/%s", account)
 	ai := pc.accountInfoCache[key]
 	if ai == nil {
-		if err := pc.Cache.GetStructured(key, &ai); err != nil {
+		if err := pc.Cache.GetStructured(ctx, key, &ai); err != nil {
 			ai = nil
 		}
 	}
@@ -174,7 +174,7 @@ func (pc *ProxyContext) GetAccountInfo(ctx context.Context, account string) (*Ac
 		resp := pc.C.HeadAccount(ctx, account, nil)
 		resp.Body.Close()
 		if resp.StatusCode/100 != 2 {
-			pc.Cache.Set(key, &AccountInfo{StatusCode: resp.StatusCode}, 30)
+			pc.Cache.Set(ctx, key, &AccountInfo{StatusCode: resp.StatusCode}, 30)
 			return nil, fmt.Errorf("%d error retrieving info for account %s", resp.StatusCode, account)
 		}
 		ai = &AccountInfo{
@@ -199,15 +199,15 @@ func (pc *ProxyContext) GetAccountInfo(ctx context.Context, account string) (*Ac
 				ai.SysMetadata[k[18:]] = resp.Header.Get(k)
 			}
 		}
-		pc.Cache.Set(key, ai, 30)
+		pc.Cache.Set(ctx, key, ai, 30)
 	}
 	return ai, nil
 }
 
-func (pc *ProxyContext) InvalidateAccountInfo(account string) {
+func (pc *ProxyContext) InvalidateAccountInfo(ctx context.Context, account string) {
 	key := fmt.Sprintf("account/%s", account)
 	delete(pc.accountInfoCache, key)
-	pc.Cache.Delete(key)
+	pc.Cache.Delete(ctx, key)
 }
 
 func (pc *ProxyContext) AutoCreateAccount(ctx context.Context, account string, headers http.Header) {
@@ -220,7 +220,7 @@ func (pc *ProxyContext) AutoCreateAccount(ctx context.Context, account string, h
 	}
 	resp := pc.C.PutAccount(ctx, account, h)
 	if resp.StatusCode/100 == 2 {
-		pc.InvalidateAccountInfo(account)
+		pc.InvalidateAccountInfo(ctx, account)
 	}
 }
 

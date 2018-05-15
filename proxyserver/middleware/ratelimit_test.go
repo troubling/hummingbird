@@ -16,6 +16,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"testing"
 	"time"
@@ -59,17 +60,17 @@ func TestGetSleepTime(t *testing.T) {
 	sleep = s.fakeSleep
 	nowNano = fakeNowNano
 
-	sleepTime, err := rt.getSleepTime(fakeMr, "hey", int64(1000))
+	sleepTime, err := rt.getSleepTime(context.Background(), fakeMr, "hey", int64(1000))
 	assert.Equal(t, sleepTime, int64(0))
 	assert.Equal(t, err, nil)
 
 	fakeMr = &test.FakeMemcacheRing{MockIncrResults: []int64{now + 2000}}
-	sleepTime, err = rt.getSleepTime(fakeMr, "hey", int64(1000))
+	sleepTime, err = rt.getSleepTime(context.Background(), fakeMr, "hey", int64(1000))
 	assert.Equal(t, sleepTime, int64(2000))
 	assert.Equal(t, err, nil)
 
 	fakeMr = &test.FakeMemcacheRing{MockIncrResults: []int64{nsPerSecond}}
-	sleepTime, err = rt.getSleepTime(fakeMr, "hey", int64(1000))
+	sleepTime, err = rt.getSleepTime(context.Background(), fakeMr, "hey", int64(1000))
 	assert.Equal(t, sleepTime, int64(0))
 	assert.Equal(t, err, nil)
 	assert.Equal(t, fakeMr.MockSetValues[0], now+nsPerSecond/1000)

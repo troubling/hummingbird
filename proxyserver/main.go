@@ -221,6 +221,7 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 		if err != nil {
 			return ipPort, nil, nil, fmt.Errorf("Error setting up tracer: %v", err)
 		}
+		server.mc = ring.NewTracingMemcacheRing(server.mc, server.tracer)
 	}
 	policies, err := cnf.GetPolicies()
 	if err != nil {

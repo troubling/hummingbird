@@ -16,6 +16,7 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -55,9 +56,9 @@ var nowNano = func() int64 {
 }
 
 // returns int64 of ns to sleep before serving request
-func (r *ratelimiter) getSleepTime(mc ring.MemcacheRing, key string, ratePs int64) (int64, error) {
+func (r *ratelimiter) getSleepTime(ctx context.Context, mc ring.MemcacheRing, key string, ratePs int64) (int64, error) {
 	nsPerRequest := nsPerSecond / ratePs
-	runningTime, err := mc.Incr(key, nsPerRequest, 3600)
+	runningTime, err := mc.Incr(ctx, key, nsPerRequest, 3600)
 	if err != nil {
 		return 0, err
 	}
@@ -65,7 +66,7 @@ func (r *ratelimiter) getSleepTime(mc ring.MemcacheRing, key string, ratePs int6
 	now := nowNano()
 	if int64(now-runningTime) > rateBuffer {
 		// nothing has happened in a while, set new clocktime
-		mc.Set(key, now+nsPerRequest, 3600)
+		mc.Set(ctx, key, now+nsPerRequest, 3600)
 	} else {
 		sleepTime = runningTime - now - nsPerRequest
 		if sleepTime < 0 {
@@ -99,7 +100,7 @@ func (r *ratelimiter) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		limit = r.containerLimit
 	}
 	if limit > 0 {
-		sleepTime, err := r.getSleepTime(ctx.Cache, ratekey, limit)
+		sleepTime, err := r.getSleepTime(request.Context(), ctx.Cache, ratekey, limit)
 		if err == nil {
 			if sleepTime > maxSleep {
 				sleep(time.Second)

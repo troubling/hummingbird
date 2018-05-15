@@ -17,6 +17,7 @@ package ring
 
 import (
 	"bufio"
+	"context"
 	"crypto/md5"
 	"encoding/binary"
 	"encoding/hex"
@@ -32,6 +33,8 @@ import (
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+
+	opentracing "github.com/opentracing/opentracing-go"
 )
 
 const (
@@ -45,14 +48,117 @@ const (
 )
 
 type MemcacheRing interface {
-	Decr(key string, delta int64, timeout int) (int64, error)
-	Delete(key string) error
-	Get(key string) (interface{}, error)
-	GetStructured(key string, val interface{}) error
-	GetMulti(serverKey string, keys []string) (map[string]interface{}, error)
-	Incr(key string, delta int64, timeout int) (int64, error)
-	Set(key string, value interface{}, timeout int) error
-	SetMulti(serverKey string, values map[string]interface{}, timeout int) error
+	Decr(ctx context.Context, key string, delta int64, timeout int) (int64, error)
+	Delete(ctx context.Context, key string) error
+	Get(ctx context.Context, key string) (interface{}, error)
+	GetStructured(ctx context.Context, key string, val interface{}) error
+	GetMulti(ctx context.Context, serverKey string, keys []string) (map[string]interface{}, error)
+	Incr(ctx context.Context, key string, delta int64, timeout int) (int64, error)
+	Set(ctx context.Context, key string, value interface{}, timeout int) error
+	SetMulti(ctx context.Context, serverKey string, values map[string]interface{}, timeout int) error
+}
+
+type tracingMemcacheRing struct {
+	MemcacheRing
+	tracer opentracing.Tracer
+}
+
+func NewTracingMemcacheRing(mc MemcacheRing, tracer opentracing.Tracer) *tracingMemcacheRing {
+	return &tracingMemcacheRing{MemcacheRing: mc, tracer: tracer}
+}
+
+func (r *tracingMemcacheRing) getSpanContext(ctx context.Context) opentracing.SpanContext {
+	var parentContext opentracing.SpanContext
+	if span := opentracing.SpanFromContext(ctx); span != nil {
+		parentContext = span.Context()
+	}
+	return parentContext
+}
+
+func (r *tracingMemcacheRing) addKey(span opentracing.Span, key string) {
+	if strings.HasPrefix(key, "account/") || strings.HasPrefix(key, "container/") {
+		span.SetTag("key", key)
+	}
+}
+
+func (r *tracingMemcacheRing) addError(span opentracing.Span, err error) {
+	if err == CacheMiss {
+		span.SetTag("CacheMiss", true)
+	} else if err != nil {
+		span.SetTag("error", true)
+	}
+}
+
+func (r *tracingMemcacheRing) Decr(ctx context.Context, key string, delta int64, timeout int) (int64, error) {
+	mcSpan := r.tracer.StartSpan("Memcache Decr", opentracing.ChildOf(r.getSpanContext(ctx)))
+	r.addKey(mcSpan, key)
+	defer mcSpan.Finish()
+	ret, err := r.MemcacheRing.Decr(ctx, key, delta, timeout)
+	r.addError(mcSpan, err)
+	return ret, err
+}
+
+func (r *tracingMemcacheRing) Delete(ctx context.Context, key string) error {
+	mcSpan := r.tracer.StartSpan("Memcache Delete", opentracing.ChildOf(r.getSpanContext(ctx)))
+	r.addKey(mcSpan, key)
+	defer mcSpan.Finish()
+	err := r.MemcacheRing.Delete(ctx, key)
+	r.addError(mcSpan, err)
+	return err
+}
+
+func (r *tracingMemcacheRing) Get(ctx context.Context, key string) (interface{}, error) {
+	mcSpan := r.tracer.StartSpan("Memcache Get", opentracing.ChildOf(r.getSpanContext(ctx)))
+	r.addKey(mcSpan, key)
+	defer mcSpan.Finish()
+	ret, err := r.MemcacheRing.Get(ctx, key)
+	r.addError(mcSpan, err)
+	return ret, err
+}
+
+func (r *tracingMemcacheRing) GetStructured(ctx context.Context, key string, val interface{}) error {
+	mcSpan := r.tracer.StartSpan("Memcache GetStructured", opentracing.ChildOf(r.getSpanContext(ctx)))
+	r.addKey(mcSpan, key)
+	defer mcSpan.Finish()
+	err := r.MemcacheRing.GetStructured(ctx, key, val)
+	r.addError(mcSpan, err)
+	return err
+}
+
+func (r *tracingMemcacheRing) GetMulti(ctx context.Context, serverKey string, keys []string) (map[string]interface{}, error) {
+	mcSpan := r.tracer.StartSpan("Memcache GetMulti", opentracing.ChildOf(r.getSpanContext(ctx)))
+	r.addKey(mcSpan, serverKey)
+	defer mcSpan.Finish()
+	ret, err := r.MemcacheRing.GetMulti(ctx, serverKey, keys)
+	r.addError(mcSpan, err)
+	return ret, err
+}
+
+func (r *tracingMemcacheRing) Incr(ctx context.Context, key string, delta int64, timeout int) (int64, error) {
+	mcSpan := r.tracer.StartSpan("Memcache Incr", opentracing.ChildOf(r.getSpanContext(ctx)))
+	r.addKey(mcSpan, key)
+	defer mcSpan.Finish()
+	ret, err := r.MemcacheRing.Incr(ctx, key, delta, timeout)
+	r.addError(mcSpan, err)
+	return ret, err
+}
+
+func (r *tracingMemcacheRing) Set(ctx context.Context, key string, value interface{}, timeout int) error {
+	mcSpan := r.tracer.StartSpan("Memcache Set", opentracing.ChildOf(r.getSpanContext(ctx)))
+	r.addKey(mcSpan, key)
+	defer mcSpan.Finish()
+	err := r.MemcacheRing.Set(ctx, key, value, timeout)
+	r.addError(mcSpan, err)
+	return err
+}
+
+func (r *tracingMemcacheRing) SetMulti(ctx context.Context, serverKey string, values map[string]interface{}, timeout int) error {
+	mcSpan := r.tracer.StartSpan("Memcache SetMulti", opentracing.ChildOf(r.getSpanContext(ctx)))
+	r.addKey(mcSpan, serverKey)
+	defer mcSpan.Finish()
+	err := r.MemcacheRing.SetMulti(ctx, serverKey, values, timeout)
+	r.addError(mcSpan, err)
+	return err
 }
 
 type memcacheRing struct {
@@ -64,6 +170,7 @@ type memcacheRing struct {
 	maxFreeConnectionsPerServer int64
 	tries                       int64
 	nodeWeight                  int64
+	tracing                     bool
 }
 
 func NewMemcacheRing(confPath string) (*memcacheRing, error) {
@@ -127,11 +234,11 @@ func (ring *memcacheRing) sortServerKeys() {
 	sort.Strings(ring.serverKeys)
 }
 
-func (ring *memcacheRing) Decr(key string, delta int64, timeout int) (int64, error) {
-	return ring.Incr(key, -delta, timeout)
+func (ring *memcacheRing) Decr(ctx context.Context, key string, delta int64, timeout int) (int64, error) {
+	return ring.Incr(ctx, key, -delta, timeout)
 }
 
-func (ring *memcacheRing) Delete(key string) error {
+func (ring *memcacheRing) Delete(ctx context.Context, key string) error {
 	fn := func(conn *connection) error {
 		_, _, err := conn.roundTripPacket(opDelete, hashKey(key), nil, nil)
 		if err != nil && err != CacheMiss {
@@ -142,7 +249,7 @@ func (ring *memcacheRing) Delete(key string) error {
 	return ring.loop(key, fn)
 }
 
-func (ring *memcacheRing) GetStructured(key string, val interface{}) error {
+func (ring *memcacheRing) GetStructured(ctx context.Context, key string, val interface{}) error {
 	fn := func(conn *connection) error {
 		value, extras, err := conn.roundTripPacket(opGet, hashKey(key), nil, nil)
 		if err != nil {
@@ -160,7 +267,7 @@ func (ring *memcacheRing) GetStructured(key string, val interface{}) error {
 	return ring.loop(key, fn)
 }
 
-func (ring *memcacheRing) Get(key string) (interface{}, error) {
+func (ring *memcacheRing) Get(ctx context.Context, key string) (interface{}, error) {
 	type Return struct {
 		value interface{}
 	}
@@ -183,7 +290,7 @@ func (ring *memcacheRing) Get(key string) (interface{}, error) {
 	return ret.value, ring.loop(key, fn)
 }
 
-func (ring *memcacheRing) GetMulti(serverKey string, keys []string) (map[string]interface{}, error) {
+func (ring *memcacheRing) GetMulti(ctx context.Context, serverKey string, keys []string) (map[string]interface{}, error) {
 	type Return struct {
 		value map[string]interface{}
 	}
@@ -219,7 +326,7 @@ func (ring *memcacheRing) GetMulti(serverKey string, keys []string) (map[string]
 	return ret.value, ring.loop(serverKey, fn)
 }
 
-func (ring *memcacheRing) Incr(key string, delta int64, timeout int) (int64, error) {
+func (ring *memcacheRing) Incr(ctx context.Context, key string, delta int64, timeout int) (int64, error) {
 	type Return struct {
 		value int64
 	}
@@ -246,7 +353,7 @@ func (ring *memcacheRing) Incr(key string, delta int64, timeout int) (int64, err
 	return ret.value, ring.loop(key, fn)
 }
 
-func (ring *memcacheRing) Set(key string, value interface{}, timeout int) error {
+func (ring *memcacheRing) Set(ctx context.Context, key string, value interface{}, timeout int) error {
 	serl, err := json.Marshal(value)
 	if err != nil {
 		return err
@@ -261,7 +368,7 @@ func (ring *memcacheRing) Set(key string, value interface{}, timeout int) error 
 	return ring.loop(key, fn)
 }
 
-func (ring *memcacheRing) SetMulti(serverKey string, values map[string]interface{}, timeout int) error {
+func (ring *memcacheRing) SetMulti(ctx context.Context, serverKey string, values map[string]interface{}, timeout int) error {
 	fn := func(conn *connection) error {
 		for key, value := range values {
 			serl, err := json.Marshal(value)

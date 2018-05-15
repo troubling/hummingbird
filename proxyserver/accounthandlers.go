@@ -118,7 +118,7 @@ func (server *ProxyServer) AccountPostHandler(writer http.ResponseWriter, reques
 			request.Header.Set(strings.Replace(strings.ToLower(k), "-remove", "", 1), "")
 		}
 	}
-	defer ctx.InvalidateAccountInfo(vars["account"])
+	defer ctx.InvalidateAccountInfo(request.Context(), vars["account"])
 	resp := ctx.C.PostAccount(request.Context(), vars["account"], request.Header)
 	if resp.StatusCode == http.StatusNotFound && server.accountAutoCreate {
 		resp.Body.Close()
@@ -157,7 +157,7 @@ func (server *ProxyServer) AccountPutHandler(writer http.ResponseWriter, request
 			request.Header.Set(strings.Replace(strings.ToLower(k), "-remove", "", 1), "")
 		}
 	}
-	defer ctx.InvalidateAccountInfo(vars["account"])
+	defer ctx.InvalidateAccountInfo(request.Context(), vars["account"])
 	resp := ctx.C.PutAccount(request.Context(), vars["account"], request.Header)
 	resp.Body.Close()
 	srv.StandardResponse(writer, resp.StatusCode)
@@ -176,7 +176,7 @@ func (server *ProxyServer) AccountDeleteHandler(writer http.ResponseWriter, requ
 			return
 		}
 	}
-	defer ctx.InvalidateAccountInfo(vars["account"])
+	defer ctx.InvalidateAccountInfo(request.Context(), vars["account"])
 	resp := ctx.C.DeleteAccount(request.Context(), vars["account"], request.Header)
 	resp.Body.Close()
 	srv.StandardResponse(writer, resp.StatusCode)
