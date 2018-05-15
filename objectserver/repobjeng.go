@@ -43,27 +43,13 @@ func repEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.F
 	if err != nil {
 		return nil, err
 	}
-	dbPartPower := 0
-	if policy.Config["db_part_power"] != "" {
-		dbPartPowerInt64, err := strconv.ParseInt(policy.Config["db_part_power"], 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("Could not parse db_part_power value %q: %s", policy.Config["db_part_power"], err)
-		}
-		dbPartPower = int(dbPartPowerInt64)
+	dbPartPower, err := policy.GetDbPartPower()
+	if err != nil {
+		return nil, err
 	}
-	if dbPartPower < 1 {
-		dbPartPower = 5
-	}
-	subdirs := 0
-	if policy.Config["subdirs"] != "" {
-		subdirsInt64, err := strconv.ParseInt(policy.Config["subdirs"], 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("Could not parse subdirs value %q: %s", policy.Config["subdirs"], err)
-		}
-		subdirs = int(subdirsInt64)
-	}
-	if subdirs < 1 {
-		subdirs = 32
+	subdirs, err := policy.GetDbSubDirs()
+	if err != nil {
+		return nil, err
 	}
 	certFile := config.GetDefault("app:object-server", "cert_file", "")
 	keyFile := config.GetDefault("app:object-server", "key_file", "")
@@ -96,7 +82,7 @@ func repEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.F
 		policy:         policy.Index,
 		rng:            rng,
 		idbs:           map[string]*IndexDB{},
-		dbPartPower:    dbPartPower,
+		dbPartPower:    int(dbPartPower),
 		numSubDirs:     subdirs,
 		logger:         zap.L(),
 		client: &http.Client{

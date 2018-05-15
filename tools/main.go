@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/bits"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
@@ -119,21 +120,6 @@ func getRing(ringPath, ringType string, policyNum int) (ring.Ring, string) {
 		os.Exit(1)
 	}
 	return r, ringType
-}
-
-func storageDirectory(datadir string, partNum uint64, nameHash string, policy *conf.Policy) string {
-	if policy.Type == "hec" {
-		if digest, err := hex.DecodeString(nameHash); err == nil {
-			// Stolen from ec engine
-			return filepath.Join(datadir, "nursery",
-				strconv.Itoa(int(digest[0]>>1)), strconv.Itoa(int((digest[0]<<6|digest[1]>>2)&127)),
-				strconv.Itoa(int((digest[1]<<5|digest[2]>>3)&127)), nameHash)
-		}
-		fmt.Printf("Couldn't decode hash: %v\n", nameHash)
-		os.Exit(1)
-	}
-	partition := fmt.Sprintf("%v", partNum)
-	return filepath.Join(datadir, partition, nameHash[len(nameHash)-3:], nameHash)
 }
 
 func curlHeadCommand(scheme string, ipStr string, port int, device string, partNum uint64, target string, policy int) string {
@@ -236,27 +222,65 @@ func printRingLocations(r ring.Ring, ringType, datadir, account, container, obje
 	fmt.Printf("\n\nUse your own device location of servers:\n")
 	fmt.Printf("such as \"export DEVICE=/srv/node\"\n")
 
-	if pathHash != "" {
-		for _, v := range primaries {
-			fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v\"\n", v.Ip, v.Device, storageDirectory(datadir, partNum, pathHash, policy))
-		}
-		handoffs = r.GetMoreNodes(partNum)
-		for i, v := 0, handoffs.Next(); v != nil; i, v = i+1, handoffs.Next() {
-			if handoffLimit != -1 && i == handoffLimit {
-				break
+	if policy.Type == "replication" || object == "" {
+		if pathHash != "" {
+			stDir := filepath.Join(datadir, strconv.Itoa(int(partNum)), pathHash[len(pathHash)-3:], pathHash)
+			for _, v := range primaries {
+				fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v\"\n", v.Ip, v.Device, stDir)
 			}
-			fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v\" # [Handoff]\n", v.Ip, v.Device, storageDirectory(datadir, partNum, pathHash, policy))
+			handoffs = r.GetMoreNodes(partNum)
+			for i, v := 0, handoffs.Next(); v != nil; i, v = i+1, handoffs.Next() {
+				if handoffLimit != -1 && i == handoffLimit {
+					break
+				}
+				fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v\" # [Handoff]\n", v.Ip, v.Device, stDir)
+			}
+		} else {
+			for _, v := range primaries {
+				fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v/%v\"\n", v.Ip, v.Device, datadir, partNum)
+			}
+			handoffs = r.GetMoreNodes(partNum)
+			for i, v := 0, handoffs.Next(); v != nil; i, v = i+1, handoffs.Next() {
+				if handoffLimit != -1 && i == handoffLimit {
+					break
+				}
+				fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v/%v\" # [Handoff]\n", v.Ip, v.Device, datadir, partNum)
+			}
 		}
 	} else {
+		if pathHash == "" {
+			fmt.Println("not implemented: please supply object path")
+			return
+		}
+		ringPartPower := bits.Len64(r.PartitionCount() - 1)
+		dbPartPower, err := policy.GetDbPartPower()
+		if err != nil {
+			fmt.Println("Error getting dbPartPower", err)
+			return
+		}
+		subdirs, err := policy.GetDbSubDirs()
+		if err != nil {
+			fmt.Println("Error getting subdirs", err)
+			return
+		}
+		_, _, dbPart, dirNum, err := objectserver.ValidateHash(pathHash, uint(ringPartPower), dbPartPower, subdirs)
+		if err != nil {
+			fmt.Println("Error in ValidateHash", err)
+			return
+		}
+		dbFileName := fmt.Sprintf("index.db.%02x", dbPart)
+		odir := fmt.Sprintf("index.db.dir.%02x", dirNum)
 		for _, v := range primaries {
-			fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v/%v\"\n", v.Ip, v.Device, datadir, partNum)
+			fmt.Printf("ssh %s \"sqlite3 ${DEVICE:-/srv/node*}/%v/%v/hec.db/%v \\\"SELECT * FROM objects WHERE hash = '%v'\\\"\"\n", v.Ip, v.Device, objectserver.PolicyDir(policy.Index), dbFileName, pathHash)
+			fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v/hec/%v/%v*\"\n\n", v.Ip, v.Device, objectserver.PolicyDir(policy.Index), odir, pathHash)
 		}
 		handoffs = r.GetMoreNodes(partNum)
 		for i, v := 0, handoffs.Next(); v != nil; i, v = i+1, handoffs.Next() {
 			if handoffLimit != -1 && i == handoffLimit {
 				break
 			}
-			fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v/%v\" # [Handoff]\n", v.Ip, v.Device, datadir, partNum)
+			fmt.Printf("ssh %s \"sqlite3 ${DEVICE:-/srv/node*}/%v/%v/hec.db/%v \\\"SELECT * FROM objects WHERE hash = '%v'\\\"\" #[HANDOFF]\n", v.Ip, v.Device, objectserver.PolicyDir(policy.Index), dbFileName, pathHash)
+			fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v/hec/%v/%v*\" #[HANDOFF]\n\n", v.Ip, v.Device, objectserver.PolicyDir(policy.Index), odir, pathHash)
 		}
 	}
 

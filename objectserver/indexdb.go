@@ -219,7 +219,7 @@ func (ot *IndexDB) TempFile(hsh string, shard int, timestamp int64, sizeHint int
 // Timestamp is the timestamp for the object contents, not necessarily the
 // metadata.
 func (ot *IndexDB) Commit(f fs.AtomicFileWriter, hsh string, shard int, timestamp int64, method string, metahash string, metadata []byte, nursery bool, shardhash string) error {
-	hsh, _, dbPart, _, err := ot.validateHash(hsh)
+	hsh, _, dbPart, _, err := ValidateHash(hsh, ot.RingPartPower, ot.dbPartPower, ot.subdirs)
 	if err != nil {
 		return err
 	}
@@ -379,7 +379,7 @@ func (ot *IndexDB) Commit(f fs.AtomicFileWriter, hsh string, shard int, timestam
 }
 
 func (ot *IndexDB) SetStabilized(hsh string, shard int, timestamp int64, stabilizePath bool) error {
-	hsh, _, dbPart, _, err := ot.validateHash(hsh)
+	hsh, _, dbPart, _, err := ValidateHash(hsh, ot.RingPartPower, ot.dbPartPower, ot.subdirs)
 	if err != nil {
 		return err
 	}
@@ -411,7 +411,7 @@ func (ot *IndexDB) SetStabilized(hsh string, shard int, timestamp int64, stabili
 }
 
 func (ot *IndexDB) wholeObjectDir(hsh string) (string, error) {
-	hsh, _, _, dirNm, err := ot.validateHash(hsh)
+	hsh, _, _, dirNm, err := ValidateHash(hsh, ot.RingPartPower, ot.dbPartPower, ot.subdirs)
 	if err != nil {
 		return "", err
 	}
@@ -419,7 +419,7 @@ func (ot *IndexDB) wholeObjectDir(hsh string) (string, error) {
 }
 
 func (ot *IndexDB) WholeObjectPath(hsh string, shard int, timestamp int64, nursery bool) (string, error) {
-	hsh, _, _, dirNm, err := ot.validateHash(hsh)
+	hsh, _, _, dirNm, err := ValidateHash(hsh, ot.RingPartPower, ot.dbPartPower, ot.subdirs)
 	if err != nil {
 		return "", err
 	}
@@ -431,7 +431,7 @@ func (ot *IndexDB) WholeObjectPath(hsh string, shard int, timestamp int64, nurse
 
 // Remove removes an entry from the database and its backing disk file.
 func (ot *IndexDB) Remove(hsh string, shard int, timestamp int64, nursery bool) error {
-	hsh, _, dbPart, _, err := ot.validateHash(hsh)
+	hsh, _, dbPart, _, err := ValidateHash(hsh, ot.RingPartPower, ot.dbPartPower, ot.subdirs)
 	if err != nil {
 		return err
 	}
@@ -458,7 +458,7 @@ func (ot *IndexDB) Remove(hsh string, shard int, timestamp int64, nursery bool) 
 // Will return (nil, error) if there is an error. (nil, nil) if not found
 func (ot *IndexDB) Lookup(hsh string, shard int, justStable bool) (*IndexDBItem, error) {
 	var err error
-	hsh, _, dbPart, _, err := ot.validateHash(hsh)
+	hsh, _, dbPart, _, err := ValidateHash(hsh, ot.RingPartPower, ot.dbPartPower, ot.subdirs)
 	if err != nil {
 		return nil, err
 	}
@@ -546,11 +546,11 @@ func (ot *IndexDB) List(startHash, stopHash, marker string, limit int) ([]*Index
 	if stopHash == "" {
 		stopHash = "ffffffffffffffffffffffffffffffff"
 	}
-	_, _, startDBPart, _, err := ot.validateHash(startHash)
+	_, _, startDBPart, _, err := ValidateHash(startHash, ot.RingPartPower, ot.dbPartPower, ot.subdirs)
 	if err != nil {
 		return nil, err
 	}
-	_, _, stopDBPart, _, err := ot.validateHash(stopHash)
+	_, _, stopDBPart, _, err := ValidateHash(stopHash, ot.RingPartPower, ot.dbPartPower, ot.subdirs)
 	if err != nil {
 		return nil, err
 	}
@@ -592,7 +592,7 @@ func (ot *IndexDB) List(startHash, stopHash, marker string, limit int) ([]*Index
 	return listing, nil
 }
 
-func (ot *IndexDB) validateHash(hsh string) (hshOut string, ringPart, dbPart, dirNm int, err error) {
+func ValidateHash(hsh string, ringPartPower, dbPartPower uint, subdirs int) (hshOut string, ringPart, dbPart, dirNm int, err error) {
 	hsh = strings.ToLower(hsh)
 	if len(hsh) != 32 {
 		return "", 0, 0, 0, fmt.Errorf("invalid hash %q; length was %d not 32", hsh, len(hsh))
@@ -602,7 +602,7 @@ func (ot *IndexDB) validateHash(hsh string) (hshOut string, ringPart, dbPart, di
 		return "", 0, 0, 0, fmt.Errorf("invalid hash %q; decoding error: %s", hsh, err)
 	}
 	upper := uint64(hashBytes[0])<<24 | uint64(hashBytes[1])<<16 | uint64(hashBytes[2])<<8 | uint64(hashBytes[3])
-	return hsh, int(upper >> (32 - ot.RingPartPower)), int(hashBytes[0] >> (8 - ot.dbPartPower)), int(hashBytes[15]) % ot.subdirs, nil
+	return hsh, int(upper >> (32 - ringPartPower)), int(hashBytes[0] >> (8 - dbPartPower)), int(hashBytes[15]) % subdirs, nil
 }
 
 func (ot *IndexDB) RingPartRange(ringPart int) (string, string) {

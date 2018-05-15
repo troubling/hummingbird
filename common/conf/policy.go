@@ -17,6 +17,7 @@ package conf
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -28,6 +29,35 @@ type Policy struct {
 	Default    bool
 	Deprecated bool
 	Config     map[string]string
+}
+
+func (p Policy) GetDbPartPower() (uint, error) {
+	dbPartPower := 0
+	if p.Config["db_part_power"] != "" {
+		dbPartPowerInt64, err := strconv.ParseInt(p.Config["db_part_power"], 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("Could not parse db_part_power value %q: %s", p.Config["db_part_power"], err)
+		}
+		dbPartPower = int(dbPartPowerInt64)
+	}
+	if dbPartPower < 1 {
+		dbPartPower = 5
+	}
+	return uint(dbPartPower), nil
+}
+func (p Policy) GetDbSubDirs() (int, error) {
+	subdirs := 0
+	if p.Config["subdirs"] != "" {
+		subdirsInt64, err := strconv.ParseInt(p.Config["subdirs"], 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("Could not parse subdirs value %q: %s", p.Config["subdirs"], err)
+		}
+		subdirs = int(subdirsInt64)
+	}
+	if subdirs < 1 {
+		subdirs = 32
+	}
+	return subdirs, nil
 }
 
 type PolicyList map[int]*Policy
