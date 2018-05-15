@@ -219,7 +219,7 @@ func (r *Replicator) verifyRunningDevices() {
 			if _, ok := r.runningDevices[key]; !ok {
 				if rd, err := objEngine.GetReplicationDevice(oring, dev, r); err == nil {
 					r.runningDevices[key] = rd
-					r.stats["object-replicator"][key] = &DeviceStats{
+					r.stats[rd.Type()][key] = &DeviceStats{
 						LastCheckin: time.Now(), DeviceStarted: time.Now(),
 						Stats: map[string]int64{},
 					}
@@ -307,11 +307,11 @@ func (r *Replicator) reportStats() {
 	}
 }
 
-func (r *Replicator) getDeviceProgress() map[string]*DeviceStats {
+func (r *Replicator) getDeviceProgress(name string) map[string]*DeviceStats {
 	r.runningDevicesLock.Lock()
 	defer r.runningDevicesLock.Unlock()
 	deviceProgress := make(map[string]*DeviceStats)
-	for key, stats := range r.stats["object-replicator"] {
+	for key, stats := range r.stats[name] {
 		deviceProgress[key] = stats
 	}
 	return deviceProgress

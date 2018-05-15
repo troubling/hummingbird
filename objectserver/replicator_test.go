@@ -149,6 +149,9 @@ func (d *mockReplicationDevice) Key() string {
 	}
 	return ""
 }
+func (d *mockReplicationDevice) Type() string {
+	return "object-replicator"
+}
 func (d *mockReplicationDevice) Cancel() {
 	if d._Cancel != nil {
 		d._Cancel()
@@ -1069,7 +1072,7 @@ func TestGetDeviceProgress(t *testing.T) {
 			},
 		},
 	}
-	progress := replicator.getDeviceProgress()
+	progress := replicator.getDeviceProgress("object-replicator")
 	sdb, ok := progress["sdb"]
 	require.True(t, ok)
 	require.Equal(t, int64(100), sdb.PartitionsTotal)

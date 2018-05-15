@@ -72,6 +72,7 @@ type ReplicationDevice interface {
 	Cancel()
 	PriorityReplicate(w http.ResponseWriter, pri PriorityRepJob)
 	UpdateStat(string, int64)
+	Type() string
 }
 
 // ObjectEngine is the type you have to give hummingbird to create a new object engine.
