@@ -135,6 +135,7 @@ func (re *repEngine) New(vars map[string]string, needData bool, asyncWG *sync.Wa
 			Hash: hash,
 		},
 		ring:     re.ring,
+		policy:   re.policy,
 		reserve:  re.reserve,
 		metadata: map[string]string{},
 		asyncWG:  asyncWG,
@@ -154,8 +155,8 @@ func (re *repEngine) New(vars map[string]string, needData bool, asyncWG *sync.Wa
 	}
 }
 
-func (re *repEngine) GetReplicationDevice(oring ring.Ring, dev *ring.Device, policy int, r *Replicator) (ReplicationDevice, error) {
-	return GetNurseryDevice(oring, dev, policy, r, re)
+func (re *repEngine) GetReplicationDevice(oring ring.Ring, dev *ring.Device, r *Replicator) (ReplicationDevice, error) {
+	return GetNurseryDevice(oring, dev, re.policy, r, re)
 }
 
 func (re *repEngine) GetObjectsToReplicate(prirep PriorityRepJob, c chan ObjectStabilizer, cancel chan struct{}) {
@@ -217,6 +218,7 @@ func (re *repEngine) GetObjectsToReplicate(prirep PriorityRepJob, c chan ObjectS
 			IndexDBItem: *item,
 			reserve:     re.reserve,
 			ring:        re.ring,
+			policy:      re.policy,
 			idb:         idb,
 			metadata:    map[string]string{},
 			client:      re.client,
@@ -255,6 +257,7 @@ func (re *repEngine) GetObjectsToStabilize(device string, c chan ObjectStabilize
 			IndexDBItem: *item,
 			reserve:     re.reserve,
 			ring:        re.ring,
+			policy:      re.policy,
 			idb:         idb,
 			metadata:    map[string]string{},
 			client:      re.client,

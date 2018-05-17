@@ -277,36 +277,17 @@ func (a *Auditor) auditDB(dbpath string, objRing ring.Ring, policy *conf.Policy)
 		a.logger.Error("Logger type assertion failed")
 		zapLogger = zap.L()
 	}
-	// Shamelessly copypasted from ecengine.go.
-	dbPartPower := 0
-	if policy.Config["db_part_power"] != "" {
-		dbPartPowerInt64, err := strconv.ParseInt(policy.Config["db_part_power"], 10, 64)
-		if err != nil {
-			a.errors++
-			a.totalErrors++
-			a.logger.Error("Could not parse db_part_power value", zap.String("db_part_power", policy.Config["db_part_power"]))
-			return
-		}
-		dbPartPower = int(dbPartPowerInt64)
+	dbPartPower, err := policy.GetDbPartPower()
+	if err != nil {
+		a.logger.Error("Could not GetDbPartPower", zap.Error(err))
+		return
 	}
-	if dbPartPower < 1 {
-		dbPartPower = 5
+	subdirs, err := policy.GetDbSubDirs()
+	if err != nil {
+		a.logger.Error("Could not GetDbSubDirs", zap.Error(err))
+		return
 	}
-	subdirs := 0
-	if policy.Config["subdirs"] != "" {
-		subdirsInt64, err := strconv.ParseInt(policy.Config["subdirs"], 10, 64)
-		if err != nil {
-			a.errors++
-			a.totalErrors++
-			a.logger.Error("Could not parse subdirs value", zap.String("subdirs", policy.Config["subdirs"]))
-			return
-		}
-		subdirs = int(subdirsInt64)
-	}
-	if subdirs < 1 {
-		subdirs = 32
-	}
-	db, err := NewIndexDB(dbpath, path, temppath, ringPartPower, dbPartPower, subdirs, 0, zapLogger)
+	db, err := NewIndexDB(dbpath, path, temppath, ringPartPower, int(dbPartPower), subdirs, 0, zapLogger)
 	if err != nil {
 		a.errors++
 		a.totalErrors++

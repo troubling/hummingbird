@@ -217,7 +217,7 @@ func (r *Replicator) verifyRunningDevices() {
 				continue
 			}
 			if _, ok := r.runningDevices[key]; !ok {
-				if rd, err := objEngine.GetReplicationDevice(oring, dev, policy, r); err == nil {
+				if rd, err := objEngine.GetReplicationDevice(oring, dev, r); err == nil {
 					r.runningDevices[key] = rd
 					r.stats["object-replicator"][key] = &DeviceStats{
 						LastCheckin: time.Now(), DeviceStarted: time.Now(),
@@ -403,7 +403,7 @@ func (r *Replicator) Run() {
 			return
 		}
 		for _, dev := range devices {
-			rd, err := objEngine.GetReplicationDevice(theRing, dev, policy, r)
+			rd, err := objEngine.GetReplicationDevice(theRing, dev, r)
 			if err != nil {
 				r.logger.Error("building replication device", zap.String("device", dev.Device), zap.Int("policy", policy), zap.Error(err))
 				continue

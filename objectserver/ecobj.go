@@ -410,7 +410,7 @@ func (o *ecObject) Replicate(prirep PriorityRepJob) error {
 			return err
 		}
 		req.ContentLength = ecShardLength(o.ContentLength(), o.dataShards)
-		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(prirep.Policy))
+		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
 		req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("reedsolomon/%d/%d/%d", o.dataShards, o.parityShards, o.chunkSize))
 		for k, v := range o.metadata {
 			req.Header.Set("Meta-"+k, v)
@@ -506,7 +506,7 @@ func (o *ecObject) nurseryReplicate(partition uint64, dev *ring.Device) error {
 	return nil
 }
 
-func (o *ecObject) restabilize(dev *ring.Device, policy int) error {
+func (o *ecObject) restabilize(dev *ring.Device) error {
 	partition, err := o.ring.PartitionForHash(o.Hash)
 	if err != nil {
 		return fmt.Errorf("invalid Hash: %s", o.Hash)
@@ -523,7 +523,7 @@ func (o *ecObject) restabilize(dev *ring.Device, policy int) error {
 			return err
 		}
 		req.Header.Set("X-Timestamp", o.metadata["X-Timestamp"])
-		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(policy))
+		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
 		for k, v := range o.metadata {
 			req.Header.Set("Meta-"+k, v)
 		}
@@ -546,9 +546,9 @@ func (o *ecObject) restabilize(dev *ring.Device, policy int) error {
 	return o.idb.SetStabilized(o.Hash, o.Shard, o.Timestamp, false)
 }
 
-func (o *ecObject) Stabilize(dev *ring.Device, policy int) error {
+func (o *ecObject) Stabilize(dev *ring.Device) error {
 	if o.Restabilize {
-		return o.restabilize(dev, policy)
+		return o.restabilize(dev)
 	}
 	partition, err := o.ring.PartitionForHash(o.Hash)
 	if err != nil {
@@ -581,7 +581,7 @@ func (o *ecObject) Stabilize(dev *ring.Device, policy int) error {
 		}
 		req.Header.Set("X-Timestamp", o.metadata["X-Timestamp"])
 		req.Header.Set("Deletion", strconv.FormatBool(o.Deletion)) //TODO: this can be removed right?
-		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(policy))
+		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
 		req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("reedsolomon/%d/%d/%d", o.dataShards, o.parityShards, o.chunkSize))
 		for k, v := range o.metadata {
 			req.Header.Set("Meta-"+k, v)
