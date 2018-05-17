@@ -455,7 +455,8 @@ func (server *ContainerServer) ObjPutHandler(writer http.ResponseWriter, request
 		return
 	}
 	defer server.containerEngine.Return(db)
-	if err := db.PutObject(vars["obj"], timestamp, size, contentType, etag, policyIndex); err != nil {
+	expires := request.Header.Get("X-Delete-At")
+	if err := db.PutObject(vars["obj"], timestamp, size, contentType, etag, policyIndex, expires); err != nil {
 		srv.GetLogger(request).Error("Error adding object to container.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return

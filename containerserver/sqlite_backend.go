@@ -137,6 +137,9 @@ func (db *sqliteContainer) GetInfo() (*ContainerInfo, error) {
 	if err := db.flush(); err != nil {
 		return nil, err
 	}
+	if _, err := db.Exec("DELETE FROM object WHERE expires < ?", time.Now().Unix()); err != nil {
+		return nil, err
+	}
 	if info, ok := db.infoCache.Load().(*ContainerInfo); ok && !info.invalid && time.Since(info.updated) < infoCacheTimeout {
 		return info, nil
 	}
@@ -302,7 +305,7 @@ func (db *sqliteContainer) MergeItems(records []*ObjectRecord, remoteID string) 
 	}
 	defer dst.Close()
 
-	ast, err := tx.Prepare("INSERT INTO object (name, created_at, size, content_type, etag, deleted, storage_policy_index) VALUES (?, ?, ?, ?, ?, ?, ?)")
+	ast, err := tx.Prepare("INSERT INTO object (name, created_at, size, content_type, etag, deleted, storage_policy_index, expires) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		return err
 	}
@@ -332,7 +335,7 @@ func (db *sqliteContainer) MergeItems(records []*ObjectRecord, remoteID string) 
 	}
 
 	for _, record := range toAdd {
-		if _, err := ast.Exec(record.Name, record.CreatedAt, record.Size, record.ContentType, record.ETag, record.Deleted, record.StoragePolicyIndex); err != nil {
+		if _, err := ast.Exec(record.Name, record.CreatedAt, record.Size, record.ContentType, record.ETag, record.Deleted, record.StoragePolicyIndex, record.Expires); err != nil {
 			if common.IsCorruptDBError(err) {
 				return fmt.Errorf("Failed to MergeItems INSERT: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
 			}
@@ -518,7 +521,7 @@ func (db *sqliteContainer) NewID() error {
 func (db *sqliteContainer) ItemsSince(start int64, count int) ([]*ObjectRecord, error) {
 	db.flush()
 	records := []*ObjectRecord{}
-	rows, err := db.Query(`SELECT ROWID, name, created_at, size, content_type, etag, deleted, storage_policy_index
+	rows, err := db.Query(`SELECT ROWID, name, created_at, size, content_type, etag, deleted, storage_policy_index, expires
 						   FROM object WHERE ROWID > ? ORDER BY ROWID ASC LIMIT ?`, start, count)
 	if err != nil {
 		if common.IsCorruptDBError(err) {
@@ -528,7 +531,7 @@ func (db *sqliteContainer) ItemsSince(start int64, count int) ([]*ObjectRecord, 
 	}
 	for rows.Next() {
 		r := &ObjectRecord{}
-		if err := rows.Scan(&r.Rowid, &r.Name, &r.CreatedAt, &r.Size, &r.ContentType, &r.ETag, &r.Deleted, &r.StoragePolicyIndex); err != nil {
+		if err := rows.Scan(&r.Rowid, &r.Name, &r.CreatedAt, &r.Size, &r.ContentType, &r.ETag, &r.Deleted, &r.StoragePolicyIndex, &r.Expires); err != nil {
 			if common.IsCorruptDBError(err) {
 				return nil, fmt.Errorf("Failed to ItemsSince Scan: %v; %v", err, common.QuarantineDir(path.Dir(db.containerFile), 4, "containers"))
 			}
@@ -940,36 +943,45 @@ func (db *sqliteContainer) flushAlreadyLocked() error {
 		if len(base64ed) < 1 {
 			continue
 		}
-		pickled, err := base64.StdEncoding.DecodeString(base64ed)
+		serialized, err := base64.StdEncoding.DecodeString(base64ed)
 		if err != nil {
 			continue
 		}
-		r, err := pickle.PickleLoads(pickled)
-		if err != nil {
-			continue
-		}
-		record, ok := r.([]interface{})
-		if !ok || len(record) < 7 {
-			return fmt.Errorf("Invalid commit pending record")
-		}
-		casts := make([]bool, 7)
-		var deleted, policy int64
-		rec := &ObjectRecord{}
-		rec.Name, casts[0] = record[0].(string)
-		rec.CreatedAt, casts[1] = record[1].(string)
-		rec.Size, casts[2] = record[2].(int64)
-		rec.ContentType, casts[3] = record[3].(string)
-		rec.ETag, casts[4] = record[4].(string)
-		deleted, casts[5] = record[5].(int64)
-		policy, casts[6] = record[6].(int64)
-		rec.Deleted = int(deleted)
-		rec.StoragePolicyIndex = int(policy)
-		for i := 0; i < 7; i++ {
-			if !casts[i] {
+		if serialized[0] == '{' {
+			rec := &ObjectRecord{}
+			if err = json.Unmarshal(serialized, &rec); err == nil {
+				records = append(records, rec)
+			} else {
+				return fmt.Errorf("Invalid commit pending json record")
+			}
+		} else {
+			r, err := pickle.PickleLoads(serialized)
+			if err != nil {
+				continue
+			}
+			record, ok := r.([]interface{})
+			if !ok || len(record) < 7 {
 				return fmt.Errorf("Invalid commit pending record")
 			}
+			casts := make([]bool, 7)
+			var deleted, policy int64
+			rec := &ObjectRecord{}
+			rec.Name, casts[0] = record[0].(string)
+			rec.CreatedAt, casts[1] = record[1].(string)
+			rec.Size, casts[2] = record[2].(int64)
+			rec.ContentType, casts[3] = record[3].(string)
+			rec.ETag, casts[4] = record[4].(string)
+			deleted, casts[5] = record[5].(int64)
+			policy, casts[6] = record[6].(int64)
+			rec.Deleted = int(deleted)
+			rec.StoragePolicyIndex = int(policy)
+			for i := 0; i < 7; i++ {
+				if !casts[i] {
+					return fmt.Errorf("Invalid commit pending record")
+				}
+			}
+			records = append(records, rec)
 		}
-		records = append(records, rec)
 	}
 	err = db.MergeItems(records, "")
 	if err == nil {
@@ -987,19 +999,35 @@ func (db *sqliteContainer) flush() error {
 	return db.flushAlreadyLocked()
 }
 
-func (db *sqliteContainer) addObject(name string, timestamp string, size int64, contentType string, etag string, deleted int, storagePolicyIndex int) error {
+func (db *sqliteContainer) addObject(name string, timestamp string, size int64, contentType string, etag string, deleted int, storagePolicyIndex int, expires string) error {
 	lock, err := fs.LockPath(filepath.Dir(db.containerFile), 10*time.Second)
 	if err != nil {
 		return err
 	}
 	defer lock.Close()
-	tuple := []interface{}{name, timestamp, size, contentType, etag, deleted, storagePolicyIndex}
+	rec := ObjectRecord{
+		Name:               name,
+		CreatedAt:          timestamp,
+		Size:               size,
+		ContentType:        contentType,
+		ETag:               etag,
+		Deleted:            deleted,
+		StoragePolicyIndex: storagePolicyIndex,
+		Expires:            &expires,
+	}
+	if expires == "" {
+		rec.Expires = nil
+	}
 	file, err := os.OpenFile(db.containerFile+".pending", os.O_RDWR|os.O_APPEND|os.O_CREATE, 0644)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
-	if _, err := file.WriteString(":" + base64.StdEncoding.EncodeToString(pickle.PickleDumps(tuple))); err != nil {
+	marshalled, err := json.Marshal(&rec)
+	if err != nil {
+		return err
+	}
+	if _, err := file.WriteString(":" + base64.StdEncoding.EncodeToString(marshalled)); err != nil {
 		return err
 	}
 	if info, err := file.Stat(); err == nil && info.Size() > pendingCap {
@@ -1009,13 +1037,13 @@ func (db *sqliteContainer) addObject(name string, timestamp string, size int64, 
 }
 
 // PutObject adds an object to the container, by way of pending file.
-func (db *sqliteContainer) PutObject(name string, timestamp string, size int64, contentType string, etag string, storagePolicyIndex int) error {
-	return db.addObject(name, timestamp, size, contentType, etag, 0, storagePolicyIndex)
+func (db *sqliteContainer) PutObject(name string, timestamp string, size int64, contentType string, etag string, storagePolicyIndex int, expires string) error {
+	return db.addObject(name, timestamp, size, contentType, etag, 0, storagePolicyIndex, expires)
 }
 
 // DeleteObject removes an object from the container, by way of pending file.
 func (db *sqliteContainer) DeleteObject(name string, timestamp string, storagePolicyIndex int) error {
-	return db.addObject(name, timestamp, 0, "", "", 1, storagePolicyIndex)
+	return db.addObject(name, timestamp, 0, "", "", 1, storagePolicyIndex, "")
 }
 
 // Close closes the underlying sqlite database connection.

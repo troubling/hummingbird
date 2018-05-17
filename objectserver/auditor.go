@@ -41,6 +41,7 @@ import (
 
 // AuditForeverInterval represents how often a auditor check should be performed.
 var AuditForeverInterval = 30 * time.Second
+var expiredObject = fmt.Errorf("Expired Object")
 
 // AuditorDaemon keeps track of object specific audit data.
 type AuditorDaemon struct {
@@ -194,6 +195,9 @@ func auditHash(hashPath string, md5BytesPerSec int64) (bytesProcessed int64, err
 		metadata, err := common.SwiftObjectReadMetadata(filePath)
 		if err != nil {
 			return bytesProcessed, fmt.Errorf("Error getting file metadata: %v", err)
+		}
+		if Expired(metadata) {
+			return 0, expiredObject
 		}
 
 		if ext == ".data" {
@@ -390,7 +394,10 @@ func (a *Auditor) auditSuffix(suffixDir string) {
 		a.totalBytes += bytesProcessed
 		rateLimitSleep(a.passStart, a.totalPasses, a.filesPerSecond)
 		rateLimitSleep(a.passStart, a.totalBytes, a.bytesPerSecond)
-		if err != nil {
+		if err == expiredObject {
+			a.logger.Debug("Removing expired object", zap.String("hashDir", hashDir))
+			os.RemoveAll(hashDir)
+		} else if err != nil {
 			a.logger.Error("Failed audit and is being quarantined",
 				zap.String("hashDir", hashDir),
 				zap.Error(err))

@@ -128,9 +128,11 @@ const (
 				content_type TEXT,
 				etag TEXT,
 				deleted INTEGER DEFAULT 0,
-				storage_policy_index INTEGER DEFAULT 0
+				storage_policy_index INTEGER DEFAULT 0,
+				expires INTEGER DEFAULT NULL
 			);
 		CREATE INDEX ix_object_deleted_name ON object (deleted, name);
+		CREATE INDEX ix_object_expires ON object(expires) WHERE expires IS NOT NULL;
 		CREATE TRIGGER object_update BEFORE UPDATE ON object
 			BEGIN
 				SELECT RAISE(FAIL, 'UPDATE not allowed; DELETE and INSERT');
@@ -199,6 +201,12 @@ const (
 		PRAGMA temp_store = MEMORY;
 		PRAGMA journal_mode = WAL;
 		PRAGMA busy_timeout = 25000;`
+
+	// There's no real reason that adding a column with a partial index on non-default values would
+	// require a table scan, but I can't find any way to tell sqlite not to do it that isn't dark magic.
+	xExpireMigrateScript = `
+		ALTER TABLE object ADD COLUMN expires INTEGER DEFAULT NULL;
+		CREATE INDEX ix_object_expires ON object(expires) WHERE expires IS NOT NULL;`
 )
 
 func schemaMigrate(db *sql.DB) (bool, error) {
@@ -206,6 +214,7 @@ func schemaMigrate(db *sql.DB) (bool, error) {
 	hasSyncPoints := false
 	hasMetadata := false
 	hasPolicyStat := false
+	hasExpireColumn := false
 
 	tx, err := db.Begin()
 	if err != nil {
@@ -230,6 +239,8 @@ func schemaMigrate(db *sql.DB) (bool, error) {
 		} else if name == "container_stat" {
 			hasSyncPoints = strings.Contains(sql, "x_container_sync_point1")
 			hasMetadata = strings.Contains(sql, "metadata")
+		} else if name == "ix_object_expires" {
+			hasExpireColumn = true
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -256,6 +267,11 @@ func schemaMigrate(db *sql.DB) (bool, error) {
 	if !hasPolicyStat {
 		if _, err = tx.Exec(policyMigrateScript); err != nil {
 			return hasDeletedNameIndex, fmt.Errorf("Performing policy migration: %v", err)
+		}
+	}
+	if !hasExpireColumn {
+		if _, err = tx.Exec(xExpireMigrateScript); err != nil {
+			return hasDeletedNameIndex, fmt.Errorf("Performing expires migration: %v", err)
 		}
 	}
 	return hasDeletedNameIndex, tx.Commit()
