@@ -69,7 +69,7 @@ func (nrd *nurseryDevice) Scan() {
 			defer func() {
 				<-nrd.r.nurseryConcurrencySem
 			}()
-			if err := o.Stabilize(nrd.oring, nrd.dev, nrd.policy); err == nil {
+			if err := o.Stabilize(nrd.dev, nrd.policy); err == nil {
 				nrd.UpdateStat("objectsStabilized", 1)
 			} else {
 				nrd.r.logger.Debug("[stabilizeDevice] error Stabilize obj", zap.String("Object", o.Repr()), zap.Error(err))

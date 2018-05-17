@@ -80,7 +80,7 @@ func repEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.F
 		hashPathSuffix: hashPathSuffix,
 		reserve:        config.GetInt("app:object-server", "fallocate_reserve", 0),
 		policy:         policy.Index,
-		rng:            rng,
+		ring:           rng,
 		idbs:           map[string]*IndexDB{},
 		dbPartPower:    int(dbPartPower),
 		numSubDirs:     subdirs,
@@ -100,7 +100,7 @@ type repEngine struct {
 	hashPathSuffix string
 	reserve        int64
 	policy         int
-	rng            ring.Ring
+	ring           ring.Ring
 	logger         *zap.Logger
 	idbs           map[string]*IndexDB
 	dblock         sync.Mutex
@@ -119,7 +119,7 @@ func (re *repEngine) getDB(device string) (*IndexDB, error) {
 	dbpath := filepath.Join(re.driveRoot, device, PolicyDir(re.policy))
 	path := filepath.Join(re.driveRoot, device, PolicyDir(re.policy))
 	temppath := filepath.Join(re.driveRoot, device, "tmp")
-	ringPartPower := bits.Len64(re.rng.PartitionCount() - 1)
+	ringPartPower := bits.Len64(re.ring.PartitionCount() - 1)
 	re.idbs[device], err = NewIndexDB(dbpath, path, temppath, ringPartPower, re.dbPartPower, re.numSubDirs, re.reserve, re.logger)
 	if err != nil {
 		return nil, err
@@ -134,7 +134,7 @@ func (re *repEngine) New(vars map[string]string, needData bool, asyncWG *sync.Wa
 		IndexDBItem: IndexDBItem{
 			Hash: hash,
 		},
-		rng:      re.rng,
+		ring:     re.ring,
 		reserve:  re.reserve,
 		metadata: map[string]string{},
 		asyncWG:  asyncWG,
@@ -216,7 +216,7 @@ func (re *repEngine) GetObjectsToReplicate(prirep PriorityRepJob, c chan ObjectS
 		obj := &repObject{
 			IndexDBItem: *item,
 			reserve:     re.reserve,
-			rng:         re.rng,
+			ring:        re.ring,
 			idb:         idb,
 			metadata:    map[string]string{},
 			client:      re.client,
@@ -254,7 +254,7 @@ func (re *repEngine) GetObjectsToStabilize(device string, c chan ObjectStabilize
 		obj := &repObject{
 			IndexDBItem: *item,
 			reserve:     re.reserve,
-			rng:         re.rng,
+			ring:        re.ring,
 			idb:         idb,
 			metadata:    map[string]string{},
 			client:      re.client,

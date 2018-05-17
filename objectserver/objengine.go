@@ -61,7 +61,7 @@ type Object interface {
 type ObjectStabilizer interface {
 	Object
 	// Stabilize object- move to stable location / erasure code / do nothing / etc
-	Stabilize(ring.Ring, *ring.Device, int) error
+	Stabilize(*ring.Device, int) error
 	Replicate(PriorityRepJob) error
 }
 

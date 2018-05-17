@@ -428,9 +428,9 @@ func (o *ecObject) Replicate(prirep PriorityRepJob) error {
 	return o.Reconstruct()
 }
 
-func (o *ecObject) nurseryReplicate(rng ring.Ring, partition uint64, dev *ring.Device) error {
-	nodes, handoff := rng.GetJobNodes(partition, dev.Id)
-	more := rng.GetMoreNodes(partition)
+func (o *ecObject) nurseryReplicate(partition uint64, dev *ring.Device) error {
+	nodes, handoff := o.ring.GetJobNodes(partition, dev.Id)
+	more := o.ring.GetMoreNodes(partition)
 	var node *ring.Device
 	e := common.NewExpector(o.client)
 	defer e.Close()
@@ -506,14 +506,14 @@ func (o *ecObject) nurseryReplicate(rng ring.Ring, partition uint64, dev *ring.D
 	return nil
 }
 
-func (o *ecObject) restabilize(rng ring.Ring, dev *ring.Device, policy int) error {
-	partition, err := rng.PartitionForHash(o.Hash)
+func (o *ecObject) restabilize(dev *ring.Device, policy int) error {
+	partition, err := o.ring.PartitionForHash(o.Hash)
 	if err != nil {
 		return fmt.Errorf("invalid Hash: %s", o.Hash)
 	}
 	wg := sync.WaitGroup{}
 	var successes int64
-	nodes := rng.GetNodes(partition)
+	nodes := o.ring.GetNodes(partition)
 	if len(nodes) != o.dataShards+o.parityShards {
 		return fmt.Errorf("Ring doesn't match EC scheme (%d != %d).", len(nodes), o.dataShards+o.parityShards)
 	}
@@ -546,15 +546,15 @@ func (o *ecObject) restabilize(rng ring.Ring, dev *ring.Device, policy int) erro
 	return o.idb.SetStabilized(o.Hash, o.Shard, o.Timestamp, false)
 }
 
-func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error {
+func (o *ecObject) Stabilize(dev *ring.Device, policy int) error {
 	if o.Restabilize {
-		return o.restabilize(rng, dev, policy)
+		return o.restabilize(dev, policy)
 	}
-	partition, err := rng.PartitionForHash(o.Hash)
+	partition, err := o.ring.PartitionForHash(o.Hash)
 	if err != nil {
 		return fmt.Errorf("invalid Hash: %s", o.Hash)
 	}
-	nodes := rng.GetNodes(partition)
+	nodes := o.ring.GetNodes(partition)
 	if len(nodes) != o.dataShards+o.parityShards {
 		return fmt.Errorf("Ring doesn't match EC scheme (%d != %d).", len(nodes), o.dataShards+o.parityShards)
 	}
@@ -634,7 +634,7 @@ func (o *ecObject) Stabilize(rng ring.Ring, dev *ring.Device, policy int) error 
 	}
 
 	if !success {
-		o.nurseryReplicate(rng, partition, dev)
+		o.nurseryReplicate(partition, dev)
 		return fmt.Errorf("Failed to stabilize object")
 	} else if o.idb != nil {
 		return o.idb.Remove(o.Hash, o.Shard, o.Timestamp, true)

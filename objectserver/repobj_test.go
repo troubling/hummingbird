@@ -56,21 +56,6 @@ func TestReplicateStabilizeDeletion(t *testing.T) {
 	defer os.RemoveAll(dir)
 	ot := newTestIndexDB(t, dir)
 
-	ro := &repObject{
-		IndexDBItem: IndexDBItem{
-			Hash:     "00000011111122222233333344444455",
-			Deletion: true,
-			Nursery:  true,
-			Path:     fp.Name(),
-		},
-		client: http.DefaultClient,
-		metadata: map[string]string{
-			"Content-Length": "7",
-			"name":           "/a/c/o",
-		},
-		idb: ot,
-	}
-	node := &ring.Device{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port - 1, Device: "sda"}
 	rng := &test.FakeRing{
 		MockDevices: []*ring.Device{
 			{Id: 2, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdc"},
@@ -79,7 +64,23 @@ func TestReplicateStabilizeDeletion(t *testing.T) {
 		},
 		MockGetJobNodesHandoff: false,
 	}
-	require.Nil(t, ro.Stabilize(rng, node, 1))
+	ro := &repObject{
+		IndexDBItem: IndexDBItem{
+			Hash:     "00000011111122222233333344444455",
+			Deletion: true,
+			Nursery:  true,
+			Path:     fp.Name(),
+		},
+		client: http.DefaultClient,
+		ring:   rng,
+		metadata: map[string]string{
+			"Content-Length": "7",
+			"name":           "/a/c/o",
+		},
+		idb: ot,
+	}
+	node := &ring.Device{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port - 1, Device: "sda"}
+	require.Nil(t, ro.Stabilize(node, 1))
 	require.Equal(t, int64(2), calls)
 }
 
@@ -110,6 +111,14 @@ func TestReplicateStabilizeDeletionFail(t *testing.T) {
 	defer os.RemoveAll(dir)
 	ot := newTestIndexDB(t, dir)
 
+	rng := &test.FakeRing{
+		MockDevices: []*ring.Device{
+			{Id: 2, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdc"},
+			{Id: 3, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdd"},
+			{Id: 4, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sda"},
+		},
+		MockGetJobNodesHandoff: false,
+	}
 	ro := &repObject{
 		IndexDBItem: IndexDBItem{
 			Hash:     "00000011111122222233333344444455",
@@ -122,18 +131,11 @@ func TestReplicateStabilizeDeletionFail(t *testing.T) {
 			"Content-Length": "7",
 			"name":           "/a/c/o",
 		},
-		idb: ot,
+		ring: rng,
+		idb:  ot,
 	}
 	node := &ring.Device{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port - 1, Device: "sda"}
-	rng := &test.FakeRing{
-		MockDevices: []*ring.Device{
-			{Id: 2, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdc"},
-			{Id: 3, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdd"},
-			{Id: 4, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sda"},
-		},
-		MockGetJobNodesHandoff: false,
-	}
-	require.NotNil(t, ro.Stabilize(rng, node, 1))
+	require.NotNil(t, ro.Stabilize(node, 1))
 	require.Equal(t, int64(2), calls)
 }
 
@@ -163,6 +165,14 @@ func TestReplicateRestabilize(t *testing.T) {
 	defer os.RemoveAll(dir)
 	ot := newTestIndexDB(t, dir)
 
+	rng := &test.FakeRing{
+		MockDevices: []*ring.Device{
+			{Id: 2, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdc"},
+			{Id: 3, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdd"},
+			{Id: 4, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sda"},
+		},
+		MockGetJobNodesHandoff: false,
+	}
 	ro := &repObject{
 		IndexDBItem: IndexDBItem{
 			Hash:        "00000011111122222233333344444455",
@@ -176,18 +186,11 @@ func TestReplicateRestabilize(t *testing.T) {
 			"X-Object-Meta-Hey": "there",
 			"X-Timestamp":       "1000.000",
 		},
-		idb: ot,
+		ring: rng,
+		idb:  ot,
 	}
 	node := &ring.Device{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port - 1, Device: "sda"}
-	rng := &test.FakeRing{
-		MockDevices: []*ring.Device{
-			{Id: 2, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdc"},
-			{Id: 3, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdd"},
-			{Id: 4, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sda"},
-		},
-		MockGetJobNodesHandoff: false,
-	}
-	require.Nil(t, ro.Stabilize(rng, node, 1))
+	require.Nil(t, ro.Stabilize(node, 1))
 	require.Equal(t, int64(2), calls)
 }
 
@@ -222,17 +225,6 @@ func TestReplicateCanStabilize(t *testing.T) {
 		"X-Object-Meta-Hey": "there",
 		"X-Timestamp":       "1000.000",
 	}
-	ro := &repObject{
-		IndexDBItem: IndexDBItem{
-			Hash:    hsh,
-			Nursery: true,
-			Path:    fp.Name(),
-		},
-		client:   http.DefaultClient,
-		metadata: metad,
-		idb:      ot,
-	}
-	node := &ring.Device{Scheme: u.Scheme, Ip: u.Hostname(), Port: port, Device: "sda"}
 	rng := &test.FakeRing{
 		MockDevices: []*ring.Device{
 			{Id: 2, Scheme: u.Scheme, Ip: u.Hostname(), Port: port, Device: "sdc"},
@@ -241,6 +233,18 @@ func TestReplicateCanStabilize(t *testing.T) {
 		},
 		MockGetJobNodesHandoff: false,
 	}
+	ro := &repObject{
+		IndexDBItem: IndexDBItem{
+			Hash:    hsh,
+			Nursery: true,
+			Path:    fp.Name(),
+		},
+		client:   http.DefaultClient,
+		metadata: metad,
+		ring:     rng,
+		idb:      ot,
+	}
+	node := &ring.Device{Scheme: u.Scheme, Ip: u.Hostname(), Port: port, Device: "sda"}
 	afw, err := ot.TempFile(hsh, roShard, 10000, 10, true)
 	require.Nil(t, err)
 	md, err := json.Marshal(metad)
@@ -252,7 +256,7 @@ func TestReplicateCanStabilize(t *testing.T) {
 	require.Nil(t, err)
 	_, err = os.Stat(nurseryPath)
 	require.Nil(t, err)
-	require.Nil(t, ro.Stabilize(rng, node, 1))
+	require.Nil(t, ro.Stabilize(node, 1))
 	_, err = os.Stat(nurseryPath)
 	require.NotNil(t, err)
 	stablePath, err := ot.WholeObjectPath(hsh, roShard, 0, false)
@@ -314,7 +318,7 @@ func TestReplicateCanStabilizeFail(t *testing.T) {
 		client:   http.DefaultClient,
 		metadata: metad,
 		idb:      ot,
-		rng:      rng,
+		ring:     rng,
 	}
 	node := &ring.Device{Scheme: u.Scheme, Ip: u.Hostname(), Port: port, Device: "sda"}
 	afw, err := ot.TempFile(hsh, roShard, 10000, 10, true)
@@ -328,7 +332,7 @@ func TestReplicateCanStabilizeFail(t *testing.T) {
 	require.Nil(t, err)
 	_, err = os.Stat(nurseryPath)
 	require.Nil(t, err)
-	require.NotNil(t, ro.Stabilize(rng, node, 1))
+	require.NotNil(t, ro.Stabilize(node, 1))
 	_, err = os.Stat(nurseryPath)
 	require.Nil(t, err)
 	stablePath, err := ot.WholeObjectPath(hsh, roShard, 0, false)
