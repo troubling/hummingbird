@@ -895,11 +895,11 @@ func (f *SwiftEngine) New(vars map[string]string, needData bool, asyncWG *sync.W
 	return sor, nil
 }
 
-func (f *SwiftEngine) GetReplicationDevice(oring ring.Ring, dev *ring.Device, policy int, r *Replicator) (ReplicationDevice, error) {
+func (f *SwiftEngine) GetReplicationDevice(oring ring.Ring, dev *ring.Device, r *Replicator) (ReplicationDevice, error) {
 	rd := &swiftDevice{
 		r:      r,
 		dev:    dev,
-		policy: policy,
+		policy: f.policy,
 		cancel: make(chan struct{}),
 	}
 	rd.i = rd

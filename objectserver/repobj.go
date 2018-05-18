@@ -26,6 +26,7 @@ type repObject struct {
 	asyncWG          *sync.WaitGroup
 	idb              *IndexDB
 	ring             ring.Ring
+	policy           int
 	loaded           bool
 	atomicFileWriter fs.AtomicFileWriter
 	metadata         map[string]string
@@ -147,7 +148,7 @@ func (ro *repObject) Close() error {
 	return nil
 }
 
-func (ro *repObject) isStable(dev *ring.Device, policy int) (bool, []*ring.Device, error) {
+func (ro *repObject) isStable(dev *ring.Device) (bool, []*ring.Device, error) {
 	if ro.Deletion {
 		return false, nil, fmt.Errorf("you just send deletions")
 	}
@@ -165,7 +166,7 @@ func (ro *repObject) isStable(dev *ring.Device, policy int) (bool, []*ring.Devic
 		}
 		url := fmt.Sprintf("%s://%s:%d/%s/%d%s", node.Scheme, node.Ip, node.Port, node.Device, partition, common.Urlencode(ro.metadata["name"]))
 		req, err := http.NewRequest("HEAD", url, nil)
-		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.FormatInt(int64(policy), 10))
+		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.FormatInt(int64(ro.policy), 10))
 		req.Header.Set("User-Agent", "nursery-stabilizer")
 		resp, err := ro.client.Do(req)
 		if err == nil && (resp.StatusCode/100 == 2) &&
@@ -183,7 +184,7 @@ func (ro *repObject) isStable(dev *ring.Device, policy int) (bool, []*ring.Devic
 	return goodNodes == ro.ring.ReplicaCount(), notFoundNodes, nil
 }
 
-func (ro *repObject) stabilizeDelete(dev *ring.Device, policy int) error {
+func (ro *repObject) stabilizeDelete(dev *ring.Device) error {
 	partition, err := ro.ring.PartitionForHash(ro.Hash)
 	if err != nil {
 		return err
@@ -200,7 +201,7 @@ func (ro *repObject) stabilizeDelete(dev *ring.Device, policy int) error {
 			return err
 		}
 		req.Header.Set("X-Timestamp", ro.metadata["X-Timestamp"])
-		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(policy))
+		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(ro.policy))
 		wg.Add(1)
 		go func(req *http.Request) {
 			defer wg.Done()
@@ -220,7 +221,7 @@ func (ro *repObject) stabilizeDelete(dev *ring.Device, policy int) error {
 	return ro.idb.Remove(ro.Hash, ro.Shard, ro.Timestamp, ro.Nursery)
 }
 
-func (ro *repObject) restabilize(dev *ring.Device, policy int) error {
+func (ro *repObject) restabilize(dev *ring.Device) error {
 	wg := sync.WaitGroup{}
 	var successes int64
 	partition, err := ro.ring.PartitionForHash(ro.Hash)
@@ -237,7 +238,7 @@ func (ro *repObject) restabilize(dev *ring.Device, policy int) error {
 			return err
 		}
 		req.Header.Set("X-Timestamp", ro.metadata["X-Timestamp"])
-		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(policy))
+		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(ro.policy))
 		for k, v := range ro.metadata {
 			req.Header.Set("Meta-"+k, v)
 		}
@@ -260,21 +261,21 @@ func (ro *repObject) restabilize(dev *ring.Device, policy int) error {
 	return ro.idb.SetStabilized(ro.Hash, ro.Shard, ro.Timestamp, false)
 }
 
-func (ro *repObject) Stabilize(dev *ring.Device, policy int) error {
+func (ro *repObject) Stabilize(dev *ring.Device) error {
 	partition, err := ro.ring.PartitionForHash(ro.Hash)
 	if err != nil {
 		return err
 	}
 	if ro.Restabilize {
-		return ro.restabilize(dev, policy)
+		return ro.restabilize(dev)
 	}
 	if !ro.Nursery {
 		return nil
 	}
 	if ro.Deletion {
-		return ro.stabilizeDelete(dev, policy)
+		return ro.stabilizeDelete(dev)
 	}
-	isStable, notFoundNodes, err := ro.isStable(dev, policy)
+	isStable, notFoundNodes, err := ro.isStable(dev)
 	if err != nil {
 		return err
 	}
@@ -291,7 +292,7 @@ func (ro *repObject) Stabilize(dev *ring.Device, policy int) error {
 		if err := ro.Replicate(PriorityRepJob{Partition: partition,
 			FromDevice: dev,
 			ToDevice:   notFoundNode,
-			Policy:     policy}); err != nil {
+			Policy:     ro.policy}); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -316,7 +317,7 @@ func (ro *repObject) Replicate(prirep PriorityRepJob) error {
 		return err
 	}
 	req.ContentLength = ro.ContentLength()
-	req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(prirep.Policy))
+	req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(ro.policy))
 	for k, v := range ro.metadata {
 		req.Header.Set("Meta-"+k, v)
 	}

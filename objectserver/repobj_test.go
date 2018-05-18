@@ -77,10 +77,11 @@ func TestReplicateStabilizeDeletion(t *testing.T) {
 			"Content-Length": "7",
 			"name":           "/a/c/o",
 		},
-		idb: ot,
+		idb:    ot,
+		policy: 1,
 	}
 	node := &ring.Device{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port - 1, Device: "sda"}
-	require.Nil(t, ro.Stabilize(node, 1))
+	require.Nil(t, ro.Stabilize(node))
 	require.Equal(t, int64(2), calls)
 }
 
@@ -131,11 +132,12 @@ func TestReplicateStabilizeDeletionFail(t *testing.T) {
 			"Content-Length": "7",
 			"name":           "/a/c/o",
 		},
-		ring: rng,
-		idb:  ot,
+		idb:    ot,
+		policy: 1,
+		ring:   rng,
 	}
 	node := &ring.Device{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port - 1, Device: "sda"}
-	require.NotNil(t, ro.Stabilize(node, 1))
+	require.NotNil(t, ro.Stabilize(node))
 	require.Equal(t, int64(2), calls)
 }
 
@@ -186,11 +188,12 @@ func TestReplicateRestabilize(t *testing.T) {
 			"X-Object-Meta-Hey": "there",
 			"X-Timestamp":       "1000.000",
 		},
-		ring: rng,
-		idb:  ot,
+		idb:    ot,
+		policy: 1,
+		ring:   rng,
 	}
 	node := &ring.Device{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port - 1, Device: "sda"}
-	require.Nil(t, ro.Stabilize(node, 1))
+	require.Nil(t, ro.Stabilize(node))
 	require.Equal(t, int64(2), calls)
 }
 
@@ -243,6 +246,7 @@ func TestReplicateCanStabilize(t *testing.T) {
 		metadata: metad,
 		ring:     rng,
 		idb:      ot,
+		policy:   1,
 	}
 	node := &ring.Device{Scheme: u.Scheme, Ip: u.Hostname(), Port: port, Device: "sda"}
 	afw, err := ot.TempFile(hsh, roShard, 10000, 10, true)
@@ -256,7 +260,7 @@ func TestReplicateCanStabilize(t *testing.T) {
 	require.Nil(t, err)
 	_, err = os.Stat(nurseryPath)
 	require.Nil(t, err)
-	require.Nil(t, ro.Stabilize(node, 1))
+	require.Nil(t, ro.Stabilize(node))
 	_, err = os.Stat(nurseryPath)
 	require.NotNil(t, err)
 	stablePath, err := ot.WholeObjectPath(hsh, roShard, 0, false)
@@ -319,6 +323,7 @@ func TestReplicateCanStabilizeFail(t *testing.T) {
 		metadata: metad,
 		idb:      ot,
 		ring:     rng,
+		policy:   1,
 	}
 	node := &ring.Device{Scheme: u.Scheme, Ip: u.Hostname(), Port: port, Device: "sda"}
 	afw, err := ot.TempFile(hsh, roShard, 10000, 10, true)
@@ -332,7 +337,7 @@ func TestReplicateCanStabilizeFail(t *testing.T) {
 	require.Nil(t, err)
 	_, err = os.Stat(nurseryPath)
 	require.Nil(t, err)
-	require.NotNil(t, ro.Stabilize(node, 1))
+	require.NotNil(t, ro.Stabilize(node))
 	_, err = os.Stat(nurseryPath)
 	require.Nil(t, err)
 	stablePath, err := ot.WholeObjectPath(hsh, roShard, 0, false)

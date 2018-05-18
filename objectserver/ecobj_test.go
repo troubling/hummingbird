@@ -189,7 +189,7 @@ func TestStabilize(t *testing.T) {
 		},
 		nurseryReplicas: 3,
 	}
-	require.Nil(t, to.Stabilize(nil, 0))
+	require.Nil(t, to.Stabilize(nil))
 	require.Equal(t, "PUT", methods["sda"])
 	// 7 bytes / 3 shards rounds up to 3
 	require.Equal(t, int64(3), lengths["sda"])
@@ -251,7 +251,7 @@ func TestStabilizeDelete(t *testing.T) {
 		},
 		nurseryReplicas: 3,
 	}
-	require.Nil(t, to.Stabilize(nil, 0))
+	require.Nil(t, to.Stabilize(nil))
 	require.Equal(t, "DELETE", methods["sda"])
 	require.Equal(t, "DELETE", methods["sdb"])
 	require.Equal(t, "DELETE", methods["sdc"])
@@ -304,7 +304,7 @@ func TestDontStabilizeWithFailure(t *testing.T) {
 	}
 
 	node := &ring.Device{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port - 1, Device: "sda"}
-	err = to.Stabilize(node, 0)
+	err = to.Stabilize(node)
 	require.NotNil(t, err)
 	require.Equal(t, "Failed to stabilize object", err.Error())
 }

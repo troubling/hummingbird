@@ -116,8 +116,8 @@ func (f *ecEngine) New(vars map[string]string, needData bool, asyncWG *sync.Wait
 	return nil, errors.New("Unable to open database")
 }
 
-func (f *ecEngine) GetReplicationDevice(oring ring.Ring, dev *ring.Device, policy int, r *Replicator) (ReplicationDevice, error) {
-	return GetNurseryDevice(oring, dev, policy, r, f)
+func (f *ecEngine) GetReplicationDevice(oring ring.Ring, dev *ring.Device, r *Replicator) (ReplicationDevice, error) {
+	return GetNurseryDevice(oring, dev, f.policy, r, f)
 }
 
 func (f *ecEngine) ecShardGetHandler(writer http.ResponseWriter, request *http.Request) {
