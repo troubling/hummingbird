@@ -27,6 +27,8 @@ import (
 	"strings"
 	"time"
 
+	"context"
+
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/pickle"
@@ -66,10 +68,11 @@ func (server *ObjectServer) expirerContainer(deleteAt time.Time, account, contai
 	return fmt.Sprintf("%010d", timestamp)
 }
 
-func (server *ObjectServer) sendContainerUpdate(scheme, host, device, method, partition, account, container, obj string, headers http.Header) bool {
+func (server *ObjectServer) sendContainerUpdate(ctx context.Context, scheme, host, device, method, partition, account, container, obj string, headers http.Header) bool {
 	obj_url := fmt.Sprintf("%s://%s/%s/%s/%s/%s/%s", scheme, host, device, partition,
 		common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj))
 	if req, err := http.NewRequest(method, obj_url, nil); err == nil {
+		req = req.WithContext(ctx)
 		req.Header = headers
 		if resp, err := server.updateClient.Do(req); err == nil {
 			resp.Body.Close()
@@ -106,7 +109,7 @@ func (server *ObjectServer) saveAsync(method, account, container, obj, localDevi
 	logger.Error("Error saving obj async", zap.String("objPath", fmt.Sprintf("%s/%s/%s", account, container, obj)), zap.Error(err))
 }
 
-func (server *ObjectServer) updateContainer(metadata map[string]string, request *http.Request, vars map[string]string, logger srv.LowLevelLogger) {
+func (server *ObjectServer) updateContainer(ctx context.Context, metadata map[string]string, request *http.Request, vars map[string]string, logger srv.LowLevelLogger) {
 	partition := request.Header.Get("X-Container-Partition")
 	hosts := splitHeader(request.Header.Get("X-Container-Host"))
 	devices := splitHeader(request.Header.Get("X-Container-Device"))
@@ -131,7 +134,7 @@ func (server *ObjectServer) updateContainer(metadata map[string]string, request 
 	}
 	failures := 0
 	for index := range hosts {
-		if !server.sendContainerUpdate(schemes[index], hosts[index], devices[index], request.Method, partition, vars["account"], vars["container"], vars["obj"], requestHeaders) {
+		if !server.sendContainerUpdate(ctx, schemes[index], hosts[index], devices[index], request.Method, partition, vars["account"], vars["container"], vars["obj"], requestHeaders) {
 			logger.Error("ERROR container update failed (saving for async update later)",
 				zap.String("Host", hosts[index]),
 				zap.String("Device", devices[index]))
@@ -143,7 +146,7 @@ func (server *ObjectServer) updateContainer(metadata map[string]string, request 
 	}
 }
 
-func (server *ObjectServer) updateDeleteAt(method string, header http.Header, deleteAtTime time.Time, vars map[string]string, logger srv.LowLevelLogger) {
+func (server *ObjectServer) updateDeleteAt(ctx context.Context, method string, header http.Header, deleteAtTime time.Time, vars map[string]string, logger srv.LowLevelLogger) {
 	container := common.GetDefault(header, "X-Delete-At-Container", "")
 	if container == "" {
 		container = server.expirerContainer(deleteAtTime, vars["account"], vars["container"], vars["obj"])
@@ -170,7 +173,7 @@ func (server *ObjectServer) updateDeleteAt(method string, header http.Header, de
 	}
 	failures := 0
 	for index := range hosts {
-		if !server.sendContainerUpdate(schemes[index], hosts[index], devices[index], method, partition, deleteAtAccount, container, obj, requestHeaders) {
+		if !server.sendContainerUpdate(ctx, schemes[index], hosts[index], devices[index], method, partition, deleteAtAccount, container, obj, requestHeaders) {
 			logger.Error("ERROR container update failed with (saving for async update later)",
 				zap.String("Host", hosts[index]),
 				zap.String("Device", devices[index]))
@@ -185,12 +188,12 @@ func (server *ObjectServer) updateDeleteAt(method string, header http.Header, de
 func (server *ObjectServer) containerUpdates(writer http.ResponseWriter, request *http.Request, metadata map[string]string, deleteAt string, vars map[string]string, logger srv.LowLevelLogger) {
 	defer middleware.Recover(writer, request, "PANIC WHILE UPDATING CONTAINER LISTINGS")
 	if deleteAtTime, err := common.ParseDate(deleteAt); err == nil {
-		go server.updateDeleteAt(request.Method, request.Header, deleteAtTime, vars, logger)
+		go server.updateDeleteAt(request.Context(), request.Method, request.Header, deleteAtTime, vars, logger)
 	}
 
 	done := make(chan struct{}, 1)
 	go func() {
-		server.updateContainer(metadata, request, vars, logger)
+		server.updateContainer(request.Context(), metadata, request, vars, logger)
 		done <- struct{}{}
 	}()
 	select {

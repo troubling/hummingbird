@@ -18,6 +18,7 @@ package objectserver
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -29,8 +30,10 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
+	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/common/test"
 	"go.uber.org/zap"
 )
@@ -250,4 +253,38 @@ func TestGetObjectsToReplicateRemoteHasSome(t *testing.T) {
 	require.Equal(t, "o2", os.Metadata()["name"])
 	os = <-osc
 	require.Nil(t, os)
+}
+
+func TestEcShardDelete(t *testing.T) {
+	ece, dr, err := getTestEce()
+	if dr != "" {
+		defer os.RemoveAll(dr)
+	}
+	require.Nil(t, err)
+	idb, err := ece.getDB("sdb1")
+	require.Nil(t, err)
+
+	timestamp := time.Now().UnixNano()
+	body := "just testing"
+	hsh0 := "00000000000000000000000000000001"
+	f, err := idb.TempFile(hsh0, 0, timestamp, int64(len(body)), true)
+	require.Nil(t, err)
+	f.Write([]byte(body))
+	metadata, err := json.Marshal(map[string]string{"name": "o1"})
+	require.Nil(t, err)
+	require.Nil(t, idb.Commit(f, hsh0, 0, timestamp, "PUT", "", metadata, false, ""))
+	req, _ := http.NewRequest("DELETE", fmt.Sprintf("/ec-shard/sdb1/%s/0", hsh0), nil)
+	req.Header.Set("X-Timestamp",
+		common.CanonicalTimestampFromTime(time.Now().AddDate(0, 0, -1)))
+	req = srv.SetVars(req, map[string]string{"index": "0", "device": "sdb1", "hash": hsh0})
+	w := &httptest.ResponseRecorder{}
+	ece.ecShardDeleteHandler(w, req)
+	resp := w.Result()
+	require.Equal(t, 409, resp.StatusCode)
+	req.Header.Set("X-Timestamp",
+		common.CanonicalTimestampFromTime(time.Now().AddDate(0, 0, 1)))
+	w = &httptest.ResponseRecorder{}
+	ece.ecShardDeleteHandler(w, req)
+	resp = w.Result()
+	require.Equal(t, 204, resp.StatusCode)
 }

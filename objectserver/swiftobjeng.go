@@ -605,7 +605,7 @@ func (rd *swiftDevice) listPartitions() ([]string, []string, error) {
 	return partitionList, handoffList, nil
 }
 
-func (rd *swiftDevice) Replicate() {
+func (rd *swiftDevice) Scan() {
 	defer srv.LogPanics(rd.r.logger, fmt.Sprintf("PANIC REPLICATING DEVICE: %s", rd.dev.Device))
 	rd.UpdateStat("startRun", 1)
 	if mounted, err := fs.IsMount(filepath.Join(rd.r.deviceRoot, rd.dev.Device)); rd.r.checkMounts && (err != nil || mounted != true) {
@@ -679,13 +679,13 @@ func (rd *swiftDevice) Cancel() {
 	close(rd.cancel)
 }
 
-func (rd *swiftDevice) ReplicateLoop() {
+func (rd *swiftDevice) ScanLoop() {
 	for {
 		select {
 		case <-rd.cancel:
 			return
 		default:
-			rd.Replicate()
+			rd.Scan()
 		}
 		time.Sleep(replicateLoopSleepTime)
 	}
@@ -895,11 +895,11 @@ func (f *SwiftEngine) New(vars map[string]string, needData bool, asyncWG *sync.W
 	return sor, nil
 }
 
-func (f *SwiftEngine) GetReplicationDevice(oring ring.Ring, dev *ring.Device, policy int, r *Replicator) (ReplicationDevice, error) {
+func (f *SwiftEngine) GetReplicationDevice(oring ring.Ring, dev *ring.Device, r *Replicator) (ReplicationDevice, error) {
 	rd := &swiftDevice{
 		r:      r,
 		dev:    dev,
-		policy: policy,
+		policy: f.policy,
 		cancel: make(chan struct{}),
 	}
 	rd.i = rd

@@ -17,6 +17,7 @@ package test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -98,8 +99,8 @@ func (r *FakeRing) GetPartition(account string, container string, object string)
 	return 0
 }
 
-func (r *FakeRing) PartitionForHash(hsh uint64) uint64 {
-	return 0
+func (r *FakeRing) PartitionForHash(hsh string) (uint64, error) {
+	return 0, nil
 }
 
 func (r *FakeRing) LocalDevices(localPort int) (devs []*ring.Device, err error) {
@@ -154,30 +155,30 @@ type FakeMemcacheRing struct {
 	MockGetStructured map[string][]byte
 }
 
-func (mr *FakeMemcacheRing) Decr(key string, delta int64, timeout int) (int64, error) {
+func (mr *FakeMemcacheRing) Decr(ctx context.Context, key string, delta int64, timeout int) (int64, error) {
 	return int64(0), nil
 }
 
-func (mr *FakeMemcacheRing) Delete(key string) error {
+func (mr *FakeMemcacheRing) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-func (mr *FakeMemcacheRing) Get(key string) (interface{}, error) {
+func (mr *FakeMemcacheRing) Get(ctx context.Context, key string) (interface{}, error) {
 	return nil, nil
 }
 
-func (mr *FakeMemcacheRing) GetStructured(key string, val interface{}) error {
+func (mr *FakeMemcacheRing) GetStructured(ctx context.Context, key string, val interface{}) error {
 	if v, ok := mr.MockGetStructured[key]; ok {
 		json.Unmarshal(v, val)
 	}
 	return nil
 }
 
-func (mr *FakeMemcacheRing) GetMulti(serverKey string, keys []string) (map[string]interface{}, error) {
+func (mr *FakeMemcacheRing) GetMulti(ctx context.Context, serverKey string, keys []string) (map[string]interface{}, error) {
 	return nil, nil
 }
 
-func (mr *FakeMemcacheRing) Incr(key string, delta int64, timeout int) (int64, error) {
+func (mr *FakeMemcacheRing) Incr(ctx context.Context, key string, delta int64, timeout int) (int64, error) {
 	mr.MockIncrKeys = append(mr.MockIncrKeys, key)
 	if len(mr.MockIncrResults) > 0 {
 		res := mr.MockIncrResults[0] + delta
@@ -187,12 +188,12 @@ func (mr *FakeMemcacheRing) Incr(key string, delta int64, timeout int) (int64, e
 	return int64(0), nil
 }
 
-func (mr *FakeMemcacheRing) Set(key string, value interface{}, timeout int) error {
+func (mr *FakeMemcacheRing) Set(ctx context.Context, key string, value interface{}, timeout int) error {
 	mr.MockSetValues = append(mr.MockSetValues, value)
 	return nil
 }
 
-func (mr *FakeMemcacheRing) SetMulti(serverKey string, values map[string]interface{}, timeout int) error {
+func (mr *FakeMemcacheRing) SetMulti(ctx context.Context, serverKey string, values map[string]interface{}, timeout int) error {
 	return nil
 }
 

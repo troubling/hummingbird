@@ -46,11 +46,11 @@ func (server *ProxyServer) AccountGetHandler(writer http.ResponseWriter, request
 			}
 		}
 	}
-	resp := ctx.C.GetAccount(vars["account"], options, request.Header)
+	resp := ctx.C.GetAccount(request.Context(), vars["account"], options, request.Header)
 	if resp.StatusCode == http.StatusNotFound && server.accountAutoCreate {
 		resp.Body.Close()
-		ctx.AutoCreateAccount(vars["account"], request.Header)
-		resp = ctx.C.GetAccount(vars["account"], options, request.Header)
+		ctx.AutoCreateAccount(request.Context(), vars["account"], request.Header)
+		resp = ctx.C.GetAccount(request.Context(), vars["account"], options, request.Header)
 	}
 	for k := range resp.Header {
 		if !common.OwnerHeaders[strings.ToLower(k)] || ctx.StorageOwner {
@@ -75,11 +75,11 @@ func (server *ProxyServer) AccountHeadHandler(writer http.ResponseWriter, reques
 			return
 		}
 	}
-	resp := ctx.C.HeadAccount(vars["account"], request.Header)
+	resp := ctx.C.HeadAccount(request.Context(), vars["account"], request.Header)
 	if resp.StatusCode == http.StatusNotFound && server.accountAutoCreate {
 		resp.Body.Close()
-		ctx.AutoCreateAccount(vars["account"], request.Header)
-		resp = ctx.C.HeadAccount(vars["account"], request.Header)
+		ctx.AutoCreateAccount(request.Context(), vars["account"], request.Header)
+		resp = ctx.C.HeadAccount(request.Context(), vars["account"], request.Header)
 	}
 	for k := range resp.Header {
 		if !common.OwnerHeaders[strings.ToLower(k)] || ctx.StorageOwner {
@@ -118,12 +118,12 @@ func (server *ProxyServer) AccountPostHandler(writer http.ResponseWriter, reques
 			request.Header.Set(strings.Replace(strings.ToLower(k), "-remove", "", 1), "")
 		}
 	}
-	defer ctx.InvalidateAccountInfo(vars["account"])
-	resp := ctx.C.PostAccount(vars["account"], request.Header)
+	defer ctx.InvalidateAccountInfo(request.Context(), vars["account"])
+	resp := ctx.C.PostAccount(request.Context(), vars["account"], request.Header)
 	if resp.StatusCode == http.StatusNotFound && server.accountAutoCreate {
 		resp.Body.Close()
-		ctx.AutoCreateAccount(vars["account"], request.Header)
-		resp = ctx.C.PostAccount(vars["account"], request.Header)
+		ctx.AutoCreateAccount(request.Context(), vars["account"], request.Header)
+		resp = ctx.C.PostAccount(request.Context(), vars["account"], request.Header)
 	}
 	resp.Body.Close()
 	srv.StandardResponse(writer, resp.StatusCode)
@@ -157,8 +157,8 @@ func (server *ProxyServer) AccountPutHandler(writer http.ResponseWriter, request
 			request.Header.Set(strings.Replace(strings.ToLower(k), "-remove", "", 1), "")
 		}
 	}
-	defer ctx.InvalidateAccountInfo(vars["account"])
-	resp := ctx.C.PutAccount(vars["account"], request.Header)
+	defer ctx.InvalidateAccountInfo(request.Context(), vars["account"])
+	resp := ctx.C.PutAccount(request.Context(), vars["account"], request.Header)
 	resp.Body.Close()
 	srv.StandardResponse(writer, resp.StatusCode)
 }
@@ -176,8 +176,8 @@ func (server *ProxyServer) AccountDeleteHandler(writer http.ResponseWriter, requ
 			return
 		}
 	}
-	defer ctx.InvalidateAccountInfo(vars["account"])
-	resp := ctx.C.DeleteAccount(vars["account"], request.Header)
+	defer ctx.InvalidateAccountInfo(request.Context(), vars["account"])
+	resp := ctx.C.DeleteAccount(request.Context(), vars["account"], request.Header)
 	resp.Body.Close()
 	srv.StandardResponse(writer, resp.StatusCode)
 }

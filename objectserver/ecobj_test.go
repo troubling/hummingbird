@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -49,6 +50,13 @@ func TestNurseryReplicate(t *testing.T) {
 	port, err := strconv.Atoi(u.Port())
 	require.Nil(t, err)
 
+	rng := &test.FakeRing{
+		MockGetJobNodes: []*ring.Device{
+			{Id: 2, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdc"},
+			{Id: 3, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdd"},
+		},
+		MockGetJobNodesHandoff: false,
+	}
 	to := &ecObject{
 		IndexDBItem: IndexDBItem{
 			Hash:     "00000011111122222233333344444455",
@@ -59,20 +67,14 @@ func TestNurseryReplicate(t *testing.T) {
 		dataShards:   3,
 		parityShards: 2,
 		chunkSize:    100,
+		ring:         rng,
 		metadata: map[string]string{
 			"Content-Length": "7",
 		},
 		nurseryReplicas: 3,
 	}
 	node := &ring.Device{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port - 1, Device: "sda"}
-	rng := &test.FakeRing{
-		MockGetJobNodes: []*ring.Device{
-			{Id: 2, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdc"},
-			{Id: 3, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdd"},
-		},
-		MockGetJobNodesHandoff: false,
-	}
-	require.Nil(t, to.nurseryReplicate(rng, 1, node))
+	require.Nil(t, to.nurseryReplicate(1, node))
 	require.Equal(t, int64(2), calls)
 }
 
@@ -83,7 +85,8 @@ func TestNurseryReplicateWithFailure(t *testing.T) {
 	defer os.RemoveAll(fp.Name())
 	used := make(map[string]bool)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		drive := r.URL.Path[9:12]
+		ns := strings.SplitN(r.URL.Path, "/", 4)
+		drive := ns[2]
 		if drive == "sdb" {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
@@ -97,6 +100,14 @@ func TestNurseryReplicateWithFailure(t *testing.T) {
 	port, err := strconv.Atoi(u.Port())
 	require.Nil(t, err)
 
+	rng := &test.FakeRing{
+		MockGetJobNodes: []*ring.Device{
+			{Id: 1, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdb"},
+			{Id: 2, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdc"},
+			{Id: 3, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdd"},
+		},
+		MockGetJobNodesHandoff: false,
+	}
 	to := &ecObject{
 		IndexDBItem: IndexDBItem{
 			Hash:     "00000011111122222233333344444455",
@@ -107,21 +118,14 @@ func TestNurseryReplicateWithFailure(t *testing.T) {
 		dataShards:   3,
 		parityShards: 2,
 		chunkSize:    100,
+		ring:         rng,
 		metadata: map[string]string{
 			"Content-Length": "7",
 		},
 		nurseryReplicas: 3,
 	}
 	node := &ring.Device{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port - 1, Device: "sda"}
-	rng := &test.FakeRing{
-		MockGetJobNodes: []*ring.Device{
-			{Id: 1, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdb"},
-			{Id: 2, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdc"},
-			{Id: 3, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdd"},
-		},
-		MockGetJobNodesHandoff: false,
-	}
-	require.Nil(t, to.nurseryReplicate(rng, 1, node))
+	require.Nil(t, to.nurseryReplicate(1, node))
 	require.False(t, used["sdb"])
 	require.True(t, used["sdc"])
 	require.True(t, used["sdd"])
@@ -157,22 +161,6 @@ func TestStabilize(t *testing.T) {
 	port, err := strconv.Atoi(u.Port())
 	require.Nil(t, err)
 
-	to := &ecObject{
-		IndexDBItem: IndexDBItem{
-			Hash:     "00000011111122222233333344444455",
-			Deletion: false,
-			Path:     fp.Name(),
-		},
-		client:       http.DefaultClient,
-		dataShards:   3,
-		parityShards: 2,
-		chunkSize:    100,
-		metadata: map[string]string{
-			"name":           "/a/c/o",
-			"Content-Length": "7",
-		},
-		nurseryReplicas: 3,
-	}
 	rng := &CustomFakeRing{
 		FakeRing: test.FakeRing{
 			MockDevices: []*ring.Device{
@@ -184,7 +172,24 @@ func TestStabilize(t *testing.T) {
 			},
 		},
 	}
-	require.Nil(t, to.Stabilize(rng, nil, 0))
+	to := &ecObject{
+		IndexDBItem: IndexDBItem{
+			Hash:     "00000011111122222233333344444455",
+			Deletion: false,
+			Path:     fp.Name(),
+		},
+		client:       http.DefaultClient,
+		dataShards:   3,
+		parityShards: 2,
+		chunkSize:    100,
+		ring:         rng,
+		metadata: map[string]string{
+			"name":           "/a/c/o",
+			"Content-Length": "7",
+		},
+		nurseryReplicas: 3,
+	}
+	require.Nil(t, to.Stabilize(nil))
 	require.Equal(t, "PUT", methods["sda"])
 	// 7 bytes / 3 shards rounds up to 3
 	require.Equal(t, int64(3), lengths["sda"])
@@ -218,22 +223,6 @@ func TestStabilizeDelete(t *testing.T) {
 	port, err := strconv.Atoi(u.Port())
 	require.Nil(t, err)
 
-	to := &ecObject{
-		IndexDBItem: IndexDBItem{
-			Hash:     "00000011111122222233333344444455",
-			Deletion: true,
-			Path:     fp.Name(),
-		},
-		client:       http.DefaultClient,
-		dataShards:   3,
-		parityShards: 2,
-		chunkSize:    100,
-		metadata: map[string]string{
-			"name":           "/a/c/o",
-			"Content-Length": "7",
-		},
-		nurseryReplicas: 3,
-	}
 	rng := &CustomFakeRing{
 		FakeRing: test.FakeRing{
 			MockDevices: []*ring.Device{
@@ -245,7 +234,24 @@ func TestStabilizeDelete(t *testing.T) {
 			},
 		},
 	}
-	require.Nil(t, to.Stabilize(rng, nil, 0))
+	to := &ecObject{
+		IndexDBItem: IndexDBItem{
+			Hash:     "00000011111122222233333344444455",
+			Deletion: true,
+			Path:     fp.Name(),
+		},
+		client:       http.DefaultClient,
+		dataShards:   3,
+		parityShards: 2,
+		chunkSize:    100,
+		ring:         rng,
+		metadata: map[string]string{
+			"name":           "/a/c/o",
+			"Content-Length": "7",
+		},
+		nurseryReplicas: 3,
+	}
+	require.Nil(t, to.Stabilize(nil))
 	require.Equal(t, "DELETE", methods["sda"])
 	require.Equal(t, "DELETE", methods["sdb"])
 	require.Equal(t, "DELETE", methods["sdc"])
@@ -272,6 +278,13 @@ func TestDontStabilizeWithFailure(t *testing.T) {
 	port, err := strconv.Atoi(u.Port())
 	require.Nil(t, err)
 
+	rng := &test.FakeRing{
+		MockDevices: []*ring.Device{
+			{Id: 2, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdb"},
+			{Id: 3, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdc"},
+			{Id: 4, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdd"},
+		},
+	}
 	to := &ecObject{
 		IndexDBItem: IndexDBItem{
 			Hash:     "00000011111122222233333344444455",
@@ -282,6 +295,7 @@ func TestDontStabilizeWithFailure(t *testing.T) {
 		dataShards:   2,
 		parityShards: 1,
 		chunkSize:    100,
+		ring:         rng,
 		metadata: map[string]string{
 			"name":           "/a/c/o",
 			"Content-Length": "7",
@@ -290,14 +304,7 @@ func TestDontStabilizeWithFailure(t *testing.T) {
 	}
 
 	node := &ring.Device{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port - 1, Device: "sda"}
-	rng := &test.FakeRing{
-		MockDevices: []*ring.Device{
-			{Id: 2, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdb"},
-			{Id: 3, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdc"},
-			{Id: 4, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdd"},
-		},
-	}
-	err = to.Stabilize(rng, node, 0)
+	err = to.Stabilize(node)
 	require.NotNil(t, err)
 	require.Equal(t, "Failed to stabilize object", err.Error())
 }

@@ -4,31 +4,34 @@ import (
 	"io"
 	"net/http"
 
+	"context"
+
 	"github.com/troubling/hummingbird/common/ring"
 )
 
-// ProxyClient is similar to github.com/troubling/nectar.Client except it also accepts an account parameter to its operations.  This is meant to be used by the proxy server.
+// ProxyClient is similar to github.com/troubling/nectar.Client except it also accepts an account parameter & context.Context to its operations.
+// This is meant to be used by the proxy server.
 type ProxyClient interface {
-	PutAccount(account string, headers http.Header) *http.Response
-	PostAccount(account string, headers http.Header) *http.Response
-	GetAccount(account string, options map[string]string, headers http.Header) *http.Response
-	HeadAccount(account string, headers http.Header) *http.Response
-	DeleteAccount(account string, headers http.Header) *http.Response
-	PutContainer(account string, container string, headers http.Header) *http.Response
-	PostContainer(account string, container string, headers http.Header) *http.Response
-	GetContainer(account string, container string, options map[string]string, headers http.Header) *http.Response
-	GetContainerInfo(account string, container string) (*ContainerInfo, error)
-	SetContainerInfo(account string, container string, resp *http.Response) (*ContainerInfo, error)
-	HeadContainer(account string, container string, headers http.Header) *http.Response
-	DeleteContainer(account string, container string, headers http.Header) *http.Response
-	PutObject(account string, container string, obj string, headers http.Header, src io.Reader) *http.Response
-	PostObject(account string, container string, obj string, headers http.Header) *http.Response
-	GetObject(account string, container string, obj string, headers http.Header) *http.Response
-	HeadObject(account string, container string, obj string, headers http.Header) *http.Response
-	DeleteObject(account string, container string, obj string, headers http.Header) *http.Response
+	PutAccount(ctx context.Context, account string, headers http.Header) *http.Response
+	PostAccount(ctx context.Context, account string, headers http.Header) *http.Response
+	GetAccount(ctx context.Context, account string, options map[string]string, headers http.Header) *http.Response
+	HeadAccount(ctx context.Context, account string, headers http.Header) *http.Response
+	DeleteAccount(ctx context.Context, account string, headers http.Header) *http.Response
+	PutContainer(ctx context.Context, account string, container string, headers http.Header) *http.Response
+	PostContainer(ctx context.Context, account string, container string, headers http.Header) *http.Response
+	GetContainer(ctx context.Context, account string, container string, options map[string]string, headers http.Header) *http.Response
+	GetContainerInfo(ctx context.Context, account string, container string) (*ContainerInfo, error)
+	SetContainerInfo(ctx context.Context, account string, container string, resp *http.Response) (*ContainerInfo, error)
+	HeadContainer(ctx context.Context, account string, container string, headers http.Header) *http.Response
+	DeleteContainer(ctx context.Context, account string, container string, headers http.Header) *http.Response
+	PutObject(ctx context.Context, account string, container string, obj string, headers http.Header, src io.Reader) *http.Response
+	PostObject(ctx context.Context, account string, container string, obj string, headers http.Header) *http.Response
+	GetObject(ctx context.Context, account string, container string, obj string, headers http.Header) *http.Response
+	HeadObject(ctx context.Context, account string, container string, obj string, headers http.Header) *http.Response
+	DeleteObject(ctx context.Context, account string, container string, obj string, headers http.Header) *http.Response
 	// ObjectRingFor returns the object ring for the given account/container or
 	// a response as to why the ring could not be returned.
-	ObjectRingFor(account string, container string) (ring.Ring, *http.Response)
+	ObjectRingFor(ctx context.Context, account string, container string) (ring.Ring, *http.Response)
 	ContainerRing() ring.Ring
 }
 

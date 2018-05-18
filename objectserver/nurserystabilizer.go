@@ -22,45 +22,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"golang.org/x/net/http2"
-
 	"go.uber.org/zap"
 
-	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
 )
 
-// walk through the nursery and check every object (and tombstone) if it is
-// fully replicated.  that means HEAD other primaries for the object. if the
-// ALL other primaries return 2xx/matching x-timestamp then mv local copy to
-// stable directory. the other servers will mv their own copies as they find
-// them. That means the remote copies can be either in nursery or stable as
-// HEAD requests always check both
-
-// if the object is not on one of the other primaries or has mismatched
-// timestamps then leave the object alone and wait for existing replicator
-// daemon to fully replicate it.
-
-// the existing replicator will not really be changed. but it only walks the
-// nursery. the stable objects dir will only be affected by priority
-// replication calls sent to it by andrewd (or ops). these calls will happen
-// within the existing framework except that they will reference the stable
-// dirs.  these priority rep calls will be triggered by ring changes,
-// manually by ops, in response to dispersion scan missing objects.  since
-// long unmounted drives are zeroed out in ring by the andrewd/drivewatch
-// these are also handled once the ring is changed
-
-// PUTs / POST / DELETE will only write to nursery GET / HEAD will check
-// nursery and stable on every request. i think it has to check both. it
-// seems possible that a more recent copy could be in stable with all the
-// handoffs / replication going on in the nursery
-
-// once tombstones get put into stable they can set there indefinitely- i
-// guess auditor can clean them up?
-
-//TODO: dfg the prob where a stable obejct gets quarantined and replication doesnt
-// know to fix it
 const nurseryObjectSleep = 10 * time.Millisecond
 
 type nurseryDevice struct {
@@ -70,7 +37,6 @@ type nurseryDevice struct {
 	policy    int
 	oring     ring.Ring
 	canchan   chan struct{}
-	client    http.Client
 	objEngine NurseryObjectEngine
 }
 
@@ -86,7 +52,7 @@ func (nrd *nurseryDevice) UpdateStat(stat string, amount int64) {
 	nrd.r.updateStat <- statUpdate{"object-nursery", key, stat, amount}
 }
 
-func (nrd *nurseryDevice) Replicate() {
+func (nrd *nurseryDevice) Scan() {
 	nrd.UpdateStat("startRun", 1)
 	if mounted, err := fs.IsMount(filepath.Join(nrd.r.deviceRoot, nrd.dev.Device)); nrd.r.checkMounts && (err != nil || mounted != true) {
 		nrd.r.logger.Error("[stabilizeDevice] Drive not mounted", zap.String("Device", nrd.dev.Device), zap.Error(err))
@@ -103,7 +69,7 @@ func (nrd *nurseryDevice) Replicate() {
 			defer func() {
 				<-nrd.r.nurseryConcurrencySem
 			}()
-			if err := o.Stabilize(nrd.oring, nrd.dev, nrd.policy); err == nil {
+			if err := o.Stabilize(nrd.dev); err == nil {
 				nrd.UpdateStat("objectsStabilized", 1)
 			} else {
 				nrd.r.logger.Debug("[stabilizeDevice] error Stabilize obj", zap.String("Object", o.Repr()), zap.Error(err))
@@ -119,14 +85,14 @@ func (nrd *nurseryDevice) Replicate() {
 	nrd.r.logger.Info("[stabilizeDevice] Pass complete.")
 }
 
-func (nrd *nurseryDevice) ReplicateLoop() {
+func (nrd *nurseryDevice) ScanLoop() {
 	// TODO: somehow i'm going to have to call replication on the 3repl nursery things
 	for {
 		select {
 		case <-nrd.canchan:
 			return
 		default:
-			nrd.Replicate()
+			nrd.Scan()
 			time.Sleep(10 * time.Second)
 		}
 	}
@@ -175,20 +141,6 @@ func (nrd *nurseryDevice) PriorityReplicate(w http.ResponseWriter, pri PriorityR
 }
 
 func GetNurseryDevice(oring ring.Ring, dev *ring.Device, policy int, r *Replicator, f NurseryObjectEngine) (ReplicationDevice, error) {
-	transport := &http.Transport{
-		MaxIdleConnsPerHost: 100,
-		MaxIdleConns:        0,
-	}
-	if r.CertFile != "" && r.KeyFile != "" {
-		tlsConf, err := common.NewClientTLSConfig(r.CertFile, r.KeyFile)
-		if err != nil {
-			return nil, fmt.Errorf("Error getting TLS config: %v", err)
-		}
-		transport.TLSClientConfig = tlsConf
-		if err = http2.ConfigureTransport(transport); err != nil {
-			return nil, fmt.Errorf("Error setting up http2: %v", err)
-		}
-	}
 	return &nurseryDevice{
 		r:         r,
 		dev:       dev,
@@ -196,7 +148,6 @@ func GetNurseryDevice(oring ring.Ring, dev *ring.Device, policy int, r *Replicat
 		oring:     oring,
 		passStart: time.Now(),
 		canchan:   make(chan struct{}),
-		client:    http.Client{Timeout: 10 * time.Second, Transport: transport},
 		objEngine: f,
 	}, nil
 }

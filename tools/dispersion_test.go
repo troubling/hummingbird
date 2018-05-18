@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -59,8 +60,8 @@ func (r *FakeRing) GetPartition(account string, container string, object string)
 	return 0
 }
 
-func (r *FakeRing) PartitionForHash(hsh uint64) uint64 {
-	return 0
+func (r *FakeRing) PartitionForHash(hsh string) (uint64, error) {
+	return 0, nil
 }
 
 func (r *FakeRing) LocalDevices(localPort int) (devs []*ring.Device, err error) {
@@ -94,15 +95,15 @@ type testDispersionClient struct {
 	objCalls  int
 }
 
-func (c *testDispersionClient) PutAccount(account string, headers http.Header) *http.Response {
+func (c *testDispersionClient) PutAccount(ctx context.Context, account string, headers http.Header) *http.Response {
 	return nectarutil.ResponseStub(200, "")
 }
 
-func (c *testDispersionClient) PostAccount(account string, headers http.Header) *http.Response {
+func (c *testDispersionClient) PostAccount(ctx context.Context, account string, headers http.Header) *http.Response {
 	return nectarutil.ResponseStub(200, "")
 }
 
-func (c *testDispersionClient) GetAccount(account string, options map[string]string, headers http.Header) *http.Response {
+func (c *testDispersionClient) GetAccount(ctx context.Context, account string, options map[string]string, headers http.Header) *http.Response {
 	if c.contCalls > 0 {
 		c.contCalls--
 		olrs := []accountserver.ContainerListingRecord{{Name: "disp-objs-0"}}
@@ -114,23 +115,23 @@ func (c *testDispersionClient) GetAccount(account string, options map[string]str
 	return nectarutil.ResponseStub(200, string(out))
 }
 
-func (c *testDispersionClient) HeadAccount(account string, headers http.Header) *http.Response {
+func (c *testDispersionClient) HeadAccount(ctx context.Context, account string, headers http.Header) *http.Response {
 	return nectarutil.ResponseStub(200, "")
 }
 
-func (c *testDispersionClient) DeleteAccount(account string, headers http.Header) *http.Response {
+func (c *testDispersionClient) DeleteAccount(ctx context.Context, account string, headers http.Header) *http.Response {
 	return nectarutil.ResponseStub(200, "")
 }
 
-func (c *testDispersionClient) PutContainer(account string, container string, headers http.Header) *http.Response {
+func (c *testDispersionClient) PutContainer(ctx context.Context, account string, container string, headers http.Header) *http.Response {
 	return nectarutil.ResponseStub(200, "")
 }
 
-func (c *testDispersionClient) PostContainer(account string, container string, headers http.Header) *http.Response {
+func (c *testDispersionClient) PostContainer(ctx context.Context, account string, container string, headers http.Header) *http.Response {
 	return nectarutil.ResponseStub(200, "")
 }
 
-func (c *testDispersionClient) GetContainer(account string, container string, options map[string]string, headers http.Header) *http.Response {
+func (c *testDispersionClient) GetContainer(ctx context.Context, account string, container string, options map[string]string, headers http.Header) *http.Response {
 	if c.objCalls > 0 {
 		c.objCalls--
 		olrs := []containerserver.ObjectListingRecord{{Name: "0-12345"}}
@@ -142,48 +143,48 @@ func (c *testDispersionClient) GetContainer(account string, container string, op
 	return nectarutil.ResponseStub(200, string(out))
 }
 
-func (c *testDispersionClient) GetContainerInfo(account string, container string) (*client.ContainerInfo, error) {
+func (c *testDispersionClient) GetContainerInfo(ctx context.Context, account string, container string) (*client.ContainerInfo, error) {
 	return nil, nil
 }
 
-func (c *testDispersionClient) SetContainerInfo(account string, container string, resp *http.Response) (*client.ContainerInfo, error) {
+func (c *testDispersionClient) SetContainerInfo(ctx context.Context, account string, container string, resp *http.Response) (*client.ContainerInfo, error) {
 	return nil, nil
 }
 
-func (c *testDispersionClient) HeadContainer(account string, container string, headers http.Header) *http.Response {
+func (c *testDispersionClient) HeadContainer(ctx context.Context, account string, container string, headers http.Header) *http.Response {
 	return nectarutil.ResponseStub(200, "")
 }
 
-func (c *testDispersionClient) DeleteContainer(account string, container string, headers http.Header) *http.Response {
+func (c *testDispersionClient) DeleteContainer(ctx context.Context, account string, container string, headers http.Header) *http.Response {
 	return nectarutil.ResponseStub(200, "")
 }
 
-func (c *testDispersionClient) PutObject(account string, container string, obj string, headers http.Header, src io.Reader) *http.Response {
+func (c *testDispersionClient) PutObject(ctx context.Context, account string, container string, obj string, headers http.Header, src io.Reader) *http.Response {
 	fmt.Println("PutObject", account, container, obj)
 	c.objPuts++
 	return nectarutil.ResponseStub(200, "")
 }
 
-func (c *testDispersionClient) PostObject(account string, container string, obj string, headers http.Header) *http.Response {
+func (c *testDispersionClient) PostObject(ctx context.Context, account string, container string, obj string, headers http.Header) *http.Response {
 	return nectarutil.ResponseStub(200, "")
 }
 
-func (c *testDispersionClient) GetObject(account string, container string, obj string, headers http.Header) *http.Response {
+func (c *testDispersionClient) GetObject(ctx context.Context, account string, container string, obj string, headers http.Header) *http.Response {
 	return nectarutil.ResponseStub(200, "")
 }
 
-func (c *testDispersionClient) HeadObject(account string, container string, obj string, headers http.Header) *http.Response {
+func (c *testDispersionClient) HeadObject(ctx context.Context, account string, container string, obj string, headers http.Header) *http.Response {
 	if obj == "object-init" {
 		return nectarutil.ResponseStub(404, "")
 	}
 	return nectarutil.ResponseStub(200, "")
 }
 
-func (c *testDispersionClient) DeleteObject(account string, container string, obj string, headers http.Header) *http.Response {
+func (c *testDispersionClient) DeleteObject(ctx context.Context, account string, container string, obj string, headers http.Header) *http.Response {
 	return nectarutil.ResponseStub(200, "")
 }
 
-func (c *testDispersionClient) ObjectRingFor(account string, container string) (ring.Ring, *http.Response) {
+func (c *testDispersionClient) ObjectRingFor(ctx context.Context, account string, container string) (ring.Ring, *http.Response) {
 	return c.objRing, nil //nectarutil.ResponseStub(200, "")
 }
 

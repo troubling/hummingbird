@@ -23,6 +23,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/proxyserver/middleware"
@@ -32,10 +33,11 @@ func (server *ProxyServer) ObjectGetHandler(writer http.ResponseWriter, request 
 	vars := srv.GetVars(request)
 	ctx := middleware.GetProxyContext(request)
 	if ctx == nil {
+		server.logger.Error("could not get proxy context")
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	containerInfo, err := ctx.C.GetContainerInfo(vars["account"], vars["container"])
+	containerInfo, err := ctx.C.GetContainerInfo(request.Context(), vars["account"], vars["container"])
 	if err != nil {
 		ctx.ACL = ""
 		if ctx.Authorize != nil {
@@ -44,8 +46,12 @@ func (server *ProxyServer) ObjectGetHandler(writer http.ResponseWriter, request 
 				return
 			}
 		}
-		ctx.Logger.Debug("object GET: container error", zap.String("container", vars["container"]), zap.Error(err))
-		srv.StandardResponse(writer, 404)
+		if err == client.ContainerNotFound {
+			srv.StandardResponse(writer, 404)
+			return
+		}
+		ctx.Logger.Error("object GET: container error", zap.String("container", vars["container"]), zap.Error(err))
+		srv.StandardResponse(writer, 500)
 		return
 	}
 	ctx.ACL = containerInfo.ReadACL
@@ -55,7 +61,7 @@ func (server *ProxyServer) ObjectGetHandler(writer http.ResponseWriter, request 
 			return
 		}
 	}
-	resp := ctx.C.GetObject(vars["account"], vars["container"], vars["obj"], request.Header)
+	resp := ctx.C.GetObject(request.Context(), vars["account"], vars["container"], vars["obj"], request.Header)
 	for k := range resp.Header {
 		writer.Header().Set(k, resp.Header.Get(k))
 	}
@@ -68,10 +74,11 @@ func (server *ProxyServer) ObjectHeadHandler(writer http.ResponseWriter, request
 	vars := srv.GetVars(request)
 	ctx := middleware.GetProxyContext(request)
 	if ctx == nil {
+		server.logger.Error("could not get proxy context")
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	containerInfo, err := ctx.C.GetContainerInfo(vars["account"], vars["container"])
+	containerInfo, err := ctx.C.GetContainerInfo(request.Context(), vars["account"], vars["container"])
 	if err != nil {
 		ctx.ACL = ""
 		if ctx.Authorize != nil {
@@ -80,7 +87,12 @@ func (server *ProxyServer) ObjectHeadHandler(writer http.ResponseWriter, request
 				return
 			}
 		}
-		srv.StandardResponse(writer, 404)
+		if err == client.ContainerNotFound {
+			srv.StandardResponse(writer, 404)
+			return
+		}
+		ctx.Logger.Error("object HEAD: container error", zap.String("container", vars["container"]), zap.Error(err))
+		srv.StandardResponse(writer, 500)
 		return
 	}
 	ctx.ACL = containerInfo.ReadACL
@@ -90,7 +102,7 @@ func (server *ProxyServer) ObjectHeadHandler(writer http.ResponseWriter, request
 			return
 		}
 	}
-	resp := ctx.C.HeadObject(vars["account"], vars["container"], vars["obj"], request.Header)
+	resp := ctx.C.HeadObject(request.Context(), vars["account"], vars["container"], vars["obj"], request.Header)
 	for k := range resp.Header {
 		writer.Header().Set(k, resp.Header.Get(k))
 	}
@@ -102,10 +114,11 @@ func (server *ProxyServer) ObjectDeleteHandler(writer http.ResponseWriter, reque
 	vars := srv.GetVars(request)
 	ctx := middleware.GetProxyContext(request)
 	if ctx == nil {
+		server.logger.Error("could not get proxy context")
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	containerInfo, err := ctx.C.GetContainerInfo(vars["account"], vars["container"])
+	containerInfo, err := ctx.C.GetContainerInfo(request.Context(), vars["account"], vars["container"])
 	if err != nil {
 		ctx.ACL = ""
 		if ctx.Authorize != nil {
@@ -114,7 +127,12 @@ func (server *ProxyServer) ObjectDeleteHandler(writer http.ResponseWriter, reque
 				return
 			}
 		}
-		srv.StandardResponse(writer, 404)
+		if err == client.ContainerNotFound {
+			srv.StandardResponse(writer, 404)
+			return
+		}
+		ctx.Logger.Error("object DELETE: container error", zap.String("container", vars["container"]), zap.Error(err))
+		srv.StandardResponse(writer, 500)
 		return
 	}
 	ctx.ACL = containerInfo.WriteACL
@@ -124,7 +142,7 @@ func (server *ProxyServer) ObjectDeleteHandler(writer http.ResponseWriter, reque
 			return
 		}
 	}
-	resp := ctx.C.DeleteObject(vars["account"], vars["container"], vars["obj"], request.Header)
+	resp := ctx.C.DeleteObject(request.Context(), vars["account"], vars["container"], vars["obj"], request.Header)
 	resp.Body.Close()
 	srv.StandardResponse(writer, resp.StatusCode)
 }
@@ -133,10 +151,11 @@ func (server *ProxyServer) ObjectPostHandler(writer http.ResponseWriter, request
 	vars := srv.GetVars(request)
 	ctx := middleware.GetProxyContext(request)
 	if ctx == nil {
+		server.logger.Error("could not get proxy context")
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	containerInfo, err := ctx.C.GetContainerInfo(vars["account"], vars["container"])
+	containerInfo, err := ctx.C.GetContainerInfo(request.Context(), vars["account"], vars["container"])
 	if err != nil {
 		ctx.ACL = ""
 		if ctx.Authorize != nil {
@@ -145,7 +164,12 @@ func (server *ProxyServer) ObjectPostHandler(writer http.ResponseWriter, request
 				return
 			}
 		}
-		srv.StandardResponse(writer, 404)
+		if err == client.ContainerNotFound {
+			srv.StandardResponse(writer, 404)
+			return
+		}
+		ctx.Logger.Error("object POST: container error", zap.String("container", vars["container"]), zap.Error(err))
+		srv.StandardResponse(writer, 500)
 		return
 	}
 	ctx.ACL = containerInfo.WriteACL
@@ -161,7 +185,7 @@ func (server *ProxyServer) ObjectPostHandler(writer http.ResponseWriter, request
 		writer.Write([]byte(str))
 		return
 	}
-	resp := ctx.C.PostObject(vars["account"], vars["container"], vars["obj"], request.Header)
+	resp := ctx.C.PostObject(request.Context(), vars["account"], vars["container"], vars["obj"], request.Header)
 	resp.Body.Close()
 	srv.StandardResponse(writer, resp.StatusCode)
 }
@@ -170,6 +194,7 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 	vars := srv.GetVars(request)
 	ctx := middleware.GetProxyContext(request)
 	if ctx == nil {
+		server.logger.Error("could not get proxy context")
 		srv.StandardResponse(writer, 500)
 		return
 	}
@@ -178,7 +203,7 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 		srv.SimpleErrorResponse(writer, 400, "If-None-Match only supports *")
 		return
 	}
-	containerInfo, err := ctx.C.GetContainerInfo(vars["account"], vars["container"])
+	containerInfo, err := ctx.C.GetContainerInfo(request.Context(), vars["account"], vars["container"])
 	if err != nil {
 		ctx.ACL = ""
 		if ctx.Authorize != nil {
@@ -187,7 +212,12 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 				return
 			}
 		}
-		srv.StandardResponse(writer, 404)
+		if err == client.ContainerNotFound {
+			srv.StandardResponse(writer, 404)
+			return
+		}
+		ctx.Logger.Error("object PUT: container error", zap.String("container", vars["container"]), zap.Error(err))
+		srv.StandardResponse(writer, 500)
 		return
 	}
 	ctx.ACL = containerInfo.WriteACL
@@ -211,7 +241,7 @@ func (server *ProxyServer) ObjectPutHandler(writer http.ResponseWriter, request 
 		writer.Write([]byte(str))
 		return
 	}
-	resp := ctx.C.PutObject(vars["account"], vars["container"], vars["obj"], request.Header, request.Body)
+	resp := ctx.C.PutObject(request.Context(), vars["account"], vars["container"], vars["obj"], request.Header, request.Body)
 	resp.Body.Close()
 	writer.Header().Set("Etag", resp.Header.Get("Etag"))
 	if modified, err := common.ParseDate(request.Header.Get("X-Timestamp")); err == nil {

@@ -32,11 +32,14 @@ import (
 	"time"
 
 	"github.com/justinas/alice"
+	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/common/tracing"
 	"github.com/troubling/hummingbird/middleware"
 	"github.com/uber-go/tally"
 	promreporter "github.com/uber-go/tally/prometheus"
@@ -45,23 +48,26 @@ import (
 )
 
 type ObjectServer struct {
-	driveRoot        string
-	hashPathPrefix   string
-	hashPathSuffix   string
-	reconCachePath   string
-	checkEtags       bool
-	checkMounts      bool
-	allowedHeaders   map[string]bool
-	logger           srv.LowLevelLogger
-	logLevel         zap.AtomicLevel
-	diskInUse        *common.KeyedLimit
-	accountDiskInUse *common.KeyedLimit
-	expiringDivisor  int64
-	updateClient     *http.Client
-	objEngines       map[int]ObjectEngine
-	updateTimeout    time.Duration
-	asyncWG          sync.WaitGroup // Used to wait on async goroutines
-	metricsCloser    io.Closer
+	driveRoot          string
+	hashPathPrefix     string
+	hashPathSuffix     string
+	reconCachePath     string
+	checkEtags         bool
+	checkMounts        bool
+	allowedHeaders     map[string]bool
+	logger             srv.LowLevelLogger
+	logLevel           zap.AtomicLevel
+	diskInUse          *common.KeyedLimit
+	accountDiskInUse   *common.KeyedLimit
+	expiringDivisor    int64
+	updateClient       common.HTTPClient
+	objEngines         map[int]ObjectEngine
+	updateTimeout      time.Duration
+	asyncWG            sync.WaitGroup // Used to wait on async goroutines
+	metricsCloser      io.Closer
+	traceCloser        io.Closer
+	tracer             opentracing.Tracer
+	updateClientCloser io.Closer
 }
 
 func (server *ObjectServer) Type() string {
@@ -76,6 +82,12 @@ func (server *ObjectServer) Finalize() {
 	server.asyncWG.Wait()
 	if server.metricsCloser != nil {
 		server.metricsCloser.Close()
+	}
+	if server.traceCloser != nil {
+		server.traceCloser.Close()
+	}
+	if server.updateClientCloser != nil {
+		server.updateClientCloser.Close()
 	}
 }
 
@@ -416,10 +428,10 @@ func (server *ObjectServer) ObjPostHandler(writer http.ResponseWriter, request *
 	}
 	if !deleteAtTime.Equal(origDeleteAtTime) {
 		if !deleteAtTime.IsZero() {
-			server.updateDeleteAt("PUT", request.Header, deleteAtTime, vars, srv.GetLogger(request))
+			server.updateDeleteAt(request.Context(), "PUT", request.Header, deleteAtTime, vars, srv.GetLogger(request))
 		}
 		if !origDeleteAtTime.IsZero() {
-			server.updateDeleteAt("DELETE", request.Header, origDeleteAtTime, vars, srv.GetLogger(request))
+			server.updateDeleteAt(request.Context(), "DELETE", request.Header, origDeleteAtTime, vars, srv.GetLogger(request))
 		}
 	}
 
@@ -632,7 +644,7 @@ func (server *ObjectServer) GetHandler(config conf.Config, metricsPrefix string)
 			})
 		}
 	}
-	return alice.New(middleware.Metrics(metricsScope)).Append(middleware.GrepObject).Then(router)
+	return alice.New(middleware.Metrics(metricsScope), middleware.GrepObject, middleware.ServerTracer(server.tracer)).Then(router)
 }
 
 func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader) (*srv.IpPort, srv.Server, srv.LowLevelLogger, error) {
@@ -678,7 +690,6 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 	if server.logger, err = srv.SetupLogger("object-server", &server.logLevel, flags); err != nil {
 		return ipPort, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
-
 	server.updateTimeout = time.Duration(serverconf.GetFloat("app:object-server", "container_update_timeout", 0.25) * float64(time.Second))
 	connTimeout := time.Duration(serverconf.GetFloat("app:object-server", "conn_timeout", 1.0) * float64(time.Second))
 	nodeTimeout := time.Duration(serverconf.GetFloat("app:object-server", "node_timeout", 10.0) * float64(time.Second))
@@ -699,11 +710,29 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 			return ipPort, nil, nil, fmt.Errorf("Error setting up http2: %v", err)
 		}
 	}
-	server.updateClient = &http.Client{
+	httpClient := &http.Client{
 		Timeout:   nodeTimeout,
 		Transport: transport,
 	}
-
+	server.updateClient = httpClient
+	if serverconf.HasSection("tracing") {
+		server.tracer, server.traceCloser, err = tracing.Init("objectserver", server.logger, serverconf.GetSection("tracing"))
+		if err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error setting up tracer: %v", err)
+		}
+		updateClientTracer, updateClientCloser, err := tracing.Init("objectserver-client", server.logger, serverconf.GetSection("tracing"))
+		if err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error setting up tracer: %v", err)
+		}
+		if updateClientCloser != nil {
+			server.updateClientCloser = updateClientCloser
+		}
+		enableHTTPTrace := serverconf.GetBool("tracing", "enable_httptrace", true)
+		server.updateClient, err = client.NewTracingClient(updateClientTracer, httpClient, enableHTTPTrace)
+		if err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error setting up tracing client: %v", err)
+		}
+	}
 	deviceLockUpdateSeconds := serverconf.GetInt("app:object-server", "device_lock_update_seconds", 0)
 	if deviceLockUpdateSeconds > 0 {
 		go server.updateDeviceLocks(deviceLockUpdateSeconds)

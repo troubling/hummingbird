@@ -153,7 +153,7 @@ func (r *Replicator) stabilizeHandler(w http.ResponseWriter, req *http.Request) 
 	key := deviceKeyId(vars["device"], policy)
 	if rd, ok := r.runningDevices[key]; ok {
 		if os, ok := o.(ObjectStabilizer); ok {
-			if err = os.Stabilize(oring, rdev, policy); err == nil {
+			if err = os.Stabilize(rdev); err == nil {
 				rd.UpdateStat("objectsPeerStabilized", 1)
 			}
 		}
@@ -356,5 +356,5 @@ func (r *Replicator) GetHandler(config conf.Config, metricsPrefix string) http.H
 			})
 		}
 	}
-	return alice.New(middleware.Metrics(metricsScope)).Then(router)
+	return alice.New(middleware.Metrics(metricsScope), middleware.ServerTracer(r.tracer)).Then(router)
 }

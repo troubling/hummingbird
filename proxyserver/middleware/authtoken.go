@@ -17,6 +17,7 @@ package middleware
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -26,13 +27,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/troubling/hummingbird/client"
+	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/tracing"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
 type identity struct {
-	client          *http.Client
+	client          common.HTTPClient
 	authURL         string
 	authPlugin      string
 	projectDomainID string
@@ -211,7 +215,7 @@ type credentialsResponse struct {
 	Credentials []credential `json:"credentials"`
 }
 
-func (at *authToken) preValidate(ctx *ProxyContext, authToken string) {
+func (at *authToken) preValidate(ctx context.Context, proxyCtx *ProxyContext, authToken string) {
 	at.lock.Lock()
 	defer at.lock.Unlock()
 	_, ok := at.preValidations[authToken]
@@ -221,34 +225,34 @@ func (at *authToken) preValidate(ctx *ProxyContext, authToken string) {
 		at.preValidations[authToken] = true
 	}
 	go func() {
-		at.validate(ctx, authToken)
+		at.validate(ctx, proxyCtx, authToken)
 		at.lock.Lock()
 		defer at.lock.Unlock()
 		delete(at.preValidations, authToken)
 	}()
 }
 
-func (at *authToken) fetchAndValidateToken(ctx *ProxyContext, authToken string) (*token, bool) {
-	if ctx == nil {
+func (at *authToken) fetchAndValidateToken(ctx context.Context, proxyCtx *ProxyContext, authToken string) (*token, bool) {
+	if proxyCtx == nil {
 		return nil, false
 	}
-	cachedToken := at.loadTokenFromCache(ctx, authToken)
+	cachedToken := at.loadTokenFromCache(ctx, proxyCtx, authToken)
 	if cachedToken != nil {
 		return cachedToken, true
 	}
-	return at.validate(ctx, authToken)
+	return at.validate(ctx, proxyCtx, authToken)
 }
 
-func (at *authToken) loadTokenFromCache(ctx *ProxyContext, key string) *token {
+func (at *authToken) loadTokenFromCache(ctx context.Context, proxyCtx *ProxyContext, key string) *token {
 	var cachedToken token
-	if err := ctx.Cache.GetStructured(key, &cachedToken); err == nil {
+	if err := proxyCtx.Cache.GetStructured(ctx, key, &cachedToken); err == nil {
 		if at.preValidateDur > 0 && !cachedToken.MemcacheTtlAt.IsZero() {
 			invalidateEarlyTime := time.Now().Add(at.preValidateDur)
 			if cachedToken.MemcacheTtlAt.Before(invalidateEarlyTime) {
-				at.preValidate(ctx, key)
+				at.preValidate(ctx, proxyCtx, key)
 			}
 		}
-		ctx.Logger.Debug("Found cache token",
+		proxyCtx.Logger.Debug("Found cache token",
 			zap.String("token", key))
 		return &cachedToken
 	} else {
@@ -257,8 +261,8 @@ func (at *authToken) loadTokenFromCache(ctx *ProxyContext, key string) *token {
 }
 
 func (at *authToken) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx := GetProxyContext(r)
-	if ctx.Authorize != nil {
+	proxyCtx := GetProxyContext(r)
+	if proxyCtx.Authorize != nil {
 		at.next.ServeHTTP(w, r)
 		return
 	}
@@ -266,7 +270,7 @@ func (at *authToken) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.Header.Set("X-Identity-Status", "Invalid")
 	serviceAuthToken := r.Header.Get("X-Service-Token")
 	if serviceAuthToken != "" {
-		serviceToken, serviceTokenValid := at.fetchAndValidateToken(ctx, serviceAuthToken)
+		serviceToken, serviceTokenValid := at.fetchAndValidateToken(r.Context(), proxyCtx, serviceAuthToken)
 		if serviceToken != nil && serviceTokenValid {
 			r.Header.Set("X-Service-Identity-Status", "Confirmed")
 			serviceToken.populateReqHeader(r, "-Service")
@@ -274,9 +278,9 @@ func (at *authToken) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			r.Header.Set("X-Service-Identity-Status", "Invalid")
 		}
 	}
-	if ctx.S3Auth != nil {
+	if proxyCtx.S3Auth != nil {
 		// Handle S3 auth validation first
-		userToken, userTokenValid := at.validateS3Signature(ctx)
+		userToken, userTokenValid := at.validateS3Signature(r.Context(), proxyCtx)
 		if userToken != nil && userTokenValid {
 			r.Header.Set("X-Identity-Status", "Confirmed")
 			userToken.populateReqHeader(r, "")
@@ -288,7 +292,7 @@ func (at *authToken) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		userAuthToken = r.Header.Get("X-Storage-Token")
 	}
 	if userAuthToken != "" {
-		userToken, userTokenValid := at.fetchAndValidateToken(ctx, userAuthToken)
+		userToken, userTokenValid := at.fetchAndValidateToken(r.Context(), proxyCtx, userAuthToken)
 		if userToken != nil && userTokenValid {
 			r.Header.Set("X-Identity-Status", "Confirmed")
 			userToken.populateReqHeader(r, "")
@@ -297,54 +301,54 @@ func (at *authToken) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	at.next.ServeHTTP(w, r)
 }
 
-func (at *authToken) validateS3Signature(ctx *ProxyContext) (*token, bool) {
+func (at *authToken) validateS3Signature(ctx context.Context, proxyCtx *ProxyContext) (*token, bool) {
 	// Check for a cached token
-	cachedToken := at.loadTokenFromCache(ctx, "S3:"+ctx.S3Auth.Key)
+	cachedToken := at.loadTokenFromCache(ctx, proxyCtx, "S3:"+proxyCtx.S3Auth.Key)
 	if cachedToken != nil {
-		ctx.S3Auth.Account = cachedToken.Project.ID
-		return cachedToken, ctx.S3Auth.validateSignature([]byte(cachedToken.S3Creds.Secret))
+		proxyCtx.S3Auth.Account = cachedToken.Project.ID
+		return cachedToken, proxyCtx.S3Auth.validateSignature([]byte(cachedToken.S3Creds.Secret))
 	}
-	tok, err := at.doValidateS3(ctx.S3Auth.StringToSign, ctx.S3Auth.Key, ctx.S3Auth.Signature)
+	tok, err := at.doValidateS3(ctx, proxyCtx.S3Auth.StringToSign, proxyCtx.S3Auth.Key, proxyCtx.S3Auth.Signature)
 	if err != nil {
-		ctx.Logger.Debug("Failed to validate s3 signature", zap.Error(err))
+		proxyCtx.Logger.Debug("Failed to validate s3 signature", zap.Error(err))
 		return nil, false
 	}
 
 	if tok != nil {
-		ctx.S3Auth.Account = tok.Project.ID
+		proxyCtx.S3Auth.Account = tok.Project.ID
 		// TODO: We need to get and cache the secret to sign our own requests
-		at.cacheToken(ctx, "S3:"+ctx.S3Auth.Key, tok)
+		at.cacheToken(ctx, proxyCtx, "S3:"+proxyCtx.S3Auth.Key, tok)
 		return tok, true
 	}
 
 	return nil, false
 }
 
-func (at *authToken) validate(ctx *ProxyContext, authToken string) (*token, bool) {
-	tok, err := at.doValidate(authToken)
+func (at *authToken) validate(ctx context.Context, proxyCtx *ProxyContext, authToken string) (*token, bool) {
+	tok, err := at.doValidate(ctx, authToken)
 	if err != nil {
-		ctx.Logger.Debug("Failed to validate token", zap.Error(err))
+		proxyCtx.Logger.Debug("Failed to validate token", zap.Error(err))
 		return nil, false
 	}
 
 	if tok != nil {
-		at.cacheToken(ctx, authToken, tok)
+		at.cacheToken(ctx, proxyCtx, authToken, tok)
 		return tok, true
 	}
 
 	return nil, false
 }
 
-func (at *authToken) cacheToken(ctx *ProxyContext, key string, tok *token) {
+func (at *authToken) cacheToken(ctx context.Context, proxyCtx *ProxyContext, key string, tok *token) {
 	ttl := at.cacheDur
 	if expiresIn := tok.ExpiresAt.Sub(time.Now()); expiresIn < ttl && expiresIn > 0 {
 		ttl = expiresIn
 	}
 	tok.MemcacheTtlAt = time.Now().Add(ttl)
-	ctx.Cache.Set(key, *tok, int(ttl/time.Second))
+	proxyCtx.Cache.Set(ctx, key, *tok, int(ttl/time.Second))
 }
 
-func (at *authToken) doValidateS3(stringToSign, key, signature string) (*token, error) {
+func (at *authToken) doValidateS3(ctx context.Context, stringToSign, key, signature string) (*token, error) {
 	creds := &s3Creds{}
 	creds.Credentials.Access = key
 	creds.Credentials.Signature = signature
@@ -376,7 +380,7 @@ func (at *authToken) doValidateS3(stringToSign, key, signature string) (*token, 
 	if err != nil {
 		return nil, err
 	}
-	serverAuthToken, err := at.serverAuth()
+	serverAuthToken, err := at.serverAuth(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -395,7 +399,7 @@ func (at *authToken) doValidateS3(stringToSign, key, signature string) (*token, 
 	return token, err
 }
 
-func (at *authToken) doValidate(token string) (*token, error) {
+func (at *authToken) doValidate(ctx context.Context, token string) (*token, error) {
 	if !strings.HasSuffix(at.authURL, "/") {
 		at.authURL += "/"
 	}
@@ -403,14 +407,14 @@ func (at *authToken) doValidate(token string) (*token, error) {
 	if err != nil {
 		return nil, err
 	}
-	serverAuthToken, err := at.serverAuth()
+	serverAuthToken, err := at.serverAuth(ctx)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("X-Auth-Token", serverAuthToken)
 	req.Header.Set("X-Subject-Token", token)
 	req.Header.Set("User-Agent", at.userAgent)
-
+	req = req.WithContext(ctx)
 	r, err := at.client.Do(req)
 	if err != nil {
 		return nil, err
@@ -464,7 +468,7 @@ func (at *authToken) parseCredentialsResponse(r *http.Response) (*s3Blob, error)
 }
 
 // serverAuth return the X-Auth-Token to use or an error.
-func (at *authToken) serverAuth() (string, error) {
+func (at *authToken) serverAuth(ctx context.Context) (string, error) {
 	authReq := &identityReq{}
 	authReq.Auth.Identity.Methods = []string{at.authPlugin}
 	authReq.Auth.Identity.Password.User.Domain.ID = at.userDomainID
@@ -481,6 +485,7 @@ func (at *authToken) serverAuth() (string, error) {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(ctx)
 	resp, err := at.client.Do(req)
 	if err != nil {
 		return "", err
@@ -500,25 +505,37 @@ func removeAuthHeaders(r *http.Request) {
 	}
 }
 
-func NewAuthToken(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
+func NewAuthToken(section conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {
 	return func(next http.Handler) http.Handler {
-		tokenCacheDur := time.Duration(int(config.GetInt("token_cache_time", 300))) * time.Second
-		return &authToken{
+		tokenCacheDur := time.Duration(int(section.GetInt("token_cache_time", 300))) * time.Second
+		c := &http.Client{
+			Timeout: 5 * time.Second,
+		}
+		authTokenMiddleware := &authToken{
 			next:           next,
 			cacheDur:       tokenCacheDur,
 			preValidateDur: (tokenCacheDur / 10),
 			preValidations: make(map[string]bool),
-			identity: &identity{authURL: config.GetDefault("auth_uri", "http://127.0.0.1:5000/"),
-				authPlugin:      config.GetDefault("auth_plugin", "password"),
-				projectDomainID: config.GetDefault("project_domain_id", "default"),
-				userDomainID:    config.GetDefault("user_domain_id", "default"),
-				projectName:     config.GetDefault("project_name", "service"),
-				userName:        config.GetDefault("username", "swift"),
-				password:        config.GetDefault("password", "password"),
-				userAgent:       config.GetDefault("user_agent", "hummingbird-keystone-middleware/1.0"),
-				client: &http.Client{
-					Timeout: 5 * time.Second,
-				}},
+			identity: &identity{authURL: section.GetDefault("auth_uri", "http://127.0.0.1:5000/"),
+				authPlugin:      section.GetDefault("auth_plugin", "password"),
+				projectDomainID: section.GetDefault("project_domain_id", "default"),
+				userDomainID:    section.GetDefault("user_domain_id", "default"),
+				projectName:     section.GetDefault("project_name", "service"),
+				userName:        section.GetDefault("username", "swift"),
+				password:        section.GetDefault("password", "password"),
+				userAgent:       section.GetDefault("user_agent", "hummingbird-keystone-middleware/1.0"),
+				client:          c},
 		}
+		if section.GetConfig().HasSection("tracing") {
+			clientTracer, _, err := tracing.Init("proxy-keystone-client", zap.NewNop(), section.GetConfig().GetSection("tracing"))
+			if err == nil {
+				enableHTTPTrace := section.GetConfig().GetBool("tracing", "enable_httptrace", true)
+				authTokenMiddleware.client, err = client.NewTracingClient(clientTracer, c, enableHTTPTrace)
+				if err != nil { // In case of error revert to normal http client
+					authTokenMiddleware.client = c
+				}
+			}
+		}
+		return authTokenMiddleware
 	}, nil
 }

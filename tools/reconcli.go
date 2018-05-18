@@ -53,7 +53,7 @@ func deviceId(ip string, port int, device string) string {
 	return fmt.Sprintf("%s:%d/%s", ip, port, device)
 }
 
-func queryHostRecon(client http.Client, s *ipPort, endpoint string) ([]byte, error) {
+func queryHostRecon(client common.HTTPClient, s *ipPort, endpoint string) ([]byte, error) {
 	serverUrl := fmt.Sprintf("%s://%s:%d/recon/%s", s.scheme, s.ip, s.port, endpoint)
 	req, err := http.NewRequest("GET", serverUrl, nil)
 	if err != nil {
@@ -70,7 +70,7 @@ func queryHostRecon(client http.Client, s *ipPort, endpoint string) ([]byte, err
 	return data, nil
 }
 
-func queryHostReplication(client http.Client, s *ipPort) (map[string]objectserver.DeviceStats, error) {
+func queryHostReplication(client common.HTTPClient, s *ipPort) (map[string]objectserver.DeviceStats, error) {
 	serverUrl := fmt.Sprintf("http://%s:%d/progress", s.ip, s.replicationPort)
 	req, err := http.NewRequest("GET", serverUrl, nil)
 	if err != nil {
@@ -124,7 +124,7 @@ func (r *ringMD5Report) String() string {
 	return s
 }
 
-func getRingMD5Report(client http.Client, servers []*ipPort, ringMap map[string]string) *ringMD5Report {
+func getRingMD5Report(client common.HTTPClient, servers []*ipPort, ringMap map[string]string) *ringMD5Report {
 	report := &ringMD5Report{
 		Name:    "Ring MD5 Report",
 		Time:    time.Now().UTC(),
@@ -198,7 +198,7 @@ func (r *mainConfMD5Report) String() string {
 	return s
 }
 
-func getMainConfMD5Report(client http.Client, servers []*ipPort) *mainConfMD5Report {
+func getMainConfMD5Report(client common.HTTPClient, servers []*ipPort) *mainConfMD5Report {
 	report := &mainConfMD5Report{
 		Name:    "hummingbird.conf MD5 Report",
 		Time:    time.Now().UTC(),
@@ -272,7 +272,7 @@ func (r *hummingbirdMD5Report) String() string {
 	return s
 }
 
-func getHummingbirdMD5Report(client http.Client, servers []*ipPort) *hummingbirdMD5Report {
+func getHummingbirdMD5Report(client common.HTTPClient, servers []*ipPort) *hummingbirdMD5Report {
 	report := &hummingbirdMD5Report{
 		Name:    "hummingbird MD5 Report",
 		Time:    time.Now().UTC(),
@@ -347,7 +347,7 @@ func (r *timeReport) String() string {
 	return s
 }
 
-func getTimeReport(client http.Client, servers []*ipPort) *timeReport {
+func getTimeReport(client common.HTTPClient, servers []*ipPort) *timeReport {
 	report := &timeReport{
 		Name:    "Time Sync Report",
 		Time:    time.Now().UTC(),
@@ -495,7 +495,7 @@ func (r *quarantineReport) String() string {
 	return s
 }
 
-func getQuarantineReport(client http.Client, servers []*ipPort) *quarantineReport {
+func getQuarantineReport(client common.HTTPClient, servers []*ipPort) *quarantineReport {
 	report := &quarantineReport{
 		Name:    "Quarantine Report",
 		Time:    time.Now().UTC(),
@@ -610,7 +610,7 @@ type quarantineDetailItem struct {
 	NameInURL    string
 }
 
-func getQuarantineDetailReport(client http.Client, servers []*ipPort) *quarantineDetailReport {
+func getQuarantineDetailReport(client common.HTTPClient, servers []*ipPort) *quarantineDetailReport {
 	report := &quarantineDetailReport{
 		Name:                        "Quarantine Detail Report",
 		Time:                        time.Now().UTC(),
@@ -675,7 +675,7 @@ func (r *asyncReport) String() string {
 	return s
 }
 
-func getAsyncReport(client http.Client, servers []*ipPort) *asyncReport {
+func getAsyncReport(client common.HTTPClient, servers []*ipPort) *asyncReport {
 	report := &asyncReport{
 		Name:    "Async Pending Report",
 		Time:    time.Now().UTC(),
@@ -730,7 +730,7 @@ func (r *replicationDurationReport) String() string {
 	return s
 }
 
-func getReplicationDurationReport(client http.Client, servers []*ipPort) *replicationDurationReport {
+func getReplicationDurationReport(client common.HTTPClient, servers []*ipPort) *replicationDurationReport {
 	report := &replicationDurationReport{
 		Name:    "Replication Duration Report",
 		Time:    time.Now().UTC(),
@@ -800,7 +800,7 @@ func (r *replicationPartsSecReport) String() string {
 	return s
 }
 
-func getReplicationPartsSecReport(client http.Client, servers []*ipPort) *replicationPartsSecReport {
+func getReplicationPartsSecReport(client common.HTTPClient, servers []*ipPort) *replicationPartsSecReport {
 	report := &replicationPartsSecReport{
 		Name:        "Replication Partitions Per Second Report",
 		Time:        time.Now().UTC(),
@@ -890,7 +890,7 @@ func (r *replicationCanceledReport) String() string {
 	return s
 }
 
-func getReplicationCanceledReport(client http.Client, servers []*ipPort) *replicationCanceledReport {
+func getReplicationCanceledReport(client common.HTTPClient, servers []*ipPort) *replicationCanceledReport {
 	report := &replicationCanceledReport{
 		Name:    "Stalled Replicators Report",
 		Time:    time.Now().UTC(),
@@ -956,7 +956,8 @@ func ReconClient(flags *flag.FlagSet, cnf srv.ConfigLoader) bool {
 			return false
 		}
 	}
-	client := http.Client{Timeout: 10 * time.Second, Transport: transport}
+	// TODO: Do we want to trace requests from this client?
+	client := &http.Client{Timeout: 10 * time.Second, Transport: transport}
 	activeServerMap := make(map[string]*ipPort)
 	for _, dev := range oring.AllDevices() {
 		if dev == nil || dev.Weight < 0 {

@@ -1,0 +1,9 @@
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = false
+	logallrefupdates = true
+	ignorecase = true
+[remote "origin"]
+	url = https://github.com/uber/jaeger-client-go
+	fetch = +refs/tags/v2.13.0:refs/tags/v2.13.0

@@ -26,12 +26,14 @@
 package tools
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/bits"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
@@ -50,6 +52,7 @@ import (
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/common/tracing"
 	"github.com/troubling/hummingbird/middleware"
 	"github.com/troubling/hummingbird/objectserver"
 	"github.com/uber-go/tally"
@@ -117,21 +120,6 @@ func getRing(ringPath, ringType string, policyNum int) (ring.Ring, string) {
 		os.Exit(1)
 	}
 	return r, ringType
-}
-
-func storageDirectory(datadir string, partNum uint64, nameHash string, policy *conf.Policy) string {
-	if policy.Type == "hec" {
-		if digest, err := hex.DecodeString(nameHash); err == nil {
-			// Stolen from ec engine
-			return filepath.Join(datadir, "nursery",
-				strconv.Itoa(int(digest[0]>>1)), strconv.Itoa(int((digest[0]<<6|digest[1]>>2)&127)),
-				strconv.Itoa(int((digest[1]<<5|digest[2]>>3)&127)), nameHash)
-		}
-		fmt.Printf("Couldn't decode hash: %v\n", nameHash)
-		os.Exit(1)
-	}
-	partition := fmt.Sprintf("%v", partNum)
-	return filepath.Join(datadir, partition, nameHash[len(nameHash)-3:], nameHash)
 }
 
 func curlHeadCommand(scheme string, ipStr string, port int, device string, partNum uint64, target string, policy int) string {
@@ -234,27 +222,65 @@ func printRingLocations(r ring.Ring, ringType, datadir, account, container, obje
 	fmt.Printf("\n\nUse your own device location of servers:\n")
 	fmt.Printf("such as \"export DEVICE=/srv/node\"\n")
 
-	if pathHash != "" {
-		for _, v := range primaries {
-			fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v\"\n", v.Ip, v.Device, storageDirectory(datadir, partNum, pathHash, policy))
-		}
-		handoffs = r.GetMoreNodes(partNum)
-		for i, v := 0, handoffs.Next(); v != nil; i, v = i+1, handoffs.Next() {
-			if handoffLimit != -1 && i == handoffLimit {
-				break
+	if policy.Type == "replication" || object == "" {
+		if pathHash != "" {
+			stDir := filepath.Join(datadir, strconv.Itoa(int(partNum)), pathHash[len(pathHash)-3:], pathHash)
+			for _, v := range primaries {
+				fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v\"\n", v.Ip, v.Device, stDir)
 			}
-			fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v\" # [Handoff]\n", v.Ip, v.Device, storageDirectory(datadir, partNum, pathHash, policy))
+			handoffs = r.GetMoreNodes(partNum)
+			for i, v := 0, handoffs.Next(); v != nil; i, v = i+1, handoffs.Next() {
+				if handoffLimit != -1 && i == handoffLimit {
+					break
+				}
+				fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v\" # [Handoff]\n", v.Ip, v.Device, stDir)
+			}
+		} else {
+			for _, v := range primaries {
+				fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v/%v\"\n", v.Ip, v.Device, datadir, partNum)
+			}
+			handoffs = r.GetMoreNodes(partNum)
+			for i, v := 0, handoffs.Next(); v != nil; i, v = i+1, handoffs.Next() {
+				if handoffLimit != -1 && i == handoffLimit {
+					break
+				}
+				fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v/%v\" # [Handoff]\n", v.Ip, v.Device, datadir, partNum)
+			}
 		}
 	} else {
+		if pathHash == "" {
+			fmt.Println("not implemented: please supply object path")
+			return
+		}
+		ringPartPower := bits.Len64(r.PartitionCount() - 1)
+		dbPartPower, err := policy.GetDbPartPower()
+		if err != nil {
+			fmt.Println("Error getting dbPartPower", err)
+			return
+		}
+		subdirs, err := policy.GetDbSubDirs()
+		if err != nil {
+			fmt.Println("Error getting subdirs", err)
+			return
+		}
+		_, _, dbPart, dirNum, err := objectserver.ValidateHash(pathHash, uint(ringPartPower), dbPartPower, subdirs)
+		if err != nil {
+			fmt.Println("Error in ValidateHash", err)
+			return
+		}
+		dbFileName := fmt.Sprintf("index.db.%02x", dbPart)
+		odir := fmt.Sprintf("index.db.dir.%02x", dirNum)
 		for _, v := range primaries {
-			fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v/%v\"\n", v.Ip, v.Device, datadir, partNum)
+			fmt.Printf("ssh %s \"sqlite3 ${DEVICE:-/srv/node*}/%v/%v/hec.db/%v \\\"SELECT * FROM objects WHERE hash = '%v'\\\"\"\n", v.Ip, v.Device, objectserver.PolicyDir(policy.Index), dbFileName, pathHash)
+			fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v/hec/%v/%v*\"\n\n", v.Ip, v.Device, objectserver.PolicyDir(policy.Index), odir, pathHash)
 		}
 		handoffs = r.GetMoreNodes(partNum)
 		for i, v := 0, handoffs.Next(); v != nil; i, v = i+1, handoffs.Next() {
 			if handoffLimit != -1 && i == handoffLimit {
 				break
 			}
-			fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v/%v\" # [Handoff]\n", v.Ip, v.Device, datadir, partNum)
+			fmt.Printf("ssh %s \"sqlite3 ${DEVICE:-/srv/node*}/%v/%v/hec.db/%v \\\"SELECT * FROM objects WHERE hash = '%v'\\\"\" #[HANDOFF]\n", v.Ip, v.Device, objectserver.PolicyDir(policy.Index), dbFileName, pathHash)
+			fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v/hec/%v/%v*\" #[HANDOFF]\n\n", v.Ip, v.Device, objectserver.PolicyDir(policy.Index), odir, pathHash)
 		}
 	}
 
@@ -546,19 +572,21 @@ func ObjectInfo(flags *flag.FlagSet, cnf srv.ConfigLoader) {
 }
 
 type AutoAdmin struct {
-	serverconf     conf.Config
-	logger         srv.LowLevelLogger
-	logLevel       zap.AtomicLevel
-	port           int
-	bindIp         string
-	client         *http.Client
-	hClient        client.ProxyClient
-	policies       conf.PolicyList
-	metricsScope   tally.Scope
-	metricsCloser  io.Closer
-	runningForever bool
-	db             *dbInstance
-	fastRingScan   chan struct{}
+	serverconf        conf.Config
+	logger            srv.LowLevelLogger
+	logLevel          zap.AtomicLevel
+	port              int
+	bindIp            string
+	client            common.HTTPClient
+	hClient           client.ProxyClient
+	policies          conf.PolicyList
+	metricsScope      tally.Scope
+	metricsCloser     io.Closer
+	pdcCloser         io.Closer
+	clientTraceCloser io.Closer
+	runningForever    bool
+	db                *dbInstance
+	fastRingScan      chan struct{}
 }
 
 func (server *AutoAdmin) Type() string {
@@ -610,6 +638,12 @@ func (server *AutoAdmin) Finalize() {
 	if server.metricsCloser != nil {
 		server.metricsCloser.Close()
 	}
+	if server.clientTraceCloser != nil {
+		server.clientTraceCloser.Close()
+	}
+	if server.pdcCloser != nil {
+		server.pdcCloser.Close()
+	}
 }
 
 func (server *AutoAdmin) HealthcheckHandler(writer http.ResponseWriter, request *http.Request) {
@@ -658,7 +692,7 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 	port := int(serverconf.GetInt("andrewd", "bind_port", common.DefaultAndrewdPort))
 	certFile := serverconf.GetDefault("andrewd", "cert_file", "")
 	keyFile := serverconf.GetDefault("andrewd", "key_file", "")
-	pdc, pdcerr := client.NewProxyDirectClient(policies, srv.DefaultConfigLoader{}, logger, certFile, keyFile, "", "", "")
+	pdc, pdcerr := client.NewProxyDirectClient(policies, srv.DefaultConfigLoader{}, logger, certFile, keyFile, "", "", "", serverconf)
 	if pdcerr != nil {
 		return ipPort, nil, nil, fmt.Errorf("Could not make client: %v", pdcerr)
 	}
@@ -680,9 +714,13 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 			panic(fmt.Sprintf("Error setting up http2: %v", err))
 		}
 	}
+	httpClient := &http.Client{
+		Transport: transport,
+		Timeout:   10 * time.Second,
+	}
 	a := &AutoAdmin{
 		serverconf:     serverconf,
-		client:         &http.Client{Timeout: 10 * time.Second, Transport: transport},
+		client:         httpClient,
 		hClient:        client.NewProxyClient(pdc, nil, nil, logger),
 		port:           port,
 		bindIp:         ip,
@@ -697,6 +735,19 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 	if err != nil {
 		return ipPort, nil, nil, err
 	}
+	if serverconf.HasSection("tracing") {
+		clientTracer, clientTraceCloser, err := tracing.Init("andrewd", zap.NewNop(), serverconf.GetSection("tracing"))
+		if err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error setting up tracer: %v", err)
+		}
+		a.clientTraceCloser = clientTraceCloser
+		a.pdcCloser = pdc.ClientTraceCloser
+		enableHTTPTrace := serverconf.GetBool("tracing", "enable_httptrace", true)
+		a.client, err = client.NewTracingClient(clientTracer, httpClient, enableHTTPTrace)
+		if err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error setting up tracing client: %v", err)
+		}
+	}
 
 	a.metricsScope, a.metricsCloser = tally.NewRootScope(tally.ScopeOptions{
 		Prefix:         "hb_andrewd",
@@ -707,6 +758,7 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 
 	ipPort = &srv.IpPort{Ip: ip, Port: port, CertFile: certFile, KeyFile: keyFile}
 	resp := a.hClient.PutAccount(
+		context.Background(),
 		AdminAccount,
 		common.Map2Headers(map[string]string{
 			"Content-Length": "0",

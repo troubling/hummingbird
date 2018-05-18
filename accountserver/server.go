@@ -21,7 +21,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	_ "net/http/pprof" // install pprof http handlers
 	"path/filepath"
@@ -30,16 +29,17 @@ import (
 	"time"
 
 	"github.com/justinas/alice"
+	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/common/tracing"
 	"github.com/troubling/hummingbird/middleware"
 	"github.com/uber-go/tally"
 	promreporter "github.com/uber-go/tally/prometheus"
 	"go.uber.org/zap"
-	"golang.org/x/net/http2"
 )
 
 // AccountServer contains all of the information for a running account server.
@@ -53,10 +53,11 @@ type AccountServer struct {
 	diskInUse        *common.KeyedLimit
 	checkMounts      bool
 	accountEngine    AccountEngine
-	updateClient     *http.Client
 	autoCreatePrefix string
 	policyList       conf.PolicyList
 	metricsCloser    io.Closer
+	traceCloser      io.Closer
+	tracer           opentracing.Tracer
 }
 
 func formatTimestamp(ts string) (string, error) {
@@ -85,6 +86,9 @@ func (server *AccountServer) Background(flags *flag.FlagSet) chan struct{} {
 func (server *AccountServer) Finalize() {
 	if server.metricsCloser != nil {
 		server.metricsCloser.Close()
+	}
+	if server.traceCloser != nil {
+		server.traceCloser.Close()
 	}
 }
 
@@ -522,7 +526,7 @@ func (server *AccountServer) GetHandler(config conf.Config, metricsPrefix string
 	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Invalid path: %s", r.URL.Path), http.StatusBadRequest)
 	})
-	return alice.New(middleware.Metrics(metricsScope)).Append(middleware.GrepObject).Then(router)
+	return alice.New(middleware.Metrics(metricsScope), middleware.GrepObject, middleware.ServerTracer(server.tracer)).Then(router)
 }
 
 // NewServer parses configs and command-line flags, returning a configured server object and the ip and port it should bind on.
@@ -555,28 +559,11 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 		return ipPort, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
 	}
 	server.accountEngine = newLRUEngine(server.driveRoot, server.hashPathPrefix, server.hashPathSuffix, 32)
-	connTimeout := time.Duration(serverconf.GetFloat("app:account-server", "conn_timeout", 1.0) * float64(time.Second))
-	nodeTimeout := time.Duration(serverconf.GetFloat("app:account-server", "node_timeout", 10.0) * float64(time.Second))
-	transport := &http.Transport{
-		Dial:                (&net.Dialer{Timeout: connTimeout}).Dial,
-		MaxIdleConnsPerHost: 100,
-		MaxIdleConns:        0,
-		IdleConnTimeout:     5 * time.Second,
-		DisableCompression:  true,
-	}
-	if certFile != "" && keyFile != "" {
-		tlsConf, err := common.NewClientTLSConfig(certFile, keyFile)
+	if serverconf.HasSection("tracing") {
+		server.tracer, server.traceCloser, err = tracing.Init("accountserver", server.logger, serverconf.GetSection("tracing"))
 		if err != nil {
-			return ipPort, nil, nil, fmt.Errorf("Error getting TLS config: %v", err)
+			return ipPort, nil, nil, fmt.Errorf("Error setting up tracer: %v", err)
 		}
-		transport.TLSClientConfig = tlsConf
-		if err = http2.ConfigureTransport(transport); err != nil {
-			return ipPort, nil, nil, fmt.Errorf("Error setting up http2: %v", err)
-		}
-	}
-	server.updateClient = &http.Client{
-		Timeout:   nodeTimeout,
-		Transport: transport,
 	}
 	ipPort = &srv.IpPort{Ip: bindIP, Port: bindPort, CertFile: certFile, KeyFile: keyFile}
 	return ipPort, server, server.logger, nil

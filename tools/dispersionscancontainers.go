@@ -7,6 +7,7 @@ package tools
 // report_interval = 600    # seconds between progress reports
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -79,7 +80,7 @@ func (dsc *dispersionScanContainers) runOnce() time.Duration {
 	if err := dsc.aa.db.clearDispersionScanFailures("container", 0); err != nil {
 		logger.Error("clearDispersionScanFailures", zap.Error(err))
 	}
-	resp := dsc.aa.hClient.HeadContainer(AdminAccount, "container-init", nil)
+	resp := dsc.aa.hClient.HeadContainer(context.Background(), AdminAccount, "container-init", nil)
 	io.Copy(ioutil.Discard, resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
@@ -118,7 +119,7 @@ func (dsc *dispersionScanContainers) runOnce() time.Duration {
 	}()
 	var marker string
 	for {
-		resp := dsc.aa.hClient.GetAccount(AdminAccount, map[string]string{
+		resp := dsc.aa.hClient.GetAccount(context.Background(), AdminAccount, map[string]string{
 			"format": "json",
 			"marker": marker,
 			"prefix": "disp-conts-",

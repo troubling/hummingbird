@@ -61,13 +61,13 @@ type Object interface {
 type ObjectStabilizer interface {
 	Object
 	// Stabilize object- move to stable location / erasure code / do nothing / etc
-	Stabilize(ring.Ring, *ring.Device, int) error
+	Stabilize(*ring.Device) error
 	Replicate(PriorityRepJob) error
 }
 
 type ReplicationDevice interface {
-	Replicate()
-	ReplicateLoop()
+	Scan()
+	ScanLoop()
 	Key() string
 	Cancel()
 	PriorityReplicate(w http.ResponseWriter, pri PriorityRepJob)
@@ -78,7 +78,7 @@ type ReplicationDevice interface {
 type ObjectEngine interface {
 	// New creates a new instance of the Object, for interacting with a single object.
 	New(vars map[string]string, needData bool, asyncWG *sync.WaitGroup) (Object, error)
-	GetReplicationDevice(oring ring.Ring, dev *ring.Device, policy int, r *Replicator) (ReplicationDevice, error)
+	GetReplicationDevice(oring ring.Ring, dev *ring.Device, r *Replicator) (ReplicationDevice, error)
 	// Replicator here needs to be something else- it mostly needs logger, updateStat thing, and certs. not whole object- maybe an interface that gives those things
 }
 

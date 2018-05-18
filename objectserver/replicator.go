@@ -25,10 +25,13 @@ import (
 	"sync"
 	"time"
 
+	opentracing "github.com/opentracing/opentracing-go"
+	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/common/tracing"
 	"github.com/troubling/hummingbird/middleware"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -102,6 +105,9 @@ type Replicator struct {
 	policies            conf.PolicyList
 	logLevel            zap.AtomicLevel
 	metricsCloser       io.Closer
+	traceCloser         io.Closer
+	clientTraceCloser   io.Closer
+	tracer              opentracing.Tracer
 	auditor             *AuditorDaemon
 
 	stats                   map[string]map[string]*DeviceStats
@@ -118,7 +124,7 @@ type Replicator struct {
 	updateStat              chan statUpdate
 	onceDone                chan struct{}
 	onceWaiting             int64
-	client                  *http.Client
+	client                  common.HTTPClient
 	incomingSemLock         sync.Mutex
 	incomingSem             map[string]chan struct{}
 	asyncWG                 sync.WaitGroup // Used to wait on async goroutines
@@ -152,6 +158,12 @@ func (server *Replicator) Background(flags *flag.FlagSet) chan struct{} {
 func (server *Replicator) Finalize() {
 	if server.metricsCloser != nil {
 		server.metricsCloser.Close()
+	}
+	if server.traceCloser != nil {
+		server.traceCloser.Close()
+	}
+	if server.clientTraceCloser != nil {
+		server.clientTraceCloser.Close()
 	}
 }
 
@@ -205,13 +217,13 @@ func (r *Replicator) verifyRunningDevices() {
 				continue
 			}
 			if _, ok := r.runningDevices[key]; !ok {
-				if rd, err := objEngine.GetReplicationDevice(oring, dev, policy, r); err == nil {
+				if rd, err := objEngine.GetReplicationDevice(oring, dev, r); err == nil {
 					r.runningDevices[key] = rd
 					r.stats["object-replicator"][key] = &DeviceStats{
 						LastCheckin: time.Now(), DeviceStarted: time.Now(),
 						Stats: map[string]int64{},
 					}
-					go r.runningDevices[key].ReplicateLoop()
+					go r.runningDevices[key].ScanLoop()
 				} else {
 					r.logger.Error("building replication device", zap.String("device", key), zap.Int("policy", policy), zap.Error(err))
 				}
@@ -391,7 +403,7 @@ func (r *Replicator) Run() {
 			return
 		}
 		for _, dev := range devices {
-			rd, err := objEngine.GetReplicationDevice(theRing, dev, policy, r)
+			rd, err := objEngine.GetReplicationDevice(theRing, dev, r)
 			if err != nil {
 				r.logger.Error("building replication device", zap.String("device", dev.Device), zap.Int("policy", policy), zap.Error(err))
 				continue
@@ -399,7 +411,7 @@ func (r *Replicator) Run() {
 			key := rd.Key()
 			r.runningDevices[key] = rd
 			go func(rd ReplicationDevice) {
-				rd.Replicate()
+				rd.Scan()
 				r.onceDone <- struct{}{}
 			}(rd)
 
@@ -424,7 +436,7 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 	}
 	concurrency := int(serverconf.GetInt("object-replicator", "concurrency", 1))
 	updaterConcurrency := int(serverconf.GetInt("object-updater", "concurrency", 2))
-	nurseryConcurrency := int(serverconf.GetInt("object-nursery", "concurrency", 10))
+	nurseryConcurrency := int(serverconf.GetInt("object-nursery", "concurrency", 2))
 
 	logLevelString := serverconf.GetDefault("object-replicator", "log_level", "INFO")
 	logLevel := zap.NewAtomicLevel()
@@ -445,7 +457,10 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 			return ipPort, nil, nil, fmt.Errorf("Error setting up http2: %v", err)
 		}
 	}
-
+	httpClient := &http.Client{
+		Timeout:   time.Second * 60,
+		Transport: transport,
+	}
 	replicator := &Replicator{
 		reserve:             serverconf.GetInt("object-replicator", "fallocate_reserve", 0),
 		reconCachePath:      serverconf.GetDefault("object-replicator", "recon_cache_path", "/var/cache/swift"),
@@ -470,11 +485,8 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 		devices:                 make(map[string]bool),
 		partitions:              make(map[string]bool),
 		onceDone:                make(chan struct{}),
-		client: &http.Client{
-			Timeout:   time.Second * 60,
-			Transport: transport,
-		},
-		incomingSem: make(map[string]chan struct{}),
+		client:                  httpClient,
+		incomingSem:             make(map[string]chan struct{}),
 		stats: map[string]map[string]*DeviceStats{
 			"object-replicator": {},
 			"object-updater":    {},
@@ -491,9 +503,6 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 		return ipPort, nil, nil, err
 	}
 	for _, policy := range replicator.policies {
-		if !(policy.Type == "replication" || policy.Type == "replication-nursery" || policy.Type == "hec") {
-			continue
-		}
 		if replicator.objectRings[policy.Index], err = cnf.GetRing("object", hashPathPrefix, hashPathSuffix, policy.Index); err != nil {
 			return ipPort, nil, nil, fmt.Errorf("Unable to load ring for Policy %d: %s", policy.Index, err)
 		}
@@ -506,6 +515,24 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 	}
 	if replicator.logger, err = srv.SetupLogger("object-replicator", &logLevel, flags); err != nil {
 		return ipPort, nil, nil, fmt.Errorf("Error setting up logger: %v", err)
+	}
+	if serverconf.HasSection("tracing") {
+		replicator.tracer, replicator.traceCloser, err = tracing.Init("object-replicator", replicator.logger, serverconf.GetSection("tracing"))
+		if err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error setting up tracer: %v", err)
+		}
+		clientTracer, clientTraceCloser, err := tracing.Init("object-replicator", replicator.logger, serverconf.GetSection("tracing"))
+		if err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error setting up tracer: %v", err)
+		}
+		if clientTraceCloser != nil {
+			replicator.clientTraceCloser = clientTraceCloser
+		}
+		enableHTTPTrace := serverconf.GetBool("tracing", "enable_httptrace", true)
+		replicator.client, err = client.NewTracingClient(clientTracer, httpClient, enableHTTPTrace)
+		if err != nil {
+			return ipPort, nil, nil, fmt.Errorf("Error setting up tracing client: %v", err)
+		}
 	}
 	devices_flag := flags.Lookup("devices")
 	if devices_flag != nil {

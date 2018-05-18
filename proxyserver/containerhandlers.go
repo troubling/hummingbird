@@ -43,7 +43,7 @@ func (server *ProxyServer) ContainerGetHandler(writer http.ResponseWriter, reque
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	if _, err := ctx.GetAccountInfo(vars["account"]); err != nil {
+	if _, err := ctx.GetAccountInfo(request.Context(), vars["account"]); err != nil {
 		srv.StandardResponse(writer, 404)
 		return
 	}
@@ -55,9 +55,9 @@ func (server *ProxyServer) ContainerGetHandler(writer http.ResponseWriter, reque
 			}
 		}
 	}
-	resp := ctx.C.GetContainer(vars["account"], vars["container"], options, request.Header)
+	resp := ctx.C.GetContainer(request.Context(), vars["account"], vars["container"], options, request.Header)
 	defer resp.Body.Close()
-	ctx.C.SetContainerInfo(vars["account"], vars["container"], resp)
+	ctx.C.SetContainerInfo(request.Context(), vars["account"], vars["container"], resp)
 	ctx.ACL = resp.Header.Get("X-Container-Read")
 	if ctx.Authorize != nil {
 		if ok, s := ctx.Authorize(request); !ok {
@@ -81,13 +81,13 @@ func (server *ProxyServer) ContainerHeadHandler(writer http.ResponseWriter, requ
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	if _, err := ctx.GetAccountInfo(vars["account"]); err != nil {
+	if _, err := ctx.GetAccountInfo(request.Context(), vars["account"]); err != nil {
 		srv.StandardResponse(writer, 404)
 		return
 	}
-	resp := ctx.C.HeadContainer(vars["account"], vars["container"], request.Header)
+	resp := ctx.C.HeadContainer(request.Context(), vars["account"], vars["container"], request.Header)
 	resp.Body.Close()
-	ctx.C.SetContainerInfo(vars["account"], vars["container"], resp)
+	ctx.C.SetContainerInfo(request.Context(), vars["account"], vars["container"], resp)
 	ctx.ACL = resp.Header.Get("X-Container-Read")
 	if ctx.Authorize != nil {
 		if ok, s := ctx.Authorize(request); !ok {
@@ -110,7 +110,7 @@ func (server *ProxyServer) ContainerPostHandler(writer http.ResponseWriter, requ
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	if _, err := ctx.GetAccountInfo(vars["account"]); err != nil {
+	if _, err := ctx.GetAccountInfo(request.Context(), vars["account"]); err != nil {
 		srv.StandardResponse(writer, 404)
 		return
 	}
@@ -139,7 +139,7 @@ func (server *ProxyServer) ContainerPostHandler(writer http.ResponseWriter, requ
 			request.Header.Set(strings.Replace(strings.ToLower(k), "-remove", "", 1), "")
 		}
 	}
-	resp := ctx.C.PostContainer(vars["account"], vars["container"], request.Header)
+	resp := ctx.C.PostContainer(request.Context(), vars["account"], vars["container"], request.Header)
 	resp.Body.Close()
 	srv.StandardResponse(writer, resp.StatusCode)
 }
@@ -161,11 +161,11 @@ func (server *ProxyServer) ContainerPutHandler(writer http.ResponseWriter, reque
 			return
 		}
 	}
-	_, err := ctx.GetAccountInfo(vars["account"])
+	_, err := ctx.GetAccountInfo(request.Context(), vars["account"])
 	if err != nil {
 		if server.accountAutoCreate {
-			ctx.AutoCreateAccount(vars["account"], request.Header)
-			_, err = ctx.GetAccountInfo(vars["account"])
+			ctx.AutoCreateAccount(request.Context(), vars["account"], request.Header)
+			_, err = ctx.GetAccountInfo(request.Context(), vars["account"])
 		}
 	}
 	if err != nil {
@@ -187,7 +187,7 @@ func (server *ProxyServer) ContainerPutHandler(writer http.ResponseWriter, reque
 			request.Header.Set(strings.Replace(strings.ToLower(k), "-remove", "", 1), "")
 		}
 	}
-	resp := ctx.C.PutContainer(vars["account"], vars["container"], request.Header)
+	resp := ctx.C.PutContainer(request.Context(), vars["account"], vars["container"], request.Header)
 	resp.Body.Close()
 	srv.StandardResponse(writer, resp.StatusCode)
 }
@@ -199,7 +199,7 @@ func (server *ProxyServer) ContainerDeleteHandler(writer http.ResponseWriter, re
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	if _, err := ctx.GetAccountInfo(vars["account"]); err != nil {
+	if _, err := ctx.GetAccountInfo(request.Context(), vars["account"]); err != nil {
 		srv.StandardResponse(writer, 404)
 		return
 	}
@@ -209,7 +209,7 @@ func (server *ProxyServer) ContainerDeleteHandler(writer http.ResponseWriter, re
 			return
 		}
 	}
-	resp := ctx.C.DeleteContainer(vars["account"], vars["container"], request.Header)
+	resp := ctx.C.DeleteContainer(request.Context(), vars["account"], vars["container"], request.Header)
 	resp.Body.Close()
 	srv.StandardResponse(writer, resp.StatusCode)
 }
@@ -263,7 +263,7 @@ func (server *ProxyServer) OptionsHandler(writer http.ResponseWriter, request *h
 			return
 		}
 	}
-	if ci, err := ctx.C.GetContainerInfo(vars["account"], vars["container"]); err == nil {
+	if ci, err := ctx.C.GetContainerInfo(request.Context(), vars["account"], vars["container"]); err == nil {
 		if common.IsOriginAllowed(ci.Metadata["Access-Control-Allow-Origin"], origin) {
 			writer.Header().Set("Allow", methodString)
 			if ci.Metadata["Access-Control-Allow-Origin"] == "*" {

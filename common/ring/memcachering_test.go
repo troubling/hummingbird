@@ -17,6 +17,7 @@ package ring
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -127,23 +128,24 @@ func testWithRing(t *testing.T, ring *memcacheRing) {
 }
 
 func testSetGetDelete(t *testing.T, ring *memcacheRing) {
+	ctx := context.Background()
 	key := "testJsonSetGet"
 	setValue := "some_value"
-	if err := ring.Set(key, setValue, 0); err != nil {
+	if err := ring.Set(ctx, key, setValue, 0); err != nil {
 		t.Error(err)
 		return
 	}
-	if getValue, err := ring.Get(key); err != nil {
+	if getValue, err := ring.Get(ctx, key); err != nil {
 		t.Error(err)
 		return
 	} else {
 		assert.EqualValues(t, setValue, getValue)
 	}
-	if err := ring.Delete(key); err != nil {
+	if err := ring.Delete(ctx, key); err != nil {
 		t.Error(err)
 		return
 	}
-	if _, err := ring.Get(key); err != nil {
+	if _, err := ring.Get(ctx, key); err != nil {
 		assert.EqualValues(t, CacheMiss, err)
 	} else {
 		t.Errorf("Expected a cache miss")
@@ -151,9 +153,10 @@ func testSetGetDelete(t *testing.T, ring *memcacheRing) {
 }
 
 func testGetCacheMiss(t *testing.T, ring *memcacheRing) {
+	ctx := context.Background()
 	// make a call to an unset cache value and check for cache miss return
 	key := "testGetCacheMiss"
-	if _, err := ring.Get(key); err != nil {
+	if _, err := ring.Get(ctx, key); err != nil {
 		assert.EqualValues(t, CacheMiss, err)
 	} else {
 		t.Errorf("Expected a cache miss")
@@ -161,17 +164,18 @@ func testGetCacheMiss(t *testing.T, ring *memcacheRing) {
 }
 
 func testIncr(t *testing.T, ring *memcacheRing) {
+	ctx := context.Background()
 	// increment multiple times and check running total
 	key := "testIncr"
 	var running_total int64 = 0
 	for i := int64(1); i <= 10; i++ {
 		running_total += int64(i)
-		if j, err := ring.Incr(key, i, 2); err != nil {
+		if j, err := ring.Incr(ctx, key, i, 2); err != nil {
 			t.Error(err)
 			return
 		} else {
 			assert.EqualValues(t, running_total, j)
-			if value, err := ring.Incr(key, 0, 2); err != nil {
+			if value, err := ring.Incr(ctx, key, 0, 2); err != nil {
 				t.Error(err)
 				return
 			} else {
@@ -182,9 +186,10 @@ func testIncr(t *testing.T, ring *memcacheRing) {
 }
 
 func testDecr(t *testing.T, ring *memcacheRing) {
+	ctx := context.Background()
 	key := "testDecr"
 	// test decrement on unset value sets value to 0
-	if value, err := ring.Decr(key, 1, 2); err != nil {
+	if value, err := ring.Decr(ctx, key, 1, 2); err != nil {
 		t.Error(err)
 		return
 	} else {
@@ -192,7 +197,7 @@ func testDecr(t *testing.T, ring *memcacheRing) {
 	}
 	// test running total goes to and stays at zero
 	var running_total int64 = 30
-	if value, err := ring.Incr(key, running_total, 2); err != nil {
+	if value, err := ring.Incr(ctx, key, running_total, 2); err != nil {
 		t.Error(err)
 		return
 	} else {
@@ -204,12 +209,12 @@ func testDecr(t *testing.T, ring *memcacheRing) {
 		} else {
 			running_total = 0
 		}
-		if j, err := ring.Decr(key, i, 2); err != nil {
+		if j, err := ring.Decr(ctx, key, i, 2); err != nil {
 			t.Error(err)
 			return
 		} else {
 			assert.EqualValues(t, running_total, j)
-			if value, err := ring.Incr(key, 0, 2); err != nil {
+			if value, err := ring.Incr(ctx, key, 0, 2); err != nil {
 				t.Error(err)
 				return
 			} else {
@@ -220,6 +225,7 @@ func testDecr(t *testing.T, ring *memcacheRing) {
 }
 
 func testSetGetMulti(t *testing.T, ring *memcacheRing) {
+	ctx := context.Background()
 	key := "testSetGetMulti"
 	// set three values at once
 	setValues := map[string]interface{}{
@@ -227,12 +233,12 @@ func testSetGetMulti(t *testing.T, ring *memcacheRing) {
 		"key2": "value2",
 		"key3": "value3",
 	}
-	if err := ring.SetMulti(key, setValues, 0); err != nil {
+	if err := ring.SetMulti(ctx, key, setValues, 0); err != nil {
 		t.Error(err)
 		return
 	}
 	// get the three values
-	getValues, err := ring.GetMulti(key, []string{"key1", "key2", "key3"})
+	getValues, err := ring.GetMulti(ctx, key, []string{"key1", "key2", "key3"})
 	if err != nil {
 		t.Error(err)
 		return
@@ -251,6 +257,7 @@ func testSetGetMulti(t *testing.T, ring *memcacheRing) {
 }
 
 func testManySetGets(t *testing.T, ring *memcacheRing) {
+	ctx := context.Background()
 	key := "testManySetGets"
 	opCount := 100
 	var wg sync.WaitGroup
@@ -258,7 +265,7 @@ func testManySetGets(t *testing.T, ring *memcacheRing) {
 		defer wg.Done()
 		setKey := fmt.Sprintf("%s%d", key, i)
 		setValue := fmt.Sprintf("value%d", i)
-		if err := ring.Set(setKey, setValue, 0); err != nil {
+		if err := ring.Set(ctx, setKey, setValue, 0); err != nil {
 			t.Error(err)
 		}
 	}
@@ -272,7 +279,7 @@ func testManySetGets(t *testing.T, ring *memcacheRing) {
 		defer wg.Done()
 		getKey := fmt.Sprintf("%s%d", key, i)
 		setValue := fmt.Sprintf("value%d", i)
-		if getValue, err := ring.Get(getKey); err != nil {
+		if getValue, err := ring.Get(ctx, getKey); err != nil {
 			t.Error(err)
 		} else {
 			assert.EqualValues(t, setValue, getValue)
@@ -287,13 +294,14 @@ func testManySetGets(t *testing.T, ring *memcacheRing) {
 }
 
 func testConnectionLimits(t *testing.T, ring *memcacheRing) {
+	ctx := context.Background()
 	key := "testConnectionLimits"
 	opCount := 1000
 	var wg sync.WaitGroup
 	setIt := func(i int) {
 		defer wg.Done()
 		setKey := fmt.Sprintf("%s%d", key, i)
-		if err := ring.Set(setKey, "", 0); err != nil {
+		if err := ring.Set(ctx, setKey, "", 0); err != nil {
 			t.Error(err)
 		}
 	}
@@ -310,6 +318,7 @@ func testConnectionLimits(t *testing.T, ring *memcacheRing) {
 }
 
 func testExpiration(t *testing.T, ring *memcacheRing) {
+	ctx := context.Background()
 	if testing.Short() {
 		t.Log("Skipping testExpiration()")
 		return
@@ -320,7 +329,7 @@ func testExpiration(t *testing.T, ring *memcacheRing) {
 	setIt := func(i int, expiration int) {
 		defer wg.Done()
 		setKey := fmt.Sprintf("%s%d", key, i)
-		if err := ring.Set(setKey, "", expiration); err != nil {
+		if err := ring.Set(ctx, setKey, "", expiration); err != nil {
 			t.Error(err)
 		}
 	}
@@ -344,7 +353,7 @@ func testExpiration(t *testing.T, ring *memcacheRing) {
 		// get a bunch of keys and verify cache miss
 		for i := 0; i < opCount; i++ {
 			getKey := fmt.Sprintf("%s%d", key, i)
-			if _, err := ring.Get(getKey); err != nil {
+			if _, err := ring.Get(ctx, getKey); err != nil {
 				assert.EqualValues(t, CacheMiss, err)
 			} else {
 				t.Errorf("Expected a cache miss")

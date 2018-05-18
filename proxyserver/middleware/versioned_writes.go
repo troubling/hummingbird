@@ -246,7 +246,7 @@ func (v *versionedWrites) copyObject(writer http.ResponseWriter, request *http.R
 
 func (v *versionedWrites) copyCurrent(writer http.ResponseWriter, request *http.Request, account, container, versionContainer, object string) (bool, int) {
 	ctx := GetProxyContext(request)
-	if ci, err := ctx.C.GetContainerInfo(account, container); err != nil {
+	if ci, err := ctx.C.GetContainerInfo(request.Context(), account, container); err != nil {
 		// No container info?
 		return false, 400
 	} else {
@@ -354,7 +354,7 @@ func (v *versionedWrites) handleObjectDeleteStack(writer http.ResponseWriter, re
 		previousVersion := listing[versionIndex]
 		if !authed {
 			ctx := GetProxyContext(request)
-			if ci, err := ctx.C.GetContainerInfo(account, container); err != nil {
+			if ci, err := ctx.C.GetContainerInfo(request.Context(), account, container); err != nil {
 				// No container
 				srv.StandardResponse(writer, 400)
 				return
@@ -432,7 +432,7 @@ func (v *versionedWrites) handleObjectPut(writer http.ResponseWriter, request *h
 func (v *versionedWrites) handleObject(writer http.ResponseWriter, request *http.Request) {
 	_, account, container, object := getPathParts(request)
 	ctx := GetProxyContext(request)
-	ci, _ := ctx.C.GetContainerInfo(account, container)
+	ci, _ := ctx.C.GetContainerInfo(request.Context(), account, container)
 	if ci == nil {
 		v.next.ServeHTTP(writer, request)
 		return

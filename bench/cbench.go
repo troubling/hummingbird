@@ -25,14 +25,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/tracing"
+	"go.uber.org/zap"
 	"golang.org/x/net/http2"
 )
 
 type ContainerObject struct {
 	Url    string
-	client *http.Client
+	client common.HTTPClient
 }
 
 func (obj *ContainerObject) Put() bool {
@@ -76,6 +79,8 @@ func RunCBench(args []string) {
 		fmt.Println("    #drive_list = sdb1,sdb2")
 		fmt.Println("    #cert_file = /etc/hummingbird/server.crt")
 		fmt.Println("    #key_file = /etc/hummingbird/server.key")
+		fmt.Println("    #[tracing]")
+		fmt.Println("    #agent_host_port=127.0.0.1:6831")
 		os.Exit(1)
 	}
 
@@ -118,11 +123,29 @@ func RunCBench(args []string) {
 			os.Exit(1)
 		}
 	}
-	client := &http.Client{
+	var c common.HTTPClient
+	httpClient := &http.Client{
 		Transport: transport,
 	}
+	c = httpClient
+	if benchconf.HasSection("tracing") {
+		clientTracer, clientTraceCloser, err := tracing.Init("cbench-client", zap.NewNop(), benchconf.GetSection("tracing"))
+		if err != nil {
+			fmt.Printf("Error setting up tracer: %v", err)
+			os.Exit(1)
+		}
+		if clientTraceCloser != nil {
+			defer clientTraceCloser.Close()
+		}
+		enableHTTPTrace := benchconf.GetBool("tracing", "enable_httptrace", true)
+		c, err = client.NewTracingClient(clientTracer, httpClient, enableHTTPTrace)
+		if err != nil {
+			fmt.Printf("Error setting up tracing client: %v", err)
+			os.Exit(1)
+		}
+	}
 
-	deviceList := GetDevices(client, address, checkMounted)
+	deviceList := GetDevices(c, address, checkMounted)
 	if driveList != "" {
 		deviceList = strings.Split(driveList, ",")
 	}
@@ -135,7 +158,7 @@ func RunCBench(args []string) {
 		containers[i] = fmt.Sprintf("%s%s/%d/%s/%d", address, device, part, "a", cid)
 		req, _ := http.NewRequest("PUT", containers[i], nil)
 		req.Header.Set("X-Timestamp", common.GetTimestamp())
-		resp, err := client.Do(req)
+		resp, err := c.Do(req)
 		if resp != nil {
 			resp.Body.Close()
 		}
@@ -150,7 +173,7 @@ func RunCBench(args []string) {
 		container := containers[i%len(containers)]
 		objects[i] = &ContainerObject{
 			Url:    fmt.Sprintf("%s/%d", container, rand.Int63()),
-			client: client,
+			client: c,
 		}
 	}
 
@@ -165,7 +188,7 @@ func RunCBench(args []string) {
 	getContainer := func() bool {
 		container := containers[rand.Int()%len(containers)]
 		req, _ := http.NewRequest("GET", container+"?format=json", nil)
-		resp, err := client.Do(req)
+		resp, err := c.Do(req)
 		if err == nil {
 			defer resp.Body.Close()
 			w, err := io.Copy(ioutil.Discard, resp.Body)
@@ -206,6 +229,8 @@ func RunCGBench(args []string) {
 		fmt.Println("    #drive_list = sdb1,sdb2")
 		fmt.Println("    #cert_file = /etc/hummingbird/server.crt")
 		fmt.Println("    #key_file = /etc/hummingbird/server.key")
+		fmt.Println("    #[tracing]")
+		fmt.Println("    #agent_host_port=127.0.0.1:6831")
 		os.Exit(1)
 	}
 
@@ -247,11 +272,29 @@ func RunCGBench(args []string) {
 			os.Exit(1)
 		}
 	}
-	client := &http.Client{
+	var c common.HTTPClient
+	httpClient := &http.Client{
 		Transport: transport,
 	}
+	c = httpClient
+	if benchconf.HasSection("tracing") {
+		clientTracer, clientTraceCloser, err := tracing.Init("cgbench-client", zap.NewNop(), benchconf.GetSection("tracing"))
+		if err != nil {
+			fmt.Printf("Error setting up tracer: %v", err)
+			os.Exit(1)
+		}
+		if clientTraceCloser != nil {
+			defer clientTraceCloser.Close()
+		}
+		enableHTTPTrace := benchconf.GetBool("tracing", "enable_httptrace", true)
+		c, err = client.NewTracingClient(clientTracer, httpClient, enableHTTPTrace)
+		if err != nil {
+			fmt.Printf("Error setting up tracing client: %v", err)
+			os.Exit(1)
+		}
+	}
 
-	deviceList := GetDevices(client, address, checkMounted)
+	deviceList := GetDevices(c, address, checkMounted)
 	if driveList != "" {
 		deviceList = strings.Split(driveList, ",")
 	}
@@ -262,7 +305,7 @@ func RunCGBench(args []string) {
 	container := fmt.Sprintf("%s%s/%d/%s/%d", address, device, part, "a", cid)
 	req, _ := http.NewRequest("PUT", container, nil)
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
-	resp, err := client.Do(req)
+	resp, err := c.Do(req)
 	if resp != nil {
 		resp.Body.Close()
 	}
@@ -277,7 +320,7 @@ func RunCGBench(args []string) {
 		for i := range objects {
 			objects[i] = &ContainerObject{
 				Url:    fmt.Sprintf("%s/%d", container, rand.Int63()),
-				client: client,
+				client: c,
 			}
 		}
 
@@ -291,7 +334,7 @@ func RunCGBench(args []string) {
 
 		getContainer := func() bool {
 			req, _ := http.NewRequest("GET", container+"?format=json&marker=5", nil)
-			resp, err := client.Do(req)
+			resp, err := c.Do(req)
 			if err == nil {
 				defer resp.Body.Close()
 				w, err := io.Copy(ioutil.Discard, resp.Body)

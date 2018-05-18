@@ -414,12 +414,11 @@ func (qr *quarantineRepair) queuePartitionReplication(logger *zap.Logger, typ st
 		logger.Debug("oddball quarantined item")
 		return true
 	}
-	hsh, err := strconv.ParseUint(entryNameOnDevice[:8], 16, 64)
+	partition, err := ringg.PartitionForHash(entryNameOnDevice)
 	if err != nil {
-		logger.Debug("oddball quarantined item")
+		logger.Debug("oddball quarantined item", zap.Error(err))
 		return true
 	}
-	partition := ringg.PartitionForHash(hsh)
 	if err = qr.aa.db.queuePartitionReplication(typ, policy, partition, "quarantine", -1, deviceID); err != nil {
 		logger.Error("could not queue partition for replication", zap.Uint64("partition", partition), zap.Error(err))
 		return false
