@@ -13,6 +13,9 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
+// To use with keystone, create s3 style credentials
+//   `openstack ec2 credentials create`
+//
 // To enable, add the following to `/etc/hummingbird/proxy-server.conf`
 //
 //   [filter:s3api]
@@ -22,8 +25,8 @@
 //
 //  from boto.s3.connection import S3Connection
 //  connection = S3Connection(
-//    aws_access_key_id='AUTH_test',
-//    aws_secret_access_key='AUTH_070cb6ce-7bce-bedd-6cc6-1e3053a34a93',
+//    aws_access_key_id="e50c1a1783ca4ed3b23115806ceb37e3",
+//    aws_secret_access_key="52dc4bb2c9244754977343f554498588",
 //    port=8080,
 //    host='127.0.0.1',
 //    is_secure=False,
@@ -72,69 +75,63 @@ func NewS3BucketList() *s3BucketList {
 	return &s3BucketList{Xmlns: s3Xmlns}
 }
 
-type s3Handler struct {
+type s3ApiHandler struct {
 	next           http.Handler
 	ctx            *ProxyContext
 	account        string
 	container      string
 	object         string
 	path           string
+	signature      string
 	requestsMetric tally.Counter
 }
 
-func (s *s3Handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+func (s *s3ApiHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	ctx := GetProxyContext(request)
 	// Check if this is an S3 request
-	authStr := request.Header.Get("Authorization")
-	if authStr == "" {
-		authStr = request.Form.Get("AWSAccessKeyId")
-	}
-	if authStr == "" {
+	if ctx.S3Auth == nil || strings.HasPrefix(strings.ToLower(request.URL.Path), "/v1/") {
 		// Not an S3 request
 		s.next.ServeHTTP(writer, request)
 		return
 	}
-	// TODO: Handle V2 signature validation
-	// TODO: Handle V4 signature validation
-	// Skip auth for now for S3 req
-	ctx.Authorize = func(r *http.Request) (bool, int) { return true, http.StatusOK }
+
 	s.container, s.object, _, _ = getPathSegments(request.URL.Path)
-	// NOTE: The following is for V2 Auth
-	// TODO: Validate the account string
-	parts := strings.SplitN(strings.Split(authStr, " ")[1], ":", 2)
-	s.account = parts[0]
+	s.account = ctx.S3Auth.Account
 
 	// TODO: Validate the container
 	// Generate the hbird api path
 	if s.object != "" {
-		s.path = fmt.Sprintf("/v1/%s/%s/%s", s.account, s.container, s.object)
+		s.path = fmt.Sprintf("/v1/AUTH_%s/%s/%s", s.account, s.container, s.object)
 	} else if s.container != "" {
-		s.path = fmt.Sprintf("/v1/%s/%s", s.account, s.container)
-	} else if s.account != "" {
-		s.path = fmt.Sprintf("/v1/%s", s.account)
+		s.path = fmt.Sprintf("/v1/AUTH_%s/%s", s.account, s.container)
+	} else {
+		s.path = fmt.Sprintf("/v1/AUTH_%s", s.account)
 	}
 	// TODO: Handle metadata?
 
 	if s.object != "" {
 		s.handleObjectRequest(writer, request)
+		return
 	} else if s.container != "" {
 		s.handleContainerRequest(writer, request)
+		return
 	} else {
 		s.handleAccountRequest(writer, request)
+		return
 	}
 }
 
-func (s *s3Handler) handleObjectRequest(writer http.ResponseWriter, request *http.Request) {
+func (s *s3ApiHandler) handleObjectRequest(writer http.ResponseWriter, request *http.Request) {
 	// If we didn't get to anything, then return no implemented
 	srv.SimpleErrorResponse(writer, http.StatusNotImplemented, "Not Implemented")
 }
 
-func (s *s3Handler) handleContainerRequest(writer http.ResponseWriter, request *http.Request) {
+func (s *s3ApiHandler) handleContainerRequest(writer http.ResponseWriter, request *http.Request) {
 	// If we didn't get to anything, then return no implemented
 	srv.SimpleErrorResponse(writer, http.StatusNotImplemented, "Not Implemented")
 }
 
-func (s *s3Handler) handleAccountRequest(writer http.ResponseWriter, request *http.Request) {
+func (s *s3ApiHandler) handleAccountRequest(writer http.ResponseWriter, request *http.Request) {
 	ctx := GetProxyContext(request)
 	if request.Method == "GET" {
 		newReq, err := ctx.newSubrequest("GET", s.path, http.NoBody, request, "s3api")
@@ -146,6 +143,10 @@ func (s *s3Handler) handleAccountRequest(writer http.ResponseWriter, request *ht
 		newReq.Header.Set("Accept", "application/json")
 		cap := NewCaptureWriter()
 		ctx.serveHTTPSubrequest(cap, newReq)
+		if cap.status/100 != 2 {
+			srv.StandardResponse(writer, cap.status)
+			return
+		}
 		containerListing := []accountserver.ContainerListingRecord{}
 		err = json.Unmarshal(cap.body, &containerListing)
 		if err != nil {
@@ -153,7 +154,8 @@ func (s *s3Handler) handleAccountRequest(writer http.ResponseWriter, request *ht
 			return
 		}
 		bucketList := NewS3BucketList()
-		bucketList.Owner.ID = s.account
+		// TODO: figure out how to get the account
+		bucketList.Owner.ID = "ACCOUNT"
 		// TODO: Figure out what to put for display name
 		bucketList.Owner.DisplayName = "Some Name Goes Here"
 		for _, c := range containerListing {
@@ -199,7 +201,7 @@ func NewS3Api(config conf.Section, metricsScope tally.Scope) (func(http.Handler)
 func s3Api(requestsMetric tally.Counter) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-			(&s3Handler{next: next, requestsMetric: requestsMetric}).ServeHTTP(writer, request)
+			(&s3ApiHandler{next: next, requestsMetric: requestsMetric}).ServeHTTP(writer, request)
 		})
 	}
 }

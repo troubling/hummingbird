@@ -17,6 +17,7 @@ package middleware
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -119,6 +120,17 @@ type token struct {
 		ID   string
 		Name string
 	}
+	S3Creds *s3Blob
+}
+
+type s3Token struct {
+	Access    string `json:"access"`
+	Token     string `json:"token"`
+	Signature string `json:"signature"`
+}
+
+type s3Creds struct {
+	Credentials s3Token `json:"credentials"`
 }
 
 func (t token) Valid() bool {
@@ -183,6 +195,22 @@ type identityResponse struct {
 	Token *token
 }
 
+type credential struct {
+	UserId    string `json:"user_id"`
+	ProjectId string `json:"project_id"`
+	Blob      string `json:"blob"`
+	Id        string `json:"id"`
+}
+
+type s3Blob struct {
+	Access string `json:"access"`
+	Secret string `json:"secret"`
+}
+
+type credentialsResponse struct {
+	Credentials []credential `json:"credentials"`
+}
+
 func (at *authToken) preValidate(ctx *ProxyContext, authToken string) {
 	at.lock.Lock()
 	defer at.lock.Unlock()
@@ -204,19 +232,28 @@ func (at *authToken) fetchAndValidateToken(ctx *ProxyContext, authToken string) 
 	if ctx == nil {
 		return nil, false
 	}
+	cachedToken := at.loadTokenFromCache(ctx, authToken)
+	if cachedToken != nil {
+		return cachedToken, true
+	}
+	return at.validate(ctx, authToken)
+}
+
+func (at *authToken) loadTokenFromCache(ctx *ProxyContext, key string) *token {
 	var cachedToken token
-	if err := ctx.Cache.GetStructured(authToken, &cachedToken); err == nil {
+	if err := ctx.Cache.GetStructured(key, &cachedToken); err == nil {
 		if at.preValidateDur > 0 && !cachedToken.MemcacheTtlAt.IsZero() {
 			invalidateEarlyTime := time.Now().Add(at.preValidateDur)
 			if cachedToken.MemcacheTtlAt.Before(invalidateEarlyTime) {
-				at.preValidate(ctx, authToken)
+				at.preValidate(ctx, key)
 			}
 		}
 		ctx.Logger.Debug("Found cache token",
-			zap.String("token", authToken))
-		return &cachedToken, true
+			zap.String("token", key))
+		return &cachedToken
+	} else {
+		return nil
 	}
-	return at.validate(ctx, authToken)
 }
 
 func (at *authToken) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -237,6 +274,14 @@ func (at *authToken) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			r.Header.Set("X-Service-Identity-Status", "Invalid")
 		}
 	}
+	if ctx.S3Auth != nil {
+		// Handle S3 auth validation first
+		userToken, userTokenValid := at.validateS3Signature(ctx)
+		if userToken != nil && userTokenValid {
+			r.Header.Set("X-Identity-Status", "Confirmed")
+			userToken.populateReqHeader(r, "")
+		}
+	}
 
 	userAuthToken := r.Header.Get("X-Auth-Token")
 	if userAuthToken == "" {
@@ -252,6 +297,29 @@ func (at *authToken) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	at.next.ServeHTTP(w, r)
 }
 
+func (at *authToken) validateS3Signature(ctx *ProxyContext) (*token, bool) {
+	// Check for a cached token
+	cachedToken := at.loadTokenFromCache(ctx, "S3:"+ctx.S3Auth.Key)
+	if cachedToken != nil {
+		ctx.S3Auth.Account = cachedToken.Project.ID
+		return cachedToken, ctx.S3Auth.validateSignature([]byte(cachedToken.S3Creds.Secret))
+	}
+	tok, err := at.doValidateS3(ctx.S3Auth.StringToSign, ctx.S3Auth.Key, ctx.S3Auth.Signature)
+	if err != nil {
+		ctx.Logger.Debug("Failed to validate s3 signature", zap.Error(err))
+		return nil, false
+	}
+
+	if tok != nil {
+		ctx.S3Auth.Account = tok.Project.ID
+		// TODO: We need to get and cache the secret to sign our own requests
+		at.cacheToken(ctx, "S3:"+ctx.S3Auth.Key, tok)
+		return tok, true
+	}
+
+	return nil, false
+}
+
 func (at *authToken) validate(ctx *ProxyContext, authToken string) (*token, bool) {
 	tok, err := at.doValidate(authToken)
 	if err != nil {
@@ -260,15 +328,71 @@ func (at *authToken) validate(ctx *ProxyContext, authToken string) (*token, bool
 	}
 
 	if tok != nil {
-		ttl := at.cacheDur
-		if expiresIn := tok.ExpiresAt.Sub(time.Now()); expiresIn < ttl && expiresIn > 0 {
-			ttl = expiresIn
-		}
-		tok.MemcacheTtlAt = time.Now().Add(ttl)
-		ctx.Cache.Set(authToken, *tok, int(ttl/time.Second))
+		at.cacheToken(ctx, authToken, tok)
 		return tok, true
 	}
+
 	return nil, false
+}
+
+func (at *authToken) cacheToken(ctx *ProxyContext, key string, tok *token) {
+	ttl := at.cacheDur
+	if expiresIn := tok.ExpiresAt.Sub(time.Now()); expiresIn < ttl && expiresIn > 0 {
+		ttl = expiresIn
+	}
+	tok.MemcacheTtlAt = time.Now().Add(ttl)
+	ctx.Cache.Set(key, *tok, int(ttl/time.Second))
+}
+
+func (at *authToken) doValidateS3(stringToSign, key, signature string) (*token, error) {
+	creds := &s3Creds{}
+	creds.Credentials.Access = key
+	creds.Credentials.Signature = signature
+	creds.Credentials.Token = base64.URLEncoding.EncodeToString([]byte(stringToSign))
+	credsReqBody, err := json.Marshal(creds)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest("POST", at.authURL+"v3/s3tokens", bytes.NewBuffer(credsReqBody))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	r, err := at.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Body.Close()
+
+	if r.StatusCode >= 400 {
+		return nil, errors.New(r.Status)
+	}
+
+	token, err := at.parseAuthResponse(r)
+
+	// Now we need to get the creds so that we can do the signing next time
+	req2, err := http.NewRequest("GET", at.authURL+"v3/credentials?type=ec2&user_id="+token.User.ID, nil)
+	if err != nil {
+		return nil, err
+	}
+	serverAuthToken, err := at.serverAuth()
+	if err != nil {
+		return nil, err
+	}
+	req2.Header.Set("X-Auth-Token", serverAuthToken)
+	req2.Header.Set("Content-Type", "application/json")
+
+	r2, err := at.client.Do(req2)
+	if err != nil {
+		return nil, err
+	}
+	defer r2.Body.Close()
+
+	s3creds, err := at.parseCredentialsResponse(r2)
+	token.S3Creds = s3creds
+
+	return token, err
 }
 
 func (at *authToken) doValidate(token string) (*token, error) {
@@ -297,8 +421,13 @@ func (at *authToken) doValidate(token string) (*token, error) {
 		return nil, errors.New(r.Status)
 	}
 
+	tok, err := at.parseAuthResponse(r)
+	return tok, err
+}
+
+func (at *authToken) parseAuthResponse(r *http.Response) (*token, error) {
 	var resp identityResponse
-	if err = json.NewDecoder(r.Body).Decode(&resp); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&resp); err != nil {
 		return nil, err
 	}
 
@@ -316,6 +445,22 @@ func (at *authToken) doValidate(token string) (*token, error) {
 
 	}
 	return resp.Token, nil
+}
+
+func (at *authToken) parseCredentialsResponse(r *http.Response) (*s3Blob, error) {
+	var resp credentialsResponse
+	if err := json.NewDecoder(r.Body).Decode(&resp); err != nil {
+		return nil, err
+	}
+	if len(resp.Credentials) == 0 {
+		return nil, errors.New("Response didn't contain credentials")
+	}
+	var blob s3Blob
+	if err := json.Unmarshal([]byte(resp.Credentials[0].Blob), &blob); err != nil {
+		return nil, err
+	}
+
+	return &blob, nil
 }
 
 // serverAuth return the X-Auth-Token to use or an error.
@@ -345,6 +490,7 @@ func (at *authToken) serverAuth() (string, error) {
 		return "", fmt.Errorf("server auth token request gave status %d", resp.StatusCode)
 	}
 	rv := resp.Header.Get("X-Subject-Token")
+
 	return rv, nil
 }
 
