@@ -248,7 +248,7 @@ func (pc *ProxyContext) newSubrequest(method, urlStr string, body io.Reader, req
 		status:                 500,
 		depth:                  pc.depth + 1,
 		Source:                 source,
-		S3Auth:                 ctx.S3Auth,
+		S3Auth:                 pc.S3Auth,
 	}
 	subreq = subreq.WithContext(context.WithValue(req.Context(), "proxycontext", subctx))
 	if subctx.subrequestCopy != nil {
