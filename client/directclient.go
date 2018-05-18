@@ -623,9 +623,11 @@ func (c *ProxyDirectClient) GetContainerInfo(ctx context.Context, account string
 	}
 	if !contInCache && mc != nil {
 		if err := mc.GetStructured(ctx, key, &ci); err == nil {
-			c.lcm.RLock()
-			lc[key] = ci
-			c.lcm.RUnlock()
+			if lc != nil {
+				c.lcm.RLock()
+				lc[key] = ci
+				c.lcm.RUnlock()
+			}
 			contInCache = true
 		} else {
 			ci = nil
@@ -636,9 +638,11 @@ func (c *ProxyDirectClient) GetContainerInfo(ctx context.Context, account string
 		resp.Body.Close()
 		if resp.StatusCode/100 != 2 {
 			if resp.StatusCode == 404 {
-				c.lcm.RLock()
-				lc[key] = nil
-				c.lcm.RUnlock()
+				if lc != nil {
+					c.lcm.RLock()
+					lc[key] = nil
+					c.lcm.RUnlock()
+				}
 				return nil, ContainerNotFound
 			}
 			return nil, fmt.Errorf("%d error retrieving info for container %s/%s", resp.StatusCode, account, container)
