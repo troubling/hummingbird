@@ -58,7 +58,6 @@ type s3AuthHandler struct {
 func (s *s3AuthHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	ctx := GetProxyContext(request)
 	// Check if this is an S3 request
-	fmt.Printf("%+v", request)
 	var key, signature string
 	authStr := request.Header.Get("Authorization")
 	if authStr == "" {
