@@ -915,9 +915,112 @@ func getReplicationCanceledReport(client common.HTTPClient, servers []*ipPort) *
 	return report
 }
 
-type reconOut struct {
-	Ok  bool   `json:"ok"`
-	Msg string `json:"msg"`
+type ringActionReport struct {
+	Name            string
+	Time            time.Time
+	Pass            bool
+	Errors          []string
+	Warnings        []string
+	AccountReport   []*ringLogEntry
+	ContainerReport []*ringLogEntry
+	ObjectReports   map[int][]*ringLogEntry
+}
+
+func (r *ringActionReport) Passed() bool {
+	return r.Pass
+}
+
+func (r *ringActionReport) String() string {
+	s := fmt.Sprintf(
+		"[%s] %s\n",
+		r.Time.Format("2006-01-02 15:04:05"),
+		r.Name,
+	)
+	for _, e := range r.Errors {
+		s += fmt.Sprintf("!! %s\n", e)
+	}
+	for _, w := range r.Warnings {
+		s += fmt.Sprintf("! %s\n", w)
+	}
+	if len(r.AccountReport) > 0 {
+		s += "Account Ring:\n"
+		i := 0
+		if len(r.AccountReport) > 10 {
+			i = len(r.AccountReport) - 10
+			s += fmt.Sprintf("    %d older entries; use -json for full report\n", len(r.AccountReport)-10)
+		}
+		for _, entry := range r.AccountReport[i:] {
+			s += fmt.Sprintf("    %s %s\n", entry.Time.Format("2006-01-02 15:04"), entry.Reason)
+		}
+	}
+	if len(r.ContainerReport) > 0 {
+		s += "Container Ring:\n"
+		i := 0
+		if len(r.ContainerReport) > 10 {
+			i = len(r.ContainerReport) - 10
+			s += fmt.Sprintf("    %d older entries; use -json for full report\n", len(r.ContainerReport)-10)
+		}
+		for _, entry := range r.ContainerReport[i:] {
+			s += fmt.Sprintf("    %s %s\n", entry.Time.Format("2006-01-02 15:04"), entry.Reason)
+		}
+	}
+	var policies []int
+	for policy := range r.ObjectReports {
+		policies = append(policies, policy)
+	}
+	sort.Ints(policies)
+	for policy := range policies {
+		if len(r.ObjectReports[policy]) > 0 {
+			s += fmt.Sprintf("Object Ring %d:\n", policy)
+			i := 0
+			if len(r.ObjectReports[policy]) > 10 {
+				i = len(r.ObjectReports[policy]) - 10
+				s += fmt.Sprintf("    %d older entries; use -json for full report\n", len(r.ObjectReports[policy])-10)
+			}
+			for _, entry := range r.ObjectReports[policy][i:] {
+				s += fmt.Sprintf("    %s %s\n", entry.Time.Format("2006-01-02 15:04"), entry.Reason)
+			}
+		}
+	}
+	return s
+}
+
+func getRingActionReport(flags *flag.FlagSet) *ringActionReport {
+	report := &ringActionReport{
+		Name:          "Ring Action Report",
+		Time:          time.Now().UTC(),
+		ObjectReports: map[int][]*ringLogEntry{},
+	}
+	serverconf, err := getAndrewdConf(flags)
+	if err != nil {
+		report.Errors = append(report.Errors, err.Error())
+		return report
+	}
+	db, err := newDB(serverconf, "")
+	if err != nil {
+		report.Errors = append(report.Errors, err.Error())
+		return report
+	}
+	report.AccountReport, err = db.ringLogs("account", 0)
+	if err != nil {
+		report.Errors = append(report.Errors, err.Error())
+	}
+	report.ContainerReport, err = db.ringLogs("container", 0)
+	if err != nil {
+		report.Errors = append(report.Errors, err.Error())
+	}
+	if policies, err := conf.GetPolicies(); err != nil {
+		report.Errors = append(report.Errors, err.Error())
+	} else {
+		for _, policy := range policies {
+			report.ObjectReports[policy.Index], err = db.ringLogs("object", policy.Index)
+			if err != nil {
+				report.Errors = append(report.Errors, err.Error())
+			}
+		}
+	}
+	report.Pass = len(report.Errors) == 0
+	return report
 }
 
 func getAndrewdConf(flags *flag.FlagSet) (*conf.Config, error) {
@@ -1009,7 +1112,7 @@ func ReconClient(flags *flag.FlagSet, cnf srv.ConfigLoader) bool {
 		// TODO: reports = append(reports, getDriveReport(flags))
 	}
 	if flags.Lookup("rar").Value.(flag.Getter).Get().(bool) {
-		// TODO: reports = append(reports, getRingActionReport(flags))
+		reports = append(reports, getRingActionReport(flags))
 	}
 	if len(reports) == 0 {
 		flags.Usage()

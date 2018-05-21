@@ -717,6 +717,37 @@ func (db *dbInstance) addDeviceState(ip string, port int, device string, mounted
 	return err
 }
 
+type ringLogEntry struct {
+	Time   time.Time
+	Reason string
+}
+
+func (db *dbInstance) ringLogs(typ string, policy int) ([]*ringLogEntry, error) {
+	rows, err := db.db.Query(`
+        SELECT create_date, reason
+        FROM ring_log
+        WHERE rtype = ? AND policy = ?
+        ORDER BY create_date
+    `, typ, policy)
+	if rows != nil {
+		defer rows.Close()
+	}
+	if err != nil {
+		return nil, err
+	}
+	var entries []*ringLogEntry
+	for rows.Next() {
+		var t time.Time
+		var r string
+		if err = rows.Scan(&t, &r); err != nil {
+			return entries, err
+		}
+		entries = append(entries, &ringLogEntry{Time: t, Reason: r})
+	}
+	err = rows.Err()
+	return entries, err
+}
+
 func (db *dbInstance) addRingLog(typ string, policy int, reason string) error {
 	_, err := db.db.Exec(`
         INSERT INTO ring_log
