@@ -116,8 +116,8 @@ func (re *repEngine) getDB(device string) (*IndexDB, error) {
 		return idb, nil
 	}
 	var err error
-	dbpath := filepath.Join(re.driveRoot, device, PolicyDir(re.policy))
-	path := filepath.Join(re.driveRoot, device, PolicyDir(re.policy))
+	dbpath := filepath.Join(re.driveRoot, device, PolicyDir(re.policy), "rep.db")
+	path := filepath.Join(re.driveRoot, device, PolicyDir(re.policy), "rep")
 	temppath := filepath.Join(re.driveRoot, device, "tmp")
 	ringPartPower := bits.Len64(re.ring.PartitionCount() - 1)
 	re.idbs[device], err = NewIndexDB(dbpath, path, temppath, ringPartPower, re.dbPartPower, re.numSubDirs, re.reserve, re.logger)

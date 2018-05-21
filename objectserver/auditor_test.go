@@ -39,14 +39,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type FakeECAuditFunc struct {
+type fakeECAuditFunc struct {
 	paths        []string
 	shards       []string
 	nurseryPaths []string
 	nurseryBytes [][]byte
 }
 
-func (f *FakeECAuditFunc) AuditEcObj(path string, item *IndexDBItem, md5BytesPerSec int64) (int64, error) {
+func (f *fakeECAuditFunc) AuditItem(path string, item *IndexDBItem, md5BytesPerSec int64) (int64, error) {
 	if item.Nursery {
 		f.nurseryPaths = append(f.nurseryPaths, path)
 		f.nurseryBytes = append(f.nurseryBytes, item.Metabytes)
@@ -230,7 +230,9 @@ func makeAuditor(t *testing.T, confLoader *srv.TestConfigLoader, settings ...str
 	require.Nil(t, err)
 	obs, logs = observer.New(zap.InfoLevel)
 	auditorDaemon.logger = zap.New(obs)
-	return &Auditor{AuditorDaemon: auditorDaemon, filesPerSecond: 1, ecfunc: realECAuditFuncs{}}
+	a := &Auditor{AuditorDaemon: auditorDaemon, filesPerSecond: 1}
+	a.idbAuditors = map[int]IndexDBAuditor{0: ecAuditor{}}
+	return a
 }
 
 func TestFailsWithoutSection(t *testing.T) {
@@ -520,11 +522,11 @@ func TestAuditDB(t *testing.T) {
 	policies, err := confLoader.GetPolicies()
 	assert.Nil(t, err)
 	auditor := makeAuditor(t, confLoader)
-	fake := &FakeECAuditFunc{}
-	auditor.ecfunc = fake
+	fake := &fakeECAuditFunc{}
+	auditor.idbAuditors = map[int]IndexDBAuditor{2: fake}
 	dir, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(dir)
-	policydir := filepath.Join(dir, "objects")
+	policydir := filepath.Join(dir, "objects-2")
 	dbdir := filepath.Join(policydir, "hec.db")
 	hecdir := filepath.Join(policydir, "hec")
 	db, err := NewIndexDB(dbdir, hecdir, dir, 2, 1, 32, 0, zap.L())
@@ -563,7 +565,7 @@ func TestAuditDB(t *testing.T) {
 	assert.Nil(t, err)
 
 	// Policy 2 is hec.
-	auditor.auditDB(db.dbpath, testRing, policies[2])
+	auditor.auditDB(dir, testRing, policies[2])
 
 	assert.Equal(t, 3, len(fake.paths))
 	assert.Equal(t, shardPath, fake.paths[0])
@@ -573,7 +575,7 @@ func TestAuditDB(t *testing.T) {
 }
 
 func TestAuditShardPasses(t *testing.T) {
-	auditFuncs := realECAuditFuncs{}
+	auditFuncs := ecAuditor{}
 	dir, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(dir)
 	fName := filepath.Join(dir, "12345")
@@ -583,13 +585,13 @@ func TestAuditShardPasses(t *testing.T) {
 	f.Close()
 	meta := []byte("{\"Content-Length\": \"12\", \"Ec-Scheme\":\"reedsolomon/1/0/10\"}")
 	item := IndexDBItem{Nursery: false, ShardHash: hash, Metabytes: meta}
-	bytes, err := auditFuncs.AuditEcObj(fName, &item, 10000)
+	bytes, err := auditFuncs.AuditItem(fName, &item, 10000)
 	assert.Nil(t, err)
 	assert.Equal(t, int64(12), bytes)
 }
 
 func TestAuditShardFails(t *testing.T) {
-	auditFuncs := realECAuditFuncs{}
+	auditFuncs := ecAuditor{}
 	dir, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(dir)
 	fName := filepath.Join(dir, "12345")
@@ -599,13 +601,13 @@ func TestAuditShardFails(t *testing.T) {
 	f.Close()
 	meta := []byte("{\"Content-Length\": \"16\", \"Ec-Scheme\":\"reedsolomon/1/0/10\"}")
 	item := IndexDBItem{Nursery: false, ShardHash: hash, Metabytes: meta}
-	bytes, err := auditFuncs.AuditEcObj(fName, &item, 10000)
+	bytes, err := auditFuncs.AuditItem(fName, &item, 10000)
 	assert.NotNil(t, err)
 	assert.Equal(t, int64(16), bytes)
 }
 
 func TestAuditShardPassLength(t *testing.T) {
-	auditFuncs := realECAuditFuncs{}
+	auditFuncs := ecAuditor{}
 	dir, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(dir)
 	fName := filepath.Join(dir, "12345")
@@ -615,13 +617,13 @@ func TestAuditShardPassLength(t *testing.T) {
 	f.Close()
 	meta := []byte("{\"Content-Length\": \"24\", \"Ec-Scheme\":\"reedsolomon/2/1/10\"}")
 	item := IndexDBItem{Nursery: false, ShardHash: hash, Metabytes: meta}
-	bytes, err := auditFuncs.AuditEcObj(fName, &item, 10000)
+	bytes, err := auditFuncs.AuditItem(fName, &item, 10000)
 	assert.Nil(t, err)
 	assert.Equal(t, int64(12), bytes)
 }
 
 func TestAuditShardFailLength(t *testing.T) {
-	auditFuncs := realECAuditFuncs{}
+	auditFuncs := ecAuditor{}
 	dir, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(dir)
 	fName := filepath.Join(dir, "12345")
@@ -631,13 +633,13 @@ func TestAuditShardFailLength(t *testing.T) {
 	f.Close()
 	meta := []byte("{\"Content-Length\": \"25\", \"Ec-Scheme\":\"reedsolomon/2/1/10\"}")
 	item := IndexDBItem{Nursery: false, ShardHash: hash, Metabytes: meta}
-	bytes, err := auditFuncs.AuditEcObj(fName, &item, 10000)
+	bytes, err := auditFuncs.AuditItem(fName, &item, 10000)
 	assert.NotNil(t, err)
 	assert.Equal(t, int64(0), bytes)
 }
 
 func TestAuditShardFailMd5(t *testing.T) {
-	auditFuncs := realECAuditFuncs{}
+	auditFuncs := ecAuditor{}
 	dir, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(dir)
 	fName := filepath.Join(dir, "12345")
@@ -647,13 +649,13 @@ func TestAuditShardFailMd5(t *testing.T) {
 	f.Close()
 	meta := []byte("{\"Content-Length\": \"24\", \"Ec-Scheme\":\"reedsolomon/2/1/10\"}")
 	item := IndexDBItem{Nursery: false, ShardHash: hash, Metabytes: meta}
-	bytes, err := auditFuncs.AuditEcObj(fName, &item, 10000)
+	bytes, err := auditFuncs.AuditItem(fName, &item, 10000)
 	assert.NotNil(t, err)
 	assert.Equal(t, int64(12), bytes)
 }
 
 func TestAuditNurseryPasses(t *testing.T) {
-	auditFuncs := realECAuditFuncs{}
+	auditFuncs := ecAuditor{}
 	dir, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(dir)
 	fName := filepath.Join(dir, "12345")
@@ -662,13 +664,13 @@ func TestAuditNurseryPasses(t *testing.T) {
 	f.Close()
 	goodmeta := []byte("{\"Content-Length\": \"12\", \"ETag\": \"d3ac5112fe464b81184352ccba743001\"}")
 	item := IndexDBItem{Nursery: true, Metabytes: goodmeta}
-	bytes, err := auditFuncs.AuditEcObj(fName, &item, 10000)
+	bytes, err := auditFuncs.AuditItem(fName, &item, 10000)
 	assert.Nil(t, err)
 	assert.Equal(t, int64(12), bytes)
 }
 
 func TestAuditNurseryFails(t *testing.T) {
-	auditFuncs := realECAuditFuncs{}
+	auditFuncs := ecAuditor{}
 	dir, _ := ioutil.TempDir("", "")
 	defer os.RemoveAll(dir)
 	fName := filepath.Join(dir, "12345")
@@ -677,7 +679,7 @@ func TestAuditNurseryFails(t *testing.T) {
 	f.Close()
 	badmeta := []byte("{\"Content-Length\": \"16\", \"ETag\": \"d3ac5112fe464b81184352ccba743001\"}")
 	item := IndexDBItem{Nursery: true, Metabytes: badmeta}
-	bytes, err := auditFuncs.AuditEcObj(fName, &item, 10000)
+	bytes, err := auditFuncs.AuditItem(fName, &item, 10000)
 	assert.NotNil(t, err)
 	assert.Equal(t, int64(16), bytes)
 }
@@ -699,7 +701,7 @@ func TestQuarantineShard(t *testing.T) {
 	assert.Nil(t, err)
 
 	meta := "{\"name\": \"objectname\"}"
-	err = quarantineShard(db, hash, 0, timestamp, []byte(meta), false)
+	err = QuarantineItem(db, &IndexDBItem{Hash: hash, Shard: 0, Timestamp: timestamp, Metabytes: []byte(meta), Nursery: false})
 	assert.Nil(t, err)
 
 	shardPath, err := db.WholeObjectPath(hash, 0, timestamp, false)
@@ -714,7 +716,7 @@ func TestQuarantineShard(t *testing.T) {
 	contents, err := ioutil.ReadFile(filepath.Join(dir, "quarantined", "objects", shard, shard))
 	assert.Nil(t, err)
 	assert.Equal(t, body, string(contents))
-	metafile := fmt.Sprintf("%s.hecmeta", shard)
+	metafile := fmt.Sprintf("%s.idbmeta", shard)
 	contents, err = ioutil.ReadFile(filepath.Join(dir, "quarantined", "objects", shard, metafile))
 	assert.Nil(t, err)
 	assert.Equal(t, meta, string(contents))

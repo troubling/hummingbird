@@ -430,7 +430,7 @@ type QuarantineDetailEntry struct {
 	NameInURL    string
 }
 
-func handleHecMeta(metaPath string, entry *QuarantineDetailEntry) bool {
+func handleIdbMeta(metaPath string, entry *QuarantineDetailEntry) bool {
 	file, err := os.Open(metaPath)
 	if err != nil {
 		return false
@@ -508,9 +508,9 @@ func quarantineDetail(driveRoot string) (interface{}, error) {
 						}
 						db.Close()
 					} else { // strings.HasPrefix(key, "objects")
-						// Check EC first
-						hecMeta := filepath.Join(driveRoot, device.Name(), "quarantined", key, listingItem.Name(), listingItem.Name()+".hecmeta")
-						if handleHecMeta(hecMeta, ent) {
+						// Check EC first (really index db items)
+						idbMeta := filepath.Join(driveRoot, device.Name(), "quarantined", key, listingItem.Name(), listingItem.Name()+".idbmeta")
+						if handleIdbMeta(idbMeta, ent) {
 							break
 						}
 						listing2, err := ioutil.ReadDir(filepath.Join(driveRoot, device.Name(), "quarantined", key, listingItem.Name()))
