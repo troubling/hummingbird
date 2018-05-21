@@ -284,6 +284,11 @@ func (at *authToken) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if userToken != nil && userTokenValid {
 			r.Header.Set("X-Identity-Status", "Confirmed")
 			userToken.populateReqHeader(r, "")
+		} else {
+			// NOTE: This probably isn't the best way to handle s3 errors
+			// TODO: figure out a better way to plumb generic s3 errors/responses
+			S3ErrorResponse(w, 403, r.URL.Path, proxyCtx.TxId)
+			return
 		}
 	}
 

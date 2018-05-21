@@ -58,11 +58,23 @@ type s3AuthHandler struct {
 func (s *s3AuthHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	ctx := GetProxyContext(request)
 	// Check if this is an S3 request
+	fmt.Printf("%+v", request)
+	var key, signature string
 	authStr := request.Header.Get("Authorization")
 	if authStr == "" {
 		authStr = request.Form.Get("AWSAccessKeyId")
 	}
-	if authStr == "" || ctx.S3Auth != nil {
+	if authStr != "" {
+		parts := strings.SplitN(strings.Split(authStr, " ")[1], ":", 2)
+		key = parts[0]
+		signature = parts[1]
+	}
+	if authStr == "" {
+		// Check params for auth info
+		key = request.FormValue("AWSAccessKeyId")
+		signature = request.FormValue("Signature")
+	}
+	if key == "" || signature == "" || ctx.S3Auth != nil {
 		// Not an S3 request or already processed
 		s.next.ServeHTTP(writer, request)
 		return
@@ -98,9 +110,6 @@ func (s *s3AuthHandler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 		}
 	}
 	// NOTE: The following is for V2 Auth
-	parts := strings.SplitN(strings.Split(authStr, " ")[1], ":", 2)
-	key := parts[0]
-	signature := parts[1]
 
 	buf.WriteString(request.URL.RequestURI())
 	ctx.S3Auth = &S3AuthInfo{

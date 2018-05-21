@@ -75,6 +75,43 @@ func NewS3BucketList() *s3BucketList {
 	return &s3BucketList{Xmlns: s3Xmlns}
 }
 
+type s3Error struct {
+	XMLName   xml.Name `xml:"Error"`
+	Code      string   `xml:"Code"`
+	Message   string   `xml:"Message"`
+	Resource  string   `xml:"Resource"`
+	RequestId string   `xml"RequestId"`
+}
+
+func NewS3Error() *s3Error {
+	return &s3Error{}
+}
+
+// TODO: Figure out how to plumb S3 Responses
+func S3ErrorResponse(w http.ResponseWriter, statusCode int, resource, requestId string) {
+	s3err := NewS3Error()
+	// TODO: Add all error codes
+	if statusCode == 403 {
+		statusCode = 403
+		s3err.Code = "AccessDenied"
+		s3err.Message = "Access Denied"
+	}
+	s3err.Resource = resource
+	s3err.RequestId = requestId
+	output, err := xml.MarshalIndent(s3err, "", "  ")
+	if err != nil {
+		srv.SimpleErrorResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	output = []byte(xml.Header + string(output))
+	headers := w.Header()
+	headers.Set("Content-Type", "application/xml; charset=utf-8")
+	headers.Set("Content-Length", strconv.Itoa(len(output)))
+	w.WriteHeader(statusCode)
+	w.Write(output)
+
+}
+
 type s3ApiHandler struct {
 	next           http.Handler
 	ctx            *ProxyContext
