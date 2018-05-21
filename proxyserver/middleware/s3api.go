@@ -80,7 +80,7 @@ type s3Error struct {
 	Code      string   `xml:"Code"`
 	Message   string   `xml:"Message"`
 	Resource  string   `xml:"Resource"`
-	RequestId string   `xml"RequestId"`
+	RequestId string   `xml:"RequestId"`
 }
 
 func NewS3Error() *s3Error {
