@@ -700,6 +700,14 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 	if err != nil {
 		return ipPort, nil, nil, err
 	}
+	pl2 := conf.PolicyList{}
+	for _, p := range pl {
+		if p.Config["andrewd"] == "ignore" {
+			continue
+		}
+		pl2[p.Index] = p
+	}
+	pl = pl2
 	transport := &http.Transport{
 		MaxIdleConnsPerHost: 100,
 		MaxIdleConns:        0,
