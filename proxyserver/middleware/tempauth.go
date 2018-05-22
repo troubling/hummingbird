@@ -55,6 +55,15 @@ func (ta *tempAuth) getUser(account, user, key string) *testUser {
 	return nil
 }
 
+func (ta *tempAuth) getUserPassword(account, user string) string {
+	for _, tu := range ta.testUsers {
+		if tu.Account == account && tu.Username == user {
+			return tu.Password
+		}
+	}
+	return ""
+}
+
 type cachedAuth struct {
 	Groups  []string
 	Expires int64
@@ -168,6 +177,35 @@ func (ta *tempAuth) getReseller(account string) (string, bool) {
 }
 
 func (ta *tempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	ctx := GetProxyContext(request)
+	if ctx.S3Auth != nil && ctx.Authorize == nil {
+		// handle S3 auth validation
+		key := ctx.S3Auth.Key
+		parts := strings.Split(key, ":")
+		if len(parts) != 2 {
+			ctx.Authorize = func(r *http.Request) (bool, int) {
+				return false, http.StatusForbidden
+			}
+		} else {
+			account := parts[0]
+			user := parts[1]
+			secret := ta.getUserPassword(account, user)
+			isValid := ctx.S3Auth.validateSignature([]byte(secret))
+			if !isValid {
+				ctx.Authorize = func(r *http.Request) (bool, int) {
+					return false, http.StatusForbidden
+				}
+			} else {
+				// TODO: Not sure if we need a more complicated authorize func for the S3 stuff?
+				ctx.S3Auth.Account = account
+				ctx.Authorize = func(r *http.Request) (bool, int) {
+					return true, http.StatusOK
+				}
+			}
+		}
+		ta.next.ServeHTTP(writer, request)
+		return
+	}
 	if request.URL.Path == "/auth/v1.0" {
 		ta.handleGetToken(writer, request)
 		return
@@ -176,7 +214,6 @@ func (ta *tempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 		if token == "" {
 			token = request.Header.Get("X-Storage-Token")
 		}
-		ctx := GetProxyContext(request)
 		if ctx == nil {
 			ta.next.ServeHTTP(writer, request)
 			return

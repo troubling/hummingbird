@@ -64,9 +64,17 @@ func (s *s3AuthHandler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 		authStr = request.Form.Get("AWSAccessKeyId")
 	}
 	if authStr != "" {
-		parts := strings.SplitN(strings.Split(authStr, " ")[1], ":", 2)
-		key = parts[0]
-		signature = parts[1]
+		authStr = strings.TrimPrefix(authStr, "AWS ")
+		i := strings.LastIndex(authStr, ":")
+		if i < 0 {
+			ctx.Authorize = func(r *http.Request) (bool, int) {
+				return false, http.StatusForbidden
+			}
+			s.next.ServeHTTP(writer, request)
+			return
+		}
+		key = authStr[0:i]
+		signature = authStr[i+1 : len(authStr)]
 	}
 	if authStr == "" {
 		// Check params for auth info
