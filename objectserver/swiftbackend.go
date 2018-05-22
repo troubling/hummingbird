@@ -359,3 +359,12 @@ func ObjectMetadata(dataFile string, metaFile string) (map[string]string, error)
 func TempDirPath(driveRoot string, device string) string {
 	return filepath.Join(driveRoot, device, "tmp")
 }
+
+func Expired(metadata map[string]string) bool {
+	if deleteAt, ok := metadata["X-Delete-At"]; ok {
+		if deleteTime, err := common.ParseDate(deleteAt); err == nil && deleteTime.Before(time.Now()) {
+			return true
+		}
+	}
+	return false
+}

@@ -16,7 +16,6 @@
 package objectserver
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -239,15 +238,11 @@ func (o *ecObject) commit(metadata map[string]string, method string, nursery boo
 		return err
 	}
 	timestamp := timestampTime.UnixNano()
-	metabytes, err := json.Marshal(metadata)
-	if err != nil {
-		return err
-	}
 	shard := 0
 	if !nursery {
 		shard = o.Shard
 	}
-	return o.idb.Commit(o.afw, o.Hash, shard, timestamp, method, MetadataHash(metadata), metabytes, nursery, "")
+	return o.idb.Commit(o.afw, o.Hash, shard, timestamp, method, metadata, nursery, "")
 }
 
 func (o *ecObject) Commit(metadata map[string]string) error {

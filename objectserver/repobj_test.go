@@ -16,7 +16,6 @@
 package objectserver
 
 import (
-	"encoding/json"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -251,10 +250,8 @@ func TestReplicateCanStabilize(t *testing.T) {
 	node := &ring.Device{Scheme: u.Scheme, Ip: u.Hostname(), Port: port, Device: "sda"}
 	afw, err := ot.TempFile(hsh, roShard, 10000, 10, true)
 	require.Nil(t, err)
-	md, err := json.Marshal(metad)
-	require.Nil(t, err)
 
-	err = ot.Commit(afw, hsh, roShard, 0, "PUT", "", md, true, "")
+	err = ot.Commit(afw, hsh, roShard, 0, "PUT", metad, true, "")
 	require.Nil(t, err)
 	nurseryPath, err := ot.WholeObjectPath(hsh, roShard, 0, true)
 	require.Nil(t, err)
@@ -328,10 +325,8 @@ func TestReplicateCanStabilizeFail(t *testing.T) {
 	node := &ring.Device{Scheme: u.Scheme, Ip: u.Hostname(), Port: port, Device: "sda"}
 	afw, err := ot.TempFile(hsh, roShard, 10000, 10, true)
 	require.Nil(t, err)
-	md, err := json.Marshal(metad)
-	require.Nil(t, err)
 
-	err = ot.Commit(afw, hsh, roShard, 0, "PUT", "", md, true, "")
+	err = ot.Commit(afw, hsh, roShard, 0, "PUT", metad, true, "")
 	require.Nil(t, err)
 	nurseryPath, err := ot.WholeObjectPath(hsh, roShard, 0, true)
 	require.Nil(t, err)

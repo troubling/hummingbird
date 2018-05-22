@@ -85,14 +85,15 @@ type SubdirListingRecord struct {
 
 // ObjectRecord represents the object's data in-databaee, it is used by replication.
 type ObjectRecord struct {
-	Rowid              int64  `json:"ROWID"`
-	Name               string `json:"name"`
-	CreatedAt          string `json:"created_at"`
-	Size               int64  `json:"size"`
-	ContentType        string `json:"content_type"`
-	ETag               string `json:"etag"`
-	Deleted            int    `json:"deleted"`
-	StoragePolicyIndex int    `json:"storage_policy_index"`
+	Rowid              int64   `json:"ROWID"`
+	Name               string  `json:"name"`
+	CreatedAt          string  `json:"created_at"`
+	Size               int64   `json:"size"`
+	ContentType        string  `json:"content_type"`
+	ETag               string  `json:"etag"`
+	Deleted            int     `json:"deleted"`
+	StoragePolicyIndex int     `json:"storage_policy_index"`
+	Expires            *string `json:"expires"`
 }
 
 // SyncRecord represents a row in the incoming_sync table.  It is used by replication.
@@ -116,7 +117,7 @@ type Container interface {
 	// UpdateMetadata applies updates to the container's metadata.
 	UpdateMetadata(updates map[string][]string, timestamp string) error
 	// PutObject adds a new object to the container.
-	PutObject(name string, timestamp string, size int64, contentType string, etag string, storagePolicyIndex int) error
+	PutObject(name string, timestamp string, size int64, contentType string, etag string, storagePolicyIndex int, expires string) error
 	// DeleteObject deletes an object from the container.
 	DeleteObject(name string, timestamp string, storagePolicyIndex int) error
 	// ID returns a unique identifier for the container.
