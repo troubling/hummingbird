@@ -17,7 +17,7 @@ type ringFilter interface {
 	GetPartition(account string, container string, object string) uint64
 	GetNodes(partition uint64) []*ring.Device
 	getReadNodes(partition uint64) ([]*ring.Device, ring.MoreNodes)
-	getWriteNodes(partition uint64, deviceLimit int) ([]*ring.Device, ring.MoreNodes)
+	getWriteNodes(partition uint64) ([]*ring.Device, ring.MoreNodes)
 	ring() ring.Ring
 }
 
@@ -73,9 +73,10 @@ type readAffSection struct {
 
 type clientRingFilter struct {
 	ring.Ring
-	raffs      []readAffSection
-	waffRegion int
-	waffCount  int
+	raffs       []readAffSection
+	waffRegion  int
+	waffCount   int
+	deviceLimit int
 }
 
 func (a *clientRingFilter) ring() ring.Ring {
@@ -102,21 +103,21 @@ func (a *clientRingFilter) getReadNodes(partition uint64) ([]*ring.Device, ring.
 	return devs, a.Ring.GetMoreNodes(partition)
 }
 
-func (a *clientRingFilter) getWriteNodes(partition uint64, deviceLimit int) ([]*ring.Device, ring.MoreNodes) {
+func (a *clientRingFilter) getWriteNodes(partition uint64) ([]*ring.Device, ring.MoreNodes) {
 	var ndevs []*ring.Device
 	devs := a.GetNodes(partition)
-	if deviceLimit == 0 {
-		deviceLimit = len(devs)
+	if a.deviceLimit == 0 {
+		a.deviceLimit = len(devs)
 	}
 	more := &writeNodeIter{
 		devs:       devs,
 		more:       a.GetMoreNodes(partition),
 		waffRegion: a.waffRegion,
 		waffCount:  a.waffCount,
-		limit:      deviceLimit,
+		limit:      a.deviceLimit,
 	}
-	if deviceLimit < len(devs) {
-		ndevs = make([]*ring.Device, deviceLimit)
+	if a.deviceLimit < len(devs) {
+		ndevs = make([]*ring.Device, a.deviceLimit)
 	} else {
 		ndevs = make([]*ring.Device, len(devs))
 	}
@@ -126,7 +127,7 @@ func (a *clientRingFilter) getWriteNodes(partition uint64, deviceLimit int) ([]*
 	return ndevs, more
 }
 
-func newClientRingFilter(r ring.Ring, readAff, writeAff, waffCount string) *clientRingFilter {
+func newClientRingFilter(r ring.Ring, readAff, writeAff, waffCount string, deviceLimit int) *clientRingFilter {
 	waffRegion := -1
 	fmt.Sscanf(writeAff, "r%d", &waffRegion)
 
@@ -153,9 +154,10 @@ func newClientRingFilter(r ring.Ring, readAff, writeAff, waffCount string) *clie
 	}
 	sort.Slice(raffs, func(i, j int) bool { return raffs[i].weight < raffs[j].weight })
 	return &clientRingFilter{
-		Ring:       r,
-		raffs:      raffs,
-		waffRegion: waffRegion,
-		waffCount:  wc,
+		Ring:        r,
+		raffs:       raffs,
+		waffRegion:  waffRegion,
+		waffCount:   wc,
+		deviceLimit: deviceLimit,
 	}
 }

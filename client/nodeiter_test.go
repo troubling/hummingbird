@@ -17,13 +17,13 @@ func TestAffinityReadOrder(t *testing.T) {
 		},
 	}
 
-	a := newClientRingFilter(r, "r1z1=100, r1=200", "", "")
+	a := newClientRingFilter(r, "r1z1=100, r1=200", "", "", 0)
 	devs, _ := a.getReadNodes(1)
 	require.Equal(t, "sdb", devs[0].Device)
 	require.Equal(t, "sda", devs[1].Device)
 	require.Equal(t, "sdc", devs[2].Device)
 
-	a = newClientRingFilter(r, "r1=200, r1z1=100", "", "")
+	a = newClientRingFilter(r, "r1=200, r1z1=100", "", "", 0)
 	devs, _ = a.getReadNodes(1)
 	require.Equal(t, "sdb", devs[0].Device)
 	require.Equal(t, "sda", devs[1].Device)
@@ -54,8 +54,8 @@ func TestWriteAffinityFiltering(t *testing.T) {
 		},
 	}
 
-	a := newClientRingFilter(r, "", "r1", "")
-	devs, _ := a.getWriteNodes(1, 4)
+	a := newClientRingFilter(r, "", "r1", "", 4)
+	devs, _ := a.getWriteNodes(1)
 	require.Equal(t, 4, len(devs))
 	require.Equal(t, 0, devs[0].Id)
 	require.Equal(t, 2, devs[1].Id)
@@ -64,15 +64,15 @@ func TestWriteAffinityFiltering(t *testing.T) {
 }
 
 func TestParseWaffCount(t *testing.T) {
-	a := newClientRingFilter(&test.FakeRing{}, "", "r1", "")
+	a := newClientRingFilter(&test.FakeRing{}, "", "r1", "", 0)
 	require.Equal(t, 6, a.waffCount)
-	a = newClientRingFilter(&test.FakeRing{}, "", "r1", "7")
+	a = newClientRingFilter(&test.FakeRing{}, "", "r1", "7", 0)
 	require.Equal(t, 7, a.waffCount)
-	a = newClientRingFilter(&test.FakeRing{}, "", "r1", "3 * replicas")
+	a = newClientRingFilter(&test.FakeRing{}, "", "r1", "3 * replicas", 0)
 	require.Equal(t, 9, a.waffCount)
-	a = newClientRingFilter(&test.FakeRing{}, "", "r1", "2.5 * replicas")
+	a = newClientRingFilter(&test.FakeRing{}, "", "r1", "2.5 * replicas", 0)
 	require.Equal(t, 8, a.waffCount)
-	a = newClientRingFilter(&test.FakeRing{}, "", "r1", "7 * monkeys")
+	a = newClientRingFilter(&test.FakeRing{}, "", "r1", "7 * monkeys", 0)
 	require.Equal(t, 6, a.waffCount)
 }
 
@@ -90,20 +90,20 @@ func TestDeviceLimit(t *testing.T) {
 			{Id: 5, Region: 2, Zone: 1, Device: "sdf"},
 		},
 	}
-	a := newClientRingFilter(r, "", "", "")
+	a := newClientRingFilter(r, "", "", "", 0)
 
-	devs, _ := a.getWriteNodes(1, 0)
+	devs, _ := a.getWriteNodes(1)
 	require.Equal(t, 6, len(devs))
-
-	devs, more := a.getWriteNodes(1, 4)
+	a = newClientRingFilter(r, "", "", "", 4)
+	devs, more := a.getWriteNodes(1)
 	require.Equal(t, 4, len(devs))
 	i := 0
 	for more.Next() != nil {
 		i++
 	}
 	require.Equal(t, 4, i)
-
-	devs, more = a.getWriteNodes(1, 2)
+	a = newClientRingFilter(r, "", "", "", 2)
+	devs, more = a.getWriteNodes(1)
 	require.Equal(t, 2, len(devs))
 
 	i = 0
@@ -128,8 +128,8 @@ func TestWriteAffinityNonPreferred(t *testing.T) {
 		},
 	}
 
-	a := newClientRingFilter(r, "", "r1", "4")
-	devs, more := a.getWriteNodes(1, 3)
+	a := newClientRingFilter(r, "", "r1", "4", 3)
+	devs, more := a.getWriteNodes(1)
 	require.Equal(t, 3, len(devs))
 	require.Equal(t, 0, devs[0].Id)
 	require.Equal(t, 2, devs[1].Id)
@@ -139,8 +139,8 @@ func TestWriteAffinityNonPreferred(t *testing.T) {
 	require.Equal(t, 3, more.Next().Id)
 	require.Equal(t, (*ring.Device)(nil), more.Next())
 
-	a = newClientRingFilter(r, "", "r1", "2")
-	devs, more = a.getWriteNodes(1, 3)
+	a = newClientRingFilter(r, "", "r1", "2", 3)
+	devs, more = a.getWriteNodes(1)
 	require.Equal(t, 3, len(devs))
 	require.Equal(t, 0, devs[0].Id)
 	require.Equal(t, 2, devs[1].Id)
