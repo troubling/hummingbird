@@ -350,7 +350,11 @@ func (a *Auditor) auditDB(devPath string, objRing ring.Ring, policy *conf.Policy
 		a.logger.Error("could not GetDbSubDirs", zap.Error(err))
 		return
 	}
-	db, err := NewIndexDB(dbpath, path, temppath, ringPartPower, int(dbPartPower), subdirs, 0, zapLogger)
+	if _, ok := a.idbAuditors[policy.Index]; !ok {
+		a.logger.Error("No auditor set policy", zap.String("policy-type", policy.Type), zap.Int("policy-index", policy.Index))
+		return
+	}
+	db, err := NewIndexDB(dbpath, path, temppath, ringPartPower, int(dbPartPower), subdirs, 0, zapLogger, a.idbAuditors[policy.Index])
 	if err != nil {
 		a.errors++
 		a.totalErrors++
@@ -359,10 +363,6 @@ func (a *Auditor) auditDB(devPath string, objRing ring.Ring, policy *conf.Policy
 	}
 	defer db.Close()
 
-	if _, ok := a.idbAuditors[policy.Index]; !ok {
-		a.logger.Error("No auditor set policy", zap.String("policy-type", policy.Type), zap.Int("policy-index", policy.Index))
-		return
-	}
 	marker := ""
 	for {
 		items, err := db.List("", "", marker, 1000)

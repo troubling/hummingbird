@@ -325,7 +325,7 @@ func (ro *repObject) Replicate(prirep PriorityRepJob) error {
 		return fmt.Errorf("error syncing obj %s: %v", ro.Hash, err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
+	if !(resp.StatusCode/100 == 2 || resp.StatusCode == 409) {
 		return fmt.Errorf("bad status code %d syncing obj with  %s", resp.StatusCode, ro.Hash)
 	}
 	if isHandoff {

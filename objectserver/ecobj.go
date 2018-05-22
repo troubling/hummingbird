@@ -34,6 +34,7 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
+	"github.com/troubling/hummingbird/common/srv"
 )
 
 type ecObject struct {
@@ -43,7 +44,7 @@ type ecObject struct {
 	policy          int
 	metadata        map[string]string
 	ring            ring.Ring
-	logger          *zap.Logger
+	logger          srv.LowLevelLogger
 	reserve         int64
 	dataShards      int
 	parityShards    int
@@ -360,7 +361,7 @@ func (o *ecObject) Reconstruct() error {
 			} else {
 				io.Copy(ioutil.Discard, resp.Body)
 				resp.Body.Close()
-				if resp.StatusCode/100 != 2 {
+				if !(resp.StatusCode/100 == 2 || resp.StatusCode == 409) {
 					o.logger.Info("PUT StatusCode failed", zap.String("url", url), zap.Int("code", resp.StatusCode))
 					writeSuccess <- false
 					return
@@ -410,6 +411,7 @@ func (o *ecObject) Replicate(prirep PriorityRepJob) error {
 		req.ContentLength = ecShardLength(o.ContentLength(), o.dataShards)
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
 		req.Header.Set("X-Trans-Id", o.txnId)
+		req.Header.Set("User-Agent", "nursery-stabilizer")
 		req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("reedsolomon/%d/%d/%d", o.dataShards, o.parityShards, o.chunkSize))
 		for k, v := range o.metadata {
 			req.Header.Set("Meta-"+k, v)
@@ -419,7 +421,7 @@ func (o *ecObject) Replicate(prirep PriorityRepJob) error {
 			return fmt.Errorf("error syncing shard %s/%d: %v", o.Hash, o.Shard, err)
 		}
 		defer resp.Body.Close()
-		if resp.StatusCode/100 != 2 {
+		if !(resp.StatusCode/100 == 2 || resp.StatusCode == 409) {
 			return fmt.Errorf("bad status code %d syncing shard with  %s/%d", resp.StatusCode, o.Hash, o.Shard)
 		}
 		return o.idb.Remove(o.Hash, o.Shard, o.Timestamp, o.Nursery)
@@ -458,6 +460,8 @@ func (o *ecObject) nurseryReplicate(partition uint64, dev *ring.Device) error {
 			return err
 		}
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
+		req.Header.Set("X-Trans-Id", o.txnId)
+		req.Header.Set("User-Agent", "nursery-stabilizer")
 		req.Header.Set("Deletion", strconv.FormatBool(o.Deletion))
 		req.Header.Set("Content-Length", o.metadata["Content-Length"])
 		for k, v := range o.metadata {
@@ -496,7 +500,11 @@ func (o *ecObject) nurseryReplicate(partition uint64, dev *ring.Device) error {
 		}
 	}
 
-	successes := e.Successes(time.Second*15, o.Deletion)
+	sts := []int{2, 409}
+	if o.Deletion {
+		sts = append(sts, 404)
+	}
+	successes := e.Successes(time.Second*15, sts...)
 	if handoff && successes >= nurseryReplicaCount && successes > 0 {
 		return o.idb.Remove(o.Hash, o.Shard, o.Timestamp, true)
 	} else if successes < nurseryReplicaCount {
@@ -524,6 +532,7 @@ func (o *ecObject) restabilize(dev *ring.Device) error {
 		req.Header.Set("X-Timestamp", o.metadata["X-Timestamp"])
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
 		req.Header.Set("X-Trans-Id", o.txnId)
+		req.Header.Set("User-Agent", "nursery-stabilizer")
 		for k, v := range o.metadata {
 			req.Header.Set("Meta-"+k, v)
 		}
@@ -583,6 +592,7 @@ func (o *ecObject) Stabilize(dev *ring.Device) error {
 		req.Header.Set("Deletion", strconv.FormatBool(o.Deletion)) //TODO: this can be removed right?
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
 		req.Header.Set("X-Trans-Id", o.txnId)
+		req.Header.Set("User-Agent", "nursery-stabilizer")
 		req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("reedsolomon/%d/%d/%d", o.dataShards, o.parityShards, o.chunkSize))
 		for k, v := range o.metadata {
 			req.Header.Set("Meta-"+k, v)
@@ -596,9 +606,10 @@ func (o *ecObject) Stabilize(dev *ring.Device) error {
 	success := true
 	for i := range responses {
 		if responses[i] != nil {
-			if responses[i].StatusCode/100 == 2 || (o.Deletion && responses[i].StatusCode == 404) {
+			if responses[i].StatusCode/100 == 2 || responses[i].StatusCode == 409 || (o.Deletion && responses[i].StatusCode == 404) {
 			} else {
 				success = false
+				o.logger.Debug("stabilize req failed", zap.Int("status", responses[i].StatusCode), zap.String("resp", fmt.Sprintf("%v", responses[i])))
 			}
 		} else if ready[i] == true {
 			if !o.Deletion {
@@ -606,6 +617,7 @@ func (o *ecObject) Stabilize(dev *ring.Device) error {
 				writers[i] = wrs[i]
 			}
 		} else {
+			o.logger.Debug("stabilize req failed: nil response")
 			success = false
 		}
 	}
@@ -629,14 +641,18 @@ func (o *ecObject) Stabilize(dev *ring.Device) error {
 		for _, w := range wrs {
 			w.Close()
 		}
-		if e.Successes(time.Second*15, o.Deletion) < len(nodes) {
+		sts := []int{2, 409}
+		if o.Deletion {
+			sts = append(sts, 404)
+		}
+		if e.Successes(time.Second*15, sts...) < len(nodes) {
 			success = false
 		}
 	}
 
 	if !success {
 		o.nurseryReplicate(partition, dev)
-		return fmt.Errorf("Failed to stabilize object")
+		return fmt.Errorf("Failed to stabilize object: %s", o.txnId)
 	} else if o.idb != nil {
 		return o.idb.Remove(o.Hash, o.Shard, o.Timestamp, true)
 	}

@@ -39,6 +39,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type fakeIndexDBAuditor struct{}
+
+func (fakeIndexDBAuditor) AuditItem(path string, item *IndexDBItem, md5BytesPerSec int64) (int64, error) {
+	return 0, nil
+}
+
 type fakeECAuditFunc struct {
 	paths        []string
 	shards       []string
@@ -529,7 +535,7 @@ func TestAuditDB(t *testing.T) {
 	policydir := filepath.Join(dir, "objects-2")
 	dbdir := filepath.Join(policydir, "hec.db")
 	hecdir := filepath.Join(policydir, "hec")
-	db, err := NewIndexDB(dbdir, hecdir, dir, 2, 1, 32, 0, zap.L())
+	db, err := NewIndexDB(dbdir, hecdir, dir, 2, 1, 32, 0, zap.L(), fakeIndexDBAuditor{})
 	assert.Nil(t, err)
 	body := "some shard content nonsense"
 	shardHash := "d3ac5112fe464b81184352ccba743001"
@@ -690,7 +696,7 @@ func TestQuarantineShard(t *testing.T) {
 	policydir := filepath.Join(dir, "objects")
 	dbdir := filepath.Join(policydir, "hec.db")
 	hecdir := filepath.Join(policydir, "hec")
-	db, err := NewIndexDB(dbdir, hecdir, dir, 2, 1, 32, 0, zap.L())
+	db, err := NewIndexDB(dbdir, hecdir, dir, 2, 1, 32, 0, zap.L(), fakeIndexDBAuditor{})
 	timestamp := time.Now().UnixNano()
 	hash := "00000000000000000000000000000000"
 	body := "nonsense"

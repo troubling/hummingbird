@@ -16,6 +16,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/fs"
+	"github.com/troubling/hummingbird/common/srv"
 	"go.uber.org/zap"
 )
 
@@ -66,7 +67,8 @@ type IndexDB struct {
 	temppath      string
 	reserve       int64
 	dbs           []*sql.DB
-	logger        *zap.Logger
+	logger        srv.LowLevelLogger
+	auditor       IndexDBAuditor
 }
 
 // NewIndexDB creates a IndexDB to manage a set of objects.
@@ -76,7 +78,7 @@ type IndexDB struct {
 // databases are created (e.g. dbPartPower = 6 gives 64 databases). The
 // subdirs value will define how many subdirectories are created where object
 // content files are placed.
-func NewIndexDB(dbpath, filepath, temppath string, ringPartPower, dbPartPower, subdirs int, reserve int64, logger *zap.Logger) (*IndexDB, error) {
+func NewIndexDB(dbpath, filepath, temppath string, ringPartPower, dbPartPower, subdirs int, reserve int64, logger srv.LowLevelLogger, auditor IndexDBAuditor) (*IndexDB, error) {
 	if ringPartPower <= dbPartPower {
 		return nil, fmt.Errorf("ringPartPower must be greater than dbPartPower: %d is not greater than %d", ringPartPower, dbPartPower)
 	}
@@ -93,6 +95,7 @@ func NewIndexDB(dbpath, filepath, temppath string, ringPartPower, dbPartPower, s
 		dbs:           make([]*sql.DB, 1<<uint(dbPartPower)),
 		logger:        logger,
 		reserve:       reserve,
+		auditor:       auditor,
 	}
 	err := os.MkdirAll(ot.dbpath, 0700)
 	if err != nil {
@@ -189,13 +192,25 @@ func (ot *IndexDB) Close() {
 // TempFile returns a temporary file to write to for eventually adding the
 // hash:shard to the IndexDB with Commit; may return (nil, nil) if there
 // is already a newer or equal timestamp in place for the hash:shard.
-func (ot *IndexDB) TempFile(hsh string, shard int, timestamp int64, sizeHint int64, nursery bool) (fs.AtomicFileWriter, error) {
+func (ot *IndexDB) TempFile(hsh string, shard int, timestamp int64, sizeHint int64, newWriteToNursery bool) (fs.AtomicFileWriter, error) {
 	item, err := ot.Lookup(hsh, shard, false)
 	if err != nil {
 		return nil, err
 	}
 	if item != nil && item.Timestamp >= timestamp {
-		if item.Timestamp > timestamp || !item.Nursery || nursery {
+		if item.Timestamp > timestamp || !item.Nursery || newWriteToNursery {
+			// quick audit on disk object before returning all clear
+			itemPath, err := ot.WholeObjectPath(
+				item.Hash, item.Shard, item.Timestamp, item.Nursery)
+			if err != nil {
+				return nil, err
+			}
+			if _, err = ot.auditor.AuditItem(itemPath, item, 0); err != nil {
+				if qerr := QuarantineItem(ot, item); qerr != nil {
+					return nil, qerr
+				}
+				return nil, err
+			}
 			return nil, nil
 		}
 	}
@@ -696,7 +711,8 @@ func (ot *IndexDB) StablePut(hsh string, shardIndex int, request *http.Request) 
 		return http.StatusInternalServerError, err
 	}
 	if atm == nil {
-		return http.StatusCreated, fmt.Errorf("could not make a tempfile")
+		ot.logger.Debug("could not make a tempfile", zap.String("hash", hsh))
+		return http.StatusConflict, nil
 	}
 	defer atm.Abandon()
 	metadata := make(map[string]string)

@@ -54,7 +54,7 @@ type ecEngine struct {
 	ring            ring.Ring
 	idbs            map[string]*IndexDB
 	idbm            sync.Mutex
-	logger          *zap.Logger
+	logger          srv.LowLevelLogger
 	dataShards      int
 	parityShards    int
 	chunkSize       int
@@ -75,7 +75,7 @@ func (f *ecEngine) getDB(device string) (*IndexDB, error) {
 	path := filepath.Join(f.driveRoot, device, PolicyDir(f.policy), "hec")
 	temppath := filepath.Join(f.driveRoot, device, "tmp")
 	ringPartPower := bits.Len64(f.ring.PartitionCount() - 1)
-	f.idbs[device], err = NewIndexDB(dbpath, path, temppath, ringPartPower, f.dbPartPower, f.numSubDirs, f.reserve, f.logger)
+	f.idbs[device], err = NewIndexDB(dbpath, path, temppath, ringPartPower, f.dbPartPower, f.numSubDirs, f.reserve, f.logger, ecAuditor{})
 	if err != nil {
 		return nil, err
 	}
@@ -532,7 +532,9 @@ func ecEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.Fl
 			return nil, err
 		}
 	}
-	logger, _ := zap.NewProduction()
+	logLevelString := config.GetDefault("app:object-server", "log_level", "INFO")
+	logLevel := zap.NewAtomicLevel()
+	logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
 	httpClient := &http.Client{
 		Timeout:   120 * time.Minute,
 		Transport: transport,
@@ -543,15 +545,17 @@ func ecEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.Fl
 		hashPathSuffix: hashPathSuffix,
 		reserve:        reserve,
 		policy:         policy.Index,
-		logger:         logger,
 		ring:           r,
 		idbs:           map[string]*IndexDB{},
 		dbPartPower:    int(dbPartPower),
 		numSubDirs:     subdirs,
 		client:         httpClient,
 	}
+	if engine.logger, err = srv.SetupLogger("ecengine", &logLevel, flags); err != nil {
+		return nil, fmt.Errorf("Error setting up logger: %v", err)
+	}
 	if config.HasSection("tracing") {
-		clientTracer, _, err := tracing.Init("ecengine-client", logger, config.GetSection("tracing"))
+		clientTracer, _, err := tracing.Init("ecengine-client", engine.logger, config.GetSection("tracing"))
 		if err != nil {
 			return nil, fmt.Errorf("Error setting up tracer: %v", err)
 		}
