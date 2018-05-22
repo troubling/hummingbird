@@ -16,6 +16,7 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -90,8 +91,43 @@ func (ta *tempAuth) getUserGroups(tu *testUser) []string {
 	return groups
 }
 
-func (ta *tempAuth) handleGetToken(writer http.ResponseWriter, request *http.Request) {
+func (ta *tempAuth) getToken(ctx context.Context, proxyCtx *ProxyContext, user, account, password string) (*testUser, string) {
+	var prevToken string
+	var token string
+	tUser := ta.getUser(account, user, password)
+	if tUser == nil {
+		return nil, ""
+	}
+	userGroups := ta.getUserGroups(tUser)
+	if err := proxyCtx.Cache.GetStructured(ctx, "authuser:"+user, &prevToken); err == nil {
+		var ca cachedAuth
+		if err = proxyCtx.Cache.GetStructured(ctx, "auth:"+prevToken, &ca); err == nil {
+			if ca.Expires > time.Now().Unix() && len(userGroups) == len(ca.Groups) {
+				eq := true
+				for i, r := range userGroups {
+					if r != ca.Groups[i] {
+						eq = false
+					}
+				}
+				if eq {
+					token = prevToken
+				}
+			}
+		}
+	}
+	if token == "" {
+		token = ta.reseller + common.UUID()
+		now := time.Now().Unix()
+		proxyCtx.Cache.Set(ctx, "auth:"+token, &cachedAuth{Expires: now + 86400, Groups: userGroups}, 86400)
+		if err := proxyCtx.Cache.Set(ctx, "authuser:"+user, &token, 86400); err != nil {
+			proxyCtx.Logger.Debug("Error setting tempauth token", zap.Error(err))
+			return tUser, ""
+		}
+	}
+	return tUser, token
+}
 
+func (ta *tempAuth) handleGetToken(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != "GET" {
 		srv.StandardResponse(writer, 400)
 		return
@@ -111,46 +147,19 @@ func (ta *tempAuth) handleGetToken(writer http.ResponseWriter, request *http.Req
 	if password == "" {
 		password = request.Header.Get("X-Storage-Pass")
 	}
-	tUser := ta.getUser(account, user, password)
-	if tUser == nil {
-		srv.StandardResponse(writer, 401)
-		return
-	}
-	var token string
 	ctx := GetProxyContext(request)
 	if ctx == nil {
 		srv.StandardResponse(writer, 500)
 		return
 	}
-	var prevToken string
-	userGroups := ta.getUserGroups(tUser)
-	if err := ctx.Cache.GetStructured(request.Context(), "authuser:"+user, &prevToken); err == nil {
-		var ca cachedAuth
-		if err = ctx.Cache.GetStructured(request.Context(), "auth:"+prevToken, &ca); err == nil {
-			if ca.Expires > time.Now().Unix() && len(userGroups) == len(ca.Groups) {
-				eq := true
-				for i, r := range userGroups {
-					if r != ca.Groups[i] {
-						eq = false
-					}
-				}
-				if eq {
-					token = prevToken
-				}
-			}
-		}
+	tUser, token := ta.getToken(request.Context(), ctx, user, account, password)
+	if tUser == nil {
+		srv.StandardResponse(writer, 401)
+		return
+	} else if token == "" {
+		srv.SimpleErrorResponse(writer, 500, "Error setting token")
+		return
 	}
-	if token == "" {
-		token = ta.reseller + common.UUID()
-		now := time.Now().Unix()
-		ctx.Cache.Set(request.Context(), "auth:"+token, &cachedAuth{Expires: now + 86400, Groups: userGroups}, 86400)
-		if err := ctx.Cache.Set(request.Context(), "authuser:"+user, &token, 86400); err != nil {
-			ctx.Logger.Debug("Error setting tempauth token", zap.Error(err))
-			srv.SimpleErrorResponse(writer, 500, "Error setting token")
-			return
-		}
-	}
-
 	ctx.RemoteUsers = []string{user}
 	writer.Header().Set("X-Storage-Token", token)
 	writer.Header().Set("X-Auth-Token", token)
@@ -196,20 +205,19 @@ func (ta *tempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 					return false, http.StatusForbidden
 				}
 			} else {
-				// TODO: Not sure if we need a more complicated authorize func for the S3 stuff?
 				ctx.S3Auth.Account = account
-				ctx.Authorize = func(r *http.Request) (bool, int) {
-					return true, http.StatusOK
-				}
+				// Get a token for this user to be used with the rest of the request
+				request.Header.Set("X-Auth-User", key)
+				request.Header.Set("X-Auth-Key", secret)
+				_, token := ta.getToken(request.Context(), ctx, user, account, secret)
+				request.Header.Set("X-Auth-Token", token)
 			}
 		}
-		ta.next.ServeHTTP(writer, request)
-		return
 	}
 	if request.URL.Path == "/auth/v1.0" {
 		ta.handleGetToken(writer, request)
 		return
-	} else if strings.HasPrefix(request.URL.Path, "/v1") || strings.HasPrefix(request.URL.Path, "/V1") {
+	} else if ctx.S3Auth != nil || strings.HasPrefix(request.URL.Path, "/v1") || strings.HasPrefix(request.URL.Path, "/V1") {
 		token := request.Header.Get("X-Auth-Token")
 		if token == "" {
 			token = request.Header.Get("X-Storage-Token")
@@ -219,13 +227,19 @@ func (ta *tempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 			return
 		}
 		if ctx.Authorize == nil {
-			pathParts, err := common.ParseProxyPath(request.URL.Path)
-			if err != nil {
-				ta.next.ServeHTTP(writer, request)
-				return
+			account := ""
+			if ctx.S3Auth != nil {
+				account = ctx.S3Auth.Account
+			} else {
+				pathParts, err := common.ParseProxyPath(request.URL.Path)
+				if err != nil {
+					ta.next.ServeHTTP(writer, request)
+					return
+				}
+				account = pathParts["account"]
 			}
 			if token != "" && strings.HasPrefix(token, ta.reseller) {
-				if curReseller, ok := ta.getReseller(pathParts["account"]); ok && curReseller == ta.reseller {
+				if curReseller, ok := ta.getReseller(account); ok && curReseller == ta.reseller {
 					var ca cachedAuth
 					if err := ctx.Cache.GetStructured(request.Context(), "auth:"+token, &ca); err != nil {
 						s := http.StatusServiceUnavailable
@@ -251,7 +265,7 @@ func (ta *tempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 					ctx.Authorize = ta.authorize
 				}
 			} else {
-				if _, ok := ta.getReseller(pathParts["account"]); ok {
+				if _, ok := ta.getReseller(account); ok {
 					// i do handle the req's reseller auth. allow anonymous authorize
 					ctx.Authorize = ta.authorize
 				}
