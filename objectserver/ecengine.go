@@ -387,6 +387,7 @@ func (f *ecEngine) GetObjectsToReplicate(prirep PriorityRepJob, c chan ObjectSta
 				policy:       f.policy,
 				client:       f.client,
 				metadata:     map[string]string{},
+				txnId:        fmt.Sprintf("%s-%s", common.UUID(), prirep.FromDevice.Device),
 			}
 			if err = json.Unmarshal(item.Metabytes, &obj.metadata); err != nil {
 				//TODO: this should quarantine right?
@@ -475,6 +476,7 @@ func (f *ecEngine) GetObjectsToStabilize(device string, c chan ObjectStabilizer,
 			chunkSize:       f.chunkSize,
 			client:          f.client,
 			nurseryReplicas: f.nurseryReplicas,
+			txnId:           fmt.Sprintf("%s-%s", common.UUID(), device),
 		}
 		if err = json.Unmarshal(item.Metabytes, &obj.metadata); err != nil {
 			continue

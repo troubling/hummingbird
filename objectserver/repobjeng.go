@@ -140,6 +140,7 @@ func (re *repEngine) New(vars map[string]string, needData bool, asyncWG *sync.Wa
 		metadata: map[string]string{},
 		asyncWG:  asyncWG,
 		client:   re.client,
+		txnId:    vars["txnId"],
 	}
 	if idb, err := re.getDB(vars["device"]); err == nil {
 		obj.idb = idb
@@ -222,6 +223,7 @@ func (re *repEngine) GetObjectsToReplicate(prirep PriorityRepJob, c chan ObjectS
 			idb:         idb,
 			metadata:    map[string]string{},
 			client:      re.client,
+			txnId:       fmt.Sprintf("%s-%s", common.UUID(), prirep.FromDevice.Device),
 		}
 		if err = json.Unmarshal(item.Metabytes, &obj.metadata); err != nil {
 			//TODO: this should prob quarantine- also in ec thing that does this too
@@ -261,6 +263,7 @@ func (re *repEngine) GetObjectsToStabilize(device string, c chan ObjectStabilize
 			idb:         idb,
 			metadata:    map[string]string{},
 			client:      re.client,
+			txnId:       fmt.Sprintf("%s-%s", common.UUID(), device),
 		}
 		if err = json.Unmarshal(item.Metabytes, &obj.metadata); err != nil {
 			continue
