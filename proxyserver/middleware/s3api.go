@@ -21,18 +21,20 @@
 //   [filter:s3api]
 //   enabled = true
 //
-// Example using boto2 and haio:
+// Example using boto2 and haio with tempauth:
 //
 //  from boto.s3.connection import S3Connection
 //  connection = S3Connection(
-//    aws_access_key_id="e50c1a1783ca4ed3b23115806ceb37e3",
-//    aws_secret_access_key="52dc4bb2c9244754977343f554498588",
+//    aws_access_key_id="test:tester",
+//    aws_secret_access_key="testing",
 //    port=8080,
 //    host='127.0.0.1',
 //    is_secure=False,
 //    calling_format=boto.s3.connection.OrdinaryCallingFormat()
 //  )
 //  connection.get_all_buckets()
+//
+//  If you are using keystone auth, substitue the key and access key returned from keystone
 
 package middleware
 
