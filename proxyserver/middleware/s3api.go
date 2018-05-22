@@ -56,6 +56,19 @@ const (
 	s3Xmlns = "http://s3.amazonaws.com/doc/2006-03-01"
 )
 
+type s3Response struct {
+	Code    string
+	Message string
+}
+
+var s3Responses = map[int]s3Response{
+	// NOTE: These are meant to be generic responses
+	403: s3Response{"AccessDenied", "Access Denied"},
+	501: s3Response{"NotImplemented", "A header you provided implies functionality that is not implemented."},
+	500: s3Response{"InternalError", "We encountered an internal error. Please try again."},
+	503: s3Response{"ServiceUnavailable", "Reduce your request rate."},
+}
+
 type s3Owner struct {
 	ID          string `xml:"ID"`
 	DisplayName string `xml:"DisplayName"`
@@ -89,29 +102,64 @@ func NewS3Error() *s3Error {
 	return &s3Error{}
 }
 
-// TODO: Figure out how to plumb S3 Responses
-func S3ErrorResponse(w http.ResponseWriter, statusCode int, resource, requestId string) {
-	s3err := NewS3Error()
-	// TODO: Add all error codes
-	if statusCode == 403 {
-		statusCode = 403
-		s3err.Code = "AccessDenied"
-		s3err.Message = "Access Denied"
-	}
-	s3err.Resource = resource
-	s3err.RequestId = requestId
-	output, err := xml.MarshalIndent(s3err, "", "  ")
-	if err != nil {
-		srv.SimpleErrorResponse(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	output = []byte(xml.Header + string(output))
-	headers := w.Header()
-	headers.Set("Content-Type", "application/xml; charset=utf-8")
-	headers.Set("Content-Length", strconv.Itoa(len(output)))
-	w.WriteHeader(statusCode)
-	w.Write(output)
+// This will wrap http.ResponseWriter to support s3 style xml responses on errors
+// TODO: This may still need some work for more specific error responses
+type s3ResponseWriterWrapper struct {
+	writer    http.ResponseWriter
+	hijack    bool
+	resource  string
+	requestId string
+	msg       []byte
+}
 
+func newS3ResponseWriterWrapper(w http.ResponseWriter, r *http.Request) *s3ResponseWriterWrapper {
+	ctx := GetProxyContext(r)
+	return &s3ResponseWriterWrapper{
+		writer:    w,
+		hijack:    false,
+		resource:  r.URL.Path,
+		requestId: ctx.TxId,
+	}
+}
+
+func (w *s3ResponseWriterWrapper) Header() http.Header {
+	return w.writer.Header()
+}
+
+func (w *s3ResponseWriterWrapper) WriteHeader(statusCode int) {
+	if statusCode/200 != 1 {
+		// We are going to hijack to return an S3 style result
+		w.hijack = true
+		if statusCode == 401 {
+			statusCode = 403 // S3 returns 403 instead of 401
+		}
+		msg := NewS3Error()
+		msg.Code = s3Responses[statusCode].Code
+		msg.Message = s3Responses[statusCode].Message
+		msg.Resource = w.resource
+		msg.RequestId = w.requestId
+		output, err := xml.MarshalIndent(msg, "", "  ")
+		if err != nil {
+			w.hijack = false
+			w.WriteHeader(500)
+		}
+		output = []byte(xml.Header + string(output))
+		headers := w.writer.Header()
+		headers.Set("Content-Type", "application/xml; charset=utf-8")
+		headers.Set("Content-Length", strconv.Itoa(len(output)))
+		w.msg = output
+	}
+	w.writer.WriteHeader(statusCode)
+}
+
+func (w *s3ResponseWriterWrapper) Write(buf []byte) (int, error) {
+	if !w.hijack {
+		return w.writer.Write(buf)
+	} else {
+		// TODO: Do we need to check to make sure everything gets written?
+		n, err := w.writer.Write(w.msg)
+		return n, err
+	}
 }
 
 type s3ApiHandler struct {
