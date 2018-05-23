@@ -195,6 +195,7 @@ func (o *ecObject) CopyRange(w io.Writer, start int64, end int64) (int64, error)
 		}
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", shardStart, shardEnd))
+		req.Header.Set("X-Trans-Id", o.txnId)
 		resp, err := o.client.Do(req)
 		if err != nil {
 			continue
@@ -297,6 +298,7 @@ func (o *ecObject) Reconstruct() error {
 			continue
 		}
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
+		req.Header.Set("X-Trans-Id", o.txnId)
 		resp, err := o.client.Do(req)
 		if err != nil {
 			o.logger.Error("client.Do failed", zap.String("url", url))
@@ -343,6 +345,7 @@ func (o *ecObject) Reconstruct() error {
 		}
 		req.ContentLength = ecShardLength(o.ContentLength(), o.dataShards)
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
+		req.Header.Set("X-Trans-Id", o.txnId)
 		req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("reedsolomon/%d/%d/%d", o.dataShards, o.parityShards, o.chunkSize))
 		for k, v := range o.metadata {
 			req.Header.Set("Meta-"+k, v)
@@ -406,6 +409,7 @@ func (o *ecObject) Replicate(prirep PriorityRepJob) error {
 		}
 		req.ContentLength = ecShardLength(o.ContentLength(), o.dataShards)
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
+		req.Header.Set("X-Trans-Id", o.txnId)
 		req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("reedsolomon/%d/%d/%d", o.dataShards, o.parityShards, o.chunkSize))
 		for k, v := range o.metadata {
 			req.Header.Set("Meta-"+k, v)
@@ -519,6 +523,7 @@ func (o *ecObject) restabilize(dev *ring.Device) error {
 		}
 		req.Header.Set("X-Timestamp", o.metadata["X-Timestamp"])
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
+		req.Header.Set("X-Trans-Id", o.txnId)
 		for k, v := range o.metadata {
 			req.Header.Set("Meta-"+k, v)
 		}
@@ -577,6 +582,7 @@ func (o *ecObject) Stabilize(dev *ring.Device) error {
 		req.Header.Set("X-Timestamp", o.metadata["X-Timestamp"])
 		req.Header.Set("Deletion", strconv.FormatBool(o.Deletion)) //TODO: this can be removed right?
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
+		req.Header.Set("X-Trans-Id", o.txnId)
 		req.Header.Set("Meta-Ec-Scheme", fmt.Sprintf("reedsolomon/%d/%d/%d", o.dataShards, o.parityShards, o.chunkSize))
 		for k, v := range o.metadata {
 			req.Header.Set("Meta-"+k, v)
