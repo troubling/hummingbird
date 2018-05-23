@@ -696,18 +696,13 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 	if pdcerr != nil {
 		return ipPort, nil, nil, fmt.Errorf("Could not make client: %v", pdcerr)
 	}
-	pl, err := cnf.GetPolicies()
-	if err != nil {
-		return ipPort, nil, nil, err
-	}
-	pl2 := conf.PolicyList{}
-	for _, p := range pl {
+	pl := conf.PolicyList{}
+	for _, p := range policies {
 		if p.Config["andrewd"] == "ignore" {
 			continue
 		}
-		pl2[p.Index] = p
+		pl[p.Index] = p
 	}
-	pl = pl2
 	transport := &http.Transport{
 		MaxIdleConnsPerHost: 100,
 		MaxIdleConns:        0,
