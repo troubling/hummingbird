@@ -398,7 +398,7 @@ func (at *authToken) doValidateS3(ctx context.Context, stringToSign, key, signat
 	}
 	defer r2.Body.Close()
 
-	s3creds, err := at.parseCredentialsResponse(r2)
+	s3creds, err := at.parseCredentialsResponse(r2, key)
 	token.S3Creds = s3creds
 
 	return token, err
@@ -456,7 +456,7 @@ func (at *authToken) parseAuthResponse(r *http.Response) (*token, error) {
 	return resp.Token, nil
 }
 
-func (at *authToken) parseCredentialsResponse(r *http.Response) (*s3Blob, error) {
+func (at *authToken) parseCredentialsResponse(r *http.Response, key string) (*s3Blob, error) {
 	var resp credentialsResponse
 	if err := json.NewDecoder(r.Body).Decode(&resp); err != nil {
 		return nil, err
@@ -465,8 +465,13 @@ func (at *authToken) parseCredentialsResponse(r *http.Response) (*s3Blob, error)
 		return nil, errors.New("Response didn't contain credentials")
 	}
 	var blob s3Blob
-	if err := json.Unmarshal([]byte(resp.Credentials[0].Blob), &blob); err != nil {
-		return nil, err
+	for _, c := range resp.Credentials {
+		if err := json.Unmarshal([]byte(c.Blob), &blob); err != nil {
+			return nil, err
+		}
+		if blob.Access == key {
+			break
+		}
 	}
 
 	return &blob, nil
