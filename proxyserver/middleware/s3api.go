@@ -185,8 +185,6 @@ func (s *s3ApiHandler) handleContainerRequest(writer http.ResponseWriter, reques
 		}
 	}
 
-	// If we didn't get to anything, then return no implemented
-	ctx := GetProxyContext(request)
 	if request.Method == "PUT" {
 		newReq, err := ctx.newSubrequest("PUT", s.path, http.NoBody, request, "s3api")
 		if err != nil {
@@ -204,6 +202,7 @@ func (s *s3ApiHandler) handleContainerRequest(writer http.ResponseWriter, reques
 		}
 	}
 
+	// If we didn't get to do anything, then return not implemented
 	srv.SimpleErrorResponse(writer, http.StatusNotImplemented, "Not Implemented")
 }
 
