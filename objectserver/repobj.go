@@ -30,6 +30,7 @@ type repObject struct {
 	atomicFileWriter fs.AtomicFileWriter
 	metadata         map[string]string
 	client           *http.Client
+	txnId            string
 }
 
 func (ro *repObject) Metadata() map[string]string {
@@ -197,6 +198,7 @@ func (ro *repObject) stabilizeDelete(dev *ring.Device) error {
 		}
 		req.Header.Set("X-Timestamp", ro.metadata["X-Timestamp"])
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(ro.policy))
+		req.Header.Set("X-Trans-Id", ro.txnId)
 		wg.Add(1)
 		go func(req *http.Request) {
 			defer wg.Done()
@@ -234,6 +236,7 @@ func (ro *repObject) restabilize(dev *ring.Device) error {
 		}
 		req.Header.Set("X-Timestamp", ro.metadata["X-Timestamp"])
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(ro.policy))
+		req.Header.Set("X-Trans-Id", ro.txnId)
 		for k, v := range ro.metadata {
 			req.Header.Set("Meta-"+k, v)
 		}
@@ -313,6 +316,7 @@ func (ro *repObject) Replicate(prirep PriorityRepJob) error {
 	}
 	req.ContentLength = ro.ContentLength()
 	req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(ro.policy))
+	req.Header.Set("X-Trans-Id", ro.txnId)
 	for k, v := range ro.metadata {
 		req.Header.Set("Meta-"+k, v)
 	}

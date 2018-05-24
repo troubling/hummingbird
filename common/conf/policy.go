@@ -41,7 +41,7 @@ func (p Policy) GetDbPartPower() (uint, error) {
 		dbPartPower = int(dbPartPowerInt64)
 	}
 	if dbPartPower < 1 {
-		dbPartPower = 5
+		dbPartPower = 3
 	}
 	return uint(dbPartPower), nil
 }

@@ -210,9 +210,42 @@ func (s *s3ApiHandler) handleContainerRequest(writer http.ResponseWriter, reques
 		if cap.status/100 != 2 {
 			srv.StandardResponse(writer, cap.status)
 			return
+		} else {
+			writer.WriteHeader(200)
+			return
 		}
-		writer.WriteHeader(200)
-		return
+	}
+
+	if request.Method == "DELETE" {
+		newReq, err := ctx.newSubrequest("DELETE", s.path, http.NoBody, request, "s3api")
+		if err != nil {
+			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
+		}
+		cap := NewCaptureWriter()
+		ctx.serveHTTPSubrequest(cap, newReq)
+		if cap.status/100 != 2 {
+			srv.StandardResponse(writer, cap.status)
+			return
+		} else {
+			writer.WriteHeader(204)
+			return
+		}
+	}
+
+	if request.Method == "PUT" {
+		newReq, err := ctx.newSubrequest("PUT", s.path, http.NoBody, request, "s3api")
+		if err != nil {
+			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
+		}
+		cap := NewCaptureWriter()
+		ctx.serveHTTPSubrequest(cap, newReq)
+		if cap.status/100 != 2 {
+			srv.StandardResponse(writer, cap.status)
+			return
+		} else {
+			writer.WriteHeader(200)
+			return
+		}
 	}
 
 	if request.Method == "GET" {
@@ -330,7 +363,6 @@ func (s *s3ApiHandler) handleAccountRequest(writer http.ResponseWriter, request 
 	if request.Method == "GET" {
 		newReq, err := ctx.newSubrequest("GET", s.path, http.NoBody, request, "s3api")
 		if err != nil {
-			// TODO: Need S3 error responses?
 			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -348,15 +380,13 @@ func (s *s3ApiHandler) handleAccountRequest(writer http.ResponseWriter, request 
 			return
 		}
 		bucketList := NewS3BucketList()
-		// TODO: figure out how to get the account
-		bucketList.Owner.ID = "ACCOUNT"
-		// TODO: Figure out what to put for display name
-		bucketList.Owner.DisplayName = "Some Name Goes Here"
+		bucketList.Owner.ID = ctx.S3Auth.Account
+		bucketList.Owner.DisplayName = ctx.S3Auth.Account
+		// NOTE: The container list api doesn't have a creation date for the container, so we use an "arbitrary" date.
 		for _, c := range containerListing {
-			// TODO: Get s3 style date from timestamp
 			bucketList.Buckets = append(bucketList.Buckets, s3BucketInfo{
 				Name:         c.Name,
-				CreationDate: "2006-02-03T16:45:09.000Z",
+				CreationDate: "2009-02-03T16:45:09.000Z",
 			})
 		}
 		output, err := xml.MarshalIndent(bucketList, "", "  ")
@@ -374,8 +404,8 @@ func (s *s3ApiHandler) handleAccountRequest(writer http.ResponseWriter, request 
 
 	}
 
-	// If we didn't get to anything, then return not implemented
-	srv.SimpleErrorResponse(writer, http.StatusNotImplemented, "Not Implemented")
+	// No other methods are allowed at the account level
+	srv.StandardResponse(writer, http.StatusMethodNotAllowed)
 }
 
 func NewS3Api(config conf.Section, metricsScope tally.Scope) (func(http.Handler) http.Handler, error) {

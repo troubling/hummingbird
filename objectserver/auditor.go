@@ -48,6 +48,7 @@ type AuditorDaemon struct {
 	checkMounts       bool
 	driveRoot         string
 	policies          conf.PolicyList
+	idbAuditors       map[int]IndexDBAuditor
 	logger            srv.LowLevelLogger
 	bytesPerSecond    int64
 	logTime           int64
@@ -69,7 +70,6 @@ type Auditor struct {
 	bytesProcessed, totalBytes    int64
 	quarantines, totalQuarantines int64
 	errors, totalErrors           int64
-	ecfunc                        ECAuditFunc
 }
 
 func slowCopyMd5(file *os.File, bps int64) (int64, string, error) {
@@ -91,13 +91,13 @@ func slowCopyMd5(file *os.File, bps int64) (int64, string, error) {
 	return bytesRead, hex.EncodeToString(h.Sum(nil)), nil
 }
 
-type ECAuditFunc interface {
-	AuditEcObj(path string, item *IndexDBItem, md5BytesPerSec int64) (int64, error)
+type IndexDBAuditor interface {
+	AuditItem(path string, item *IndexDBItem, md5BytesPerSec int64) (int64, error)
 }
 
-type realECAuditFuncs struct{}
+type ecAuditor struct{}
 
-func (realECAuditFuncs) AuditEcObj(path string, item *IndexDBItem, md5BytesPerSec int64) (int64, error) {
+func (ecAuditor) AuditItem(path string, item *IndexDBItem, md5BytesPerSec int64) (int64, error) {
 	finfo, err := os.Stat(path)
 	if err != nil || !finfo.Mode().IsRegular() {
 		if item.Nursery {
@@ -155,6 +155,87 @@ func (realECAuditFuncs) AuditEcObj(path string, item *IndexDBItem, md5BytesPerSe
 		return bytesRead, nil
 	}
 	return 0, nil
+}
+
+type repAuditor struct{}
+
+func (repAuditor) AuditItem(path string, item *IndexDBItem, md5BytesPerSec int64) (int64, error) {
+	finfo, err := os.Stat(path)
+	if err != nil || !finfo.Mode().IsRegular() {
+		if item.Nursery {
+			// We're not going to do any quarantining here. It's likely the object
+			// simply got stabilized and is gone.
+			return 0, nil
+		} else {
+			return 0, fmt.Errorf("Object file isn't a normal file: %s", err)
+		}
+	}
+	metadata := map[string]string{}
+	if err = json.Unmarshal(item.Metabytes, &metadata); err != nil {
+		return 0, fmt.Errorf("Error decoding metadata: %s", err)
+	}
+	fBytes, err := strconv.ParseInt(metadata["Content-Length"], 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("Error parsing content-length from metadata: %q %v", metadata["Content-Length"], err)
+	}
+	hsh, ok := metadata["ETag"]
+	if !ok {
+		return 0, fmt.Errorf("Metadata missing ETag: %s", metadata)
+	}
+	if fBytes != finfo.Size() {
+		return 0, fmt.Errorf("File size (%d) doesn't match metadata (%d)", finfo.Size(), fBytes)
+	}
+	if md5BytesPerSec > 0 {
+		file, err := os.Open(path)
+		if err != nil {
+			return 0, fmt.Errorf("Error opening file: %s", err)
+		}
+		defer file.Close()
+		bytesRead, calcHsh, err := slowCopyMd5(file, md5BytesPerSec)
+		if err != nil {
+			return bytesRead, fmt.Errorf("Error calc md5 file: %s", err)
+		}
+		if bytesRead != fBytes {
+			return bytesRead, fmt.Errorf("did not read in entire file")
+		}
+		if calcHsh != hsh {
+			return bytesRead, fmt.Errorf("File contents don't match object hash")
+		}
+		return bytesRead, nil
+	}
+	return 0, nil
+}
+
+func QuarantineItem(db *IndexDB, item *IndexDBItem) error {
+	itemPath, err := db.WholeObjectPath(item.Hash, item.Shard, item.Timestamp, item.Nursery)
+	if err != nil {
+		return err
+	}
+	itemName := filepath.Base(itemPath)
+	objsDir := filepath.Dir(filepath.Dir(filepath.Dir(itemPath)))
+	driveDir := filepath.Dir(objsDir)
+	quarantineDir := filepath.Join(driveDir, "quarantined", filepath.Base(objsDir), itemName)
+	if err := os.MkdirAll(quarantineDir, 0755); err != nil {
+		return err
+	}
+	dest := filepath.Join(quarantineDir, itemName)
+	if err := os.Rename(itemPath, dest); err != nil {
+		return err
+	}
+	metaName := filepath.Join(quarantineDir, itemName+".idbmeta")
+	f, err := os.OpenFile(metaName, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(item.Metabytes)
+	f.Close()
+	if err != nil {
+		if rmErr := os.Remove(metaName); rmErr != nil {
+			return rmErr
+		}
+		return err
+	}
+	return db.Remove(item.Hash, item.Shard, item.Timestamp, item.Nursery)
 }
 
 // OneTimeChan returns a channel that will yield the current time once, then is closed.
@@ -238,42 +319,20 @@ func auditHash(hashPath string, md5BytesPerSec int64) (bytesProcessed int64, err
 	return bytesProcessed, nil
 }
 
-func quarantineShard(db *IndexDB, hash string, shard int, timestamp int64, metabytes []byte, nursery bool) error {
-	shardPath, err := db.WholeObjectPath(hash, shard, timestamp, nursery)
-	if err != nil {
-		return err
-	}
-	shardName := filepath.Base(shardPath)
-	objsDir := filepath.Dir(filepath.Dir(filepath.Dir(shardPath)))
-	driveDir := filepath.Dir(objsDir)
-	quarantineDir := filepath.Join(driveDir, "quarantined", filepath.Base(objsDir), shardName)
-	if err := os.MkdirAll(quarantineDir, 0755); err != nil {
-		return err
-	}
-	dest := filepath.Join(quarantineDir, shardName)
-	if err := os.Rename(shardPath, dest); err != nil {
-		return err
-	}
-	metaName := filepath.Join(quarantineDir, shardName+".hecmeta")
-	f, err := os.OpenFile(metaName, os.O_RDWR|os.O_CREATE, 0644)
-	if err != nil {
-		return err
-	}
-	_, err = f.Write(metabytes)
-	f.Close()
-	if err != nil {
-		if rmErr := os.Remove(metaName); rmErr != nil {
-			return rmErr
-		}
-		return err
-	}
-	return db.Remove(hash, shard, timestamp, nursery)
-}
-
 // auditDB.  Runs auditFunc on all objects in the given DB.
-func (a *Auditor) auditDB(dbpath string, objRing ring.Ring, policy *conf.Policy) {
+func (a *Auditor) auditDB(devPath string, objRing ring.Ring, policy *conf.Policy) {
+	dbpath := filepath.Join(devPath, PolicyDir(policy.Index), fmt.Sprintf("%s.db", policy.Type))
+	if _, err := os.Stat(dbpath); os.IsNotExist(err) {
+		a.logger.Debug("policy dbpath not found ", zap.String("policytype", policy.Type))
+		return
+	} else if err != nil {
+		a.errors++
+		a.totalErrors++
+		a.logger.Error("Couldn't open indexdb", zap.String("dbBasePath", dbpath), zap.Error(err))
+		return
+	}
 	policyDir := filepath.Dir(dbpath)
-	path := filepath.Join(policyDir, "hec")
+	path := filepath.Join(policyDir, policy.Type)
 	temppath := filepath.Join(filepath.Dir(policyDir), "tmp")
 	ringPartPower := bits.Len64(objRing.PartitionCount() - 1)
 	zapLogger, ok := a.logger.(*zap.Logger)
@@ -288,18 +347,22 @@ func (a *Auditor) auditDB(dbpath string, objRing ring.Ring, policy *conf.Policy)
 	}
 	subdirs, err := policy.GetDbSubDirs()
 	if err != nil {
-		a.logger.Error("Could not GetDbSubDirs", zap.Error(err))
+		a.logger.Error("could not GetDbSubDirs", zap.Error(err))
 		return
 	}
 	db, err := NewIndexDB(dbpath, path, temppath, ringPartPower, int(dbPartPower), subdirs, 0, zapLogger)
 	if err != nil {
 		a.errors++
 		a.totalErrors++
-		a.logger.Error("Couldn't open indexdb", zap.String("dbpath", dbpath), zap.Error(err))
+		a.logger.Error("Couldn't open indexdb", zap.String("dbBasePath", dbpath), zap.Error(err))
 		return
 	}
 	defer db.Close()
 
+	if _, ok := a.idbAuditors[policy.Index]; !ok {
+		a.logger.Error("No auditor set policy", zap.String("policy-type", policy.Type), zap.Int("policy-index", policy.Index))
+		return
+	}
 	marker := ""
 	for {
 		items, err := db.List("", "", marker, 1000)
@@ -308,7 +371,7 @@ func (a *Auditor) auditDB(dbpath string, objRing ring.Ring, policy *conf.Policy)
 			return
 		}
 		for _, item := range items {
-			shardPath, err := db.WholeObjectPath(item.Hash, item.Shard, item.Timestamp, item.Nursery)
+			itemPath, err := db.WholeObjectPath(item.Hash, item.Shard, item.Timestamp, item.Nursery)
 			if err != nil {
 				a.logger.Error("Error getting indexdb path for hash",
 					zap.String("hash", item.Hash), zap.Error(err))
@@ -320,13 +383,13 @@ func (a *Auditor) auditDB(dbpath string, objRing ring.Ring, policy *conf.Policy)
 			if a.auditorType != "ZBF" {
 				bytesPerSecond = a.bytesPerSecond
 			}
-			bytes, err := a.ecfunc.AuditEcObj(shardPath, item, bytesPerSecond)
+			bytes, err := a.idbAuditors[policy.Index].AuditItem(itemPath, item, bytesPerSecond)
 			if err != nil {
 				a.logger.Error("Failed audit and is being quarantined",
-					zap.String("shardPath", shardPath), zap.Error(err))
-				err = quarantineShard(db, item.Hash, item.Shard, item.Timestamp, item.Metabytes, item.Nursery)
+					zap.String("itemPath", itemPath), zap.String("auditorType", a.auditorType), zap.Error(err))
+				err = QuarantineItem(db, item)
 				if err != nil {
-					a.logger.Error("Failed to quarantine shard", zap.String("shardPath", shardPath), zap.Error(err))
+					a.logger.Error("Failed to quarantine indexdb item", zap.String("auditorType", a.auditorType), zap.String("itemPath", itemPath), zap.Error(err))
 					continue
 				}
 				a.quarantines++
@@ -426,8 +489,7 @@ func (a *Auditor) auditDevice(devPath string) {
 	}
 
 	for _, policy := range a.policies {
-		switch policy.Type {
-		case "replication":
+		if policy.Type == "replication" {
 			objPath := filepath.Join(devPath, PolicyDir(policy.Index))
 			partitions, err := fs.ReadDirNames(objPath)
 			if err != nil {
@@ -448,20 +510,13 @@ func (a *Auditor) auditDevice(devPath string) {
 				}
 				a.auditPartition(partitionDir)
 			}
-		case "hec":
+		} else {
 			r, err := ring.GetRing("object", a.hashPathPrefix, a.hashPathSuffix, policy.Index)
 			if err != nil {
 				a.logger.Error("Error getting object ring", zap.Int("policyindex", policy.Index))
 				continue
 			}
-			hecdbPath := filepath.Join(devPath, PolicyDir(policy.Index), "hec.db")
-			if _, err := os.Stat(hecdbPath); os.IsNotExist(err) {
-				continue
-			}
-			a.auditDB(hecdbPath, r, policy)
-		default:
-			a.logger.Error("Unknown policy type", zap.String("policytype", policy.Type))
-			continue
+			a.auditDB(devPath, r, policy)
 		}
 	}
 }
@@ -557,12 +612,12 @@ func (d *AuditorDaemon) Run() {
 	if d.zbFilesPerSecond > 0 {
 		wg.Add(1)
 		go func() {
-			zba := Auditor{AuditorDaemon: d, auditorType: "ZBF", mode: "once", filesPerSecond: d.zbFilesPerSecond, ecfunc: realECAuditFuncs{}}
+			zba := Auditor{AuditorDaemon: d, auditorType: "ZBF", mode: "once", filesPerSecond: d.zbFilesPerSecond}
 			zba.run(OneTimeChan())
 			wg.Done()
 		}()
 	}
-	reg := Auditor{AuditorDaemon: d, auditorType: "ALL", mode: "once", filesPerSecond: d.regFilesPerSecond, ecfunc: realECAuditFuncs{}}
+	reg := Auditor{AuditorDaemon: d, auditorType: "ALL", mode: "once", filesPerSecond: d.regFilesPerSecond}
 	reg.run(OneTimeChan())
 	wg.Wait()
 }
@@ -570,10 +625,10 @@ func (d *AuditorDaemon) Run() {
 // RunForever triggering audit passes every time AuditForeverInterval has passed.
 func (d *AuditorDaemon) RunForever() {
 	if d.zbFilesPerSecond > 0 {
-		zba := Auditor{AuditorDaemon: d, auditorType: "ZBF", mode: "forever", filesPerSecond: d.zbFilesPerSecond, ecfunc: realECAuditFuncs{}}
+		zba := Auditor{AuditorDaemon: d, auditorType: "ZBF", mode: "forever", filesPerSecond: d.zbFilesPerSecond}
 		go zba.run(time.Tick(AuditForeverInterval))
 	}
-	reg := Auditor{AuditorDaemon: d, auditorType: "ALL", mode: "forever", filesPerSecond: d.regFilesPerSecond, ecfunc: realECAuditFuncs{}}
+	reg := Auditor{AuditorDaemon: d, auditorType: "ALL", mode: "forever", filesPerSecond: d.regFilesPerSecond}
 	reg.run(time.Tick(AuditForeverInterval))
 }
 
@@ -586,6 +641,15 @@ func NewAuditorDaemon(serverconf conf.Config, flags *flag.FlagSet, cnf srv.Confi
 	d := &AuditorDaemon{}
 	if d.policies, err = cnf.GetPolicies(); err != nil {
 		return nil, err
+	}
+	d.idbAuditors = map[int]IndexDBAuditor{}
+	for _, policy := range d.policies {
+		switch policy.Type {
+		case "hec":
+			d.idbAuditors[policy.Index] = ecAuditor{}
+		case "rep":
+			d.idbAuditors[policy.Index] = repAuditor{}
+		}
 	}
 	d.hashPathPrefix, d.hashPathSuffix, err = cnf.GetHashPrefixAndSuffix()
 	if err != nil {
