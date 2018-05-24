@@ -127,7 +127,7 @@ func (w *s3ResponseWriterWrapper) Header() http.Header {
 }
 
 func (w *s3ResponseWriterWrapper) WriteHeader(statusCode int) {
-	if statusCode/200 != 1 {
+	if statusCode/100 != 2 {
 		// We are going to hijack to return an S3 style result
 		w.hijack = true
 		if statusCode == 401 {
@@ -156,7 +156,6 @@ func (w *s3ResponseWriterWrapper) Write(buf []byte) (int, error) {
 	if !w.hijack {
 		return w.writer.Write(buf)
 	} else {
-		// TODO: Do we need to check to make sure everything gets written?
 		n, err := w.writer.Write(w.msg)
 		return n, err
 	}
