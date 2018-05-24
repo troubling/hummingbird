@@ -187,6 +187,10 @@ func (ta *tempAuth) getReseller(account string) (string, bool) {
 
 func (ta *tempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	ctx := GetProxyContext(request)
+	if ctx == nil {
+		ta.next.ServeHTTP(writer, request)
+		return
+	}
 	if ctx.S3Auth != nil && ctx.Authorize == nil {
 		// handle S3 auth validation
 		key := ctx.S3Auth.Key
@@ -221,10 +225,6 @@ func (ta *tempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 		token := request.Header.Get("X-Auth-Token")
 		if token == "" {
 			token = request.Header.Get("X-Storage-Token")
-		}
-		if ctx == nil {
-			ta.next.ServeHTTP(writer, request)
-			return
 		}
 		if ctx.Authorize == nil {
 			account := ""
