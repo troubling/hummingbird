@@ -82,10 +82,10 @@ func NewS3BucketList() *s3BucketList {
 type s3ObjectInfo struct {
 	Name         string   `xml:"Key"`
 	LastModified string   `xml:"LastModified"`
-	ETag         string   `xml"ETag"`
-	Size         int64    `xml"Size"`
-	StorageClass string   `xml"StorageClass"`
-	Owner        *s3Owner `xml"Owner,omitempty"`
+	ETag         string   `xml:"ETag"`
+	Size         int64    `xml:"Size"`
+	StorageClass string   `xml:"StorageClass"`
+	Owner        *s3Owner `xml:"Owner,omitempty"`
 }
 
 type s3ObjectList struct {
