@@ -117,12 +117,12 @@ func NewProxyDirectClient(policyList conf.PolicyList, cnf srv.ConfigLoader, logg
 	if err != nil {
 		return nil, err
 	}
-	c.ContainerRing = newClientRingFilter(containerRing, readAffinity, "", "")
+	c.ContainerRing = newClientRingFilter(containerRing, readAffinity, "", "", 0)
 	accountRing, err := cnf.GetRing("account", hashPathPrefix, hashPathSuffix, 0)
 	if err != nil {
 		return nil, err
 	}
-	c.AccountRing = newClientRingFilter(accountRing, readAffinity, "", "")
+	c.AccountRing = newClientRingFilter(accountRing, readAffinity, "", "", 0)
 	c.objectClients = make(map[int]proxyObjectClient)
 	for _, policy := range policyList {
 		// TODO: the intention is to (if it becomes necessary) have a policy type to object client
@@ -143,18 +143,19 @@ func NewProxyDirectClient(policyList conf.PolicyList, cnf srv.ConfigLoader, logg
 		if policyWriteAffinityCount == "" {
 			policyWriteAffinityCount = writeAffinityCount
 		}
+		var deviceLimit int
+		if policy.Type == "hec" {
+			if replicas, err := strconv.Atoi(policy.Config["nursery_replicas"]); err == nil && replicas > 0 {
+				deviceLimit = replicas
+			} else {
+				deviceLimit = 3
+			}
+		}
 		client := &standardObjectClient{
 			proxyDirectClient: c,
 			policy:            policy.Index,
-			objectRing:        newClientRingFilter(ring, policyReadAffinity, policyWriteAffinity, policyWriteAffinityCount),
+			objectRing:        newClientRingFilter(ring, policyReadAffinity, policyWriteAffinity, policyWriteAffinityCount, deviceLimit),
 			Logger:            logger,
-		}
-		if policy.Type == "hec" {
-			if replicas, err := strconv.Atoi(policy.Config["nursery_replicas"]); err == nil && replicas > 0 {
-				client.deviceLimit = replicas
-			} else {
-				client.deviceLimit = 3
-			}
 		}
 		c.objectClients[policy.Index] = client
 	}
@@ -168,8 +169,8 @@ func (c *ProxyDirectClient) quorumResponse(r ringFilter, partition uint64, devTo
 	cancel := make(chan struct{})
 	defer close(cancel)
 	responsec := make(chan *http.Response)
-	devs, more := r.getWriteNodes(partition, 0)
-	for i := 0; i < int(r.ReplicaCount()); i++ {
+	devs, more := r.getWriteNodes(partition)
+	for i := 0; i < int(len(devs)); i++ {
 		go func(index int) {
 			var resp *http.Response
 			var firstResp *http.Response
@@ -206,12 +207,12 @@ func (c *ProxyDirectClient) quorumResponse(r ringFilter, partition uint64, devTo
 	}
 	responseClassCounts := make([]int, 6)
 	quorum := int(math.Ceil(float64(r.ReplicaCount()) / 2.0))
-	for i := 0; i < int(r.ReplicaCount()); i++ {
+	for i := 0; i < int(len(devs)); i++ {
 		if resp := <-responsec; resp != nil {
 			responseClassCounts[resp.StatusCode/100]++
 			if responseClassCounts[resp.StatusCode/100] >= quorum {
 				timeout := time.After(time.Duration(PostQuorumTimeoutMs) * time.Millisecond)
-				for i < int(r.ReplicaCount()-1) {
+				for i < int(len(devs)-1) {
 					select {
 					case <-responsec:
 						i++
@@ -778,7 +779,6 @@ type standardObjectClient struct {
 	proxyDirectClient *ProxyDirectClient
 	policy            int
 	objectRing        ringFilter
-	deviceLimit       int
 	Logger            srv.LowLevelLogger
 }
 
@@ -822,7 +822,7 @@ func (oc *standardObjectClient) putObject(ctx context.Context, account, containe
 	cancel := make(chan struct{})
 	defer close(cancel)
 	responsec := make(chan *http.Response)
-	devs, more := oc.objectRing.getWriteNodes(objectPartition, oc.deviceLimit)
+	devs, more := oc.objectRing.getWriteNodes(objectPartition)
 	objectReplicaCount := len(devs)
 
 	devToRequest := func(index int, dev *ring.Device) (*http.Request, error) {
@@ -928,7 +928,8 @@ func (oc *standardObjectClient) postObject(ctx context.Context, account, contain
 	partition := oc.objectRing.GetPartition(account, container, obj)
 	containerPartition := oc.proxyDirectClient.ContainerRing.GetPartition(account, container, "")
 	containerDevices := oc.proxyDirectClient.ContainerRing.GetNodes(containerPartition)
-	objectReplicaCount := int(oc.objectRing.ReplicaCount())
+	devs, _ := oc.objectRing.getWriteNodes(partition)
+	objectReplicaCount := len(devs)
 	return oc.proxyDirectClient.quorumResponse(oc.objectRing, partition, func(i int, dev *ring.Device) (*http.Request, error) {
 		url := fmt.Sprintf("%s://%s:%d/%s/%d/%s/%s/%s", dev.Scheme, dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj))
@@ -1002,7 +1003,8 @@ func (oc *standardObjectClient) deleteObject(ctx context.Context, account, conta
 	partition := oc.objectRing.GetPartition(account, container, obj)
 	containerPartition := oc.proxyDirectClient.ContainerRing.GetPartition(account, container, "")
 	containerDevices := oc.proxyDirectClient.ContainerRing.GetNodes(containerPartition)
-	objectReplicaCount := int(oc.objectRing.ReplicaCount())
+	devs, _ := oc.objectRing.getWriteNodes(partition)
+	objectReplicaCount := len(devs)
 	return oc.proxyDirectClient.quorumResponse(oc.objectRing, partition, func(i int, dev *ring.Device) (*http.Request, error) {
 		url := fmt.Sprintf("%s://%s:%d/%s/%d/%s/%s/%s", dev.Scheme, dev.Ip, dev.Port, dev.Device, partition,
 			common.Urlencode(account), common.Urlencode(container), common.Urlencode(obj))
