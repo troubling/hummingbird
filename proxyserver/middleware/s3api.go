@@ -67,6 +67,7 @@ var s3Responses = map[int]s3Response{
 	501: {"NotImplemented", "A header you provided implies functionality that is not implemented."},
 	500: {"InternalError", "We encountered an internal error. Please try again."},
 	503: {"ServiceUnavailable", "Reduce your request rate."},
+	411: {"MissingContentLength", "You must provide the Content-Length HTTP header."},
 }
 
 type s3Owner struct {
@@ -208,6 +209,28 @@ func (s *s3ApiHandler) ServeHTTP(writer http.ResponseWriter, request *http.Reque
 }
 
 func (s *s3ApiHandler) handleObjectRequest(writer http.ResponseWriter, request *http.Request) {
+	ctx := GetProxyContext(request)
+
+	if request.Method == "PUT" {
+		newReq, err := ctx.newSubrequest("PUT", s.path, request.Body, request, "s3api")
+		if err != nil {
+			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
+		}
+		newReq.Header.Set("Content-Length", request.Header.Get("Content-Length"))
+		newReq.Header.Set("Content-Type", request.Header.Get("Content-Type"))
+		cap := NewCaptureWriter()
+		ctx.serveHTTPSubrequest(cap, newReq)
+		if cap.status/100 != 2 {
+			srv.StandardResponse(writer, cap.status)
+			return
+		} else {
+			writer.Header().Set("ETag", "\""+cap.Header().Get("ETag")+"\"")
+			writer.Header().Set("Content-Length", cap.Header().Get("Content-Length"))
+			writer.WriteHeader(200)
+			return
+		}
+	}
+
 	// If we didn't get to anything, then return no implemented
 	srv.SimpleErrorResponse(writer, http.StatusNotImplemented, "Not Implemented")
 }
