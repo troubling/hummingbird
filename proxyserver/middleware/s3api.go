@@ -239,6 +239,22 @@ func (s *s3ApiHandler) ServeHTTP(writer http.ResponseWriter, request *http.Reque
 }
 
 func (s *s3ApiHandler) handleObjectRequest(writer http.ResponseWriter, request *http.Request) {
+	ctx := GetProxyContext(request)
+
+	if request.Method == "GET" || request.Method == "HEAD" {
+		newReq, err := ctx.newSubrequest(request.Method, s.path, http.NoBody, request, "s3api")
+		if err != nil {
+			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
+		}
+		newReq.Header.Set("Range", request.Header.Get("Range"))
+		newReq.Header.Set("If-Match", request.Header.Get("If-Match"))
+		newReq.Header.Set("If-None-Match", request.Header.Get("If-None-Match"))
+		newReq.Header.Set("If-Modified-Since", request.Header.Get("If-Modified-Since"))
+		newReq.Header.Set("If-UnModified-Since", request.Header.Get("If-UnModified-Since"))
+		ctx.serveHTTPSubrequest(writer, newReq)
+		return
+	}
+
 	// If we didn't get to anything, then return no implemented
 	srv.SimpleErrorResponse(writer, http.StatusNotImplemented, "Not Implemented")
 }
