@@ -239,6 +239,24 @@ func (s *s3ApiHandler) ServeHTTP(writer http.ResponseWriter, request *http.Reque
 }
 
 func (s *s3ApiHandler) handleObjectRequest(writer http.ResponseWriter, request *http.Request) {
+	ctx := GetProxyContext(request)
+
+	if request.Method == "DELETE" {
+		newReq, err := ctx.newSubrequest("DELETE", s.path, http.NoBody, request, "s3api")
+		if err != nil {
+			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
+		}
+		cap := NewCaptureWriter()
+		ctx.serveHTTPSubrequest(cap, newReq)
+		if cap.status/100 != 2 {
+			srv.StandardResponse(writer, cap.status)
+			return
+		} else {
+			writer.WriteHeader(204)
+			return
+		}
+	}
+
 	// If we didn't get to anything, then return no implemented
 	srv.SimpleErrorResponse(writer, http.StatusNotImplemented, "Not Implemented")
 }
