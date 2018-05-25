@@ -63,10 +63,10 @@ type s3Response struct {
 
 var s3Responses = map[int]s3Response{
 	// NOTE: These are meant to be generic responses
-	403: s3Response{"AccessDenied", "Access Denied"},
-	501: s3Response{"NotImplemented", "A header you provided implies functionality that is not implemented."},
-	500: s3Response{"InternalError", "We encountered an internal error. Please try again."},
-	503: s3Response{"ServiceUnavailable", "Reduce your request rate."},
+	403: {"AccessDenied", "Access Denied"},
+	501: {"NotImplemented", "A header you provided implies functionality that is not implemented."},
+	500: {"InternalError", "We encountered an internal error. Please try again."},
+	503: {"ServiceUnavailable", "Reduce your request rate."},
 }
 
 type s3Owner struct {

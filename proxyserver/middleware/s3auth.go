@@ -74,7 +74,7 @@ func (s *s3AuthHandler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 			return
 		}
 		key = authStr[0:i]
-		signature = authStr[i+1 : len(authStr)]
+		signature = authStr[i+1:]
 	}
 	if authStr == "" {
 		// Check params for auth info
