@@ -173,6 +173,18 @@ type s3ApiHandler struct {
 	requestsMetric tally.Counter
 }
 
+func s3PathSplit(path string) (string, string) {
+	parts := strings.SplitN(path, "/", 3)
+	switch len(parts) {
+	case 3:
+		return parts[1], parts[2]
+	case 2:
+		return parts[1], ""
+	default:
+		return "", ""
+	}
+}
+
 func (s *s3ApiHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	ctx := GetProxyContext(request)
 	// Check if this is an S3 request
@@ -182,7 +194,7 @@ func (s *s3ApiHandler) ServeHTTP(writer http.ResponseWriter, request *http.Reque
 		return
 	}
 
-	s.container, s.object, _, _ = getPathSegments(request.URL.Path)
+	s.container, s.object = s3PathSplit(request.URL.Path)
 	s.account = ctx.S3Auth.Account
 
 	// TODO: Validate the container
