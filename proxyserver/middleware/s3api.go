@@ -249,7 +249,8 @@ func (s *s3ApiHandler) handleContainerRequest(writer http.ResponseWriter, reques
 	}
 
 	if request.Method == "GET" {
-		maxKeys, err := strconv.Atoi(request.Form.Get("max-keys"))
+		q := request.URL.Query()
+		maxKeys, err := strconv.Atoi(q.Get("max-keys"))
 		if err != nil {
 			maxKeys = 1000
 		}
@@ -260,7 +261,6 @@ func (s *s3ApiHandler) handleContainerRequest(writer http.ResponseWriter, reques
 		}
 		newReq.Header.Set("Accept", "application/json")
 		nq := newReq.URL.Query()
-		q := request.URL.Query()
 		nq.Set("limit", strconv.Itoa(maxKeys+1))
 		ver := q.Get("list-type")
 		marker := q.Get("marker")
