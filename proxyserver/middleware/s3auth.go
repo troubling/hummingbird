@@ -122,7 +122,7 @@ func (s *s3AuthHandler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 	}
 	// NOTE: The following is for V2 Auth
 
-	buf.WriteString(request.URL.RequestURI())
+	buf.WriteString(request.URL.Path)
 	ctx.S3Auth = &S3AuthInfo{
 		StringToSign: buf.String(),
 		Key:          key,

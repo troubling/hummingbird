@@ -39,6 +39,7 @@
 package middleware
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
@@ -49,6 +50,7 @@ import (
 	"github.com/troubling/hummingbird/accountserver"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/containerserver"
 	"github.com/uber-go/tally"
 )
 
@@ -88,6 +90,35 @@ type s3BucketList struct {
 
 func NewS3BucketList() *s3BucketList {
 	return &s3BucketList{Xmlns: s3Xmlns}
+}
+
+type s3ObjectInfo struct {
+	Name         string   `xml:"Key"`
+	LastModified string   `xml:"LastModified"`
+	ETag         string   `xml:"ETag"`
+	Size         int64    `xml:"Size"`
+	StorageClass string   `xml:"StorageClass"`
+	Owner        *s3Owner `xml:"Owner,omitempty"`
+}
+
+type s3ObjectList struct {
+	XMLName               xml.Name       `xml:"ListBucketResult"`
+	Xmlns                 string         `xml:"xmlns,attr"`
+	Name                  string         `xml:"Name"`
+	Prefix                string         `xml:"Prefix"`
+	Marker                string         `xml:"Marker"`
+	NextMarker            string         `xml:"NextMarker"`
+	MaxKeys               int            `xml:"MaxKeys"`
+	IsTruncated           bool           `xml:"IsTruncated"`
+	ContinuationToken     string         `xml:"ContinuationToken,omitempty"`
+	NextContinuationToken string         `xml:"NextContinationToken,omitempty"`
+	StartAfter            string         `xml:"StartAfter,omitempty"`
+	KeyCount              string         `xml:"KeyCount,omitempty"`
+	Objects               []s3ObjectInfo `xml:"Contents"`
+}
+
+func NewS3ObjectList() *s3ObjectList {
+	return &s3ObjectList{Xmlns: s3Xmlns}
 }
 
 type s3Error struct {
@@ -215,12 +246,28 @@ func (s *s3ApiHandler) handleObjectRequest(writer http.ResponseWriter, request *
 func (s *s3ApiHandler) handleContainerRequest(writer http.ResponseWriter, request *http.Request) {
 	ctx := GetProxyContext(request)
 
+	if request.Method == "HEAD" {
+		newReq, err := ctx.newSubrequest("HEAD", s.path, http.NoBody, request, "s3api")
+		if err != nil {
+			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
+			return
+		}
+		cap := NewCaptureWriter()
+		ctx.serveHTTPSubrequest(cap, newReq)
+		if cap.status/100 != 2 {
+			srv.StandardResponse(writer, cap.status)
+			return
+		} else {
+			writer.WriteHeader(200)
+			return
+		}
+	}
+
 	if request.Method == "DELETE" {
 		newReq, err := ctx.newSubrequest("DELETE", s.path, http.NoBody, request, "s3api")
 		if err != nil {
 			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
 		}
-		newReq.Header.Set("Accept", "application/json")
 		cap := NewCaptureWriter()
 		ctx.serveHTTPSubrequest(cap, newReq)
 		if cap.status/100 != 2 {
@@ -237,7 +284,6 @@ func (s *s3ApiHandler) handleContainerRequest(writer http.ResponseWriter, reques
 		if err != nil {
 			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
 		}
-		newReq.Header.Set("Accept", "application/json")
 		cap := NewCaptureWriter()
 		ctx.serveHTTPSubrequest(cap, newReq)
 		if cap.status/100 != 2 {
@@ -249,7 +295,113 @@ func (s *s3ApiHandler) handleContainerRequest(writer http.ResponseWriter, reques
 		}
 	}
 
-	// If we didn't get to do anything, then return not implemented
+	if request.Method == "GET" {
+		q := request.URL.Query()
+		maxKeys, err := strconv.Atoi(q.Get("max-keys"))
+		if err != nil {
+			maxKeys = 1000
+		}
+		newReq, err := ctx.newSubrequest("GET", s.path, http.NoBody, request, "s3api")
+		if err != nil {
+			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
+			return
+		}
+		newReq.Header.Set("Accept", "application/json")
+		nq := newReq.URL.Query()
+		nq.Set("limit", strconv.Itoa(maxKeys+1))
+		ver := q.Get("list-type")
+		marker := q.Get("marker")
+		prefix := q.Get("prefix")
+		delimeter := q.Get("delimeter")
+		fetchOwner := false
+		if ver == "2" {
+			marker = q.Get("start-after")
+			cont := q.Get("continuation-token")
+			if cont != "" {
+				if b, err := base64.StdEncoding.DecodeString(cont); err == nil {
+					marker = string(b)
+				}
+			}
+			fetchOwner, err = strconv.ParseBool(q.Get("fetch-owner"))
+			if err != nil {
+				fetchOwner = false
+			}
+		}
+		if marker != "" {
+			nq.Set("marker", marker)
+		}
+		if prefix != "" {
+			nq.Set("prefix", prefix)
+		}
+		if delimeter != "" {
+			nq.Set("delimiter", delimeter)
+		}
+		cap := NewCaptureWriter()
+		newReq.URL.RawQuery = nq.Encode()
+		ctx.serveHTTPSubrequest(cap, newReq)
+		if cap.status/100 != 2 {
+			srv.StandardResponse(writer, cap.status)
+			return
+		}
+		objectListing := []containerserver.ObjectListingRecord{}
+		err = json.Unmarshal(cap.body, &objectListing)
+		if err != nil {
+			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
+			return
+		}
+		truncated := maxKeys > 0 && len(objectListing) > maxKeys
+		if len(objectListing) > maxKeys {
+			objectListing = objectListing[:maxKeys]
+		}
+		objectList := NewS3ObjectList()
+		objectList.Name = s.container
+		objectList.MaxKeys = maxKeys
+		objectList.IsTruncated = truncated
+		objectList.Marker = marker
+		objectList.Prefix = prefix
+		if ver == "2" {
+			if truncated {
+				objectList.NextContinuationToken = base64.StdEncoding.EncodeToString([]byte(objectListing[len(objectListing)].Name))
+			}
+			objectList.ContinuationToken = q.Get("continuation-token")
+			objectList.StartAfter = q.Get("start-after")
+			objectList.KeyCount = strconv.Itoa(len(objectListing))
+		} else {
+			if truncated && delimeter != "" {
+				objectList.NextMarker = objectListing[len(objectListing)].Name
+			}
+		}
+		for _, o := range objectListing {
+			obj := s3ObjectInfo{
+				Name:         o.Name,
+				LastModified: o.LastModified + "Z",
+				ETag:         "\"" + o.ETag + "\"",
+				Size:         o.Size,
+				StorageClass: "STANDARD",
+			}
+			if fetchOwner || ver != "2" {
+				obj.Owner = &s3Owner{
+					ID:          ctx.S3Auth.Account,
+					DisplayName: ctx.S3Auth.Account,
+				}
+			}
+			objectList.Objects = append(objectList.Objects, obj)
+		}
+		output, err := xml.MarshalIndent(objectList, "", "  ")
+		if err != nil {
+			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
+			return
+		}
+		output = []byte(xml.Header + string(output))
+		headers := writer.Header()
+		headers.Set("Content-Type", "application/xml; charset=utf-8")
+		headers.Set("Content-Length", strconv.Itoa(len(output)))
+		writer.WriteHeader(200)
+		writer.Write(output)
+		return
+
+	}
+	// If we didn't get to anything, then return no implemented
 	srv.SimpleErrorResponse(writer, http.StatusNotImplemented, "Not Implemented")
 }
 
