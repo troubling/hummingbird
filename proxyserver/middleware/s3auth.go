@@ -86,6 +86,10 @@ func (s *s3AuthHandler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 		s.next.ServeHTTP(writer, request)
 		return
 	}
+
+	// Wrap the writer so that we can capture errors and send correct S3 style responses
+	writer = newS3ResponseWriterWrapper(writer, request)
+
 	// TODO: Handle parameter style auth
 	// TODO: Handle V2 signature validation
 	// Setup the string to be signed
