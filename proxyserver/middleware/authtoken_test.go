@@ -157,6 +157,10 @@ func (mr *mockTokenMemcacheRing) Incr(ctx context.Context, key string, delta int
 }
 
 func (mr *mockTokenMemcacheRing) Set(ctx context.Context, key string, value interface{}, timeout int) error {
+	// we don't cache the server auth token to keep the tests clean
+	if key == "Keystone:ServerAuth" {
+		return nil
+	}
 	mr.lock.Lock()
 	defer mr.lock.Unlock()
 	serl, _ := json.Marshal(value)
