@@ -304,7 +304,7 @@ func (s *s3ApiHandler) handleObjectRequest(writer http.ResponseWriter, request *
 		}
 	}
 
-  // If we didn't get to anything, then return no implemented
+	// If we didn't get to anything, then return no implemented
 	srv.SimpleErrorResponse(writer, http.StatusNotImplemented, "Not Implemented")
 }
 
