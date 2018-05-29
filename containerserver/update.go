@@ -27,6 +27,7 @@ import (
 
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/common/tracing"
 	"github.com/troubling/hummingbird/middleware"
 	"go.uber.org/zap"
 )
@@ -61,8 +62,9 @@ func (server *ContainerServer) accountUpdate(writer http.ResponseWriter, request
 		for len(schemes) < len(hosts) {
 			schemes = append(schemes, "http")
 		}
+		ctx := tracing.CopySpanFromContext(request.Context())
 		for index, host := range hosts {
-			if err := accountUpdateHelper(request.Context(), info, schemes[index], host, devices[index], accpartition, vars["account"], vars["container"], request.Header.Get("X-Trans-Id"), request.Header.Get("X-Account-Override-Deleted") == "yes", server.updateClient); err != nil {
+			if err := accountUpdateHelper(ctx, info, schemes[index], host, devices[index], accpartition, vars["account"], vars["container"], request.Header.Get("X-Trans-Id"), request.Header.Get("X-Account-Override-Deleted") == "yes", server.updateClient); err != nil {
 				logger.Error(
 					"Account update failed:", zap.Error(err),
 					zap.String("schemes[index]", schemes[index]),
