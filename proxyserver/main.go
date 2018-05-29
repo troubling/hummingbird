@@ -47,7 +47,7 @@ type ProxyServer struct {
 	logLevel          zap.AtomicLevel
 	mc                ring.MemcacheRing
 	accountAutoCreate bool
-	proxyDirectClient *client.ProxyDirectClient
+	proxyClient       client.ProxyClient
 	metricsCloser     io.Closer
 	traceCloser       io.Closer
 	tracer            opentracing.Tracer
@@ -68,9 +68,7 @@ func (server *ProxyServer) Finalize() {
 	if server.traceCloser != nil {
 		server.traceCloser.Close()
 	}
-	if server.proxyDirectClient.ClientTraceCloser != nil {
-		server.proxyDirectClient.ClientTraceCloser.Close()
-	}
+	server.proxyClient.Close()
 }
 
 func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) http.Handler {
@@ -182,7 +180,7 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 		}
 	}
 	pipeline := alice.New(globalmiddleware.ServerTracer(server.tracer), middleware.NewContext(config.GetBool("debug", "debug_x_source_code", false),
-		server.mc, server.logger, server.proxyDirectClient))
+		server.mc, server.logger, server.proxyClient))
 	for _, m := range middlewares {
 		mid, err := m.construct(config.GetSection(m.section), metricsScope)
 		if err != nil {
@@ -229,10 +227,10 @@ func NewServer(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader
 	if err != nil {
 		return ipPort, nil, nil, err
 	}
-	server.proxyDirectClient, err = client.NewProxyDirectClient(
+	server.proxyClient, err = client.NewProxyClient(
 		policies, cnf, server.logger, certFile, keyFile, readAff, writeAff, writeAffCount, serverconf)
 	if err != nil {
-		return ipPort, nil, nil, fmt.Errorf("Error setting up proxyDirectClient: %v", err)
+		return ipPort, nil, nil, fmt.Errorf("Error setting up proxyClient: %v", err)
 	}
 	info := map[string]interface{}{
 		"version":                  common.Version,

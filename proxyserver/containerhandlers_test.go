@@ -26,10 +26,15 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/troubling/hummingbird/client"
+	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/common/test"
 	"github.com/troubling/hummingbird/proxyserver/middleware"
 )
+
+var staticPolicyList = conf.PolicyList(map[int]*conf.Policy{
+	0: {Index: 0, Type: "rep", Name: "gold", Aliases: []string{}, Default: true, Deprecated: false, Config: map[string]string{}},
+})
 
 func TestOptionsHandler(t *testing.T) {
 	p := ProxyServer{}
@@ -37,9 +42,13 @@ func TestOptionsHandler(t *testing.T) {
 	theStatus := map[string]int{"S": 1}
 	fakeWriter := test.MockResponseWriter{SaveHeader: &theHeader, StatusMap: theStatus}
 
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
+
 	r := httptest.NewRequest("OPTIONS", "/v1/a/c/o", nil)
 	ctx := &middleware.ProxyContext{
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{
 			"container/a/c": {Metadata: map[string]string{"Access-Control-Allow-Origin": "there.com"}},
 		}, zap.NewNop()),
 	}
@@ -72,10 +81,13 @@ func TestOptionsHandlerStar(t *testing.T) {
 	theHeader := make(http.Header, 1)
 	theStatus := map[string]int{"S": 1}
 	fakeWriter := test.MockResponseWriter{SaveHeader: &theHeader, StatusMap: theStatus}
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
 
 	r := httptest.NewRequest("OPTIONS", "/v1/a/c/o", nil)
 	ctx := &middleware.ProxyContext{
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{
 			"container/a/c": {Metadata: map[string]string{"Access-Control-Allow-Origin": "*"}},
 		}, zap.NewNop()),
 	}
@@ -95,10 +107,13 @@ func TestOptionsHandlerNotSetup(t *testing.T) {
 	theHeader := make(http.Header, 1)
 	theStatus := map[string]int{"S": 1}
 	fakeWriter := test.MockResponseWriter{SaveHeader: &theHeader, StatusMap: theStatus}
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
 
 	r := httptest.NewRequest("OPTIONS", "/v1/a/c/o", nil)
 	ctx := &middleware.ProxyContext{
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{
 			"container/a/c": {Metadata: map[string]string{}},
 		}, zap.NewNop()),
 	}

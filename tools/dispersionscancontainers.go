@@ -119,7 +119,7 @@ func (dsc *dispersionScanContainers) runOnce() time.Duration {
 	}()
 	var marker string
 	for {
-		resp := dsc.aa.hClient.GetAccount(context.Background(), AdminAccount, map[string]string{
+		resp := dsc.aa.hClient.GetAccountRaw(context.Background(), AdminAccount, map[string]string{
 			"format": "json",
 			"marker": marker,
 			"prefix": "disp-conts-",

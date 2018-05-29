@@ -12,6 +12,8 @@ import (
 	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/common/test"
 
 	"go.uber.org/zap"
 )
@@ -28,9 +30,12 @@ func passthroughQuotaHandler() http.Handler {
 
 func TestQuotaBytes(t *testing.T) {
 	h := passthroughQuotaHandler()
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
 	ctx := &ProxyContext{
 		Logger: zap.NewNop(),
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{
 			"container/a/c": {
 				Metadata: map[string]string{"Quota-Bytes": "3"},
 			},
@@ -53,9 +58,12 @@ func TestQuotaBytes(t *testing.T) {
 
 func TestQuotaCount(t *testing.T) {
 	h := passthroughQuotaHandler()
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
 	ctx := &ProxyContext{
 		Logger: zap.NewNop(),
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{
 			"container/a/c": {
 				Metadata:    map[string]string{"Quota-Count": "3"},
 				ObjectCount: 42,

@@ -45,6 +45,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/net/http2"
+
 	"github.com/justinas/alice"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/troubling/hummingbird/client"
@@ -58,7 +60,6 @@ import (
 	"github.com/uber-go/tally"
 	promreporter "github.com/uber-go/tally/prometheus"
 	"go.uber.org/zap"
-	"golang.org/x/net/http2"
 )
 
 const AdminAccount = ".admin"
@@ -578,7 +579,7 @@ type AutoAdmin struct {
 	port              int
 	bindIp            string
 	client            common.HTTPClient
-	hClient           client.ProxyClient
+	hClient           client.RequestClient
 	policies          conf.PolicyList
 	metricsScope      tally.Scope
 	metricsCloser     io.Closer
@@ -692,7 +693,7 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 	port := int(serverconf.GetInt("andrewd", "bind_port", common.DefaultAndrewdPort))
 	certFile := serverconf.GetDefault("andrewd", "cert_file", "")
 	keyFile := serverconf.GetDefault("andrewd", "key_file", "")
-	pdc, pdcerr := client.NewProxyDirectClient(policies, srv.DefaultConfigLoader{}, logger, certFile, keyFile, "", "", "", serverconf)
+	pdc, pdcerr := client.NewProxyClient(policies, srv.DefaultConfigLoader{}, logger, certFile, keyFile, "", "", "", serverconf)
 	if pdcerr != nil {
 		return ipPort, nil, nil, fmt.Errorf("Could not make client: %v", pdcerr)
 	}
@@ -724,7 +725,7 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 	a := &AutoAdmin{
 		serverconf:     serverconf,
 		client:         httpClient,
-		hClient:        client.NewProxyClient(pdc, nil, nil, logger),
+		hClient:        pdc.NewRequestClient(nil, nil, logger),
 		port:           port,
 		bindIp:         ip,
 		policies:       pl,
@@ -744,7 +745,7 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 			return ipPort, nil, nil, fmt.Errorf("Error setting up tracer: %v", err)
 		}
 		a.clientTraceCloser = clientTraceCloser
-		a.pdcCloser = pdc.ClientTraceCloser
+		a.pdcCloser = pdc
 		enableHTTPTrace := serverconf.GetBool("tracing", "enable_httptrace", true)
 		a.client, err = client.NewTracingClient(clientTracer, httpClient, enableHTTPTrace)
 		if err != nil {
