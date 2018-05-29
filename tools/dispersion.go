@@ -264,6 +264,9 @@ func getDispersionReport(flags *flag.FlagSet) *dispersionReport {
 		report.Errors = append(report.Errors, err.Error())
 	} else {
 		for _, policy := range policies {
+			if policy.Config["andrewd"] == "ignore" {
+				continue
+			}
 			ring, _ := getRing("", "object", policy.Index)
 			objectReport := &innerDispersionReport{TotalPartitions: int(ring.PartitionCount()), ReplicaCount: int(ring.ReplicaCount()), Partitions: map[int][]*dispersionMissing{}, ScanFailures: map[int][]*scanFailure{}}
 			var progress string

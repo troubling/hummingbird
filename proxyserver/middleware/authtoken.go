@@ -225,6 +225,7 @@ func (at *authToken) preValidate(ctx context.Context, proxyCtx *ProxyContext, au
 		at.preValidations[authToken] = true
 	}
 	go func() {
+		ctx = tracing.CopySpanFromContext(ctx)
 		at.validate(ctx, proxyCtx, authToken)
 		at.lock.Lock()
 		defer at.lock.Unlock()

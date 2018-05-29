@@ -33,6 +33,7 @@ import (
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/pickle"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/common/tracing"
 	"github.com/troubling/hummingbird/middleware"
 	"go.uber.org/zap"
 )
@@ -152,7 +153,8 @@ func (server *ObjectServer) containerUpdates(writer http.ResponseWriter, request
 
 	done := make(chan struct{}, 1)
 	go func() {
-		server.updateContainer(request.Context(), metadata, request, vars, logger)
+		ctx := tracing.CopySpanFromContext(request.Context())
+		server.updateContainer(ctx, metadata, request, vars, logger)
 		done <- struct{}{}
 	}()
 	select {
