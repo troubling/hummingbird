@@ -65,9 +65,9 @@ func NewPipeResponseWriter(writer *io.PipeWriter, ready chan struct{}, logger sr
 	}
 }
 
-func PipedGet(path string, request *http.Request, source string, auth AuthorizeFunc) (io.ReadCloser, http.Header, int) {
+func PipedGet(urlStr string, request *http.Request, source string, auth AuthorizeFunc) (io.ReadCloser, http.Header, int) {
 	ctx := GetProxyContext(request)
-	subRequest, err := ctx.newSubrequest("GET", path, nil, request, source)
+	subRequest, err := ctx.newSubrequest("GET", urlStr, nil, request, source)
 	if err != nil {
 		ctx.Logger.Error("getSourceObject GET error", zap.Error(err))
 		return nil, nil, 400

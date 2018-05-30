@@ -171,9 +171,9 @@ func (v *versionedWrites) versionedObjectName(object string, ts string) string {
 	return v.versionedObjectPrefix(object) + ts
 }
 
-func (v *versionedWrites) containerListing(writer http.ResponseWriter, req *http.Request, path string) (listing []segItem, err error) {
+func (v *versionedWrites) containerListing(writer http.ResponseWriter, req *http.Request, urlStr string) (listing []segItem, err error) {
 	ctx := GetProxyContext(req)
-	request, err := ctx.newSubrequest("GET", path, http.NoBody, req, "VW")
+	request, err := ctx.newSubrequest("GET", urlStr, http.NoBody, req, "VW")
 	if err != nil {
 		return listing, err
 	}
@@ -190,7 +190,7 @@ func (v *versionedWrites) containerListing(writer http.ResponseWriter, req *http
 
 func (v *versionedWrites) putDeletedMarker(writer http.ResponseWriter, req *http.Request, path string) (http.Header, int) {
 	ctx := GetProxyContext(req)
-	request, err := ctx.newSubrequest("PUT", path, http.NoBody, req, "VW")
+	request, err := ctx.newSubrequest("PUT", common.Urlencode(path), http.NoBody, req, "VW")
 	if err != nil {
 		ctx.Logger.Error("putDeletedMarker PUT error", zap.Error(err))
 		return nil, 500
@@ -207,7 +207,7 @@ func (v *versionedWrites) putDeletedMarker(writer http.ResponseWriter, req *http
 
 func (v *versionedWrites) putVersionedObj(writer http.ResponseWriter, req *http.Request, path string, body io.ReadCloser, header http.Header) (http.Header, int) {
 	ctx := GetProxyContext(req)
-	request, err := ctx.newSubrequest("PUT", path, body, req, "VW")
+	request, err := ctx.newSubrequest("PUT", common.Urlencode(path), body, req, "VW")
 	if err != nil {
 		ctx.Logger.Error("putVersionedObj PUT error", zap.Error(err))
 		return nil, 400
@@ -224,7 +224,7 @@ func okAuthFunc(r *http.Request) (bool, int) { return true, http.StatusOK }
 
 func (v *versionedWrites) copyObject(writer http.ResponseWriter, request *http.Request, dest string, src string) bool {
 	ctx := GetProxyContext(request)
-	srcBody, srcHeader, srcStatus := PipedGet(src, request, "VW", okAuthFunc)
+	srcBody, srcHeader, srcStatus := PipedGet(common.Urlencode(src), request, "VW", okAuthFunc)
 	if srcBody != nil {
 		defer srcBody.Close()
 	}
@@ -258,7 +258,7 @@ func (v *versionedWrites) copyCurrent(writer http.ResponseWriter, request *http.
 		}
 	}
 
-	srcBody, srcHeader, srcStatus := PipedGet(request.URL.Path, request, "VW", okAuthFunc)
+	srcBody, srcHeader, srcStatus := PipedGet(common.Urlencode(request.URL.Path), request, "VW", okAuthFunc)
 	if srcBody != nil {
 		defer srcBody.Close()
 	}
@@ -309,7 +309,7 @@ func (v *versionedWrites) handleObjectDeleteHistory(writer http.ResponseWriter, 
 
 func (v *versionedWrites) deleteObject(writer http.ResponseWriter, req *http.Request, path string) (http.Header, int) {
 	ctx := GetProxyContext(req)
-	request, err := ctx.newSubrequest("DELETE", path, http.NoBody, req, "VW")
+	request, err := ctx.newSubrequest("DELETE", common.Urlencode(path), http.NoBody, req, "VW")
 	if err != nil {
 		ctx.Logger.Error("deleteObject error", zap.Error(err))
 		return nil, 500
@@ -322,7 +322,7 @@ func (v *versionedWrites) deleteObject(writer http.ResponseWriter, req *http.Req
 
 func (v *versionedWrites) headObject(writer http.ResponseWriter, req *http.Request, path string) (http.Header, int) {
 	ctx := GetProxyContext(req)
-	request, err := ctx.newSubrequest("HEAD", path, http.NoBody, req, "VW")
+	request, err := ctx.newSubrequest("HEAD", common.Urlencode(path), http.NoBody, req, "VW")
 	if err != nil {
 		ctx.Logger.Error("headObject error", zap.Error(err))
 		return nil, 500
@@ -334,7 +334,7 @@ func (v *versionedWrites) headObject(writer http.ResponseWriter, req *http.Reque
 
 func (v *versionedWrites) handleObjectDeleteStack(writer http.ResponseWriter, request *http.Request, account, container, versionsContainer, object string) {
 	ctx := GetProxyContext(request)
-	listingPath := fmt.Sprintf("/v1/%s/%s?format=json&prefix=%s&reverse=on", account, versionsContainer, v.versionedObjectPrefix(object))
+	listingPath := fmt.Sprintf("/v1/%s/%s?format=json&prefix=%s&reverse=on", common.Urlencode(account), common.Urlencode(versionsContainer), url.QueryEscape(v.versionedObjectPrefix(object)))
 	listing, err := v.containerListing(writer, request, listingPath)
 	if err != nil {
 		srv.SimpleErrorResponse(writer, 500, "Failed to get versions container listing")
