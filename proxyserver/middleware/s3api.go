@@ -304,8 +304,13 @@ func (s *s3ApiHandler) handleObjectRequest(writer http.ResponseWriter, request *
 		}
 	}
 
-	// If we didn't get to anything, then return no implemented
-	srv.SimpleErrorResponse(writer, http.StatusNotImplemented, "Not Implemented")
+	if request.Method == "POST" {
+		srv.StandardResponse(writer, http.StatusNotImplemented)
+		return
+	}
+
+	// If we didn't get to anything, then return method not allowed
+	srv.StandardResponse(writer, http.StatusMethodNotAllowed)
 }
 
 func (s *s3ApiHandler) handleContainerRequest(writer http.ResponseWriter, request *http.Request) {
@@ -466,8 +471,8 @@ func (s *s3ApiHandler) handleContainerRequest(writer http.ResponseWriter, reques
 		return
 
 	}
-	// If we didn't get to anything, then return no implemented
-	srv.SimpleErrorResponse(writer, http.StatusNotImplemented, "Not Implemented")
+	// If we didn't get to anything, then return method not allowed
+	srv.StandardResponse(writer, http.StatusMethodNotAllowed)
 }
 
 func (s *s3ApiHandler) handleAccountRequest(writer http.ResponseWriter, request *http.Request) {
@@ -516,7 +521,7 @@ func (s *s3ApiHandler) handleAccountRequest(writer http.ResponseWriter, request 
 
 	}
 
-	// No other methods are allowed at the account level
+	// If we didn't get to anything, then return method not allowed
 	srv.StandardResponse(writer, http.StatusMethodNotAllowed)
 }
 
