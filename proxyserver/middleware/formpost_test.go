@@ -36,6 +36,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/common/test"
 )
 
 func makeFormpostRequest(t *testing.T, body, boundary string, next http.Handler) *httptest.ResponseRecorder {
@@ -44,9 +47,12 @@ func makeFormpostRequest(t *testing.T, body, boundary string, next http.Handler)
 	require.Nil(t, err)
 	newr.Header.Set("Content-Type", "multipart/form-data; boundary="+boundary)
 	neww := httptest.NewRecorder()
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
 	ctx := &ProxyContext{
 		Logger: zap.NewNop(),
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{
 			"container/AUTH_test/container": {Metadata: map[string]string{"Temp-Url-Key": "mykey"}},
 		}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{
@@ -162,9 +168,12 @@ func TestFpLimitReader(t *testing.T) {
 
 // func authorizeFormpost(ctx context.Context, pc *ProxyContext, account, container, path string, attrs map[string]string) int {
 func TestAuthenticateFormpost(t *testing.T) {
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
 	pc := &ProxyContext{
 		Logger: zap.NewNop(),
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{
 			"container/a/c": {Metadata: map[string]string{
 				"Temp-Url-Key":   "containerkey",
 				"Temp-Url-Key-2": "containerkey2",

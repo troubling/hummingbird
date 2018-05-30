@@ -179,7 +179,7 @@ func (dso *dispersionScanObjects) scanDispersionObjects(logger *zap.Logger, poli
 	}()
 	var marker string
 	for {
-		resp := dso.aa.hClient.GetContainer(context.Background(), AdminAccount, container, map[string]string{
+		resp := dso.aa.hClient.GetContainerRaw(context.Background(), AdminAccount, container, map[string]string{
 			"format": "json",
 			"marker": marker,
 		}, http.Header{})

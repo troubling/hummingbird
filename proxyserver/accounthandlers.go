@@ -46,11 +46,11 @@ func (server *ProxyServer) AccountGetHandler(writer http.ResponseWriter, request
 			}
 		}
 	}
-	resp := ctx.C.GetAccount(request.Context(), vars["account"], options, request.Header)
+	resp := ctx.C.GetAccountRaw(request.Context(), vars["account"], options, request.Header)
 	if resp.StatusCode == http.StatusNotFound && server.accountAutoCreate {
 		resp.Body.Close()
 		ctx.AutoCreateAccount(request.Context(), vars["account"], request.Header)
-		resp = ctx.C.GetAccount(request.Context(), vars["account"], options, request.Header)
+		resp = ctx.C.GetAccountRaw(request.Context(), vars["account"], options, request.Header)
 	}
 	for k := range resp.Header {
 		if !common.OwnerHeaders[strings.ToLower(k)] || ctx.StorageOwner {

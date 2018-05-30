@@ -31,6 +31,9 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/troubling/hummingbird/client"
+	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/common/test"
 )
 
 var deleteMarkerRegex = regexp.MustCompile(`/v1/a/c_v/001o/\d{10}\.\d{5}`)
@@ -69,6 +72,9 @@ func TestObjectPutHistory(t *testing.T) {
 	})
 	vw := versionedWrites{next: next, enabled: true}
 	w := httptest.NewRecorder()
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
 
 	req, err := http.NewRequest("PUT", "/v1/a/c/o", bytes.NewBuffer([]byte(newObjectContents)))
 	ctx := &ProxyContext{
@@ -76,7 +82,7 @@ func TestObjectPutHistory(t *testing.T) {
 			next: next,
 		},
 		Logger: zap.NewNop(),
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{
 			"container/a/c": {
 				SysMetadata: map[string]string{
 					"Versions-Location": "c_v",
@@ -126,6 +132,9 @@ func TestObjectDeleteHistory(t *testing.T) {
 
 	vw := versionedWrites{next: next, enabled: true}
 	w := httptest.NewRecorder()
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
 
 	req, err := http.NewRequest("DELETE", "/v1/a/c/o", http.NoBody)
 	ctx := &ProxyContext{
@@ -133,7 +142,7 @@ func TestObjectDeleteHistory(t *testing.T) {
 			next: next,
 		},
 		Logger: zap.NewNop(),
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{
 			"container/a/c": {
 				SysMetadata: map[string]string{
 					"Versions-Location": "c_v",
@@ -190,6 +199,9 @@ func TestObjectDeleteStack(t *testing.T) {
 
 	vw := versionedWrites{next: next, enabled: true}
 	w := httptest.NewRecorder()
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
 
 	req, err := http.NewRequest("DELETE", "/v1/a/c/o", http.NoBody)
 	ctx := &ProxyContext{
@@ -197,7 +209,7 @@ func TestObjectDeleteStack(t *testing.T) {
 			next: next,
 		},
 		Logger: zap.NewNop(),
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{
 			"container/a/c": {
 				SysMetadata: map[string]string{
 					"Versions-Location": "c_v",
@@ -255,14 +267,16 @@ func TestObjectDeleteStackMarker(t *testing.T) {
 
 	vw := versionedWrites{next: next, enabled: true}
 	w := httptest.NewRecorder()
-
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
 	req, err := http.NewRequest("DELETE", "/v1/a/c/o", http.NoBody)
 	ctx := &ProxyContext{
 		ProxyContextMiddleware: &ProxyContextMiddleware{
 			next: next,
 		},
 		Logger: zap.NewNop(),
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{
 			"container/a/c": {
 				SysMetadata: map[string]string{
 					"Versions-Location": "c_v",

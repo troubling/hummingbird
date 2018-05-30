@@ -55,7 +55,7 @@ func (server *ProxyServer) ContainerGetHandler(writer http.ResponseWriter, reque
 			}
 		}
 	}
-	resp := ctx.C.GetContainer(request.Context(), vars["account"], vars["container"], options, request.Header)
+	resp := ctx.C.GetContainerRaw(request.Context(), vars["account"], vars["container"], options, request.Header)
 	defer resp.Body.Close()
 	ctx.C.SetContainerInfo(request.Context(), vars["account"], vars["container"], resp)
 	ctx.ACL = resp.Header.Get("X-Container-Read")

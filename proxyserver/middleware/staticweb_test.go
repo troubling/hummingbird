@@ -11,8 +11,12 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/stretchr/testify/require"
 	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/common/test"
 )
 
 type testNext struct {
@@ -102,10 +106,13 @@ func TestStaticWebGetObject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
 	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", &ProxyContext{
 		ProxyContextMiddleware: &ProxyContextMiddleware{next: s},
 		Logger:                 zap.NewNop(),
-		C:                      client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{"Web-Index": "index.html"}}}, zap.NewNop()),
+		C:                      f.NewRequestClient(nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{"Web-Index": "index.html"}}}, zap.NewNop()),
 		accountInfoCache:       map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
 	}))
 	rec := httptest.NewRecorder()
@@ -142,10 +149,13 @@ func TestStaticWebGetObjectNotThere(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
 	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", &ProxyContext{
 		ProxyContextMiddleware: &ProxyContextMiddleware{next: s},
 		Logger:                 zap.NewNop(),
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Listings": "true",
 		}}}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
@@ -181,10 +191,13 @@ func TestStaticWebGetSubdirRedirect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
 	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", &ProxyContext{
 		ProxyContextMiddleware: &ProxyContextMiddleware{next: s},
 		Logger:                 zap.NewNop(),
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Listings": "true",
 		}}}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
@@ -224,10 +237,13 @@ func TestStaticWebGetSubdir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
 	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", &ProxyContext{
 		ProxyContextMiddleware: &ProxyContextMiddleware{next: s},
 		Logger:                 zap.NewNop(),
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Listings": "true",
 		}}}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
@@ -275,10 +291,13 @@ func TestStaticWebGetContainerRedirect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
 	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", &ProxyContext{
 		ProxyContextMiddleware: &ProxyContextMiddleware{next: s},
 		Logger:                 zap.NewNop(),
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Listings": "true",
 		}}}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
@@ -308,10 +327,13 @@ func TestStaticWebGetContainer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
 	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", &ProxyContext{
 		ProxyContextMiddleware: &ProxyContextMiddleware{next: s},
 		Logger:                 zap.NewNop(),
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Listings": "true",
 		}}}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
@@ -353,10 +375,13 @@ func TestStaticWebGetWithWebIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
 	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", &ProxyContext{
 		ProxyContextMiddleware: &ProxyContextMiddleware{next: s},
 		Logger:                 zap.NewNop(),
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Listings": "true",
 			"Web-Index":    "index.html",
 		}}}, zap.NewNop()),
@@ -399,10 +424,13 @@ func TestStaticWebGetSubdirWithWebIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
 	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", &ProxyContext{
 		ProxyContextMiddleware: &ProxyContextMiddleware{next: s},
 		Logger:                 zap.NewNop(),
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Listings": "true",
 			"Web-Index":    "index.html",
 		}}}, zap.NewNop()),
@@ -449,10 +477,13 @@ func TestStaticWebGetSubdirWithWebIndexRedirect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
 	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", &ProxyContext{
 		ProxyContextMiddleware: &ProxyContextMiddleware{next: s},
 		Logger:                 zap.NewNop(),
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Listings": "true",
 			"Web-Index":    "index.html",
 		}}}, zap.NewNop()),
@@ -487,10 +518,13 @@ func TestStaticWebGetContainerNoListings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
 	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", &ProxyContext{
 		ProxyContextMiddleware: &ProxyContextMiddleware{next: s},
 		Logger:                 zap.NewNop(),
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Index": "notfound",
 		}}}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
@@ -530,10 +564,13 @@ func TestStaticWebGetContainerCustomCSS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
 	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", &ProxyContext{
 		ProxyContextMiddleware: &ProxyContextMiddleware{next: s},
 		Logger:                 zap.NewNop(),
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Listings":     "true",
 			"Web-Listings-Css": "listings.css",
 		}}}, zap.NewNop()),
@@ -575,7 +612,7 @@ func TestStaticWebGetContainerCustomCSS(t *testing.T) {
 	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", &ProxyContext{
 		ProxyContextMiddleware: &ProxyContextMiddleware{next: s},
 		Logger:                 zap.NewNop(),
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Listings": "true",
 		}}}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
@@ -615,10 +652,13 @@ func TestStaticWebCustomErrorPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
 	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", &ProxyContext{
 		ProxyContextMiddleware: &ProxyContextMiddleware{next: s},
 		Logger:                 zap.NewNop(),
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Error": "error.html",
 		}}}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
@@ -663,7 +703,7 @@ func TestStaticWebCustomErrorPages(t *testing.T) {
 	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", &ProxyContext{
 		ProxyContextMiddleware: &ProxyContextMiddleware{next: s},
 		Logger:                 zap.NewNop(),
-		C: client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
+		C: f.NewRequestClient(nil, map[string]*client.ContainerInfo{"container/a/c": {Metadata: map[string]string{
 			"Web-Error": "error.html",
 		}}}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
@@ -705,10 +745,13 @@ func TestStaticWebNoContainerInfo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
 	request = request.WithContext(context.WithValue(request.Context(), "proxycontext", &ProxyContext{
 		ProxyContextMiddleware: &ProxyContextMiddleware{next: s},
 		Logger:                 zap.NewNop(),
-		C:                      client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{"container/a/c2": client.NilContainerInfo}, zap.NewNop()),
+		C:                      f.NewRequestClient(nil, map[string]*client.ContainerInfo{"container/a/c2": client.NilContainerInfo}, zap.NewNop()),
 		accountInfoCache:       map[string]*AccountInfo{"account/a": {Metadata: map[string]string{}}},
 	}))
 	rec := httptest.NewRecorder()

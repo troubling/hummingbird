@@ -12,9 +12,15 @@ import (
 	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/common/test"
 
 	"go.uber.org/zap"
 )
+
+var staticPolicyList = conf.PolicyList(map[int]*conf.Policy{
+	0: {Index: 0, Type: "rep", Name: "gold", Aliases: []string{}, Default: true, Deprecated: false, Config: map[string]string{}},
+})
 
 func passthroughAccountQuotaHandler() http.Handler {
 	next := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -28,9 +34,13 @@ func passthroughAccountQuotaHandler() http.Handler {
 
 func TestAccountQuotaBytes(t *testing.T) {
 	h := passthroughAccountQuotaHandler()
+	f, err := client.NewProxyClient(staticPolicyList, srv.NewTestConfigLoader(&test.FakeRing{}),
+		nil, "", "", "", "", "", conf.Config{})
+	require.Nil(t, err)
+
 	ctx := &ProxyContext{
 		Logger: zap.NewNop(),
-		C:      client.NewProxyClient(&client.ProxyDirectClient{}, nil, map[string]*client.ContainerInfo{}, zap.NewNop()),
+		C:      f.NewRequestClient(nil, map[string]*client.ContainerInfo{}, zap.NewNop()),
 		accountInfoCache: map[string]*AccountInfo{
 			"account/a": {
 				Metadata: map[string]string{"Quota-Bytes": "3"},

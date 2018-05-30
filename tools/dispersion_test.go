@@ -103,7 +103,7 @@ func (c *testDispersionClient) PostAccount(ctx context.Context, account string, 
 	return nectarutil.ResponseStub(200, "")
 }
 
-func (c *testDispersionClient) GetAccount(ctx context.Context, account string, options map[string]string, headers http.Header) *http.Response {
+func (c *testDispersionClient) GetAccountRaw(ctx context.Context, account string, options map[string]string, headers http.Header) *http.Response {
 	if c.contCalls > 0 {
 		c.contCalls--
 		olrs := []accountserver.ContainerListingRecord{{Name: "disp-objs-0"}}
@@ -131,7 +131,7 @@ func (c *testDispersionClient) PostContainer(ctx context.Context, account string
 	return nectarutil.ResponseStub(200, "")
 }
 
-func (c *testDispersionClient) GetContainer(ctx context.Context, account string, container string, options map[string]string, headers http.Header) *http.Response {
+func (c *testDispersionClient) GetContainerRaw(ctx context.Context, account string, container string, options map[string]string, headers http.Header) *http.Response {
 	if c.objCalls > 0 {
 		c.objCalls--
 		olrs := []containerserver.ObjectListingRecord{{Name: "0-12345"}}
