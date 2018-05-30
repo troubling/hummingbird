@@ -219,8 +219,9 @@ func QuarantineItem(db *IndexDB, item *IndexDBItem) error {
 		return err
 	}
 	dest := filepath.Join(quarantineDir, itemName)
-	if err := os.Rename(itemPath, dest); err != nil {
-		return err
+	var rerr error
+	if err = os.Rename(itemPath, dest); err != nil && !os.IsNotExist(err) {
+		rerr = err
 	}
 	metaName := filepath.Join(quarantineDir, itemName+".idbmeta")
 	f, err := os.OpenFile(metaName, os.O_RDWR|os.O_CREATE, 0644)
@@ -235,7 +236,11 @@ func QuarantineItem(db *IndexDB, item *IndexDBItem) error {
 		}
 		return err
 	}
-	return db.Remove(item.Hash, item.Shard, item.Timestamp, item.Nursery)
+	err = db.Remove(item.Hash, item.Shard, item.Timestamp, item.Nursery)
+	if err == nil && rerr != nil {
+		return rerr
+	}
+	return err
 }
 
 // OneTimeChan returns a channel that will yield the current time once, then is closed.
