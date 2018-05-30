@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/klauspost/reedsolomon"
+	"github.com/troubling/hummingbird/common/srv"
 	"go.uber.org/zap"
 )
 
@@ -70,7 +71,7 @@ func ecSplit(dataChunks, parityChunks int, fp io.Reader, chunkSize int, contentL
 	return nil
 }
 
-func ecReconstruct(dataChunks, parityChunks int, bodies []io.Reader, chunkSize int, contentLength int64, dsts []io.Writer, dstChunkNum []int, logger *zap.Logger) error {
+func ecReconstruct(dataChunks, parityChunks int, bodies []io.Reader, chunkSize int, contentLength int64, dsts []io.Writer, dstChunkNum []int, logger srv.LowLevelLogger) error {
 	logger.Info(fmt.Sprintf("ecReconstruct, dsts: %+v", dsts))
 	logger.Info(fmt.Sprintf("ecReconstruct, dstChunkNum: %+v", dstChunkNum))
 	enc, err := reedsolomon.New(dataChunks, parityChunks)

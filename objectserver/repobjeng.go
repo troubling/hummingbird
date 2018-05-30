@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -51,6 +52,9 @@ func repEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.F
 	if err != nil {
 		return nil, err
 	}
+	logLevelString := config.GetDefault("app:object-server", "log_level", "INFO")
+	logLevel := zap.NewAtomicLevel()
+	logLevel.UnmarshalText([]byte(strings.ToLower(logLevelString)))
 	certFile := config.GetDefault("app:object-server", "cert_file", "")
 	keyFile := config.GetDefault("app:object-server", "key_file", "")
 	transport := &http.Transport{
@@ -74,7 +78,7 @@ func repEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.F
 			return nil, err
 		}
 	}
-	return &repEngine{
+	re := &repEngine{
 		driveRoot:      driveRoot,
 		hashPathPrefix: hashPathPrefix,
 		hashPathSuffix: hashPathSuffix,
@@ -84,12 +88,15 @@ func repEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.F
 		idbs:           map[string]*IndexDB{},
 		dbPartPower:    int(dbPartPower),
 		numSubDirs:     subdirs,
-		logger:         zap.L(),
 		client: &http.Client{
 			Timeout:   120 * time.Minute,
 			Transport: transport,
 		},
-	}, nil
+	}
+	if re.logger, err = srv.SetupLogger("repobjengine", &logLevel, flags); err != nil {
+		return nil, fmt.Errorf("Error setting up logger: %v", err)
+	}
+	return re, nil
 }
 
 var _ ObjectEngine = &repEngine{}
@@ -101,7 +108,7 @@ type repEngine struct {
 	reserve        int64
 	policy         int
 	ring           ring.Ring
-	logger         *zap.Logger
+	logger         srv.LowLevelLogger
 	idbs           map[string]*IndexDB
 	dblock         sync.Mutex
 	dbPartPower    int
@@ -120,7 +127,7 @@ func (re *repEngine) getDB(device string) (*IndexDB, error) {
 	path := filepath.Join(re.driveRoot, device, PolicyDir(re.policy), "rep")
 	temppath := filepath.Join(re.driveRoot, device, "tmp")
 	ringPartPower := bits.Len64(re.ring.PartitionCount() - 1)
-	re.idbs[device], err = NewIndexDB(dbpath, path, temppath, ringPartPower, re.dbPartPower, re.numSubDirs, re.reserve, re.logger)
+	re.idbs[device], err = NewIndexDB(dbpath, path, temppath, ringPartPower, re.dbPartPower, re.numSubDirs, re.reserve, re.logger, repAuditor{})
 	if err != nil {
 		return nil, err
 	}

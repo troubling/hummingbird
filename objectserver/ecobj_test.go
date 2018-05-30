@@ -29,6 +29,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"go.uber.org/zap"
+
 	"github.com/stretchr/testify/require"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/test"
@@ -285,6 +287,7 @@ func TestDontStabilizeWithFailure(t *testing.T) {
 			{Id: 4, Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port, Device: "sdd"},
 		},
 	}
+	logger, _ := zap.NewProduction()
 	to := &ecObject{
 		IndexDBItem: IndexDBItem{
 			Hash:     "00000011111122222233333344444455",
@@ -301,12 +304,14 @@ func TestDontStabilizeWithFailure(t *testing.T) {
 			"Content-Length": "7",
 		},
 		nurseryReplicas: 3,
+		logger:          logger,
+		txnId:           "abcde",
 	}
 
 	node := &ring.Device{Scheme: u.Scheme, ReplicationIp: u.Hostname(), ReplicationPort: port - 1, Device: "sda"}
 	err = to.Stabilize(node)
 	require.NotNil(t, err)
-	require.Equal(t, "Failed to stabilize object", err.Error())
+	require.Equal(t, "Failed to stabilize object: abcde", err.Error())
 }
 
 func TestParseECScheme(t *testing.T) {

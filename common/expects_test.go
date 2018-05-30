@@ -55,7 +55,7 @@ func TestExpectorSuccesses(t *testing.T) {
 		require.Nil(t, err)
 		e.AddRequest(req)
 	}
-	require.Equal(t, 3, e.Successes(time.Second, false))
+	require.Equal(t, 3, e.Successes(time.Second, []int{2}...))
 }
 
 func TestExpectorSuccessesWith404Fail(t *testing.T) {
@@ -72,7 +72,7 @@ func TestExpectorSuccessesWith404Fail(t *testing.T) {
 		require.Nil(t, err)
 		e.AddRequest(req)
 	}
-	require.Equal(t, 2, e.Successes(time.Second, false))
+	require.Equal(t, 2, e.Successes(time.Second, []int{2}...))
 }
 
 func TestExpectorSuccessesWith404Pass(t *testing.T) {
@@ -89,7 +89,7 @@ func TestExpectorSuccessesWith404Pass(t *testing.T) {
 		require.Nil(t, err)
 		e.AddRequest(req)
 	}
-	require.Equal(t, 3, e.Successes(time.Second, true))
+	require.Equal(t, 3, e.Successes(time.Second, []int{2, 404}...))
 }
 
 func TestExpectorReady(t *testing.T) {
@@ -137,7 +137,7 @@ func TestExpectorErrorRetry(t *testing.T) {
 	require.Nil(t, err)
 	e.AddRequest(req)
 
-	require.Equal(t, 3, e.Successes(time.Second, false))
+	require.Equal(t, 3, e.Successes(time.Second, []int{2}...))
 	_, ready := e.Wait(time.Second)
 	require.Equal(t, 4, len(ready))
 	require.Equal(t, false, ready[0])
