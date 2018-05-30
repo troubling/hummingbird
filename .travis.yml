@@ -55,7 +55,8 @@ script:
       PATH=$PATH:~/swift-venv/bin swift-init start proxy
       PATH=$PATH:~/swift-venv/bin nosetests -e test_unicode_metadata --with-html --html-file=/tmp/output/functional_swiftproxy.html ~/swift/test/functional
     else
-      test -z "$(find . -name '*.go' | xargs gofmt -l -s)" || (echo "You need to run 'make fmt'"; exit 1)
+      cd $GOPATH/src/github.com/troubling/hummingbird
+      test -z "$(find . -name '*.go' -not -path './vendor/*' | xargs gofmt -l -s)" || (echo "You need to run 'make fmt'"; exit 1)
       go vet github.com/troubling/hummingbird/...
       goverage -coverprofile=/tmp/coverage.out github.com/troubling/hummingbird/...
       go tool cover -html=/tmp/coverage.out -o "/tmp/output/coverage.html"
