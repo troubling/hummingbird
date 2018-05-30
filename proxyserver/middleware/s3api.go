@@ -48,6 +48,7 @@ import (
 	"strings"
 
 	"github.com/troubling/hummingbird/accountserver"
+	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/containerserver"
@@ -66,10 +67,12 @@ type s3Response struct {
 var s3Responses = map[int]s3Response{
 	// NOTE: These are meant to be generic responses
 	403: {"AccessDenied", "Access Denied"},
-	501: {"NotImplemented", "A header you provided implies functionality that is not implemented."},
-	500: {"InternalError", "We encountered an internal error. Please try again."},
-	503: {"ServiceUnavailable", "Reduce your request rate."},
+	404: {"NotFound", "Not Found"}, // TODO: S3 responds with differetn 404 messages
+	405: {"MethodNotAllowed", "The specified method is not allowed against this resource."},
 	411: {"MissingContentLength", "You must provide the Content-Length HTTP header."},
+	500: {"InternalError", "We encountered an internal error. Please try again."},
+	501: {"NotImplemented", "A header you provided implies functionality that is not implemented."},
+	503: {"ServiceUnavailable", "Reduce your request rate."},
 }
 
 type s3Owner struct {
@@ -120,6 +123,12 @@ type s3ObjectList struct {
 
 func NewS3ObjectList() *s3ObjectList {
 	return &s3ObjectList{Xmlns: s3Xmlns}
+}
+
+type s3CopyObject struct {
+	XMLName      xml.Name `xml:"CopyObjectResult"`
+	LastModified string   `xml:"LastModified"`
+	ETag         string   `xml:"ETag"`
 }
 
 type s3Error struct {
@@ -205,6 +214,9 @@ type s3ApiHandler struct {
 }
 
 func s3PathSplit(path string) (string, string) {
+	if len(path) > 0 && !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
 	parts := strings.SplitN(path, "/", 3)
 	switch len(parts) {
 	case 3:
@@ -285,9 +297,26 @@ func (s *s3ApiHandler) handleObjectRequest(writer http.ResponseWriter, request *
 	}
 
 	if request.Method == "PUT" {
-		newReq, err := ctx.newSubrequest("PUT", s.path, request.Body, request, "s3api")
+		method := "PUT"
+		dest := ""
+		// Check to see if this is a copy request
+		copySource := request.Header.Get("X-Amz-Copy-Source")
+		if copySource != "" {
+			method = "COPY"
+			dest = s.path
+			c, o := s3PathSplit(copySource)
+			s.path = fmt.Sprintf("/v1/AUTH_%s/%s/%s", s.account, c, o)
+		}
+		newReq, err := ctx.newSubrequest(method, s.path, request.Body, request, "s3api")
 		if err != nil {
 			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
+		}
+		if copySource != "" {
+			pathMap, err := common.ParseProxyPath(dest)
+			if err != nil {
+				srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
+			}
+			newReq.Header.Set("Destination", fmt.Sprintf("/%s/%s", pathMap["container"], pathMap["object"]))
 		}
 		newReq.Header.Set("Content-Length", request.Header.Get("Content-Length"))
 		newReq.Header.Set("Content-Type", request.Header.Get("Content-Type"))
@@ -297,9 +326,23 @@ func (s *s3ApiHandler) handleObjectRequest(writer http.ResponseWriter, request *
 			srv.StandardResponse(writer, cap.status)
 			return
 		} else {
-			writer.Header().Set("ETag", "\""+cap.Header().Get("ETag")+"\"")
-			writer.Header().Set("Content-Length", cap.Header().Get("Content-Length"))
-			writer.WriteHeader(200)
+			if copySource != "" {
+				copyResult := &s3CopyObject{}
+				copyResult.ETag = "\"" + cap.Header().Get("ETag") + "\""
+				copyResult.LastModified = cap.Header().Get("Last-Modified")
+				output, err := xml.MarshalIndent(copyResult, "", "  ")
+				if err != nil {
+					srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
+					return
+				}
+				output = []byte(xml.Header + string(output))
+				writer.WriteHeader(200)
+				writer.Write(output)
+			} else {
+				writer.Header().Set("ETag", "\""+cap.Header().Get("ETag")+"\"")
+				writer.Header().Set("Content-Length", cap.Header().Get("Content-Length"))
+				writer.WriteHeader(200)
+			}
 			return
 		}
 	}

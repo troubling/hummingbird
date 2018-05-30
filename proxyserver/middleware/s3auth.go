@@ -108,7 +108,7 @@ func (s *s3AuthHandler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 	}
 	akeys := make([]string, 0)
 	for k := range request.Header {
-		if strings.HasPrefix(k, "x-amz-") {
+		if strings.HasPrefix(strings.ToLower(k), "x-amz-") {
 			akeys = append(akeys, k)
 		}
 	}
