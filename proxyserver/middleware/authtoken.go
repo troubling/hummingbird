@@ -313,7 +313,7 @@ func (at *authToken) validateS3Signature(ctx context.Context, proxyCtx *ProxyCon
 		proxyCtx.S3Auth.Account = cachedToken.Project.ID
 		return cachedToken, proxyCtx.S3Auth.validateSignature([]byte(cachedToken.S3Creds.Secret))
 	}
-	tok, err := at.doValidateS3(ctx, proxyCtx.S3Auth.StringToSign, proxyCtx.S3Auth.Key, proxyCtx.S3Auth.Signature)
+	tok, err := at.doValidateS3(ctx, proxyCtx, proxyCtx.S3Auth.StringToSign, proxyCtx.S3Auth.Key, proxyCtx.S3Auth.Signature)
 	if err != nil {
 		proxyCtx.Logger.Debug("Failed to validate s3 signature", zap.Error(err))
 		return nil, false
@@ -330,7 +330,7 @@ func (at *authToken) validateS3Signature(ctx context.Context, proxyCtx *ProxyCon
 }
 
 func (at *authToken) validate(ctx context.Context, proxyCtx *ProxyContext, authToken string) (*token, bool) {
-	tok, err := at.doValidate(ctx, authToken)
+	tok, err := at.doValidate(ctx, proxyCtx, authToken)
 	if err != nil {
 		proxyCtx.Logger.Debug("Failed to validate token", zap.Error(err))
 		return nil, false
@@ -353,7 +353,7 @@ func (at *authToken) cacheToken(ctx context.Context, proxyCtx *ProxyContext, key
 	proxyCtx.Cache.Set(ctx, key, *tok, int(ttl/time.Second))
 }
 
-func (at *authToken) doValidateS3(ctx context.Context, stringToSign, key, signature string) (*token, error) {
+func (at *authToken) doValidateS3(ctx context.Context, proxyCtx *ProxyContext, stringToSign, key, signature string) (*token, error) {
 	creds := &s3Creds{}
 	creds.Credentials.Access = key
 	creds.Credentials.Signature = signature
@@ -381,56 +381,75 @@ func (at *authToken) doValidateS3(ctx context.Context, stringToSign, key, signat
 	token, err := at.parseAuthResponse(r)
 
 	// Now we need to get the creds so that we can do the signing next time
-	req2, err := http.NewRequest("GET", at.authURL+"v3/credentials?type=ec2&user_id="+token.User.ID, nil)
-	if err != nil {
-		return nil, err
+	for tries := 0; tries < 2; tries++ { // second try will use fresh serverAuthToken
+		var req2 *http.Request
+		req2, err = http.NewRequest("GET", at.authURL+"v3/credentials?type=ec2&user_id="+token.User.ID, nil)
+		if err != nil {
+			return nil, err
+		}
+		var serverAuthToken string
+		serverAuthToken, err = at.serverAuth(ctx, proxyCtx, tries > 0)
+		if err != nil {
+			return nil, err
+		}
+		req2.Header.Set("X-Auth-Token", serverAuthToken)
+		req2.Header.Set("Content-Type", "application/json")
+		var r2 *http.Response
+		r2, err = at.client.Do(req2)
+		if err != nil {
+			return nil, err
+		}
+		defer r2.Body.Close() // yes, defer in loop, but loop is just 2 iterations at most
+		if r2.StatusCode == 401 {
+			err = errors.New("serverAuth was invalid, 401")
+			continue
+		}
+		var s3creds *s3Blob
+		s3creds, err = at.parseCredentialsResponse(r2, key)
+		token.S3Creds = s3creds
+		break
 	}
-	serverAuthToken, err := at.serverAuth(ctx)
-	if err != nil {
-		return nil, err
-	}
-	req2.Header.Set("X-Auth-Token", serverAuthToken)
-	req2.Header.Set("Content-Type", "application/json")
-
-	r2, err := at.client.Do(req2)
-	if err != nil {
-		return nil, err
-	}
-	defer r2.Body.Close()
-
-	s3creds, err := at.parseCredentialsResponse(r2, key)
-	token.S3Creds = s3creds
 
 	return token, err
 }
 
-func (at *authToken) doValidate(ctx context.Context, token string) (*token, error) {
+func (at *authToken) doValidate(ctx context.Context, proxyCtx *ProxyContext, tken string) (*token, error) {
 	if !strings.HasSuffix(at.authURL, "/") {
 		at.authURL += "/"
 	}
-	req, err := http.NewRequest("GET", at.authURL+"v3/auth/tokens?nocatalog", nil)
-	if err != nil {
-		return nil, err
+	var tok *token
+	var err error
+	for tries := 0; tries < 2; tries++ { // second try will use fresh serverAuthToken
+		var req *http.Request
+		req, err = http.NewRequest("GET", at.authURL+"v3/auth/tokens?nocatalog", nil)
+		if err != nil {
+			return nil, err
+		}
+		var serverAuthToken string
+		serverAuthToken, err = at.serverAuth(ctx, proxyCtx, tries > 0)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("X-Auth-Token", serverAuthToken)
+		req.Header.Set("X-Subject-Token", tken)
+		req.Header.Set("User-Agent", at.userAgent)
+		req = req.WithContext(ctx)
+		var resp *http.Response
+		resp, err = at.client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close() // yes, defer in loop, but loop is just 2 iterations at most
+		if resp.StatusCode == 401 {
+			err = errors.New("serverAuth was invalid, 401")
+			continue
+		}
+		if resp.StatusCode >= 400 {
+			return nil, errors.New(resp.Status)
+		}
+		tok, err = at.parseAuthResponse(resp)
+		break
 	}
-	serverAuthToken, err := at.serverAuth(ctx)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("X-Auth-Token", serverAuthToken)
-	req.Header.Set("X-Subject-Token", token)
-	req.Header.Set("User-Agent", at.userAgent)
-	req = req.WithContext(ctx)
-	r, err := at.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer r.Body.Close()
-
-	if r.StatusCode >= 400 {
-		return nil, errors.New(r.Status)
-	}
-
-	tok, err := at.parseAuthResponse(r)
 	return tok, err
 }
 
@@ -478,7 +497,16 @@ func (at *authToken) parseCredentialsResponse(r *http.Response, key string) (*s3
 }
 
 // serverAuth return the X-Auth-Token to use or an error.
-func (at *authToken) serverAuth(ctx context.Context) (string, error) {
+func (at *authToken) serverAuth(ctx context.Context, proxyCtx *ProxyContext, fresh bool) (string, error) {
+	cacheKey := "Keystone:ServerAuth"
+	var cachedServerAuth struct{ XSubjectToken string }
+	if !fresh {
+		if err := proxyCtx.Cache.GetStructured(ctx, cacheKey, &cachedServerAuth); err == nil {
+			if cachedServerAuth.XSubjectToken != "" {
+				return cachedServerAuth.XSubjectToken, nil
+			}
+		}
+	}
 	authReq := &identityReq{}
 	authReq.Auth.Identity.Methods = []string{at.authPlugin}
 	authReq.Auth.Identity.Password.User.Domain.ID = at.userDomainID
@@ -504,9 +532,9 @@ func (at *authToken) serverAuth(ctx context.Context) (string, error) {
 	if resp.StatusCode != 201 {
 		return "", fmt.Errorf("server auth token request gave status %d", resp.StatusCode)
 	}
-	rv := resp.Header.Get("X-Subject-Token")
-
-	return rv, nil
+	cachedServerAuth.XSubjectToken = resp.Header.Get("X-Subject-Token")
+	proxyCtx.Cache.Set(ctx, cacheKey, cachedServerAuth, int(at.cacheDur/time.Second))
+	return cachedServerAuth.XSubjectToken, nil
 }
 
 func removeAuthHeaders(r *http.Request) {
