@@ -43,3 +43,7 @@ When designing your network, here are some general considerations:
   *  Each incoming object sent will fan out to (# of replicas) storage servers, so intra cluster bandwith will be (# of replicas)x the overall throughput for incoming requests.
   *  All other requests only require a single storage node.
   *  For larger/busier clusters, consideration will need to be made for bandwidth between zones.
+
+## Operating System Considerations
+
+All testing to date has been on Ubuntu Server 16.04. Newer versions of Ubuntu should work as well, but no specific testing has been done. Other Linux distributions should also work, but tweaks to init scripts / systemd service files may be needed.
