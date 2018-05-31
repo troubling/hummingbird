@@ -340,6 +340,7 @@ func main() {
 	nodesFlags.String("p", "", "Show nodes for a given partition")
 	nodesFlags.String("r", "", "Specify which ring file to use")
 	nodesFlags.String("P", "", "Specify which policy to use")
+	nodesFlags.String("objhash", "", "Specify an object hash")
 	nodesFlags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "hummingbird nodes [-a] <account> [<container> [<object]]\n")
 		fmt.Fprintf(os.Stderr, "hummingbird nodes [-a] <account>[/<container[/<object>]]\n")
