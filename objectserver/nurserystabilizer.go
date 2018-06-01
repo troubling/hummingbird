@@ -48,8 +48,7 @@ type PriorityReplicationResult struct {
 }
 
 func (nrd *nurseryDevice) UpdateStat(stat string, amount int64) {
-	key := deviceKeyId(nrd.dev.Device, nrd.policy)
-	nrd.r.updateStat <- statUpdate{"object-nursery", key, stat, amount}
+	nrd.r.updateStat <- statUpdate{nrd.Type(), nrd.Key(), stat, amount}
 }
 
 func (nrd *nurseryDevice) Scan() {
@@ -70,9 +69,11 @@ func (nrd *nurseryDevice) Scan() {
 				<-nrd.r.nurseryConcurrencySem
 			}()
 			if err := o.Stabilize(nrd.dev); err == nil {
-				nrd.UpdateStat("objectsStabilized", 1)
+				nrd.UpdateStat("ObjectsStabilizedSuccess", 1)
+				nrd.UpdateStat("ObjectsStabilizedBytes", o.ContentLength())
 			} else {
 				nrd.r.logger.Debug("[stabilizeDevice] error Stabilize obj", zap.String("Object", o.Repr()), zap.Error(err))
+				nrd.UpdateStat("ObjectsStabilizedError", 1)
 			}
 		}()
 		select {
@@ -86,7 +87,6 @@ func (nrd *nurseryDevice) Scan() {
 }
 
 func (nrd *nurseryDevice) ScanLoop() {
-	// TODO: somehow i'm going to have to call replication on the 3repl nursery things
 	for {
 		select {
 		case <-nrd.canchan:
@@ -106,6 +106,10 @@ func (nrd *nurseryDevice) Key() string {
 	return deviceKeyId(nrd.dev.Device, nrd.policy)
 }
 
+func (nrd *nurseryDevice) Type() string {
+	return "object-nursery"
+}
+
 func (nrd *nurseryDevice) PriorityReplicate(w http.ResponseWriter, pri PriorityRepJob) {
 	objc := make(chan ObjectStabilizer)
 	canchan := make(chan struct{})
@@ -119,8 +123,11 @@ func (nrd *nurseryDevice) PriorityReplicate(w http.ResponseWriter, pri PriorityR
 		if err := o.Replicate(pri); err != nil {
 			nrd.r.logger.Error("error prirep Replicate", zap.Error(err))
 			prr.ObjectsErrored++
+			nrd.UpdateStat("ObjectsReplicatedError", 1)
 		} else {
 			prr.ObjectsReplicated++
+			nrd.UpdateStat("ObjectsReplicatedSuccess", 1)
+			nrd.UpdateStat("ObjectsReplicatedBytes", o.ContentLength())
 			if time.Since(t) > time.Minute {
 				w.Write([]byte(" "))
 				t = time.Now()
@@ -138,6 +145,7 @@ func (nrd *nurseryDevice) PriorityReplicate(w http.ResponseWriter, pri PriorityR
 	}
 	w.Write(b)
 	w.Write([]byte("\n"))
+	nrd.UpdateStat("PriorityRepsDone", 1)
 }
 
 func GetNurseryDevice(oring ring.Ring, dev *ring.Device, policy int, r *Replicator, f NurseryObjectEngine) (ReplicationDevice, error) {

@@ -66,7 +66,8 @@ func (r *Replicator) incomingDone(device string) {
 
 // ProgressReportHandler handles HTTP requests for current replication progress
 func (r *Replicator) ProgressReportHandler(w http.ResponseWriter, req *http.Request) {
-	data, err := json.Marshal(r.getDeviceProgress())
+	vars := srv.GetVars(req)
+	data, err := json.Marshal(r.getDeviceProgress(vars["name"]))
 	if err != nil {
 		r.logger.Error("Error Marshaling device progress", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
@@ -342,7 +343,7 @@ func (r *Replicator) GetHandler(config conf.Config, metricsPrefix string) http.H
 	router.Post("/debug/pprof/:parm", http.DefaultServeMux)
 	router.Post("/priorityrep", commonHandlers.ThenFunc(r.priorityRepHandler))
 	router.Post("/stabilize/:device/:partition/:account/:container/*obj", commonHandlers.ThenFunc(r.stabilizeHandler))
-	router.Get("/progress", commonHandlers.ThenFunc(r.ProgressReportHandler))
+	router.Get("/progress/:name", commonHandlers.ThenFunc(r.ProgressReportHandler))
 	for _, policy := range r.policies {
 		router.HandlePolicy("REPCONN", "/:device/:partition", policy.Index, commonHandlers.ThenFunc(r.objRepConnHandler))
 		router.HandlePolicy("REPLICATE", "/:device/:partition/:suffixes", policy.Index, commonHandlers.ThenFunc(r.objReplicateHandler))

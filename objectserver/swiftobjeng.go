@@ -143,7 +143,7 @@ func (q quarantineFileError) Error() string {
 }
 
 func (rd *swiftDevice) UpdateStat(stat string, amount int64) {
-	rd.r.updateStat <- statUpdate{"object-replicator", rd.Key(), stat, amount}
+	rd.r.updateStat <- statUpdate{rd.Type(), rd.Key(), stat, amount}
 }
 
 func (rd *swiftDevice) listObjFiles(objChan chan string, cancel chan struct{}, partdir string, needSuffix func(string) bool) {
@@ -538,6 +538,9 @@ func (rd *swiftDevice) Key() string {
 	return deviceKeyId(rd.dev.Device, rd.policy)
 }
 
+func (rd *swiftDevice) Type() string {
+	return "object-replicator"
+}
 func (rd *swiftDevice) cleanTemp() {
 	tempDir := TempDirPath(rd.r.deviceRoot, rd.dev.Device)
 	if tmpContents, err := ioutil.ReadDir(tempDir); err == nil {

@@ -71,7 +71,7 @@ func queryHostRecon(client common.HTTPClient, s *ipPort, endpoint string) ([]byt
 }
 
 func queryHostReplication(client common.HTTPClient, s *ipPort) (map[string]objectserver.DeviceStats, error) {
-	serverUrl := fmt.Sprintf("http://%s:%d/progress", s.ip, s.replicationPort)
+	serverUrl := fmt.Sprintf("http://%s:%d/progress/object-replicator", s.ip, s.replicationPort)
 	req, err := http.NewRequest("GET", serverUrl, nil)
 	if err != nil {
 		return nil, err
