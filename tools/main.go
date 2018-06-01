@@ -155,6 +155,52 @@ func getPathHash(account, container, object string) string {
 	return fmt.Sprintf("%032x", h.Sum(nil))
 }
 
+func printSshCommands(r ring.Ring, pathHash string, allHandoffs bool, policy *conf.Policy) error {
+	fmt.Printf("\n\nUse your own device location of servers:\n")
+	fmt.Printf("such as \"export DEVICE=/srv/node\"\n")
+
+	if pathHash == "" {
+		return fmt.Errorf("not implemented: please supply object path")
+	}
+	partition, err := r.PartitionForHash(pathHash)
+	if err != nil {
+		return err
+	}
+	primaries := r.GetNodes(partition)
+	handoffLimit := len(primaries)
+	if allHandoffs {
+		handoffLimit = -1
+	}
+	ringPartPower := bits.Len64(r.PartitionCount() - 1)
+	dbPartPower, err := policy.GetDbPartPower()
+	if err != nil {
+		return fmt.Errorf("Error getting dbPartPower: %v", err)
+	}
+	subdirs, err := policy.GetDbSubDirs()
+	if err != nil {
+		return fmt.Errorf("Error getting subdirs: %v", err)
+	}
+	_, _, dbPart, dirNum, err := objectserver.ValidateHash(pathHash, uint(ringPartPower), dbPartPower, subdirs)
+	if err != nil {
+		return fmt.Errorf("Error in ValidateHash: %v", err)
+	}
+	dbFileName := fmt.Sprintf("index.db.%02x", dbPart)
+	odir := fmt.Sprintf("index.db.dir.%02x", dirNum)
+	for _, v := range primaries {
+		fmt.Printf("ssh %s \"sqlite3 ${DEVICE:-/srv/node*}/%v/%v/hec.db/%v \\\"SELECT * FROM objects WHERE hash = '%v'\\\"\"\n", v.Ip, v.Device, objectserver.PolicyDir(policy.Index), dbFileName, pathHash)
+		fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v/hec/%v/%v*\"\n\n", v.Ip, v.Device, objectserver.PolicyDir(policy.Index), odir, pathHash)
+	}
+	handoffs := r.GetMoreNodes(partition)
+	for i, v := 0, handoffs.Next(); v != nil; i, v = i+1, handoffs.Next() {
+		if handoffLimit != -1 && i == handoffLimit {
+			break
+		}
+		fmt.Printf("ssh %s \"sqlite3 ${DEVICE:-/srv/node*}/%v/%v/hec.db/%v \\\"SELECT * FROM objects WHERE hash = '%v'\\\"\" #[HANDOFF]\n", v.Ip, v.Device, objectserver.PolicyDir(policy.Index), dbFileName, pathHash)
+		fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v/hec/%v/%v*\" #[HANDOFF]\n\n", v.Ip, v.Device, objectserver.PolicyDir(policy.Index), odir, pathHash)
+	}
+	return nil
+}
+
 func printRingLocations(r ring.Ring, ringType, datadir, account, container, object, partition string, allHandoffs bool, policy *conf.Policy) {
 	if r == nil {
 		fmt.Println("No ring specified")
@@ -220,10 +266,10 @@ func printRingLocations(r ring.Ring, ringType, datadir, account, container, obje
 		fmt.Printf("%v # [Handoff]\n", cmd)
 	}
 
-	fmt.Printf("\n\nUse your own device location of servers:\n")
-	fmt.Printf("such as \"export DEVICE=/srv/node\"\n")
-
 	if policy.Type == "replication" || object == "" {
+		fmt.Printf("\n\nUse your own device location of servers:\n")
+		fmt.Printf("such as \"export DEVICE=/srv/node\"\n")
+
 		if pathHash != "" {
 			stDir := filepath.Join(datadir, strconv.Itoa(int(partNum)), pathHash[len(pathHash)-3:], pathHash)
 			for _, v := range primaries {
@@ -249,39 +295,9 @@ func printRingLocations(r ring.Ring, ringType, datadir, account, container, obje
 			}
 		}
 	} else {
-		if pathHash == "" {
-			fmt.Println("not implemented: please supply object path")
+		if err := printSshCommands(r, pathHash, allHandoffs, policy); err != nil {
+			fmt.Println(err.Error())
 			return
-		}
-		ringPartPower := bits.Len64(r.PartitionCount() - 1)
-		dbPartPower, err := policy.GetDbPartPower()
-		if err != nil {
-			fmt.Println("Error getting dbPartPower", err)
-			return
-		}
-		subdirs, err := policy.GetDbSubDirs()
-		if err != nil {
-			fmt.Println("Error getting subdirs", err)
-			return
-		}
-		_, _, dbPart, dirNum, err := objectserver.ValidateHash(pathHash, uint(ringPartPower), dbPartPower, subdirs)
-		if err != nil {
-			fmt.Println("Error in ValidateHash", err)
-			return
-		}
-		dbFileName := fmt.Sprintf("index.db.%02x", dbPart)
-		odir := fmt.Sprintf("index.db.dir.%02x", dirNum)
-		for _, v := range primaries {
-			fmt.Printf("ssh %s \"sqlite3 ${DEVICE:-/srv/node*}/%v/%v/hec.db/%v \\\"SELECT * FROM objects WHERE hash = '%v'\\\"\"\n", v.Ip, v.Device, objectserver.PolicyDir(policy.Index), dbFileName, pathHash)
-			fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v/hec/%v/%v*\"\n\n", v.Ip, v.Device, objectserver.PolicyDir(policy.Index), odir, pathHash)
-		}
-		handoffs = r.GetMoreNodes(partNum)
-		for i, v := 0, handoffs.Next(); v != nil; i, v = i+1, handoffs.Next() {
-			if handoffLimit != -1 && i == handoffLimit {
-				break
-			}
-			fmt.Printf("ssh %s \"sqlite3 ${DEVICE:-/srv/node*}/%v/%v/hec.db/%v \\\"SELECT * FROM objects WHERE hash = '%v'\\\"\" #[HANDOFF]\n", v.Ip, v.Device, objectserver.PolicyDir(policy.Index), dbFileName, pathHash)
-			fmt.Printf("ssh %s \"ls -lah ${DEVICE:-/srv/node*}/%v/%v/hec/%v/%v*\" #[HANDOFF]\n\n", v.Ip, v.Device, objectserver.PolicyDir(policy.Index), odir, pathHash)
 		}
 	}
 
@@ -314,12 +330,15 @@ func parseArg0(arg0 string) (string, string, string) {
 
 func Nodes(flags *flag.FlagSet, cnf srv.ConfigLoader) {
 	var account, container, object string
+	ohsh := flags.Lookup("objhash").Value.(flag.Getter).Get().(string)
 	if flags.NArg() == 1 {
 		account, container, object = parseArg0(flags.Arg(0))
 	} else {
-		account = flags.Arg(0)
-		container = flags.Arg(1)
-		object = flags.Arg(2)
+		if ohsh == "" {
+			account = flags.Arg(0)
+			container = flags.Arg(1)
+			object = flags.Arg(2)
+		}
 	}
 	partition := flags.Lookup("p").Value.(flag.Getter).Get().(string)
 	policyName := flags.Lookup("P").Value.(flag.Getter).Get().(string)
@@ -335,6 +354,9 @@ func Nodes(flags *flag.FlagSet, cnf srv.ConfigLoader) {
 	var r ring.Ring
 	var ringType string
 	inferredType := inferRingType(account, container, object)
+	if ohsh != "" {
+		inferredType = "object"
+	}
 	ringPath := flags.Lookup("r").Value.(flag.Getter).Get().(string)
 	if ringPath != "" {
 		r, ringType = getRing(ringPath, "", policy.Index)
@@ -355,7 +377,7 @@ func Nodes(flags *flag.FlagSet, cnf srv.ConfigLoader) {
 		r, ringType = getRing("", inferredType, policy.Index)
 	}
 
-	if partition != "" {
+	if partition != "" || ohsh != "" {
 		account = ""
 		container = ""
 		object = ""
@@ -374,10 +396,16 @@ func Nodes(flags *flag.FlagSet, cnf srv.ConfigLoader) {
 		}
 	}
 
-	fmt.Printf("\nAccount  \t%v\n", account)
-	fmt.Printf("Container\t%v\n", container)
-	fmt.Printf("Object   \t%v\n", object)
-	printItemLocations(r, ringType, account, container, object, partition, allHandoffs, policy)
+	if ohsh == "" {
+		fmt.Printf("\nAccount  \t%v\n", account)
+		fmt.Printf("Container\t%v\n", container)
+		fmt.Printf("Object   \t%v\n", object)
+		printItemLocations(r, ringType, account, container, object, partition, allHandoffs, policy)
+	} else {
+		if err := printSshCommands(r, ohsh, allHandoffs, policy); err != nil {
+			fmt.Println(err.Error())
+		}
+	}
 }
 
 func getACO(path string) (account, container, object string) {
