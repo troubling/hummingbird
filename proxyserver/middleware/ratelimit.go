@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/troubling/hummingbird/common"
@@ -40,6 +41,11 @@ var writeMethods = map[string]bool{"PUT": true, "DELETE": true, "POST": true}
 // accurate as the clocks in the proxy layer- meaning if your clocks
 // are accurate to 1/100 of a second then the max reliable rate/sec
 // you can set is 100/sec.
+
+type limitExpirer struct {
+	limit      int64
+	expireTime time.Time
+}
 
 type ratelimiter struct {
 	accountLimit   int64
@@ -76,6 +82,21 @@ func (r *ratelimiter) getSleepTime(ctx context.Context, mc ring.MemcacheRing, ke
 	return sleepTime, nil
 }
 
+func (r *ratelimiter) getAccountSpecificRatelimit(account string, ctx *ProxyContext, request *http.Request) (int64, error) {
+	ai, err := ctx.GetAccountInfo(request.Context(), account)
+	if err != nil {
+		return 0, err
+	}
+	if rl, ok := ai.SysMetadata["Global-Write-Ratelimit"]; ok {
+		if rli, err := strconv.ParseInt(rl, 10, 64); err == nil {
+			return rli, nil
+		} else {
+			return 0, err
+		}
+	}
+	return 0, nil
+}
+
 func (r *ratelimiter) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	isWrite := writeMethods[request.Method]
 	pathParts, err := common.ParseProxyPath(request.URL.Path)
@@ -99,6 +120,15 @@ func (r *ratelimiter) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 			"ratelimit/%s/%s", pathParts["account"], pathParts["container"])
 		limit = r.containerLimit
 	}
+	if l, err := r.getAccountSpecificRatelimit(pathParts["account"], ctx, request); err == nil {
+		if limit == 0 || l < limit {
+			ratekey = fmt.Sprintf(
+				"ratelimit/global/%s", pathParts["account"])
+			limit = l
+		}
+	} else {
+		ctx.Logger.Debug("Error ratelimiter getting account ratelimit", zap.Error(err))
+	}
 	if limit > 0 {
 		sleepTime, err := r.getSleepTime(request.Context(), ctx.Cache, ratekey, limit)
 		if err == nil {
@@ -109,9 +139,7 @@ func (r *ratelimiter) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 			}
 			sleep(time.Duration(sleepTime))
 		} else {
-			if ctx := GetProxyContext(request); ctx != nil {
-				ctx.Logger.Debug("Ratelimiter errored while getting sleep time", zap.Error(err))
-			}
+			ctx.Logger.Debug("Ratelimiter errored while getting sleep time", zap.Error(err))
 		}
 	}
 	r.next.ServeHTTP(writer, request)
@@ -121,7 +149,6 @@ func NewRatelimiter(config conf.Section, metricsScope tally.Scope) (func(http.Ha
 
 	accLimit := int64(config.GetInt("account_db_max_writes_per_sec", 0))
 	contLimit := int64(config.GetInt("container_db_max_writes_per_sec", 0))
-	//TODO: add account metadata global-write-ratelimit ratelimiter
 	RegisterInfo("ratelimit", map[string]interface{}{"account_ratelimit": accLimit, "container_ratelimits": [][]int64{{contLimit}}, "max_sleep_time_seconds": float64(60.0)})
 	return func(next http.Handler) http.Handler {
 		return &ratelimiter{
