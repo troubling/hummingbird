@@ -174,15 +174,15 @@ func printSshCommands(r ring.Ring, pathHash string, allHandoffs bool, policy *co
 	ringPartPower := bits.Len64(r.PartitionCount() - 1)
 	dbPartPower, err := policy.GetDbPartPower()
 	if err != nil {
-		return fmt.Errorf("Error getting dbPartPower", err)
+		return fmt.Errorf("Error getting dbPartPower: %v", err)
 	}
 	subdirs, err := policy.GetDbSubDirs()
 	if err != nil {
-		return fmt.Errorf("Error getting subdirs", err)
+		return fmt.Errorf("Error getting subdirs: %v", err)
 	}
 	_, _, dbPart, dirNum, err := objectserver.ValidateHash(pathHash, uint(ringPartPower), dbPartPower, subdirs)
 	if err != nil {
-		return fmt.Errorf("Error in ValidateHash", err)
+		return fmt.Errorf("Error in ValidateHash: %v", err)
 	}
 	dbFileName := fmt.Sprintf("index.db.%02x", dbPart)
 	odir := fmt.Sprintf("index.db.dir.%02x", dirNum)
