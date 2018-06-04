@@ -82,7 +82,6 @@ func (r *ratelimiter) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 	pathParts, err := common.ParseProxyPath(request.URL.Path)
 	if !isWrite || err != nil || pathParts["container"] == "" {
 		r.next.ServeHTTP(writer, request)
-		srv.StandardResponse(writer, 500)
 		return
 	}
 	ctx := GetProxyContext(request)
