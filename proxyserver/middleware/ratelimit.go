@@ -42,11 +42,6 @@ var writeMethods = map[string]bool{"PUT": true, "DELETE": true, "POST": true}
 // are accurate to 1/100 of a second then the max reliable rate/sec
 // you can set is 100/sec.
 
-type limitExpirer struct {
-	limit      int64
-	expireTime time.Time
-}
-
 type ratelimiter struct {
 	accountLimit   int64
 	containerLimit int64
@@ -82,31 +77,18 @@ func (r *ratelimiter) getSleepTime(ctx context.Context, mc ring.MemcacheRing, ke
 	return sleepTime, nil
 }
 
-func (r *ratelimiter) getAccountSpecificRatelimit(account string, ctx *ProxyContext, request *http.Request) (int64, error) {
-	ai, err := ctx.GetAccountInfo(request.Context(), account)
-	if err != nil {
-		return 0, err
-	}
-	if rl, ok := ai.SysMetadata["Global-Write-Ratelimit"]; ok {
-		if rli, err := strconv.ParseInt(rl, 10, 64); err == nil {
-			return rli, nil
-		} else {
-			return 0, err
-		}
-	}
-	return 0, nil
-}
-
 func (r *ratelimiter) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	isWrite := writeMethods[request.Method]
 	pathParts, err := common.ParseProxyPath(request.URL.Path)
 	if !isWrite || err != nil || pathParts["container"] == "" {
 		r.next.ServeHTTP(writer, request)
+		srv.StandardResponse(writer, 500)
 		return
 	}
 	ctx := GetProxyContext(request)
 	if ctx == nil {
-		ctx.Logger.Debug("Error ratelimiter getting ctx")
+		ctx.Logger.Error("Error ratelimiter getting ctx")
+		srv.StandardResponse(writer, 500)
 		return
 	}
 	limit := int64(0)
@@ -120,14 +102,26 @@ func (r *ratelimiter) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 			"ratelimit/%s/%s", pathParts["account"], pathParts["container"])
 		limit = r.containerLimit
 	}
-	if l, err := r.getAccountSpecificRatelimit(pathParts["account"], ctx, request); err == nil {
-		if limit == 0 || l < limit {
-			ratekey = fmt.Sprintf(
-				"ratelimit/global/%s", pathParts["account"])
-			limit = l
-		}
+	ai, err := ctx.GetAccountInfo(request.Context(), pathParts["account"])
+	if err != nil {
+		ctx.Logger.Debug("Error ratelimiter getting account info", zap.Error(err))
 	} else {
-		ctx.Logger.Debug("Error ratelimiter getting account ratelimit", zap.Error(err))
+		if rl, ok := ai.SysMetadata["Global-Write-Ratelimit"]; ok {
+			if rl == "BLACKLIST" {
+				sleep(time.Second)
+				srv.StandardResponse(writer, 497)
+				return
+			}
+			if rl == "WHITELIST" {
+				r.next.ServeHTTP(writer, request)
+				return
+			}
+			if rli, err := strconv.ParseInt(rl, 10, 64); err == nil && rli > 0 {
+				ratekey = fmt.Sprintf(
+					"ratelimit/global/%s", pathParts["account"])
+				limit = rli
+			}
+		}
 	}
 	if limit > 0 {
 		sleepTime, err := r.getSleepTime(request.Context(), ctx.Cache, ratekey, limit)
