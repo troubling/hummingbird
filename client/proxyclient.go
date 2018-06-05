@@ -686,3 +686,7 @@ func (c *requestClient) ObjectRingFor(ctx context.Context, account string, conta
 func (c *requestClient) ContainerRing() ring.Ring {
 	return c.pdc.ContainerRing.ring()
 }
+
+func (c *requestClient) AccountRing() ring.Ring {
+	return c.pdc.AccountRing.ring()
+}

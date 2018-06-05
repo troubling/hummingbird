@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 
 	"github.com/troubling/hummingbird/common/ring"
@@ -200,6 +201,7 @@ func (mr *FakeMemcacheRing) SetMulti(ctx context.Context, serverKey string, valu
 type MockResponseWriter struct {
 	SaveHeader *http.Header
 	StatusMap  map[string]int
+	Body       io.Writer
 }
 
 func (m MockResponseWriter) Header() (h http.Header) {
@@ -210,11 +212,14 @@ func (m MockResponseWriter) Header() (h http.Header) {
 }
 
 func (m MockResponseWriter) Write(p []byte) (n int, err error) {
+	if m.Body != nil {
+		return m.Body.Write(p)
+	}
 	return len(p), nil
 }
 
 func (m MockResponseWriter) WriteString(s string) (n int, err error) {
-	return len(s), nil
+	return m.Write([]byte(s))
 }
 
 func (m MockResponseWriter) WriteHeader(s int) {

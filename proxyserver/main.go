@@ -82,11 +82,24 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 	}, time.Second)
 	router := srv.NewRouter()
 	if obfuscatedPrefix != "" {
-		router.Get(path.Join("/", obfuscatedPrefix, "metrics"), prometheus.Handler())
-		router.Get(path.Join("/", obfuscatedPrefix, "loglevel"), server.logLevel)
-		router.Put(path.Join("/", obfuscatedPrefix, "loglevel"), server.logLevel)
-		router.Get(path.Join("/", obfuscatedPrefix, "debug/pprof/:parm"), http.DefaultServeMux)
-		router.Post(path.Join("/", obfuscatedPrefix, "debug/pprof/:parm"), http.DefaultServeMux)
+		op := obfuscatedPrefix
+		if op == "-" {
+			op = ""
+		}
+		router.Get(path.Join("/", op, "metrics"), prometheus.Handler())
+		router.Get(path.Join("/", op, "loglevel"), server.logLevel)
+		router.Put(path.Join("/", op, "loglevel"), server.logLevel)
+		router.Get(path.Join("/", op, "debug/pprof/:parm"), http.DefaultServeMux)
+		router.Post(path.Join("/", op, "debug/pprof/:parm"), http.DefaultServeMux)
+		router.Get(path.Join("/", op, "endpoints/v1/:account/:container/*obj"), http.HandlerFunc(server.EndpointsObjectGetHandler))
+		router.Get(path.Join("/", op, "endpoints/v1/:account/:container"), http.HandlerFunc(server.EndpointsContainerGetHandler))
+		router.Get(path.Join("/", op, "endpoints/v1/:account"), http.HandlerFunc(server.EndpointsAccountGetHandler))
+		router.Get(path.Join("/", op, "endpoints/v2/:account/:container/*obj"), http.HandlerFunc(server.EndpointsObjectGetHandler2))
+		router.Get(path.Join("/", op, "endpoints/v2/:account/:container"), http.HandlerFunc(server.EndpointsContainerGetHandler2))
+		router.Get(path.Join("/", op, "endpoints/v2/:account"), http.HandlerFunc(server.EndpointsAccountGetHandler2))
+		router.Get(path.Join("/", op, "endpoints/:account/:container/*obj"), http.HandlerFunc(server.EndpointsObjectGetHandler))
+		router.Get(path.Join("/", op, "endpoints/:account/:container"), http.HandlerFunc(server.EndpointsContainerGetHandler))
+		router.Get(path.Join("/", op, "endpoints/:account"), http.HandlerFunc(server.EndpointsAccountGetHandler))
 	}
 	router.Get("/v1/:account/:container/*obj", http.HandlerFunc(server.ObjectGetHandler))
 	router.Head("/v1/:account/:container/*obj", http.HandlerFunc(server.ObjectHeadHandler))

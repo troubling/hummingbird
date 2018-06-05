@@ -33,6 +33,7 @@ type RequestClient interface {
 	// a response as to why the ring could not be returned.
 	ObjectRingFor(ctx context.Context, account string, container string) (ring.Ring, *http.Response)
 	ContainerRing() ring.Ring
+	AccountRing() ring.Ring
 }
 
 // ProxyClient is the factory for RequestClients, and manages any persistent/shared client resources.

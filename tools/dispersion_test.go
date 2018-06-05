@@ -90,6 +90,7 @@ func (r *FakeRing) ReplicaCount() uint64 {
 type testDispersionClient struct {
 	objRing   ring.Ring
 	contRing  ring.Ring
+	acctRing  ring.Ring
 	objPuts   int
 	contCalls int
 	objCalls  int
@@ -190,6 +191,10 @@ func (c *testDispersionClient) ObjectRingFor(ctx context.Context, account string
 
 func (c *testDispersionClient) ContainerRing() ring.Ring {
 	return c.contRing
+}
+
+func (c *testDispersionClient) AccountRing() ring.Ring {
+	return c.acctRing
 }
 
 func TestGenerateDispersionNames(t *testing.T) {
