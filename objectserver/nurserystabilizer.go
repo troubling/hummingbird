@@ -174,10 +174,10 @@ func GetNurseryDevice(oring ring.Ring, dev *ring.Device, policy int, r *Replicat
 		canchan:   make(chan struct{}),
 		objEngine: f,
 	}
-	nrd.stabilizationAttemptsMetric = r.metricsScope.Counter(dev.Device + "_stabilization_attempts")
-	nrd.stabilizationSuccessesMetric = r.metricsScope.Counter(dev.Device + "_stabilization_successes")
-	nrd.stabilizationFailuresMetric = r.metricsScope.Counter(dev.Device + "_stabilization_failures")
-	nrd.stabilizationLastPassCountMetric = r.metricsScope.Gauge(dev.Device + "_stabilization_last_pass_count")
-	nrd.stabilizationLastPassDurationMetric = r.metricsScope.Timer(dev.Device + "_stabilization_last_pass_duration")
+	nrd.stabilizationAttemptsMetric = r.metricsScope.Counter(fmt.Sprintf("%d_%s_stabilization_attempts", policy, dev.Device))
+	nrd.stabilizationSuccessesMetric = r.metricsScope.Counter(fmt.Sprintf("%d_%s_stabilization_successes", policy, dev.Device))
+	nrd.stabilizationFailuresMetric = r.metricsScope.Counter(fmt.Sprintf("%d_%s_stabilization_failures", policy, dev.Device))
+	nrd.stabilizationLastPassCountMetric = r.metricsScope.Gauge(fmt.Sprintf("%d_%s_stabilization_last_pass_count", policy, dev.Device))
+	nrd.stabilizationLastPassDurationMetric = r.metricsScope.Timer(fmt.Sprintf("%d_%s_stabilization_last_pass_duration", policy, dev.Device))
 	return nrd, nil
 }
