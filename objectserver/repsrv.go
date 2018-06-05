@@ -321,8 +321,7 @@ func (r *Replicator) LogRequest(next http.Handler) http.Handler {
 }
 
 func (r *Replicator) GetHandler(config conf.Config, metricsPrefix string) http.Handler {
-	var metricsScope tally.Scope
-	metricsScope, r.metricsCloser = tally.NewRootScope(tally.ScopeOptions{
+	r.metricsScope, r.metricsCloser = tally.NewRootScope(tally.ScopeOptions{
 		Prefix:         metricsPrefix,
 		Tags:           map[string]string{},
 		CachedReporter: promreporter.NewReporter(promreporter.Options{}),
@@ -357,5 +356,5 @@ func (r *Replicator) GetHandler(config conf.Config, metricsPrefix string) http.H
 			})
 		}
 	}
-	return alice.New(middleware.Metrics(metricsScope), middleware.ServerTracer(r.tracer)).Then(router)
+	return alice.New(middleware.Metrics(r.metricsScope), middleware.ServerTracer(r.tracer)).Then(router)
 }

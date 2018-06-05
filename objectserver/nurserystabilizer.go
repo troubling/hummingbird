@@ -26,6 +26,7 @@ import (
 
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
+	"github.com/uber-go/tally"
 )
 
 const nurseryObjectSleep = 10 * time.Millisecond
@@ -38,6 +39,12 @@ type nurseryDevice struct {
 	oring     ring.Ring
 	canchan   chan struct{}
 	objEngine NurseryObjectEngine
+
+	stabilizationAttemptsMetric         tally.Counter
+	stabilizationSuccessesMetric        tally.Counter
+	stabilizationFailuresMetric         tally.Counter
+	stabilizationLastPassCountMetric    tally.Gauge
+	stabilizationLastPassDurationMetric tally.Timer
 }
 
 type PriorityReplicationResult struct {
@@ -57,11 +64,15 @@ func (nrd *nurseryDevice) Scan() {
 		nrd.r.logger.Error("[stabilizeDevice] Drive not mounted", zap.String("Device", nrd.dev.Device), zap.Error(err))
 		return
 	}
+	start := time.Now()
 	c := make(chan ObjectStabilizer, 100)
 	cancel := make(chan struct{})
 	defer close(cancel)
 	go nrd.objEngine.GetObjectsToStabilize(nrd.dev.Device, c, cancel)
+	count := 0
 	for o := range c {
+		count++
+		nrd.stabilizationAttemptsMetric.Inc(1)
 		nrd.UpdateStat("checkin", 1)
 		func() {
 			nrd.r.nurseryConcurrencySem <- struct{}{}
@@ -69,9 +80,11 @@ func (nrd *nurseryDevice) Scan() {
 				<-nrd.r.nurseryConcurrencySem
 			}()
 			if err := o.Stabilize(nrd.dev); err == nil {
+				nrd.stabilizationSuccessesMetric.Inc(1)
 				nrd.UpdateStat("ObjectsStabilizedSuccess", 1)
 				nrd.UpdateStat("ObjectsStabilizedBytes", o.ContentLength())
 			} else {
+				nrd.stabilizationFailuresMetric.Inc(1)
 				nrd.r.logger.Debug("[stabilizeDevice] error Stabilize obj", zap.String("Object", o.Repr()), zap.Error(err))
 				nrd.UpdateStat("ObjectsStabilizedError", 1)
 			}
@@ -82,6 +95,9 @@ func (nrd *nurseryDevice) Scan() {
 			return
 		}
 	}
+	nrd.stabilizationLastPassCountMetric.Update(float64(count))
+	// We don't use Tally's Timer Start().Stop() since we don't want to record canceled passes.
+	nrd.stabilizationLastPassDurationMetric.Record(time.Since(start))
 	nrd.UpdateStat("PassComplete", 1)
 	nrd.r.logger.Info("[stabilizeDevice] Pass complete.")
 }
@@ -149,7 +165,7 @@ func (nrd *nurseryDevice) PriorityReplicate(w http.ResponseWriter, pri PriorityR
 }
 
 func GetNurseryDevice(oring ring.Ring, dev *ring.Device, policy int, r *Replicator, f NurseryObjectEngine) (ReplicationDevice, error) {
-	return &nurseryDevice{
+	nrd := &nurseryDevice{
 		r:         r,
 		dev:       dev,
 		policy:    policy,
@@ -157,5 +173,11 @@ func GetNurseryDevice(oring ring.Ring, dev *ring.Device, policy int, r *Replicat
 		passStart: time.Now(),
 		canchan:   make(chan struct{}),
 		objEngine: f,
-	}, nil
+	}
+	nrd.stabilizationAttemptsMetric = r.metricsScope.Counter(dev.Device + "_stabilization_attempts")
+	nrd.stabilizationSuccessesMetric = r.metricsScope.Counter(dev.Device + "_stabilization_successes")
+	nrd.stabilizationFailuresMetric = r.metricsScope.Counter(dev.Device + "_stabilization_failures")
+	nrd.stabilizationLastPassCountMetric = r.metricsScope.Gauge(dev.Device + "_stabilization_last_pass_count")
+	nrd.stabilizationLastPassDurationMetric = r.metricsScope.Timer(dev.Device + "_stabilization_last_pass_duration")
+	return nrd, nil
 }

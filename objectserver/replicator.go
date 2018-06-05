@@ -33,6 +33,7 @@ import (
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/common/tracing"
 	"github.com/troubling/hummingbird/middleware"
+	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/net/http2"
@@ -104,6 +105,7 @@ type Replicator struct {
 	incomingLimitPerDev int64
 	policies            conf.PolicyList
 	logLevel            zap.AtomicLevel
+	metricsScope        tally.Scope
 	metricsCloser       io.Closer
 	traceCloser         io.Closer
 	clientTraceCloser   io.Closer
