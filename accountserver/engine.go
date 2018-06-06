@@ -113,7 +113,7 @@ type Account interface {
 	// IsDeleted returns true if the account has been deleted.
 	IsDeleted() (bool, error)
 	// Delete deletes the account.
-	Delete(timestamp string) error
+	Delete(timestamp string) (int, error)
 	// ListContainers lists the account's container entries.
 	ListContainers(limit int, marker string, endMarker string, prefix string, delimiter string, reverse bool) ([]interface{}, error)
 	// GetMetadata returns the account's current metadata.

@@ -302,17 +302,14 @@ func (server *AccountServer) AccountDeleteHandler(writer http.ResponseWriter, re
 		srv.StandardResponse(writer, http.StatusBadRequest)
 		return
 	}
-	info, err := db.GetInfo()
+	_, err = db.GetInfo()
 	if err != nil {
 		srv.GetLogger(request).Error("Unable to get account info.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
-	if info.ContainerCount > 0 {
-		srv.StandardResponse(writer, http.StatusConflict)
-		return
-	}
-	if err = db.Delete(timestamp); err != nil {
+	status, err := db.Delete(timestamp)
+	if err != nil {
 		srv.GetLogger(request).Error("Unable to delete database", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
@@ -322,7 +319,7 @@ func (server *AccountServer) AccountDeleteHandler(writer http.ResponseWriter, re
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
 	}
-	writer.WriteHeader(http.StatusNoContent)
+	writer.WriteHeader(status)
 	writer.Write([]byte(""))
 }
 
