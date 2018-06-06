@@ -201,7 +201,7 @@ func TestGenerateDispersionNames(t *testing.T) {
 	dObjs := make(chan string)
 	container := "objs"
 	cancel := make(chan struct{})
-	go generateDispersionNames(container, "", oring, dObjs, cancel)
+	go generateDispersionNames(container, "", oring, dObjs, cancel, 0)
 	for val := range dObjs {
 		part := oring.GetPartition(AdminAccount, container, val)
 		require.Equal(t, strings.Index(val, fmt.Sprintf("%d-", part)), 0)
