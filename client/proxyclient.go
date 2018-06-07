@@ -378,7 +378,7 @@ func (c *requestClient) PutAccount(ctx context.Context, account string, headers 
 		if err != nil {
 			return nil, err
 		}
-		req = req.WithContext(ctx)
+		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
@@ -394,7 +394,7 @@ func (c *requestClient) PostAccount(ctx context.Context, account string, headers
 		if err != nil {
 			return nil, err
 		}
-		req = req.WithContext(ctx)
+		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
@@ -412,7 +412,7 @@ func (c *requestClient) GetAccountRaw(ctx context.Context, account string, optio
 		if err != nil {
 			return nil, err
 		}
-		req = req.WithContext(ctx)
+		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
@@ -429,7 +429,7 @@ func (c *requestClient) HeadAccount(ctx context.Context, account string, headers
 		if err != nil {
 			return nil, err
 		}
-		req = req.WithContext(ctx)
+		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
@@ -445,7 +445,7 @@ func (c *requestClient) DeleteAccount(ctx context.Context, account string, heade
 		if err != nil {
 			return nil, err
 		}
-		req = req.WithContext(ctx)
+		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
@@ -477,7 +477,7 @@ func (c *requestClient) PutContainer(ctx context.Context, account string, contai
 		if err != nil {
 			return nil, err
 		}
-		req = req.WithContext(ctx)
+		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
@@ -501,7 +501,7 @@ func (c *requestClient) PostContainer(ctx context.Context, account string, conta
 		if err != nil {
 			return nil, err
 		}
-		req = req.WithContext(ctx)
+		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
@@ -519,7 +519,7 @@ func (c *requestClient) GetContainerRaw(ctx context.Context, account string, con
 		if err != nil {
 			return nil, err
 		}
-		req = req.WithContext(ctx)
+		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
@@ -628,7 +628,7 @@ func (c *requestClient) HeadContainer(ctx context.Context, account string, conta
 		if err != nil {
 			return nil, err
 		}
-		req = req.WithContext(ctx)
+		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
@@ -649,7 +649,7 @@ func (c *requestClient) DeleteContainer(ctx context.Context, account string, con
 		if err != nil {
 			return nil, err
 		}
-		req = req.WithContext(ctx)
+		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
