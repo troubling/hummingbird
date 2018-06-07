@@ -19,6 +19,8 @@ hbmain start   # or hball start
 # test changes
 ```
 
+Note that the systemd services, run by hbmain and hball, will use /usr/local/bin/hummingbird which is installed by `make haio`.
+
 There a few other make targets as well:
 
 ```sh
@@ -41,8 +43,7 @@ hblog object\* # shows logs for all the object servers (can also have -f)
 You can run Openstack Swift's functional tests against Hummingbird if you want:
 
 ```sh
-cd ~/swift/test/functional
-nosetests
+hbswifttests
 ```
 
 If you want to stop/start individual services, you would do it much like a "real" user would:
@@ -55,4 +56,11 @@ Although, since an HAIO pretends to be a cluster of 4 machines, the account, con
 
 ```
 sudo systemctl restart hummingbird-object1
+```
+
+Finally, there are two more commands that you may find useful occasionally:
+
+```
+hbrings     # rebuilds the rings from scratch
+hbmount     # mounts /srv/hb -- usually needed after a reboot
 ```
