@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/troubling/hummingbird/common"
@@ -85,7 +86,8 @@ func (r *ratelimiter) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 	}
 	ctx := GetProxyContext(request)
 	if ctx == nil {
-		ctx.Logger.Debug("Error ratelimiter getting ctx")
+		ctx.Logger.Error("Error ratelimiter getting ctx")
+		srv.StandardResponse(writer, 500)
 		return
 	}
 	limit := int64(0)
@@ -99,6 +101,27 @@ func (r *ratelimiter) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 			"ratelimit/%s/%s", pathParts["account"], pathParts["container"])
 		limit = r.containerLimit
 	}
+	ai, err := ctx.GetAccountInfo(request.Context(), pathParts["account"])
+	if err != nil {
+		ctx.Logger.Debug("Error ratelimiter getting account info", zap.Error(err))
+	} else {
+		if rl, ok := ai.SysMetadata["Global-Write-Ratelimit"]; ok {
+			if rl == "BLACKLIST" {
+				sleep(time.Second)
+				srv.StandardResponse(writer, 497)
+				return
+			}
+			if rl == "WHITELIST" {
+				r.next.ServeHTTP(writer, request)
+				return
+			}
+			if rli, err := strconv.ParseInt(rl, 10, 64); err == nil && rli > 0 {
+				ratekey = fmt.Sprintf(
+					"ratelimit/global/%s", pathParts["account"])
+				limit = rli
+			}
+		}
+	}
 	if limit > 0 {
 		sleepTime, err := r.getSleepTime(request.Context(), ctx.Cache, ratekey, limit)
 		if err == nil {
@@ -109,9 +132,7 @@ func (r *ratelimiter) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 			}
 			sleep(time.Duration(sleepTime))
 		} else {
-			if ctx := GetProxyContext(request); ctx != nil {
-				ctx.Logger.Debug("Ratelimiter errored while getting sleep time", zap.Error(err))
-			}
+			ctx.Logger.Debug("Ratelimiter errored while getting sleep time", zap.Error(err))
 		}
 	}
 	r.next.ServeHTTP(writer, request)
@@ -121,7 +142,6 @@ func NewRatelimiter(config conf.Section, metricsScope tally.Scope) (func(http.Ha
 
 	accLimit := int64(config.GetInt("account_db_max_writes_per_sec", 0))
 	contLimit := int64(config.GetInt("container_db_max_writes_per_sec", 0))
-	//TODO: add account metadata global-write-ratelimit ratelimiter
 	RegisterInfo("ratelimit", map[string]interface{}{"account_ratelimit": accLimit, "container_ratelimits": [][]int64{{contLimit}}, "max_sleep_time_seconds": float64(60.0)})
 	return func(next http.Handler) http.Handler {
 		return &ratelimiter{
