@@ -316,21 +316,27 @@ func getDispersionReport(flags *flag.FlagSet) *dispersionReport {
 // generateDispersionNames will feed a name per partition into the names
 // channel. The container should be an empty string if you wish to have
 // container names generated. The prefix will be the start of every name. The
-// cancel channel can be closed to abort the name generation. Usually, the
-// container name generation is called with
-// generateDispersionNames("", "disp-conts-", containerRing, containerNames, cancel)
+// cancel channel can be closed to abort the name generation. The concurrency
+// value, if 0, will default to 1/4 the number of CPUs (cores).
+// Usually, the container name generation is called with
+// generateDispersionNames("", "disp-conts-", containerRing, containerNames, cancel, 0)
 // and the object name generation is called with
-// generateDispersionNames("disp-objs-<POLICYINDEX>", "", objectRing, objectNames, cancel)
-func generateDispersionNames(container, prefix string, r ring.Ring, names chan string, cancel chan struct{}) {
+// generateDispersionNames("disp-objs-<POLICYINDEX>", "", objectRing, objectNames, cancel, 0)
+func generateDispersionNames(container, prefix string, r ring.Ring, names chan string, cancel chan struct{}, concurrency uint64) {
 	// if looking for container names, send container=""
 	defer close(names)
 	var wg sync.WaitGroup
-	numCPU := uint64(runtime.NumCPU())
-	for cpu := uint64(0); cpu < numCPU; cpu++ {
+	if concurrency < 1 {
+		concurrency = uint64(runtime.NumCPU()) / 4
+		if concurrency < 1 {
+			concurrency = 1
+		}
+	}
+	for goroutine := uint64(0); goroutine < concurrency; goroutine++ {
 		wg.Add(1)
-		go func(funcCPU uint64) {
+		go func(funcGoroutine uint64) {
 			defer wg.Done()
-			for partition := funcCPU; true; partition += numCPU {
+			for partition := funcGoroutine; true; partition += concurrency {
 				select {
 				case <-cancel:
 					break
@@ -361,7 +367,7 @@ func generateDispersionNames(container, prefix string, r ring.Ring, names chan s
 					}
 				}
 			}
-		}(cpu)
+		}(goroutine)
 	}
 	wg.Wait()
 }

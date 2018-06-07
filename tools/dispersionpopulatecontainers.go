@@ -4,6 +4,7 @@ package tools
 // [dispersion-populate-containers]
 // retry_time = 3600     # seconds before retrying a failed populate pass
 // report_interval = 600 # seconds between progress reports
+// concurrency = 0       # how many cpu cores to use while populating
 
 import (
 	"context"
@@ -21,14 +22,21 @@ type dispersionPopulateContainers struct {
 	aa             *AutoAdmin
 	retryTime      time.Duration
 	reportInterval time.Duration
+	concurrency    uint64
 }
 
 func newDispersionPopulateContainers(aa *AutoAdmin) *dispersionPopulateContainers {
-	return &dispersionPopulateContainers{
+	dpc := &dispersionPopulateContainers{
 		aa:             aa,
 		retryTime:      time.Duration(aa.serverconf.GetInt("dispersion-populate-containers", "retry_time", 3600)) * time.Second,
 		reportInterval: time.Duration(aa.serverconf.GetInt("dispersion-populate-containers", "report_interval", 600)) * time.Second,
 	}
+	concurrency := aa.serverconf.GetInt("dispersion-populate-containers", "concurrency", 0)
+	if concurrency < 1 {
+		concurrency = 0
+	}
+	dpc.concurrency = uint64(concurrency)
+	return dpc
 }
 
 func (dpc *dispersionPopulateContainers) runForever() {
@@ -60,7 +68,7 @@ func (dpc *dispersionPopulateContainers) runOnce() time.Duration {
 	cancel := make(chan struct{})
 	var successes int64
 	var errors int64
-	go generateDispersionNames("", "disp-conts-", containerRing, containerNames, cancel)
+	go generateDispersionNames("", "disp-conts-", containerRing, containerNames, cancel, dpc.concurrency)
 	progressDone := make(chan struct{})
 	go func() {
 		for {
