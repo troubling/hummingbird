@@ -324,6 +324,22 @@ func auditHash(hashPath string, md5BytesPerSec int64) (bytesProcessed int64, err
 	return bytesProcessed, nil
 }
 
+// if there is more recent entry in indexdb for hash of given item, return true, nil
+// if no object is found in index.db it will also return true, nil
+func (a *Auditor) isOverwritten(db *IndexDB, item *IndexDBItem) (bool, error) {
+	if fitem, err := db.Lookup(item.Hash, shardAny, false); err == nil {
+		if fitem == nil {
+			return true, nil
+		}
+		if fitem.Timestamp > item.Timestamp {
+			return true, nil
+		}
+	} else {
+		return false, err
+	}
+	return false, nil
+}
+
 // auditDB.  Runs auditFunc on all objects in the given DB.
 func (a *Auditor) auditDB(devPath string, objRing ring.Ring, policy *conf.Policy) {
 	dbpath := filepath.Join(devPath, PolicyDir(policy.Index), fmt.Sprintf("%s.db", policy.Type))
@@ -390,15 +406,17 @@ func (a *Auditor) auditDB(devPath string, objRing ring.Ring, policy *conf.Policy
 			}
 			bytes, err := a.idbAuditors[policy.Index].AuditItem(itemPath, item, bytesPerSecond)
 			if err != nil {
-				a.logger.Error("Failed audit and is being quarantined",
-					zap.String("itemPath", itemPath), zap.String("auditorType", a.auditorType), zap.Error(err))
-				err = QuarantineItem(db, item)
-				if err != nil {
-					a.logger.Error("Failed to quarantine indexdb item", zap.String("auditorType", a.auditorType), zap.String("itemPath", itemPath), zap.Error(err))
-					continue
+				if overwritten, oerr := a.isOverwritten(db, item); !(oerr == nil && overwritten) {
+					a.logger.Error("Failed audit and is being quarantined",
+						zap.String("itemPath", itemPath), zap.String("auditorType", a.auditorType), zap.Error(err))
+					err = QuarantineItem(db, item)
+					if err != nil {
+						a.logger.Error("Failed to quarantine indexdb item", zap.String("auditorType", a.auditorType), zap.String("itemPath", itemPath), zap.Error(err))
+						continue
+					}
+					a.quarantines++
+					a.totalQuarantines++
 				}
-				a.quarantines++
-				a.totalQuarantines++
 			}
 			a.bytesProcessed += bytes
 			a.totalBytes += bytes
