@@ -13,6 +13,7 @@ Andrewd will initially populate "dispersion objects" and containers into the clu
 
    rings.md
    monitoring.md
+   progress.md
    drivestatus.md
    async.md
    dispersion.md
