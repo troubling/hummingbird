@@ -1,6 +1,6 @@
 ## Andrewd Replication
 
-Andrewd will orchestrate replication across the cluster as needed. For example, if Andrewd notices a missing dispersion object, it will start replication of that partition. If a device goes fails and is removed from the ring, Andrewd will start up replication to rebalance the cluster according to ring changes. This works for automated ring changes that Andrewd makes itself (via the unmounted monitor for example) and for ring changes made via `hummingbird ring` commands. Andrewd constantly monitors on the on disk ring files and activates the required replication when those ring files change.
+Andrewd will orchestrate replication across the cluster as needed. For example, if Andrewd notices a missing dispersion object, it will start replication of that partition. If a device fails and is removed from the ring, Andrewd will start up replication to rebalance the cluster according to ring changes. This works for automated ring changes that Andrewd makes itself (via the unmounted monitor for example) and for ring changes made via `hummingbird ring` commands. Andrewd constantly monitors on the on disk ring files and activates the required replication when those ring files change.
 
 ## Stalled Replicators Report
 
