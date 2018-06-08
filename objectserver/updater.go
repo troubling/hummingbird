@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"go.uber.org/zap"
@@ -144,13 +145,20 @@ func (ud *updateDevice) reconReportAsync() {
 		ud.reconRunning = false
 		ud.reconLock.Unlock()
 	}()
-	c := make(chan string, 100)
-	cancel := make(chan struct{})
-	defer close(cancel)
-	go ud.listAsyncs(c, cancel)
-	cnt := int64(0)
-	for range c {
-		cnt++
+	cnt := uint64(0)
+	suffixDirs, err := filepath.Glob(filepath.Join(ud.r.deviceRoot, ud.dev.Device, AsyncDir(ud.policy), "[a-f0-9][a-f0-9][a-f0-9]"))
+	if err != nil {
+		return
+	}
+	var stat syscall.Stat_t
+	for _, suffDir := range suffixDirs {
+		if err = syscall.Stat(suffDir, &stat); err != nil {
+			ud.r.logger.Error("object-updater unable to stat", zap.String("suffDir", suffDir), zap.Error(err))
+			continue
+		}
+		if stat.Nlink > 1 {
+			cnt += stat.Nlink - 1
+		}
 	}
 	if err := middleware.DumpReconCache(ud.r.reconCachePath, "object",
 		map[string]interface{}{
