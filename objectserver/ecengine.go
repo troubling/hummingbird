@@ -110,7 +110,14 @@ func (f *ecEngine) New(vars map[string]string, needData bool, asyncWG *sync.Wait
 			if err = json.Unmarshal(item.Metabytes, &obj.metadata); err != nil {
 				return nil, fmt.Errorf("Error parsing metadata: %v", err)
 			}
-		} //TODO: dfg handle lookup err here
+			if !item.Deletion {
+				if _, err := os.Stat(item.Path); err != nil {
+					return nil, err
+				}
+			}
+		} else if err != nil {
+			return nil, err
+		}
 		return obj, nil
 	}
 	return nil, errors.New("Unable to open database")
