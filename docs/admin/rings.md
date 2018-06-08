@@ -91,7 +91,11 @@ hummingbird ring account.builder rebalance
 
 It is *very* important that you add all nodes and devices to the ring before running the rebalance command.
 
-## Handling a Device failure
+## Andrewd Device Failure Monitoring
+
+Andrewd will continuously scan for unmounted devices and unreachable servers and automatically modify the rings as needed. If a server is unreachable for over four hours, Andrewd will remove all its devices from the rings, rebalance, and push those rings out to the remaining servers. If a device is unmounted for over one hour, that specific device will be removed from the rings, rebalanced, and pushed out.
+
+## Manually Handling a Device failure
 
 If a device has failed and will be replaced in the near future, then no ring changes are neccesary.  The system will work around the failure and replication will copy the data over when the drive is replaced.  Note that there will be some degradation in performance until the device is replaced and fully replicated.
 
@@ -113,3 +117,121 @@ hummingbird ring object.builder rebalance
 If a large number of devices are added or removed in a cluster at full weight, the cluster could get overwhelmed trying to replicate a lot of data at once.  If the device changes are made with a fraction of the final intended weight, then it is easier to control how much data is moved around the cluster.  For example if the size of the cluster is being expanded, add the new devices with a weight of 20% their intended final weight, rebalance and wait for replication to move most of that data.  Then, adjust the weight to 40%, and wait again.  Continue repeating this until the weight is at 100%.  Do the reverse if you intend on removing a large number of devices from the cluster at the same time.  
 
 Note: It is important that you do all of your ring changes before running the rebalance command.
+
+## Andrewd Ring Distribution
+
+Andrewd will continuously scan the cluster and push out new rings as needed. A regular "idle" scan will try to hit every service in the cluster once every 10 minutes. This idle scan is mostly in case a older server comes back online with an older ring, or an on disk ring get corrupted somehow, etc. When the ring is actively changed by Andrewd, such as with a detected device failure, the ring scan will run at full speed to push the new ring out as quickly as possible.
+
+## Ring Action Report
+
+Andrewd will record each ring action it takes in its database and you can retrieve this information as a report:
+
+```
+$ hummingbird recon -rar
+[2018-06-08 20:12:36] Ring Action Report
+Account Ring:
+    2018-06-08 16:12 rebalanced due to schedule; now settled
+    2018-06-08 20:11 removed unmounted device sdb1 id:0 on server 127.0.0.1:6012
+    2018-06-08 20:11 rebalanced due to downed device sdb1 on 127.0.0.1:6012
+Container Ring:
+    2018-06-08 16:12 rebalanced due to schedule; now settled
+    2018-06-08 20:09 removed unmounted device sdb1 id:0 on server 127.0.0.1:6011
+    2018-06-08 20:09 rebalanced due to downed device sdb1 on 127.0.0.1:6011
+Object Ring 0:
+    2018-06-08 16:12 rebalanced due to schedule; now settled
+    2018-06-08 20:11 removed unmounted device sdb1 id:0 on server 127.0.0.1:6010
+    2018-06-08 20:11 rebalanced due to downed device sdb1 on 127.0.0.1:6010
+Object Ring 1:
+    2018-06-08 16:12 rebalanced due to schedule; now settled
+    2018-06-08 20:11 removed unmounted device sdb1 id:0 on server 127.0.0.1:6010
+    2018-06-08 20:11 rebalanced due to downed device sdb1 on 127.0.0.1:6010
+Object Ring 2:
+    2018-06-08 16:12 rebalanced due to schedule; now settled
+    2018-06-08 20:11 removed unmounted device sdb1 id:0 on server 127.0.0.1:6010
+    2018-06-08 20:11 rebalanced due to downed device sdb1 on 127.0.0.1:6010
+```
+
+Once again, the JSON output is more detailed and more machine parseable:
+
+```
+$ hummingbird recon -rar -json
+{
+    "Name": "Ring Action Report",
+    "Time": "2018-06-08T20:11:37.598220043Z",
+    "Pass": true,
+    "Errors": null,
+    "Warnings": null,
+    "AccountReport": [
+        {
+            "Time": "2018-06-08T16:12:45Z",
+            "Reason": "rebalanced due to schedule; now settled"
+        },
+        {
+            "Time": "2018-06-08T20:11:24Z",
+            "Reason": "removed unmounted device sdb1 id:0 on server 127.0.0.1:6012"
+        },
+        {
+            "Time": "2018-06-08T20:11:24Z",
+            "Reason": "rebalanced due to downed device sdb1 on 127.0.0.1:6012"
+        }
+    ],
+    "ContainerReport": [
+        {
+            "Time": "2018-06-08T16:12:46Z",
+            "Reason": "rebalanced due to schedule; now settled"
+        },
+        {
+            "Time": "2018-06-08T20:09:44Z",
+            "Reason": "removed unmounted device sdb1 id:0 on server 127.0.0.1:6011"
+        },
+        {
+            "Time": "2018-06-08T20:09:44Z",
+            "Reason": "rebalanced due to downed device sdb1 on 127.0.0.1:6011"
+        }
+    ],
+    "ObjectReports": {
+        "0": [
+            {
+                "Time": "2018-06-08T16:12:47Z",
+                "Reason": "rebalanced due to schedule; now settled"
+            },
+            {
+                "Time": "2018-06-08T20:11:04Z",
+                "Reason": "removed unmounted device sdb1 id:0 on server 127.0.0.1:6010"
+            },
+            {
+                "Time": "2018-06-08T20:11:04Z",
+                "Reason": "rebalanced due to downed device sdb1 on 127.0.0.1:6010"
+            }
+        ],
+        "1": [
+            {
+                "Time": "2018-06-08T16:12:51Z",
+                "Reason": "rebalanced due to schedule; now settled"
+            },
+            {
+                "Time": "2018-06-08T20:11:04Z",
+                "Reason": "removed unmounted device sdb1 id:0 on server 127.0.0.1:6010"
+            },
+            {
+                "Time": "2018-06-08T20:11:04Z",
+                "Reason": "rebalanced due to downed device sdb1 on 127.0.0.1:6010"
+            }
+        ],
+        "2": [
+            {
+                "Time": "2018-06-08T16:12:52Z",
+                "Reason": "rebalanced due to schedule; now settled"
+            },
+            {
+                "Time": "2018-06-08T20:11:04Z",
+                "Reason": "removed unmounted device sdb1 id:0 on server 127.0.0.1:6010"
+            },
+            {
+                "Time": "2018-06-08T20:11:04Z",
+                "Reason": "rebalanced due to downed device sdb1 on 127.0.0.1:6010"
+            }
+        ]
+    }
+}
+```

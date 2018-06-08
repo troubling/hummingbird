@@ -1,6 +1,6 @@
 ## Dispersion Report
 
-As noted at the top of this document, andrewd will populate and monitor dispersion objects to ensure data is reachable at all times. The recon tool can show you the last dispersion report andrewd created, when run on the same server as andrewd runs.
+Andrewd will populate and monitor dispersion objects to ensure data is reachable at all times. For each policy and for containers, Andrewd will place a single item into the cluster on each ring partition. Once in place, Andrewd will monitor these items and record their statuses. For example, 1 of 3 replicas being out of place is a common occurrence as a cluster rebalances itself, but 2 of 3 or worse all 3 replicas being out of place can cause temporary errors until rebalancing is performed. Andrewd can prioritize replication based on this information. The recon tool can show you the last dispersion report andrewd created, when run on the same server as andrewd runs.
 
 Note that the JSON output will give specific detail on which partitions are missing replicas to help with any investigation.
 
