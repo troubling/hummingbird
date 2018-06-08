@@ -13,6 +13,7 @@ import (
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/troubling/hummingbird/common/tracing"
 	"github.com/troubling/nectar/nectarutil"
 	"go.uber.org/zap"
 )
@@ -114,7 +115,7 @@ func (oc *standardObjectClient) putObject(ctx context.Context, account, containe
 		if err != nil {
 			return nil, err
 		}
-		req = req.WithContext(ctx)
+		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		req.Header.Set("Content-Type", "application/octet-stream")
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
@@ -217,7 +218,7 @@ func (oc *standardObjectClient) postObject(ctx context.Context, account, contain
 		if err != nil {
 			return nil, err
 		}
-		req = req.WithContext(ctx)
+		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
@@ -237,7 +238,7 @@ func (oc *standardObjectClient) getObject(ctx context.Context, account, containe
 		if err != nil {
 			return nil, err
 		}
-		req = req.WithContext(ctx)
+		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
@@ -255,7 +256,7 @@ func (oc *standardObjectClient) grepObject(ctx context.Context, account, contain
 		if err != nil {
 			return nil, err
 		}
-		req = req.WithContext(ctx)
+		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(oc.policy))
 		return req, nil
 	})
@@ -270,7 +271,7 @@ func (oc *standardObjectClient) headObject(ctx context.Context, account, contain
 		if err != nil {
 			return nil, err
 		}
-		req = req.WithContext(ctx)
+		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
@@ -292,7 +293,7 @@ func (oc *standardObjectClient) deleteObject(ctx context.Context, account, conta
 		if err != nil {
 			return nil, err
 		}
-		req = req.WithContext(ctx)
+		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
 		}
