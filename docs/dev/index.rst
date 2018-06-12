@@ -9,3 +9,4 @@ Hummingbird Development
 
    tempest.md
    tls.md
+   clisdk.md
