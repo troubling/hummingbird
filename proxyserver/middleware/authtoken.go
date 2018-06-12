@@ -30,6 +30,7 @@ import (
 	"github.com/troubling/hummingbird/client"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/common/tracing"
 	"github.com/uber-go/tally"
 	"go.uber.org/zap"
@@ -233,13 +234,13 @@ func (at *authToken) preValidate(ctx context.Context, proxyCtx *ProxyContext, au
 	}()
 }
 
-func (at *authToken) fetchAndValidateToken(ctx context.Context, proxyCtx *ProxyContext, authToken string) (*token, bool) {
+func (at *authToken) fetchAndValidateToken(ctx context.Context, proxyCtx *ProxyContext, authToken string) (*token, bool, error) {
 	if proxyCtx == nil {
-		return nil, false
+		return nil, false, errors.New("no proxyCtx")
 	}
 	cachedToken := at.loadTokenFromCache(ctx, proxyCtx, authToken)
 	if cachedToken != nil {
-		return cachedToken, true
+		return cachedToken, true, nil
 	}
 	return at.validate(ctx, proxyCtx, authToken)
 }
@@ -271,7 +272,11 @@ func (at *authToken) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.Header.Set("X-Identity-Status", "Invalid")
 	serviceAuthToken := r.Header.Get("X-Service-Token")
 	if serviceAuthToken != "" {
-		serviceToken, serviceTokenValid := at.fetchAndValidateToken(r.Context(), proxyCtx, serviceAuthToken)
+		serviceToken, serviceTokenValid, err := at.fetchAndValidateToken(r.Context(), proxyCtx, serviceAuthToken)
+		if err != nil {
+			srv.SimpleErrorResponse(w, http.StatusInternalServerError, "")
+			return
+		}
 		if serviceToken != nil && serviceTokenValid {
 			r.Header.Set("X-Service-Identity-Status", "Confirmed")
 			serviceToken.populateReqHeader(r, "-Service")
@@ -297,7 +302,11 @@ func (at *authToken) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		userAuthToken = r.Header.Get("X-Storage-Token")
 	}
 	if userAuthToken != "" {
-		userToken, userTokenValid := at.fetchAndValidateToken(r.Context(), proxyCtx, userAuthToken)
+		userToken, userTokenValid, err := at.fetchAndValidateToken(r.Context(), proxyCtx, userAuthToken)
+		if err != nil {
+			srv.SimpleErrorResponse(w, http.StatusInternalServerError, "")
+			return
+		}
 		if userToken != nil && userTokenValid {
 			r.Header.Set("X-Identity-Status", "Confirmed")
 			userToken.populateReqHeader(r, "")
@@ -329,19 +338,19 @@ func (at *authToken) validateS3Signature(ctx context.Context, proxyCtx *ProxyCon
 	return nil, false
 }
 
-func (at *authToken) validate(ctx context.Context, proxyCtx *ProxyContext, authToken string) (*token, bool) {
+func (at *authToken) validate(ctx context.Context, proxyCtx *ProxyContext, authToken string) (*token, bool, error) {
 	tok, err := at.doValidate(ctx, proxyCtx, authToken)
 	if err != nil {
 		proxyCtx.Logger.Debug("Failed to validate token", zap.Error(err))
-		return nil, false
+		return nil, false, err
 	}
 
 	if tok != nil {
 		at.cacheToken(ctx, proxyCtx, authToken, tok)
-		return tok, true
+		return tok, true, nil
 	}
 
-	return nil, false
+	return nil, false, nil
 }
 
 func (at *authToken) cacheToken(ctx context.Context, proxyCtx *ProxyContext, key string, tok *token) {
@@ -353,6 +362,10 @@ func (at *authToken) cacheToken(ctx context.Context, proxyCtx *ProxyContext, key
 	proxyCtx.Cache.Set(ctx, key, *tok, int(ttl/time.Second))
 }
 
+// doValidateS3 returns an error for any problems attempting the validation
+// (i.e. the end user did nothing wrong); it will return nil, nil if the user's
+// credentials could not be validated; or it will return the token, nil on
+// successful validation.
 func (at *authToken) doValidateS3(ctx context.Context, proxyCtx *ProxyContext, stringToSign, key, signature string) (*token, error) {
 	creds := &s3Creds{}
 	creds.Credentials.Access = key
@@ -379,6 +392,12 @@ func (at *authToken) doValidateS3(ctx context.Context, proxyCtx *ProxyContext, s
 	}
 
 	token, err := at.parseAuthResponse(r)
+	if err != nil {
+		return nil, err
+	}
+	if token == nil {
+		return nil, nil
+	}
 
 	// Now we need to get the creds so that we can do the signing next time
 	for tries := 0; tries < 2; tries++ { // second try will use fresh serverAuthToken
@@ -413,6 +432,10 @@ func (at *authToken) doValidateS3(ctx context.Context, proxyCtx *ProxyContext, s
 	return token, err
 }
 
+// doValidate returns an error for any problems attempting the validation (i.e.
+// the end user did nothing wrong); it will return nil, nil if the user's
+// credentials could not be validated; or it will return the token, nil on
+// successful validation.
 func (at *authToken) doValidate(ctx context.Context, proxyCtx *ProxyContext, tken string) (*token, error) {
 	if !strings.HasSuffix(at.authURL, "/") {
 		at.authURL += "/"
@@ -440,12 +463,12 @@ func (at *authToken) doValidate(ctx context.Context, proxyCtx *ProxyContext, tke
 			return nil, err
 		}
 		defer resp.Body.Close() // yes, defer in loop, but loop is just 2 iterations at most
-		if resp.StatusCode == 401 {
-			err = errors.New("serverAuth was invalid, 401")
+		if resp.StatusCode == 401 || resp.StatusCode == 403 {
+			err = fmt.Errorf("serverAuth was invalid, %d", resp.StatusCode)
 			continue
 		}
-		if resp.StatusCode >= 400 {
-			return nil, errors.New(resp.Status)
+		if resp.StatusCode == 404 {
+			return nil, nil
 		}
 		tok, err = at.parseAuthResponse(resp)
 		break
@@ -453,6 +476,10 @@ func (at *authToken) doValidate(ctx context.Context, proxyCtx *ProxyContext, tke
 	return tok, err
 }
 
+// parseAuthResponse returns an error for any problems attempting the
+// validation (i.e. the end user did nothing wrong); it will return nil, nil if
+// the user's credentials could not be validated; or it will return the token,
+// nil on successful validation.
 func (at *authToken) parseAuthResponse(r *http.Response) (*token, error) {
 	var resp identityResponse
 	if err := json.NewDecoder(r.Body).Decode(&resp); err != nil {
@@ -469,7 +496,7 @@ func (at *authToken) parseAuthResponse(r *http.Response) (*token, error) {
 		return nil, errors.New("Response didn't contain token context")
 	}
 	if !resp.Token.Valid() {
-		return nil, errors.New("Returned token is not valid")
+		return nil, nil
 
 	}
 	return resp.Token, nil
