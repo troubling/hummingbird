@@ -67,7 +67,7 @@ func (o *ecObject) ContentLength() int64 {
 }
 
 func (o *ecObject) Quarantine() error {
-	return errors.New("Unimplemented")
+	return QuarantineItem(o.idb, &o.IndexDBItem)
 }
 
 func (o *ecObject) Exists() bool {

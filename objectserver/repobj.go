@@ -46,7 +46,7 @@ func (ro *repObject) ContentLength() int64 {
 }
 
 func (ro *repObject) Quarantine() error {
-	return errors.New("Unimplemented")
+	return QuarantineItem(ro.idb, &ro.IndexDBItem)
 }
 
 func (ro *repObject) Exists() bool {
