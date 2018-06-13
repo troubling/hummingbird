@@ -30,7 +30,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/troubling/hummingbird/common/test"
@@ -246,11 +245,7 @@ func TestExpiredToken(t *testing.T) {
 	}
 	at.ServeHTTP(rec, req)
 	require.Equal(t, 0, len(fakeCache.MockValues))
-	require.Equal(t, 1, logs.Len())
-	want := []observer.LoggedEntry{{
-		Entry:   zapcore.Entry{Level: zap.DebugLevel, Message: "Failed to validate token"},
-		Context: []zapcore.Field{zap.Error(errors.New("Returned token is not valid"))}}}
-	require.Equal(t, want[0], logs.AllUntimed()[0])
+	require.Equal(t, 0, logs.Len())
 	if rec.Code != 200 {
 		t.Fatalf("wrong code, got %d want %d", rec.Code, 200)
 	}
