@@ -787,11 +787,13 @@ func (r *Replicator) reapAccount(dbFile string, canceler chan struct{}) error {
 	dc, err := client.NewDirectClient(info.Account, srv.DefaultConfigLoader{}, r.certFile, r.keyFile, r.logger)
 	if err != nil {
 		r.logger.Error("Could not create client to reap account.", zap.String("account", info.Account), zap.Error(err))
+		return err
 	}
 	wg := sync.WaitGroup{}
 	conc := 20 // TODO: make config
 	wg.Add(conc)
-	contObjChan := make(chan *contObj)
+	contObjChan := make(chan *contObj, conc)
+	defer close(contObjChan)
 	var objsDeleted int64
 
 	for i := 0; i < conc; i++ {
@@ -841,7 +843,6 @@ func (r *Replicator) reapAccount(dbFile string, canceler chan struct{}) error {
 		default:
 		}
 	}
-	close(contObjChan)
 	wg.Wait()
 	r.logger.Info("reaped account", zap.String("account", info.Account), zap.Int64("objectsDeleted", objsDeleted))
 	return nil
