@@ -47,7 +47,8 @@ func (server *ProxyServer) AccountGetHandler(writer http.ResponseWriter, request
 		}
 	}
 	resp := ctx.C.GetAccountRaw(request.Context(), vars["account"], options, request.Header)
-	if resp.StatusCode == http.StatusNotFound && server.accountAutoCreate {
+	if resp.StatusCode == http.StatusNotFound && server.accountAutoCreate &&
+		resp.Header.Get("X-Backend-Delete-Timestamp") == "" {
 		resp.Body.Close()
 		ctx.AutoCreateAccount(request.Context(), vars["account"], request.Header)
 		resp = ctx.C.GetAccountRaw(request.Context(), vars["account"], options, request.Header)
@@ -76,7 +77,8 @@ func (server *ProxyServer) AccountHeadHandler(writer http.ResponseWriter, reques
 		}
 	}
 	resp := ctx.C.HeadAccount(request.Context(), vars["account"], request.Header)
-	if resp.StatusCode == http.StatusNotFound && server.accountAutoCreate {
+	if resp.StatusCode == http.StatusNotFound && server.accountAutoCreate &&
+		resp.Header.Get("X-Backend-Delete-Timestamp") == "" {
 		resp.Body.Close()
 		ctx.AutoCreateAccount(request.Context(), vars["account"], request.Header)
 		resp = ctx.C.HeadAccount(request.Context(), vars["account"], request.Header)
@@ -120,7 +122,8 @@ func (server *ProxyServer) AccountPostHandler(writer http.ResponseWriter, reques
 	}
 	defer ctx.InvalidateAccountInfo(request.Context(), vars["account"])
 	resp := ctx.C.PostAccount(request.Context(), vars["account"], request.Header)
-	if resp.StatusCode == http.StatusNotFound && server.accountAutoCreate {
+	if resp.StatusCode == http.StatusNotFound && server.accountAutoCreate &&
+		resp.Header.Get("X-Backend-Delete-Timestamp") == "" {
 		resp.Body.Close()
 		ctx.AutoCreateAccount(request.Context(), vars["account"], request.Header)
 		resp = ctx.C.PostAccount(request.Context(), vars["account"], request.Header)
