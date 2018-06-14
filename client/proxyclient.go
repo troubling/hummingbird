@@ -227,12 +227,13 @@ func (c *proxyClient) quorumResponse(r ringFilter, partition uint64, devToReques
 }
 
 func (c *proxyClient) firstResponse(r ringFilter, partition uint64, devToRequest func(*ring.Device) (*http.Request, error)) (resp *http.Response) {
-	success := make(chan *http.Response)
-	returned := make(chan struct{})
-	defer close(returned)
+	receivedResponses := make(chan *http.Response)
+	alreadyFoundGoodResponse := make(chan struct{})
+	defer close(alreadyFoundGoodResponse)
 	devs, more := r.getReadNodes(partition)
 	internalErrors := 0
 	notFounds := 0
+	backendHeaders := map[string]string{}
 	interpretResponse := func(resp *http.Response) *http.Response {
 		if resp != nil && (resp.StatusCode/100 == 2 || resp.StatusCode == http.StatusPreconditionFailed ||
 			resp.StatusCode == http.StatusNotModified || resp.StatusCode == http.StatusRequestedRangeNotSatisfiable) {
@@ -244,6 +245,11 @@ func (c *proxyClient) firstResponse(r ringFilter, partition uint64, devToRequest
 		}
 		if resp != nil {
 			resp.Body.Close()
+			for k := range resp.Header {
+				if strings.HasPrefix(k, "X-Backend") {
+					backendHeaders[k] = resp.Header.Get(k)
+				}
+			}
 			if resp.StatusCode == http.StatusNotFound {
 				notFounds++
 			} else {
@@ -284,8 +290,8 @@ func (c *proxyClient) firstResponse(r ringFilter, partition uint64, devToRequest
 				response = nil
 			}
 			select {
-			case success <- response:
-			case <-returned:
+			case receivedResponses <- response:
+			case <-alreadyFoundGoodResponse:
 				if response != nil {
 					response.Body.Close()
 				}
@@ -293,7 +299,7 @@ func (c *proxyClient) firstResponse(r ringFilter, partition uint64, devToRequest
 		}(req)
 
 		select {
-		case resp = <-success:
+		case resp = <-receivedResponses:
 			requestsPending--
 			resp = interpretResponse(resp)
 			if resp != nil {
@@ -305,7 +311,7 @@ func (c *proxyClient) firstResponse(r ringFilter, partition uint64, devToRequest
 	giveUp := time.After(firstResponseFinalTimeout)
 	for requestsPending > 0 {
 		select {
-		case resp = <-success:
+		case resp = <-receivedResponses:
 			requestsPending--
 			resp = interpretResponse(resp)
 			if resp != nil {
@@ -317,7 +323,11 @@ func (c *proxyClient) firstResponse(r ringFilter, partition uint64, devToRequest
 		}
 	}
 	if notFounds > internalErrors {
-		return nectarutil.ResponseStub(http.StatusNotFound, "")
+		r := nectarutil.ResponseStub(http.StatusNotFound, "")
+		for k, v := range backendHeaders {
+			r.Header.Set(k, v)
+		}
+		return r
 	}
 	return nectarutil.ResponseStub(http.StatusServiceUnavailable, "")
 }
