@@ -73,9 +73,9 @@ func (r *progressReport) String() string {
 	opts.NilBetweenEveryRow = false
 	opts.Alignments = []brimtext.Alignment{brimtext.Right, brimtext.Center, brimtext.Left, brimtext.Left}
 	opts.Widths = []int{30, 7, 10}
-	w := brimtext.GetTTYWidth() - 3
+	w := brimtext.GetTTYWidth() - 5 // 2 for the leading `║ `, two for the trailing ` ║`, and 1 more for terminals that wrap weird right at limit
 	for _, x := range opts.Widths {
-		w -= x + 3
+		w -= x + 3 // 3 for the separating ` │ `
 	}
 	if w < 0 {
 		w = 0

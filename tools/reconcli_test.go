@@ -106,10 +106,12 @@ func TestReconReportRingMd5Fail(t *testing.T) {
 	host, ports, _ := net.SplitHostPort(u.Host)
 	port, _ := strconv.Atoi(ports)
 
-	servers := []*ipPort{{ip: host, port: port, scheme: "http"}}
 	client := &http.Client{Timeout: 10 * time.Second}
 	require.Equal(t, false, getRingMD5Report(
-		client, servers, map[string]string{"/a/object.ring.gz": "abcdf"}).Passed())
+		client,
+		map[string]string{"/a/object.ring.gz": "abcdf"},
+		map[string]map[string]*ipPort{fmt.Sprintf("%s:%d", host, port): {"object.ring.gz": {ip: host, port: port, scheme: "http"}}},
+	).Passed())
 }
 
 func TestReconReportRingMd5Pass(t *testing.T) {
@@ -134,10 +136,12 @@ func TestReconReportRingMd5Pass(t *testing.T) {
 	host, ports, _ := net.SplitHostPort(u.Host)
 	port, _ := strconv.Atoi(ports)
 
-	servers := []*ipPort{{ip: host, port: port, scheme: "http"}}
 	client := &http.Client{Timeout: 10 * time.Second}
 	require.Equal(t, true, getRingMD5Report(
-		client, servers, map[string]string{"/a/object.ring.gz": "abcde"}).Passed())
+		client,
+		map[string]string{"/a/object.ring.gz": "abcde"},
+		map[string]map[string]*ipPort{fmt.Sprintf("%s:%d", host, port): {"object.ring.gz": {ip: host, port: port, scheme: "http"}}},
+	).Passed())
 }
 
 func TestReconReportQuarantine(t *testing.T) {
@@ -178,6 +182,7 @@ func TestReconReportQuarantine(t *testing.T) {
 
 	u, _ = url.Parse(ts1.URL)
 	host1, ports1, _ := net.SplitHostPort(u.Host)
+	host1 = "0" + host1 // force it to seem like another server
 	port1, _ := strconv.Atoi(ports1)
 
 	servers := []*ipPort{{ip: host, port: port, scheme: "http"}, {ip: host1, port: port1, scheme: "http"}}
@@ -286,6 +291,7 @@ func TestReconQuarantineDetailReport(t *testing.T) {
 
 	u, _ = url.Parse(ts1.URL)
 	host1, ports1, _ := net.SplitHostPort(u.Host)
+	host1 = "0" + host1 // force it to seem like another server
 	port1, _ := strconv.Atoi(ports1)
 
 	servers := []*ipPort{{ip: host, port: port, scheme: "http"}, {ip: host1, port: port1, scheme: "http"}}
@@ -294,14 +300,14 @@ func TestReconQuarantineDetailReport(t *testing.T) {
 	require.Equal(t, true, report.Passed(), report.String())
 	out := report.String()
 	require.True(t, strings.Contains(out, "2/2 hosts matched, 0 error[s] while checking hosts."), out)
-	look := fmt.Sprintf(`  %s:%d
+	look := fmt.Sprintf(`  %s
     sdb4
       197ce7d697904ffaada1a16ee3f7a8c0-8585858 
       a4f4d624d9a18c20addf439bcb7192e8-2399494 /AUTH_test/test-container/.git/objects/ea/0192ee16fc8ee99f594c42c6804012732d9153
-`, host, port)
-	look1 := fmt.Sprintf(`  %s:%d
+`, host)
+	look1 := fmt.Sprintf(`  %s
       893848384384aadaada1a16ee3f7a8c0-9293238 /AUTH_test/test-container/haha
-`, host1, port1)
+`, host1)
 	if port < port1 {
 		look = "\nobjects\n" + look + look1
 	} else {
@@ -309,11 +315,11 @@ func TestReconQuarantineDetailReport(t *testing.T) {
 	}
 	look = fmt.Sprintf(`
 objects-1
-  %s:%d
+  %s
     sdb4
       8383a624d9a18c20addf439bcb7192e8-2988930 /AUTH_something/test2/blah/blah/blah
       ef34e7d697904ffaada1a16ee3f7a8c0-9388223 
-`, host1, port1)
+`, host1)
 	require.True(t, strings.Contains(out, look), fmt.Sprintf("\n%q\n%q", out, look))
 	require.Equal(t, handlersRun, 2)
 }
@@ -358,10 +364,15 @@ func TestReconReportAsync(t *testing.T) {
 	host1, ports1, _ := net.SplitHostPort(u.Host)
 	port1, _ := strconv.Atoi(ports1)
 
-	servers := []*ipPort{{ip: host, port: port, scheme: "http"}, {ip: host1, port: port1, scheme: "http"}}
+	servers := map[string]*ipPort{"a": {ip: host, port: port, scheme: "http"}, "b": {ip: host1, port: port1, scheme: "http"}}
 	client := &http.Client{Timeout: 10 * time.Second}
-	report := getAsyncReport(client, servers)
-	require.Equal(t, true, report.Passed())
+	report := &asyncReport{
+		Name:  "Async Pending Report",
+		Time:  time.Now().UTC(),
+		Stats: map[int]map[string]int{},
+	}
+	getAsyncReportHelper(client, report, servers, 0)
+	require.Equal(t, 0, len(report.Errors))
 	out := report.String()
 	require.True(t, strings.Contains(out, "[async_pending] low: 50, high: 100, avg: 75.0, total: 150, Failed: 0.0%, no_result: 0, reported: 2"))
 }

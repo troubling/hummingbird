@@ -387,7 +387,7 @@ func main() {
 	reconFlags.Bool("rp", false, "Get cluster replication partition/sec stats")
 	reconFlags.Bool("rc", false, "List all drives with replicator cancellations")
 	reconFlags.Bool("d", false, "Show last dispersion report")
-	reconFlags.Bool("ds", false, "Show drive status report")
+	reconFlags.Bool("ds", false, "Show device status report")
 	reconFlags.Bool("rar", false, "Show andrewd ring action report")
 	reconFlags.String("c", findConfig("andrewd"), "Andrewd Config file to use (e.g. for dispersion)")
 	reconFlags.Bool("json", false, "Output in json. {\"ok\": true|false, \"msg\": \"text-output\"}")
