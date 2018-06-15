@@ -28,6 +28,10 @@ type hashDatabase struct {
 	hash string
 }
 
+func (h hashDatabase) Ping() error {
+	return nil
+}
+
 func (h hashDatabase) ID() string {
 	return h.hash
 }

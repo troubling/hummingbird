@@ -117,3 +117,15 @@ func Exists(file string) bool {
 	}
 	return true
 }
+
+func Inode(file string) (uint64, error) {
+	fileinfo, err := os.Stat(file)
+	if err != nil {
+		return 0, err
+	}
+	stat, ok := fileinfo.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, fmt.Errorf("Unable to cast stat object")
+	}
+	return stat.Ino, nil
+}

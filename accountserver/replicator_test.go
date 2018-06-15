@@ -163,6 +163,9 @@ func testServer(t *testing.T, h http.Handler) (*ring.Device, func()) {
 
 type fakeDatabase struct{}
 
+func (f fakeDatabase) Ping() error {
+	return nil
+}
 func (f fakeDatabase) GetInfo() (*AccountInfo, error) {
 	return nil, errors.New("")
 }
@@ -352,10 +355,6 @@ func TestReplicatorChooseReplicationStrategy(t *testing.T) {
 	require.Equal(t, "hashmatch", rd.chooseReplicationStrategy(
 		&AccountInfo{Hash: "somehash", MaxRow: 10},
 		&AccountInfo{Hash: "somehash", Point: 9},
-		100))
-	require.Equal(t, "rsync_then_merge", rd.chooseReplicationStrategy(
-		&AccountInfo{Hash: "somehash1", MaxRow: 1000},
-		&AccountInfo{Hash: "somehash2", Point: 9},
 		100))
 	require.Equal(t, "diff", rd.chooseReplicationStrategy(
 		&AccountInfo{Hash: "somehash1", MaxRow: 10},

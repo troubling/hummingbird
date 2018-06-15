@@ -105,14 +105,6 @@ func (server *AccountServer) AccountReplicateHandler(writer http.ResponseWriter,
 		return nil
 	}
 	switch op {
-	case "rsync_then_merge":
-		var tmpFileName string
-		if err := extractArgs(&tmpFileName); err != nil {
-			srv.StandardResponse(writer, http.StatusBadRequest)
-		} else {
-			status := server.replicateRsyncThenMerge(request, vars, tmpFileName)
-			srv.StandardResponse(writer, status)
-		}
 	case "complete_rsync":
 		var tmpFileName string
 		if err := extractArgs(&tmpFileName); err != nil {
@@ -155,80 +147,34 @@ func (server *AccountServer) AccountReplicateHandler(writer http.ResponseWriter,
 	}
 }
 
-func (server *AccountServer) replicateRsyncThenMerge(request *http.Request, vars map[string]string, tmpFileName string) int {
-	accountFile := filepath.Join(server.driveRoot, vars["device"], "accounts", vars["partition"], vars["hash"][29:32], vars["hash"], vars["hash"]+".db")
-	tmpAccountFile := filepath.Join(server.driveRoot, vars["device"], "tmp", tmpFileName)
-	tmpDb, err := sqliteOpenAccount(tmpAccountFile)
-	if err != nil {
-		return http.StatusNotFound
-	}
-	defer tmpDb.Close()
-	localDb, err := server.accountEngine.GetByHash(vars["device"], vars["hash"], vars["partition"])
-	if err != nil {
-		return http.StatusNotFound
-	}
-	defer localDb.Close()
-	point := int64(-1)
-	for {
-		records, err := localDb.ItemsSince(point, 10000)
-		if err != nil {
-			srv.GetLogger(request).Error("Error fetching items.",
-				zap.String("accountFile", accountFile),
-				zap.Error(err))
-			return http.StatusInternalServerError
-		}
-		if len(records) == 0 {
-			break
-		}
-		point = records[len(records)-1].Rowid
-		if err := tmpDb.MergeItems(records, ""); err != nil {
-			srv.GetLogger(request).Error("Error merging items.",
-				zap.String("tmpAccountFile", tmpAccountFile),
-				zap.Error(err))
-			return http.StatusInternalServerError
-		}
-	}
-	if err := tmpDb.NewID(); err != nil {
-		srv.GetLogger(request).Error("Error blessing new account db.",
-			zap.String("accountFile", accountFile), zap.Error(err))
-		return http.StatusInternalServerError
-	}
-	if err := os.MkdirAll(filepath.Dir(accountFile), 0777); err != nil {
-		srv.GetLogger(request).Error("Error blessing new account db.",
-			zap.String("accountFile", accountFile), zap.Error(err))
-		return http.StatusInternalServerError
-	}
-	if err := os.Rename(tmpAccountFile, accountFile); err != nil {
-		srv.GetLogger(request).Error("Error blessing new account db.",
-			zap.String("accountFile", accountFile), zap.Error(err))
-		return http.StatusInternalServerError
-	}
-	server.accountEngine.Invalidate(localDb)
-	return http.StatusNoContent
-}
-
 func (server *AccountServer) replicateCompleteRsync(request *http.Request, vars map[string]string, tmpFileName string) int {
 	accountFile := filepath.Join(server.driveRoot, vars["device"], "accounts", vars["partition"], vars["hash"][29:32], vars["hash"], vars["hash"]+".db")
 	tmpAccountFile := filepath.Join(server.driveRoot, vars["device"], "tmp", tmpFileName)
 	if !fs.Exists(tmpAccountFile) || fs.Exists(accountFile) {
 		return http.StatusNotFound
 	}
-	tmpDb, err := sqliteOpenAccount(tmpAccountFile)
-	if err != nil {
-		return http.StatusNotFound
-	}
-	defer tmpDb.Close()
-	if err := tmpDb.NewID(); err != nil {
-		srv.GetLogger(request).Error("Error blessing new account db.",
-			zap.String("accountFile", accountFile), zap.Error(err))
-		return http.StatusInternalServerError
-	}
 	if err := os.MkdirAll(filepath.Dir(accountFile), 0777); err != nil {
 		srv.GetLogger(request).Error("Error blessing new account db.",
 			zap.String("accountFile", accountFile), zap.Error(err))
 		return http.StatusInternalServerError
 	}
-	if err := os.Rename(tmpAccountFile, accountFile); err != nil {
+	lock, err := fs.LockPath(filepath.Dir(accountFile), dirLockTimeout)
+	if err != nil {
+		return http.StatusInternalServerError
+	}
+	defer lock.Close()
+	tmpDb, err := sqliteOpenAccount(tmpAccountFile)
+	if err != nil {
+		return http.StatusNotFound
+	}
+	defer tmpDb.Close()
+	defer server.accountEngine.Invalidate(vars["hash"])
+	if err := tmpDb.NewID(); err != nil {
+		srv.GetLogger(request).Error("Error blessing new account db.",
+			zap.String("accountFile", accountFile), zap.Error(err))
+		return http.StatusInternalServerError
+	}
+	if err := sqliteRename(tmpAccountFile, accountFile); err != nil {
 		srv.GetLogger(request).Error("Error blessing new account db.",
 			zap.String("accountFile", accountFile), zap.Error(err))
 		return http.StatusInternalServerError

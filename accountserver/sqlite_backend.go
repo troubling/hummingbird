@@ -32,7 +32,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -49,10 +48,12 @@ const (
 	pendingCap         = 131072
 	maxMetaCount       = 90
 	maxMetaOverallSize = 4096
+	dirLockTimeout     = 30 * time.Second
 )
 
 var infoCacheTimeout = time.Second * 10
 var policyStatsCacheTimeout = time.Second * 10
+var errDatabaseExists = fmt.Errorf("Database file exists.")
 
 func chexor(old, name, timestamp string) string {
 	oldDigest, err := hex.DecodeString(old)
@@ -92,20 +93,26 @@ func init() {
 }
 
 type sqliteAccount struct {
-	connectLock sync.Mutex
 	*sql.DB
 	accountFile         string
 	hasDeletedNameIndex bool
 	infoCache           atomic.Value
 	policyStatsCache    atomic.Value
 	ringhash            string
+	inode               uint64
 }
 
 var _ Account = &sqliteAccount{}
 
 func (db *sqliteAccount) connect() error {
-	db.connectLock.Lock()
-	defer db.connectLock.Unlock()
+	if db.DB != nil {
+		return nil
+	}
+	lock, err := fs.LockPath(filepath.Dir(db.accountFile), dirLockTimeout)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
 	if db.DB != nil {
 		return nil
 	}
@@ -115,6 +122,10 @@ func (db *sqliteAccount) connect() error {
 			return fmt.Errorf("Failed to open: %v; %v", err, common.QuarantineDir(path.Dir(db.accountFile), 4, "accounts"))
 		}
 		return fmt.Errorf("Failed to open: %v", err)
+	}
+	db.inode, err = fs.Inode(db.accountFile)
+	if err != nil {
+		return err
 	}
 	dbConn.SetMaxOpenConns(maxOpenConns)
 	dbConn.SetMaxIdleConns(maxIdleConns)
@@ -266,6 +277,10 @@ func (db *sqliteAccount) MergeItems(records []*ContainerRecord, remoteID string)
 	if err := db.connect(); err != nil {
 		return err
 	}
+	return db.mergeItems(records, remoteID)
+}
+
+func (db *sqliteAccount) mergeItems(records []*ContainerRecord, remoteID string) error {
 	names := make([]interface{}, len(records))
 	existing := make(map[string]*ContainerRecord)
 	tx, err := db.Begin()
@@ -907,6 +922,23 @@ func (db *sqliteAccount) OpenDatabaseFile() (*os.File, func(), error) {
 	return fp, cleanup, nil
 }
 
+// Ping verifies the underlying sqlite file hasn't gone away.
+func (db *sqliteAccount) Ping() error {
+	lock, err := fs.LockPath(filepath.Dir(db.accountFile), dirLockTimeout)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	inode, err := fs.Inode(db.accountFile)
+	if err != nil {
+		return err
+	}
+	if inode != db.inode {
+		return db.closeAlreadyLocked()
+	}
+	return nil
+}
+
 // ID returns the account's ring hash as a unique identifier for it.
 func (db *sqliteAccount) ID() string {
 	return db.ringhash
@@ -917,10 +949,15 @@ func (db *sqliteAccount) RingHash() string {
 	return db.ringhash
 }
 
-func (db *sqliteAccount) flushAlreadyLocked() error {
+func (db *sqliteAccount) flush() error {
 	if err := db.connect(); err != nil {
 		return err
 	}
+	lock, err := fs.LockPath(filepath.Dir(db.accountFile), dirLockTimeout)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
 	if stat, err := os.Stat(db.accountFile + ".pending"); err != nil || stat.Size() == 0 {
 		return nil
 	}
@@ -967,7 +1004,7 @@ func (db *sqliteAccount) flushAlreadyLocked() error {
 		}
 		records = append(records, rec)
 	}
-	err = db.MergeItems(records, "")
+	err = db.mergeItems(records, "")
 	if err == nil {
 		err = os.Truncate(db.accountFile+".pending", 0)
 	}
@@ -985,18 +1022,9 @@ func int64MaybeStringified(i interface{}) (int64, bool) {
 	}
 }
 
-func (db *sqliteAccount) flush() error {
-	lock, err := fs.LockPath(filepath.Dir(db.accountFile), 10*time.Second)
-	if err != nil {
-		return err
-	}
-	defer lock.Close()
-	return db.flushAlreadyLocked()
-}
-
 // PutContainer adds a container to the account, by way of pending file.
 func (db *sqliteAccount) PutContainer(name string, putTimestamp string, deleteTimestamp string, objectCount int64, bytesUsed int64, storagePolicyIndex int) error {
-	lock, err := fs.LockPath(filepath.Dir(db.accountFile), 10*time.Second)
+	lock, err := fs.LockPath(filepath.Dir(db.accountFile), dirLockTimeout)
 	if err != nil {
 		return err
 	}
@@ -1014,16 +1042,25 @@ func (db *sqliteAccount) PutContainer(name string, putTimestamp string, deleteTi
 	if _, err := file.WriteString(":" + base64.StdEncoding.EncodeToString(pickle.PickleDumps(tuple))); err != nil {
 		return err
 	}
-	if info, err := file.Stat(); err == nil && info.Size() > pendingCap {
-		return db.flushAlreadyLocked()
+	if info, err := file.Stat(); err != nil {
+		return err
+	} else if info.Size() < pendingCap {
+		return nil
 	}
-	return nil
+	if err = file.Close(); err != nil {
+		return err
+	}
+	lock.Close()
+	return db.flush()
 }
 
 // Close closes the underlying sqlite database connection.
 func (db *sqliteAccount) Close() error {
-	db.connectLock.Lock()
-	defer db.connectLock.Unlock()
+	lock, err := fs.LockPath(filepath.Dir(db.accountFile), dirLockTimeout)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
 	return db.closeAlreadyLocked()
 }
 
@@ -1092,14 +1129,14 @@ func sqliteCreateAccount(accountFile string, account string, putTimestamp string
 	if err := os.MkdirAll(hashDir, 0755); err != nil {
 		return err
 	}
-	lock, err := fs.LockPath(filepath.Dir(hashDir), 10*time.Second)
+	lock, err := fs.LockPath(hashDir, dirLockTimeout)
 	if err != nil {
 		return err
 	}
 	defer lock.Close()
 
 	if fs.Exists(accountFile) {
-		return nil
+		return errDatabaseExists
 	}
 
 	if metadata == nil {
@@ -1138,9 +1175,8 @@ func sqliteCreateAccount(accountFile string, account string, putTimestamp string
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	if err := os.Rename(tempFile, accountFile); err != nil {
-		return err
-	}
+	dbConn.Close()
+	sqliteRename(tempFile, accountFile)
 	return nil
 }
 
@@ -1154,4 +1190,27 @@ func sqliteOpenAccount(accountFile string) (ReplicableAccount, error) {
 		ringhash:            filepath.Base(filepath.Dir(accountFile)),
 	}
 	return db, nil
+}
+
+func sqliteRename(fromFile, toFile string) error {
+	// make sure the destination path doesn't exist, including any journals
+	ms, err := filepath.Glob(toFile + "*")
+	if err != nil {
+		return err
+	}
+	for _, m := range ms {
+		if err := os.Remove(m); err != nil {
+			return err
+		}
+	}
+	// make sure we copy over any journals for the new database file
+	if ms, err = filepath.Glob(fromFile + "*"); err != nil {
+		return err
+	}
+	for _, m := range ms {
+		if err := os.Rename(m, toFile+m[len(fromFile):]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
