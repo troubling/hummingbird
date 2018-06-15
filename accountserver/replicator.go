@@ -793,7 +793,6 @@ func (r *Replicator) reapAccount(dbFile string, canceler chan struct{}) error {
 	conc := 20 // TODO: make config
 	wg.Add(conc)
 	contObjChan := make(chan *contObj, conc)
-	defer close(contObjChan)
 	var objsDeleted int64
 
 	for i := 0; i < conc; i++ {
@@ -816,9 +815,11 @@ func (r *Replicator) reapAccount(dbFile string, canceler chan struct{}) error {
 	marker := ""
 	conts, err := db.ListContainers(1000, marker, "", "", "", false)
 	if err != nil {
-		return err
+		r.logger.Error("ListContainers error", zap.Error(err))
+		conts = nil // should already be nil
 	}
 	var contr interface{}
+ContLoop:
 	for len(conts) > 0 {
 		contr, conts = conts[0], conts[1:]
 		cont, ok := contr.(*ContainerListingRecord)
@@ -829,22 +830,24 @@ func (r *Replicator) reapAccount(dbFile string, canceler chan struct{}) error {
 			marker = cont.Name
 		} else {
 			r.logger.Error("invalid listing", zap.String("record", fmt.Sprintf("%v", contr)))
-			break
+			break ContLoop
 		}
 		if len(conts) == 0 {
 			conts, err = db.ListContainers(1000, marker, "", "", "", false)
 			if err != nil {
-				return err
+				r.logger.Error("ListContainers error", zap.Error(err))
+				break ContLoop
 			}
 		}
 		select {
 		case <-canceler:
-			return nil
+			break ContLoop
 		default:
 		}
 	}
+	close(contObjChan)
 	wg.Wait()
-	r.logger.Info("reaped account", zap.String("account", info.Account), zap.Int64("objectsDeleted", objsDeleted))
+	r.logger.Info("reaped account", zap.String("account", info.Account), zap.Int64("objectsDeleted", objsDeleted), zap.Bool("Errored Out", err != nil), zap.Error(err))
 	return nil
 }
 
