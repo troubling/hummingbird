@@ -32,6 +32,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/justinas/alice"
@@ -45,6 +47,7 @@ import (
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/common/tracing"
 	"github.com/troubling/hummingbird/middleware"
+	"github.com/troubling/nectar"
 	"github.com/uber-go/tally"
 	promreporter "github.com/uber-go/tally/prometheus"
 	"go.uber.org/zap"
@@ -73,6 +76,8 @@ type Replicator struct {
 	checkin           chan string
 	startRun          chan string
 	client            common.HTTPClient
+	certFile          string
+	keyFile           string
 	runningDevices    map[string]*replicationDevice
 	reclaimAge        int64
 	logLevel          zap.AtomicLevel
@@ -81,6 +86,10 @@ type Replicator struct {
 	tracer            opentracing.Tracer
 	clientTracer      opentracing.Tracer
 	clientTraceCloser io.Closer
+	reaperLock        sync.Mutex
+	reaperLastCheckin time.Time
+	reaperCanceler    chan struct{}
+	reaperCheckin     chan struct{}
 }
 
 type statUpdate struct {
@@ -98,6 +107,7 @@ type replicationDevice struct {
 		chooseReplicationStrategy(localInfo, remoteInfo *AccountInfo, usyncThreshold int64) string
 		replicateDatabaseToDevice(dev *ring.Device, c ReplicableAccount, part uint64) error
 		replicateDatabase(dbFile string) error
+		checkForReaping(dbFile string) error
 		findAccountDbs(devicePath string, results chan string)
 		incrementStat(stat string)
 	}
@@ -268,6 +278,48 @@ func (rd *replicationDevice) replicateDatabaseToDevice(dev *ring.Device, c Repli
 	return nil
 }
 
+func (rd *replicationDevice) checkForReaping(dbFile string) error {
+	c, err := sqliteOpenAccount(dbFile)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	if d, err := c.IsDeleted(); err != nil {
+		return err
+	} else if !d {
+		return nil
+	}
+	parts := filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(dbFile))))
+	part, err := strconv.ParseUint(parts, 10, 64)
+	if err != nil {
+		return fmt.Errorf("Bad partition: %s", parts)
+	}
+	devs := rd.r.Ring.GetNodes(part)
+	if len(devs) == 0 || devs[0].Id != rd.dev.Id {
+		return nil
+	}
+	info, err := c.GetInfo()
+	if err != nil {
+		return err
+	}
+	doDelete := false
+	if info.DeleteTimestamp > info.PutTimestamp {
+		if dti, err := strconv.ParseFloat(info.DeleteTimestamp, 64); err == nil {
+			dt := time.Unix(int64(dti), 0)
+			cutOff := time.Now().Add(time.Second * time.Duration(-rd.r.reclaimAge))
+
+			if dt.Before(cutOff) {
+				doDelete = true
+			}
+		} else {
+			return err
+		}
+	}
+	if doDelete {
+		rd.r.TryToReapAccount(dbFile)
+	}
+	return nil
+}
 func (rd *replicationDevice) replicateDatabase(dbFile string) error {
 	rd.r.logger.Debug("Replicating database.", zap.String("dbFile", filepath.Base(dbFile)))
 	parts := filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(dbFile))))
@@ -389,6 +441,11 @@ func (rd *replicationDevice) replicate() {
 					zap.Error(err))
 			}
 			<-rd.r.concurrencySem
+		}
+		if err := rd.i.checkForReaping(dbFile); err != nil {
+			rd.r.logger.Error("Error checking for reaping database file.",
+				zap.String("dbFile", dbFile),
+				zap.Error(err))
 		}
 	}
 }
@@ -523,6 +580,13 @@ func (r *Replicator) verifyDevices() {
 			delete(r.runningDevices, key)
 		}
 	}
+	if !r.reaperLastCheckin.IsZero() && time.Since(r.reaperLastCheckin) > deviceLockupTimeout {
+		r.reaperLock.Lock()
+		close(r.reaperCanceler)
+		r.reaperCanceler = make(chan struct{})
+		r.reaperLastCheckin = time.Time{}
+		r.reaperLock.Unlock()
+	}
 	ringDevices, err := r.Ring.LocalDevices(r.serverPort)
 	if err != nil {
 		r.logger.Error("Error getting local devices from ring.",
@@ -587,8 +651,12 @@ func (r *Replicator) runLoopCheck(reportTimer <-chan time.Time) {
 	select {
 	case device := <-r.checkin:
 		if rd, ok := r.runningDevices[device]; ok {
-			rd.lastCheckin = time.Now()
+			rd.lastCheckin = time.Now() //TODO: add locking around this
 		}
+	case <-r.reaperCheckin:
+		r.reaperLock.Lock()
+		r.reaperLastCheckin = time.Now()
+		r.reaperLock.Unlock()
 	case device := <-r.startRun:
 		if rd, ok := r.runningDevices[device]; ok {
 			rd.runStarted = time.Now()
@@ -638,6 +706,7 @@ func (r *Replicator) Run() {
 	for waitingFor > 0 {
 		select {
 		case <-r.checkin:
+		case <-r.reaperCheckin:
 		case <-r.startRun:
 		case update := <-r.sendStat:
 			if ctx, ok := r.runningDevices[update.device]; ok {
@@ -648,6 +717,141 @@ func (r *Replicator) Run() {
 		}
 	}
 	r.reportStats()
+}
+
+// try to reap account for given database. will spin off a go routine to do
+// actual deleting
+func (r *Replicator) TryToReapAccount(dbFile string) {
+	r.reaperLock.Lock()
+	defer r.reaperLock.Unlock()
+
+	if r.reaperLastCheckin.IsZero() {
+		r.reaperLastCheckin = time.Now()
+		go r.reapAccount(dbFile, r.reaperCanceler)
+	} else if time.Since(r.reaperLastCheckin) > deviceLockupTimeout {
+		close(r.reaperCanceler)
+		r.reaperCanceler = make(chan struct{})
+		r.reaperLastCheckin = time.Now()
+		go r.reapAccount(dbFile, r.reaperCanceler)
+	} else {
+		r.logger.Debug("Wanted to reap an account but one is already running", zap.String("dbFile", dbFile))
+	}
+}
+func (r *Replicator) reapContainer(cont string, dc nectar.Client, contObjChan chan *contObj, canceler chan struct{}) error {
+	// TODO: add something here that will delete the container if it is empty
+	// the reaper will just make 2 passes to get all the way done
+	marker := ""
+	objs, resp := dc.GetContainer(cont, marker, "", 10000, "", "", false, map[string]string{})
+	var obj *nectar.ObjectRecord
+	hdrs := map[string]string{}
+	for len(objs) > 0 {
+		obj, objs = objs[0], objs[1:]
+		contObjChan <- &contObj{cont, obj.Name}
+		marker = obj.Name
+		if len(objs) == 0 {
+			objs, resp = dc.GetContainer(cont, marker, "", 10000, "", "", false, map[string]string{})
+		}
+		select {
+		case <-canceler:
+			return nil
+		default:
+		}
+	}
+	hdrs["X-Timestamp"] = common.GetTimestamp()
+	if resp = dc.DeleteContainer(cont, hdrs); resp == nil || resp.StatusCode/100 != 2 {
+		r.logger.Debug("invalid reap cont resp", zap.String("container", cont))
+	}
+	return nil
+}
+
+type contObj struct {
+	cont string
+	obj  string
+}
+
+func (r *Replicator) reapAccount(dbFile string, canceler chan struct{}) {
+	db, err := sqliteOpenAccount(dbFile)
+	if err != nil {
+		r.logger.Error("error on opening dbfile", zap.String("dbFile", dbFile), zap.Error(err))
+		return
+	}
+	defer db.Close()
+	if d, err := db.IsDeleted(); err != nil {
+		r.logger.Error("error on checking IsDeleted", zap.String("dbFile", dbFile), zap.Error(err))
+		return
+	} else if !d {
+		r.logger.Error("reapAccount was call on active account", zap.String("dbFile", dbFile))
+		return
+	}
+	info, err := db.GetInfo()
+	if err != nil {
+		r.logger.Error("reapAccount getInfo errpr", zap.String("dbFile", dbFile), zap.Error(err))
+		return
+	}
+	dc, err := client.NewDirectClient(info.Account, srv.DefaultConfigLoader{}, r.certFile, r.keyFile, r.logger)
+	if err != nil {
+		r.logger.Error("Could not create client to reap account.", zap.String("account", info.Account), zap.Error(err))
+		return
+	}
+	wg := sync.WaitGroup{}
+	conc := 20 // TODO: make config
+	wg.Add(conc)
+	contObjChan := make(chan *contObj, conc)
+	var objsDeleted int64
+
+	for i := 0; i < conc; i++ {
+		go func() {
+			defer wg.Done()
+			for {
+				co := <-contObjChan
+				if co == nil {
+					return
+				}
+				if resp := dc.DeleteObject(co.cont, co.obj, map[string]string{"X-Timestamp": common.GetTimestamp()}); resp == nil || resp.StatusCode/100 != 2 {
+					r.logger.Debug("invalid reap object resp", zap.String("container", co.cont), zap.String("obj", co.obj))
+				} else {
+					atomic.AddInt64(&objsDeleted, 1)
+				}
+				r.reaperCheckin <- struct{}{}
+			}
+		}()
+	}
+	marker := ""
+	conts, err := db.ListContainers(1000, marker, "", "", "", false)
+	if err != nil {
+		r.logger.Error("ListContainers error", zap.Error(err))
+		conts = nil // should already be nil
+	}
+	var contr interface{}
+ContLoop:
+	for len(conts) > 0 {
+		contr, conts = conts[0], conts[1:]
+		cont, ok := contr.(*ContainerListingRecord)
+		if ok {
+			if err = r.reapContainer(cont.Name, dc, contObjChan, canceler); err != nil {
+				r.logger.Error("error reaping container", zap.String("account", info.Account), zap.String("container", cont.Name), zap.Error(err))
+			}
+			marker = cont.Name
+		} else {
+			r.logger.Error("invalid listing", zap.String("record", fmt.Sprintf("%v", contr)))
+			break ContLoop
+		}
+		if len(conts) == 0 {
+			conts, err = db.ListContainers(1000, marker, "", "", "", false)
+			if err != nil {
+				r.logger.Error("ListContainers error", zap.Error(err))
+				break ContLoop
+			}
+		}
+		select {
+		case <-canceler:
+			break ContLoop
+		default:
+		}
+	}
+	close(contObjChan)
+	wg.Wait()
+	r.logger.Info("reaped account", zap.String("account", info.Account), zap.Int64("objectsDeleted", objsDeleted), zap.Bool("Errored Out", err != nil), zap.Error(err))
 }
 
 // NewReplicator uses the config settings and command-line flags to configure and return a replicator daemon struct.
@@ -705,6 +909,8 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 		maxUsyncs:      25,
 		sendStat:       make(chan statUpdate),
 		checkin:        make(chan string),
+		reaperCheckin:  make(chan struct{}),
+		reaperCanceler: make(chan struct{}),
 		startRun:       make(chan string),
 		reconCachePath: serverconf.GetDefault("account-replicator", "recon_cache_path", "/var/cache/swift"),
 		checkMounts:    serverconf.GetBool("account-replicator", "mount_check", true),
@@ -715,6 +921,8 @@ func NewReplicator(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLo
 		concurrencySem: make(chan struct{}, concurrency),
 		Ring:           ring,
 		client:         c,
+		certFile:       certFile,
+		keyFile:        keyFile,
 		logLevel:       logLevel,
 	}
 	if serverconf.HasSection("tracing") {

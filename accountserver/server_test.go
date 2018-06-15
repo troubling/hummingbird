@@ -207,7 +207,7 @@ func TestAccountDeleteNotEmpty(t *testing.T) {
 	require.Nil(t, err)
 	req.Header.Set("X-Timestamp", common.GetTimestamp())
 	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 409, rsp.Status)
+	require.Equal(t, 204, rsp.Status) // reaper cleans up containers
 }
 
 func TestAccountPutContainersGet(t *testing.T) {

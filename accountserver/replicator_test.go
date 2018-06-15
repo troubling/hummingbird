@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/fs"
 	"github.com/troubling/hummingbird/common/ring"
@@ -96,6 +97,9 @@ func (d *patchableReplicationDevice) replicateDatabase(dbFile string) error {
 		return d._replicateDatabase(dbFile)
 	}
 	return d.rd.replicateDatabase(dbFile)
+}
+func (d *patchableReplicationDevice) checkForReaping(dbFile string) error {
+	return d.rd.checkForReaping(dbFile)
 }
 func (d *patchableReplicationDevice) findAccountDbs(devicePath string, results chan string) {
 	if d._findAccountDbs != nil {
@@ -168,8 +172,8 @@ func (f fakeDatabase) PolicyStats() ([]*PolicyStat, error) {
 func (f fakeDatabase) IsDeleted() (bool, error) {
 	return false, errors.New("")
 }
-func (f fakeDatabase) Delete(timestamp string) error {
-	return errors.New("")
+func (f fakeDatabase) Delete(timestamp string) (int, error) {
+	return 500, errors.New("")
 }
 func (f fakeDatabase) ListContainers(limit int, marker string, endMarker string, prefix string, delimiter string, reverse bool) ([]interface{}, error) {
 	return nil, errors.New("")
@@ -786,4 +790,33 @@ func TestSomeDatabaseFailures(t *testing.T) {
 	rd := newTestReplicationDevice(&ring.Device{}, &Replicator{Ring: &handoffJobRing{}})
 	require.NotNil(t, rd.rsync(&ring.Device{}, fakeDatabase{}, 1, "complete_rsync"))
 	require.NotNil(t, rd.usync(&ring.Device{}, fakeDatabase{}, 1, "123", 3))
+}
+
+func TestCheckForReaping(t *testing.T) {
+	c, dbFile, cleanup, err := createTestDatabase("1410586890.28563")
+	require.Nil(t, err)
+	defer cleanup()
+	r := &Replicator{client: http.DefaultClient, reaperLastCheckin: time.Now().Add(-time.Second)}
+	r.reaperCanceler = make(chan struct{})
+	fr := &test.FakeRing{}
+	fr.MockDevices = []*ring.Device{}
+	fr.MockDevices = append(fr.MockDevices, &ring.Device{Id: 0})
+	fr.MockDevices = append(fr.MockDevices, &ring.Device{Id: 1})
+	fr.MockDevices = append(fr.MockDevices, &ring.Device{Id: 2})
+	r.Ring = fr
+
+	r.reclaimAge = 0
+	rd := newTestReplicationDevice(&ring.Device{Id: 0}, r)
+	err = rd.checkForReaping(dbFile)
+	require.Nil(t, err)
+	st, err := c.Delete(common.GetTimestamp())
+	require.Equal(t, st, 204)
+	require.Nil(t, err)
+	r.reaperLastCheckin = time.Now().Add(-time.Minute * 2)
+	obs, logs := observer.New(zap.DebugLevel)
+	r.logger = zap.New(obs)
+	err = rd.checkForReaping(dbFile)
+	require.Nil(t, err)
+	obslog1 := logs.AllUntimed()[0]
+	require.Equal(t, "Wanted to reap an account but one is already running", obslog1.Message)
 }
