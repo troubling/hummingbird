@@ -769,25 +769,29 @@ type contObj struct {
 	obj  string
 }
 
-func (r *Replicator) reapAccount(dbFile string, canceler chan struct{}) error {
+func (r *Replicator) reapAccount(dbFile string, canceler chan struct{}) {
 	db, err := sqliteOpenAccount(dbFile)
 	if err != nil {
-		return err
+		r.logger.Error("error on opening dbfile", zap.String("dbFile", dbFile), zap.Error(err))
+		return
 	}
 	defer db.Close()
 	if d, err := db.IsDeleted(); err != nil {
-		return err
+		r.logger.Error("error on checking IsDeleted", zap.String("dbFile", dbFile), zap.Error(err))
+		return
 	} else if !d {
-		return fmt.Errorf("Trying to delete an active db: %s", dbFile)
+		r.logger.Error("reapAccount was call on active account", zap.String("dbFile", dbFile))
+		return
 	}
 	info, err := db.GetInfo()
 	if err != nil {
-		return err
+		r.logger.Error("reapAccount getInfo errpr", zap.String("dbFile", dbFile), zap.Error(err))
+		return
 	}
 	dc, err := client.NewDirectClient(info.Account, srv.DefaultConfigLoader{}, r.certFile, r.keyFile, r.logger)
 	if err != nil {
 		r.logger.Error("Could not create client to reap account.", zap.String("account", info.Account), zap.Error(err))
-		return err
+		return
 	}
 	wg := sync.WaitGroup{}
 	conc := 20 // TODO: make config
@@ -848,7 +852,6 @@ ContLoop:
 	close(contObjChan)
 	wg.Wait()
 	r.logger.Info("reaped account", zap.String("account", info.Account), zap.Int64("objectsDeleted", objsDeleted), zap.Bool("Errored Out", err != nil), zap.Error(err))
-	return nil
 }
 
 // NewReplicator uses the config settings and command-line flags to configure and return a replicator daemon struct.
