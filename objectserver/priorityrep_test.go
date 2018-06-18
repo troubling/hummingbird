@@ -230,7 +230,7 @@ func TestMovePartsPolicy(t *testing.T) {
 		require.FailNow(t, "Shouldn't be called")
 		return "", "", nil
 	}
-	args := []string{"-p", "0", "/etc/hummingbird/object-1.ring.gz"}
+	args := []string{"-P", "Policy-0", "/etc/hummingbird/object-1.ring.gz"}
 
 	ret := doMoveParts(args, confLoader)
 	require.EqualValues(t, 1, ret)
