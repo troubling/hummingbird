@@ -36,6 +36,10 @@ type AtomicFileWriter interface {
 	Abandon() error
 	// Preallocate pre-allocates space on disk, given the expected file size and disk reserve size.
 	Preallocate(int64, int64) error
+	// syncs file to disk (1st half of Save)
+	Sync() error
+	// links synced file to correct place in filesystem (2nd half of Save)
+	Finalize(string) error
 }
 
 // LockPath locks a directory with a timeout.
