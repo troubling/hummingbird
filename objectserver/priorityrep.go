@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
 	"golang.org/x/net/http2"
@@ -209,11 +210,11 @@ func objectRingPolicyIndex(s string) (int, error) {
 
 func doMoveParts(args []string, cnf srv.ConfigLoader) int {
 	flags := flag.NewFlagSet("moveparts", flag.ExitOnError)
-	policy := flags.Int("p", 0, "policy index to use")
+	policyName := flags.String("P", "", "policy to use")
 	certFile := flags.String("certfile", "", "Cert file to use for setting up https client")
 	keyFile := flags.String("keyfile", "", "Key file to use for setting up https client")
 	flags.Usage = func() {
-		fmt.Fprintf(os.Stderr, "USAGE: hummingbird moveparts [old ringfile]")
+		fmt.Fprintf(os.Stderr, "USAGE: hummingbird moveparts [old ringfile]\n")
 		flags.PrintDefaults()
 	}
 	flags.Parse(args)
@@ -221,15 +222,28 @@ func doMoveParts(args []string, cnf srv.ConfigLoader) int {
 		flags.Usage()
 		return 1
 	}
-
+	policyIndex := 0
+	if *policyName != "" {
+		policies, err := conf.GetPolicies()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Unable to load policies:", err)
+			return 1
+		}
+		p := policies.NameLookup(*policyName)
+		if p == nil {
+			fmt.Fprintf(os.Stderr, "Unknown policy named %q\n", *policyName)
+			return 1
+		}
+		policyIndex = p.Index
+	}
 	oldPolicy, policyErr := objectRingPolicyIndex(flags.Arg(0))
 	if policyErr != nil {
 		fmt.Println("Invalid ring:", policyErr)
 		return 1
 	}
 
-	if oldPolicy != *policy {
-		fmt.Printf("Old policy: %v doesn't match specified policy: %v\n", oldPolicy, *policy)
+	if oldPolicy != policyIndex {
+		fmt.Printf("Old policy: %v doesn't match specified policy: %v\n", oldPolicy, policyIndex)
 		return 1
 	}
 
@@ -243,7 +257,7 @@ func doMoveParts(args []string, cnf srv.ConfigLoader) int {
 		fmt.Println("Unable to load old ring:", err)
 		return 1
 	}
-	curRing, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, *policy)
+	curRing, err := ring.GetRing("object", hashPathPrefix, hashPathSuffix, policyIndex)
 	if err != nil {
 		fmt.Println("Unable to load current ring:", err)
 		return 1
@@ -270,7 +284,7 @@ func doMoveParts(args []string, cnf srv.ConfigLoader) int {
 	}
 	badParts := []uint64{}
 	for {
-		jobs := getPartMoveJobs(oldRing, curRing, badParts, *policy)
+		jobs := getPartMoveJobs(oldRing, curRing, badParts, policyIndex)
 		lastRun := len(jobs)
 		for i := len(jobs) - 1; i > 0; i-- { // shuffle jobs list
 			j := rand.Intn(i + 1)
@@ -357,7 +371,7 @@ func getRestoreDeviceJobs(theRing ring.Ring, ip string, devName string, srcRegio
 // RestoreDevice takes an IP address and device name such as []string{"172.24.0.1", "sda1"} and attempts to restores its data from peers.
 func RestoreDevice(args []string, cnf srv.ConfigLoader) {
 	flags := flag.NewFlagSet("restoredevice", flag.ExitOnError)
-	policy := flags.Int("p", 0, "policy index to use")
+	policyName := flags.String("P", "", "policy to use")
 	region := flags.Int("region", -1, "restore device only from peers in specified region")
 	ringLoc := flags.String("r", "", "Specify which ring file to use")
 	conc := flags.Int("c", 2, "limit of per device concurrency priority repl calls")
@@ -373,7 +387,20 @@ func RestoreDevice(args []string, cnf srv.ConfigLoader) {
 		flags.Usage()
 		return
 	}
-
+	policyIndex := 0
+	if *policyName != "" {
+		policies, err := conf.GetPolicies()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Unable to load policies:", err)
+			return
+		}
+		p := policies.NameLookup(*policyName)
+		if p == nil {
+			fmt.Fprintf(os.Stderr, "Unknown policy named %q\n", *policyName)
+			return
+		}
+		policyIndex = p.Index
+	}
 	hashPathPrefix, hashPathSuffix, err := cnf.GetHashPrefixAndSuffix()
 	if err != nil {
 		fmt.Println("Unable to load hash path prefix and suffix:", err)
@@ -381,7 +408,7 @@ func RestoreDevice(args []string, cnf srv.ConfigLoader) {
 	}
 	var objRing ring.Ring
 	if *ringLoc == "" {
-		objRing, err = ring.GetRing("object", hashPathPrefix, hashPathSuffix, *policy)
+		objRing, err = ring.GetRing("object", hashPathPrefix, hashPathSuffix, policyIndex)
 		if err != nil {
 			fmt.Println("Unable to load ring:", err)
 			return
@@ -417,7 +444,7 @@ func RestoreDevice(args []string, cnf srv.ConfigLoader) {
 	}
 	badParts := []uint64{}
 	for {
-		jobs := getRestoreDeviceJobs(objRing, flags.Arg(0), flags.Arg(1), *region, *full, badParts, *policy)
+		jobs := getRestoreDeviceJobs(objRing, flags.Arg(0), flags.Arg(1), *region, *full, badParts, policyIndex)
 		lastRun := len(jobs)
 		fmt.Println("Job count:", len(jobs))
 		for i := len(jobs) - 1; i > 0; i-- { // shuffle jobs list
