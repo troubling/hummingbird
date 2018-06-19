@@ -84,6 +84,7 @@ type TempFile struct {
 	tempDir   string
 	saved     bool
 	otempfile bool
+	synced    bool
 }
 
 // Abandon removes any resources associated with this file, if it hasn't already been saved.
@@ -98,11 +99,30 @@ func (o *TempFile) Abandon() error {
 }
 
 // Save atomically writes the file to its destination.
+// You can also use Sync and Finalize instead of Save
 func (o *TempFile) Save(dst string) error {
-	defer o.File.Close()
+	if err := o.Sync(); err != nil {
+		o.File.Close()
+		return err
+	}
+	return o.Finalize(dst)
+}
+
+// sync file to disk
+func (o *TempFile) Sync() error {
 	if err := o.File.Sync(); err != nil {
 		return err
 	}
+	o.synced = true
+	return nil
+}
+
+// Finalize writes a synced file to its destination.
+func (o *TempFile) Finalize(dst string) error {
+	if !o.synced {
+		return fmt.Errorf("must sync file first")
+	}
+	defer o.File.Close()
 	if o.otempfile {
 		if err := linkat(o.File.Fd(), dst); err != nil {
 			if err := os.MkdirAll(o.tempDir, 0770); err != nil {

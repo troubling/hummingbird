@@ -64,3 +64,49 @@ func TestTempFileReplace(t *testing.T) {
 	require.Nil(t, err)
 	require.Equal(t, []byte("some crap"), data)
 }
+
+func TestTempFileWithSyncFinalize(t *testing.T) {
+	dir, err := ioutil.TempDir("", "")
+	require.Nil(t, err)
+	defer os.RemoveAll(dir)
+	f, err := NewAtomicFileWriter(dir, dir)
+	require.Nil(t, err)
+	f.Write([]byte("some crap"))
+	err = f.Finalize("moo")
+	require.NotNil(t, err)
+	require.Nil(t, f.Sync())
+	require.Nil(t, f.Finalize(filepath.Join(dir, "somefile")))
+	require.True(t, Exists(filepath.Join(dir, "somefile")))
+}
+
+func TestTempFileDirRemovedSyncFinalize(t *testing.T) {
+	tempdir, err := ioutil.TempDir("", "")
+	require.Nil(t, err)
+	defer os.RemoveAll(tempdir)
+	dir, err := ioutil.TempDir("", "")
+	require.Nil(t, err)
+	defer os.RemoveAll(dir)
+	f, err := NewAtomicFileWriter(tempdir, tempdir)
+	require.Nil(t, err)
+	f.Write([]byte("some crap"))
+	os.RemoveAll(dir)
+	require.Nil(t, f.Sync())
+	require.Nil(t, f.Finalize(filepath.Join(dir, "somefile")))
+	require.True(t, Exists(filepath.Join(dir, "somefile")))
+}
+
+func TestTempFileReplaceSyncFinalize(t *testing.T) {
+	dir, err := ioutil.TempDir("", "")
+	require.Nil(t, err)
+	defer os.RemoveAll(dir)
+	require.Nil(t, ioutil.WriteFile(filepath.Join(dir, "somefile"), []byte("original contents"), 0666))
+	f, err := NewAtomicFileWriter(dir, dir)
+	require.Nil(t, err)
+	f.Write([]byte("some crap"))
+	require.Nil(t, f.Sync())
+	require.Nil(t, f.Finalize(filepath.Join(dir, "somefile")))
+	require.True(t, Exists(filepath.Join(dir, "somefile")))
+	data, err := ioutil.ReadFile(filepath.Join(dir, "somefile"))
+	require.Nil(t, err)
+	require.Equal(t, []byte("some crap"), data)
+}

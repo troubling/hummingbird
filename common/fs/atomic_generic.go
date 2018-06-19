@@ -18,6 +18,7 @@
 package fs
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -26,7 +27,8 @@ import (
 // TempFile implements an atomic file write by writing to a temp directory and then renaming into place.
 type TempFile struct {
 	*os.File
-	saved bool
+	saved  bool
+	synced bool
 }
 
 // Abandon removes any resources associated with this file, if it hasn't already been saved.
@@ -39,11 +41,30 @@ func (o *TempFile) Abandon() error {
 }
 
 // Save atomically writes the file to its destination.
+// You can also use Sync and Finalize instead of Save
 func (o *TempFile) Save(dst string) error {
-	defer o.File.Close()
+	if err := o.Sync(); err != nil {
+		o.File.Close()
+		return err
+	}
+	return o.Finalize(dst)
+}
+
+// sync file to disk
+func (o *TempFile) Sync() error {
 	if err := o.File.Sync(); err != nil {
 		return err
 	}
+	o.synced = true
+	return nil
+}
+
+// Finalize writes a synced file to its destination.
+func (o *TempFile) Finalize(dst string) error {
+	if !o.synced {
+		return fmt.Errorf("must sync file first")
+	}
+	defer o.File.Close()
 	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
 		return err
 	}

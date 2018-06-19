@@ -258,6 +258,12 @@ func (ot *IndexDB) Commit(f fs.AtomicFileWriter, hsh string, shard int, timestam
 		}
 	}
 
+	if f != nil {
+		if err = f.Sync(); err != nil {
+			return err
+		}
+	}
+
 	var tx *sql.Tx
 	var rows *sql.Rows
 	// Single defer so we can control the order of the tear down.
@@ -369,11 +375,6 @@ func (ot *IndexDB) Commit(f fs.AtomicFileWriter, hsh string, shard int, timestam
 	if err != nil {
 		return err
 	}
-	if f != nil {
-		if err = f.Save(pth); err != nil {
-			return err
-		}
-	}
 	restabilize := false
 	if dbWholeObjectPath == "" {
 		_, err = tx.Exec(`
@@ -390,6 +391,11 @@ func (ot *IndexDB) Commit(f fs.AtomicFileWriter, hsh string, shard int, timestam
             WHERE hash = ? AND shard = ? AND nursery = ?
         `, timestamp, deletion, metahash, metabytes, nursery, shardhash, restabilize, expires, hsh, shard, nursery)
 		if err != nil {
+			return err
+		}
+	}
+	if f != nil {
+		if err = f.Finalize(pth); err != nil {
 			return err
 		}
 	}
