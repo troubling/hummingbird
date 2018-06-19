@@ -126,6 +126,8 @@ type Account interface {
 	ID() string
 	// Close frees any resources associated with the account.
 	Close() error
+	// Ping makes sure the database still has a valid connection.
+	Ping() error
 }
 
 // ReplicableAccount is an account that also implements the replication API.
@@ -165,8 +167,8 @@ type AccountEngine interface {
 	// GetByHash returns a replicable database given its hash.  This will probably move from this interface once we
 	// have replicator->replicator communication.
 	GetByHash(device, hash, partition string) (c ReplicableAccount, err error)
-	// Invalidate removes an account from the cache entirely.  This will probably also move, since it's only used by replication.
-	Invalidate(c Account)
+	// Invalidate removes an account hash from the cache entirely.  This will probably also move, since it's only used by replication.
+	Invalidate(id string)
 }
 
 // My attempts at making this lruEngine reusable have not been successful, so for now it's sqlite-specific and not exported.
@@ -218,6 +220,9 @@ func (l *lruEngine) getbypath(accountFile string) (c Account, err error) {
 	l.m.Lock()
 	defer l.m.Unlock()
 	if e := l.cache[ringHash]; e != nil {
+		if err := e.c.Ping(); err != nil {
+			return nil, err
+		}
 		e.inUse++
 		l.used.MoveToBack(e.elem)
 		return e.c, nil
@@ -236,19 +241,27 @@ func (l *lruEngine) Get(vars map[string]string) (c Account, err error) {
 
 // Create creates a new account.
 func (l *lruEngine) Create(vars map[string]string, putTimestamp string, metadata map[string][]string) (bool, Account, error) {
-	accountFile := l.accountLocation(vars)
-	created := false
-	c, err := l.Get(vars)
-	if err != nil {
-		created = true
-		err = sqliteCreateAccount(accountFile, vars["account"], putTimestamp, metadata)
-		if err == nil {
-			c, err = l.Get(vars)
+	if c, err := l.Get(vars); err == nil {
+		if created, err := sqliteCreateExistingAccount(c, putTimestamp, metadata); err != nil {
+			c.Close()
+			return false, nil, err
+		} else {
+			return created, c, nil
 		}
-	} else {
-		created, err = sqliteCreateExistingAccount(c, putTimestamp, metadata)
 	}
-	return created, c, err
+	if err := sqliteCreateAccount(l.accountLocation(vars), vars["account"], putTimestamp, metadata); err == errDatabaseExists {
+		if c, err := l.Get(vars); err == nil {
+			if created, err := sqliteCreateExistingAccount(c, putTimestamp, metadata); err == nil {
+				return created, c, err
+			}
+			c.Close()
+		}
+		return false, nil, err
+	} else if err != nil {
+		return false, nil, err
+	}
+	c, err := l.Get(vars)
+	return true, c, err
 }
 
 // Return returns a database object to the engine.
@@ -277,12 +290,12 @@ func (l *lruEngine) GetByHash(device, hash, partition string) (ReplicableAccount
 }
 
 // Invalidate removes any cached backend connections to the database.
-func (l *lruEngine) Invalidate(c Account) {
-	defer c.Close()
+func (l *lruEngine) Invalidate(id string) {
 	l.m.Lock()
-	if e := l.cache[c.ID()]; e != nil && e.c == c {
+	if e := l.cache[id]; e != nil {
+		e.c.Close()
 		l.used.Remove(e.elem)
-		delete(l.cache, c.ID())
+		delete(l.cache, id)
 	}
 	l.m.Unlock()
 }

@@ -236,8 +236,6 @@ func (rd *replicationDevice) chooseReplicationStrategy(localInfo, remoteInfo *Ac
 		return "no_change"
 	case localInfo.Hash == remoteInfo.Hash:
 		return "hashmatch"
-	case remoteInfo.MaxRow < localInfo.MaxRow*2 && localInfo.MaxRow-remoteInfo.MaxRow > usyncThreshold:
-		return "rsync_then_merge"
 	default:
 		return "diff"
 	}
@@ -260,7 +258,7 @@ func (rd *replicationDevice) replicateDatabaseToDevice(dev *ring.Device, c Repli
 		rd.r.logger.Debug("Not replicating anything.",
 			zap.String("strategy", strategy),
 			zap.String("RingHash", c.RingHash()))
-	case "complete_rsync", "rsync_then_merge":
+	case "complete_rsync":
 		rd.r.logger.Debug("Replicating ringhash",
 			zap.String("RingHash", c.RingHash()),
 			zap.String("Ip", dev.Ip),
@@ -320,6 +318,7 @@ func (rd *replicationDevice) checkForReaping(dbFile string) error {
 	}
 	return nil
 }
+
 func (rd *replicationDevice) replicateDatabase(dbFile string) error {
 	rd.r.logger.Debug("Replicating database.", zap.String("dbFile", filepath.Base(dbFile)))
 	parts := filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(dbFile))))
@@ -365,6 +364,11 @@ func (rd *replicationDevice) replicateDatabase(dbFile string) error {
 		}
 	}
 	if handoff && successes == len(devices) {
+		lock, err := fs.LockPath(filepath.Dir(dbFile), dirLockTimeout)
+		if err != nil {
+			return err
+		}
+		defer lock.Close()
 		rd.i.incrementStat("remove")
 		return os.RemoveAll(filepath.Dir(dbFile))
 	}

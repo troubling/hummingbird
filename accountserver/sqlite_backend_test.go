@@ -24,6 +24,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/fs"
 )
 
 func createTestDatabase(timestamp string) (*sqliteAccount, string, func(), error) {
@@ -446,5 +447,27 @@ func TestNotADB(t *testing.T) {
 	// Different library versions give slightly different errors.
 	if !strings.Contains(err.Error(), "file is encrypted or is not a database; quarantined") && !strings.Contains(err.Error(), "file is not a database; quarantined") {
 		t.Fatal(err)
+	}
+}
+
+func TestSqliteRename(t *testing.T) {
+	dir, err := ioutil.TempDir("", "")
+	require.Nil(t, err)
+	defer os.RemoveAll(dir)
+	for _, filename := range []string{"a.db", "a.db-wal", "a.db-journal"} {
+		require.Nil(t, ioutil.WriteFile(filepath.Join(dir, filename), []byte("a data"), 0777))
+	}
+	for _, filename := range []string{"b.db", "b.db-wal", "b.db-journal"} {
+		require.Nil(t, ioutil.WriteFile(filepath.Join(dir, filename), []byte("b data"), 0777))
+	}
+	require.Nil(t, sqliteRename(filepath.Join(dir, "a.db"), filepath.Join(dir, "b.db")))
+	for _, filename := range []string{"a.db", "a.db-wal", "a.db-journal"} {
+		require.False(t, fs.Exists(filepath.Join(dir, filename)))
+	}
+	for _, filename := range []string{"b.db", "b.db-wal", "b.db-journal"} {
+		require.True(t, fs.Exists(filepath.Join(dir, filename)))
+		data, err := ioutil.ReadFile(filepath.Join(dir, filename))
+		require.Nil(t, err)
+		require.Equal(t, data, []byte("a data"))
 	}
 }

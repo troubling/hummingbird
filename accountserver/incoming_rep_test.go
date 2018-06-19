@@ -262,70 +262,6 @@ func TestServerReplicateMergeSyncs(t *testing.T) {
 	require.Equal(t, int64(15), info.Point)
 }
 
-func TestServerReplicateRsyncThenMerge(t *testing.T) {
-	handler, cleanup, err := makeTestServer()
-	require.Nil(t, err)
-	defer cleanup()
-
-	// make a container with some objects
-	rsp := test.MakeCaptureResponse()
-	req, err := http.NewRequest("PUT", "/device/1/a", nil)
-	require.Nil(t, err)
-	req.Header.Set("X-Timestamp", common.CanonicalTimestamp(100))
-	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 201, rsp.Status)
-
-	for _, name := range []string{"a", "b", "c"} {
-		req, err := http.NewRequest("PUT", "/device/1/a/"+name, nil)
-		require.Nil(t, err)
-		req.Header.Set("X-Put-Timestamp", common.GetTimestamp())
-		req.Header.Set("X-Bytes-Used", "2")
-		req.Header.Set("X-Object-Count", "2")
-		req.Header.Set("X-Backend-Storage-Policy-Index", "0")
-		handler.ServeHTTP(rsp, req)
-		require.Equal(t, 201, rsp.Status)
-	}
-
-	h := md5.New()
-	fmt.Fprintf(h, "%s/%s%s", "changeme", "a", "changeme")
-	accountHash := fmt.Sprintf("%032x", h.Sum(nil))
-
-	// create a local database with 1 object
-	db, _, cleanup, err := createTestDatabase(common.GetTimestamp())
-	require.Nil(t, err)
-	defer cleanup()
-	require.Nil(t, mergeItemsByName(db, []string{"d"}))
-
-	tmpFilename := common.UUID()
-
-	// upload the local database to the server
-	fp, release, err := db.OpenDatabaseFile()
-	require.Nil(t, err)
-	defer release()
-	rsp = test.MakeCaptureResponse()
-	req, err = http.NewRequest("PUT", "/device/tmp/"+tmpFilename, fp)
-	require.Nil(t, err)
-	handler.ServeHTTP(rsp, req)
-	require.Equal(t, 201, rsp.Status)
-
-	// send rsync_then_merge replicate request
-	replRequest := []interface{}{"rsync_then_merge", tmpFilename}
-	msg, err := json.Marshal(replRequest)
-	require.Nil(t, err)
-	rsp = test.MakeCaptureResponse()
-	req, err = http.NewRequest("REPLICATE", "/device/1/"+accountHash, bytes.NewBuffer(msg))
-	require.Nil(t, err)
-	handler.ServeHTTP(rsp, req)
-	require.Equal(t, http.StatusNoContent, rsp.Status)
-
-	// HEAD the container and make sure it has 3 shiny new objects and one old gross one
-	rsp = test.MakeCaptureResponse()
-	req, err = http.NewRequest("HEAD", "/device/1/a", nil)
-	require.Nil(t, err)
-	handler.ServeHTTP(rsp, req)
-	require.Equal(t, "6", rsp.Header().Get("X-Account-Object-Count"))
-}
-
 func TestServerReplicateCompleteRsync(t *testing.T) {
 	handler, cleanup, err := makeTestServer()
 	require.Nil(t, err)
@@ -354,7 +290,7 @@ func TestServerReplicateCompleteRsync(t *testing.T) {
 	handler.ServeHTTP(rsp, req)
 	require.Equal(t, 201, rsp.Status)
 
-	// send rsync_then_merge replicate request
+	// send complete_rsync replicate request
 	replRequest := []interface{}{"complete_rsync", tmpFilename}
 	msg, err := json.Marshal(replRequest)
 	require.Nil(t, err)
@@ -427,7 +363,7 @@ func TestServerReplicateBadJsonOp(t *testing.T) {
 	handler, cleanup, err := makeTestServer()
 	require.Nil(t, err)
 	defer cleanup()
-	for _, op := range []string{"rsync_then_merge", "complete_rsync", "merge_items", "merge_syncs", "sync"} {
+	for _, op := range []string{"complete_rsync", "merge_items", "merge_syncs", "sync"} {
 		msg, err := json.Marshal([]string{op})
 		require.Nil(t, err)
 		rsp := test.MakeCaptureResponse()
