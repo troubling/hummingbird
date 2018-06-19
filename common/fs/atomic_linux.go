@@ -101,34 +101,11 @@ func (o *TempFile) Abandon() error {
 // Save atomically writes the file to its destination.
 // You can also use Sync and Finalize instead of Save
 func (o *TempFile) Save(dst string) error {
-	defer o.File.Close()
-	if err := o.File.Sync(); err != nil {
+	if err := o.Sync(); err != nil {
+		o.File.Close()
 		return err
 	}
-	if o.otempfile {
-		if err := linkat(o.File.Fd(), dst); err != nil {
-			if err := os.MkdirAll(o.tempDir, 0770); err != nil {
-				return err
-			}
-			tmpLocation := filepath.Join(o.tempDir, fmt.Sprintf(".%016X", rand.Int63()))
-			if err := linkat(o.File.Fd(), tmpLocation); err != nil {
-				return err
-			}
-			if err := os.MkdirAll(filepath.Dir(dst), 0770); err != nil {
-				return err
-			}
-			return os.Rename(tmpLocation, dst)
-		}
-	} else {
-		if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
-			return err
-		}
-		if err := os.Rename(o.File.Name(), dst); err != nil {
-			return err
-		}
-	}
-	o.saved = true
-	return nil
+	return o.Finalize(dst)
 }
 
 // sync file to disk
