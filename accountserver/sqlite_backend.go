@@ -1175,9 +1175,10 @@ func sqliteCreateAccount(accountFile string, account string, putTimestamp string
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	dbConn.Close()
-	sqliteRename(tempFile, accountFile)
-	return nil
+	if err := dbConn.Close(); err != nil {
+		return err
+	}
+	return sqliteRename(tempFile, accountFile)
 }
 
 func sqliteOpenAccount(accountFile string) (ReplicableAccount, error) {
