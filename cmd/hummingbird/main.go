@@ -389,6 +389,7 @@ func main() {
 	reconFlags.Bool("d", false, "Show last dispersion report")
 	reconFlags.Bool("ds", false, "Show drive status report")
 	reconFlags.Bool("rar", false, "Show andrewd ring action report")
+	reconFlags.Bool("rbr", false, "Show andrewd ring balance report")
 	reconFlags.String("c", findConfig("andrewd"), "Andrewd Config file to use (e.g. for dispersion)")
 	reconFlags.Bool("json", false, "Output in json. {\"ok\": true|false, \"msg\": \"text-output\"}")
 	reconFlags.String("certfile", "", "Cert file to use for setting up https client")
