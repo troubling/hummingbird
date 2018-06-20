@@ -72,13 +72,28 @@ type DeviceStats struct {
 	DeviceStarted      time.Time
 	LastPassFinishDate time.Time
 	LastPassDuration   time.Duration
-	CancelCount        int64
-	FilesSent          int64
-	BytesSent          int64
-	PartitionsDone     int64
-	PartitionsTotal    int64
-	TotalPasses        int64
-	PriorityRepsDone   int64
+
+	// We can probably drop these at some point. But right now, recon uses
+	// these results. We'd need to update the recon tools to use the /metrics
+	// endpoint instead and make sure no other tools are using the /recon
+	// endpoint. Probably a deprecation phase or something. For now, double the
+	// stats work.
+	CancelCount      int64
+	FilesSent        int64
+	BytesSent        int64
+	PartitionsDone   int64
+	PartitionsTotal  int64
+	TotalPasses      int64
+	PriorityRepsDone int64
+
+	cancelsMetric          tally.Counter
+	filesSentMetric        tally.Counter
+	bytesSentMetric        tally.Counter
+	partitionsDoneMetric   tally.Counter
+	partitionsTotalMetric  tally.Counter
+	totalPassesMetric      tally.Counter
+	priorityRepsDoneMetric tally.Counter
+	lastPassDurationMetric tally.Timer
 }
 
 type statUpdate struct {
@@ -196,6 +211,17 @@ func (r *Replicator) cancelStalledDevices() {
 	}
 }
 
+func (r *Replicator) addMetrics(devStats *DeviceStats, policy int, name string) {
+	devStats.cancelsMetric = r.metricsScope.Counter(fmt.Sprintf("%d_%s_cancels", policy, name))
+	devStats.filesSentMetric = r.metricsScope.Counter(fmt.Sprintf("%d_%s_files_sent", policy, name))
+	devStats.bytesSentMetric = r.metricsScope.Counter(fmt.Sprintf("%d_%s_bytes_sent", policy, name))
+	devStats.partitionsDoneMetric = r.metricsScope.Counter(fmt.Sprintf("%d_%s_partitions_done", policy, name))
+	devStats.partitionsTotalMetric = r.metricsScope.Counter(fmt.Sprintf("%d_%s_partitions_total", policy, name))
+	devStats.totalPassesMetric = r.metricsScope.Counter(fmt.Sprintf("%d_%s_total_passes", policy, name))
+	devStats.priorityRepsDoneMetric = r.metricsScope.Counter(fmt.Sprintf("%d_%s_priority_reps_done", policy, name))
+	devStats.lastPassDurationMetric = r.metricsScope.Timer(fmt.Sprintf("%d_%s_last_pass_duration", policy, name))
+}
+
 func (r *Replicator) verifyRunningDevices() {
 	r.runningDevicesLock.Lock()
 	defer r.runningDevicesLock.Unlock()
@@ -225,6 +251,7 @@ func (r *Replicator) verifyRunningDevices() {
 						LastCheckin: time.Now(), DeviceStarted: time.Now(),
 						Stats: map[string]int64{},
 					}
+					r.addMetrics(r.stats[rd.Type()][key], policy, dev.Device)
 					go r.runningDevices[key].ScanLoop()
 				} else {
 					r.logger.Error("building replication device", zap.String("device", key), zap.Int("policy", policy), zap.Error(err))
@@ -236,6 +263,7 @@ func (r *Replicator) verifyRunningDevices() {
 					LastCheckin: time.Now(), DeviceStarted: time.Now(),
 					Stats: map[string]int64{"Success": 0, "Failure": 0},
 				}
+				r.addMetrics(r.stats["object-updater"][key], policy, dev.Device)
 				go r.updatingDevices[key].updateLoop()
 			}
 		}
@@ -345,8 +373,10 @@ func (r *Replicator) runLoopCheck(reportTimer <-chan time.Time) {
 			}
 		case "FullReplicateCount":
 			stats.LastPassDuration = time.Since(stats.PassStarted)
+			stats.lastPassDurationMetric.Record(time.Since(stats.PassStarted))
 			stats.LastPassFinishDate = time.Now()
 			stats.TotalPasses++
+			stats.totalPassesMetric.Inc(1)
 			stats.Stats[update.stat] += update.value
 
 			lf := []zapcore.Field{
@@ -360,16 +390,22 @@ func (r *Replicator) runLoopCheck(reportTimer <-chan time.Time) {
 			r.logger.Info("Service pass complete", lf...)
 		case "cancel":
 			stats.CancelCount += update.value
+			stats.cancelsMetric.Inc(update.value)
 		case "FilesSent":
 			stats.FilesSent += update.value
+			stats.filesSentMetric.Inc(update.value)
 		case "BytesSent":
 			stats.BytesSent += update.value
+			stats.bytesSentMetric.Inc(update.value)
 		case "PartitionsDone":
 			stats.PartitionsDone += update.value
+			stats.partitionsDoneMetric.Inc(update.value)
 		case "PartitionsTotal":
 			stats.PartitionsTotal = update.value
+			stats.partitionsTotalMetric.Inc(update.value)
 		case "PriorityRepsDone":
 			stats.PriorityRepsDone += update.value
+			stats.priorityRepsDoneMetric.Inc(update.value)
 		default:
 			stats.Stats[update.stat] += update.value
 		}
@@ -412,12 +448,22 @@ func (r *Replicator) Run() {
 			}
 			key := rd.Key()
 			r.runningDevices[key] = rd
+			r.stats[rd.Type()][key] = &DeviceStats{
+				LastCheckin: time.Now(), DeviceStarted: time.Now(),
+				Stats: map[string]int64{},
+			}
+			r.addMetrics(r.stats[rd.Type()][key], policy, dev.Device)
 			go func(rd ReplicationDevice) {
 				rd.Scan()
 				r.onceDone <- struct{}{}
 			}(rd)
 
 			r.updatingDevices[key] = newUpdateDevice(dev, policy, r)
+			r.stats["object-updater"][key] = &DeviceStats{
+				LastCheckin: time.Now(), DeviceStarted: time.Now(),
+				Stats: map[string]int64{"Success": 0, "Failure": 0},
+			}
+			r.addMetrics(r.stats["object-updater"][key], policy, dev.Device)
 			go func(ud *updateDevice) {
 				ud.update()
 				r.onceDone <- struct{}{}
