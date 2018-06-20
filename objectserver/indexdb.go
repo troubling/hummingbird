@@ -21,7 +21,10 @@ import (
 )
 
 const (
-	shardAny = -1
+	shardAny                 = -1
+	shardNursery             = 0
+	numStabilizeObjects      = 100
+	maxStableObjectCacheSize = 1000000
 )
 
 // IndexDBItem is a single item returned by List.
@@ -169,10 +172,7 @@ func (ot *IndexDB) init(dbi int) error {
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec("CREATE INDEX IF NOT EXISTS ix_nursery_items ON objects (nursery) WHERE nursery = 1"); err != nil {
-		return err
-	}
-	if _, err = tx.Exec("CREATE INDEX IF NOT EXISTS ix_nursery_restabilize_items ON objects (restabilize) WHERE restabilize = 1"); err != nil {
+	if _, err = tx.Exec("CREATE INDEX IF NOT EXISTS ix_stabilize_items ON objects (nursery, restabilize, timestamp) WHERE nursery = 1 OR restabilize = 1"); err != nil {
 		return err
 	}
 	if _, err = tx.Exec("CREATE INDEX IF NOT EXISTS ix_object_expires ON objects(expires) WHERE expires IS NOT NULL"); err != nil {
@@ -466,32 +466,37 @@ func (ot *IndexDB) WholeObjectPath(hsh string, shard int, timestamp int64, nurse
 }
 
 // Remove removes an entry from the database and its backing disk file.
-func (ot *IndexDB) Remove(hsh string, shard int, timestamp int64, nursery bool) error {
+func (ot *IndexDB) Remove(hsh string, shard int, timestamp int64, nursery bool, metahash string) (int64, error) {
 	hsh, _, dbPart, _, err := ValidateHash(hsh, ot.RingPartPower, ot.dbPartPower, ot.subdirs)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	db := ot.dbs[dbPart]
 	res, err := db.Exec(`
         DELETE
 		FROM objects
-        WHERE hash = ? AND shard = ? AND timestamp = ? AND nursery = ?
-    `, hsh, shard, timestamp, nursery)
+        WHERE hash = ? AND shard = ? AND timestamp = ? AND nursery = ? AND metahash = ?
+    `, hsh, shard, timestamp, nursery, metahash)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	if af, err := res.RowsAffected(); err == nil && af > 0 {
+	af := int64(0)
+	if af, err = res.RowsAffected(); err == nil && af > 0 {
 		path, err := ot.WholeObjectPath(hsh, shard, timestamp, nursery)
 		if err != nil {
-			return err
+			return af, err
 		}
-		os.Remove(path)
+		if err = os.Remove(path); err != nil {
+			ot.logger.Debug("remove row had no file", zap.String("hash", hsh), zap.Int64("ts", timestamp), zap.Int("shard", shard), zap.String("metahash", metahash), zap.Bool("nursery", nursery), zap.Int64("numRem", af), zap.Error(err))
+		}
 	}
-	return nil
+	return af, nil
 }
 
 // Lookup returns the stored information for the hsh and shard.
 // Will return (nil, error) if there is an error. (nil, nil) if not found
+// use var shardAny to search for any shard or in nursery
+// NOTE: if justStable is true then you must specify shard. TODO: is this kinda weird?
 func (ot *IndexDB) Lookup(hsh string, shard int, justStable bool) (*IndexDBItem, error) {
 	var err error
 	hsh, _, dbPart, _, err := ValidateHash(hsh, ot.RingPartPower, ot.dbPartPower, ot.subdirs)
@@ -537,7 +542,7 @@ func (ot *IndexDB) Lookup(hsh string, shard int, justStable bool) (*IndexDBItem,
 	return item, err
 }
 
-// ListObjectsToStabilize lists all objects that are in the nursery or set to restabilzed
+// ListObjectsToStabilize lists oldest objects in the nursery, it will be limited to numStabilizeObjects * # index.db's
 func (ot *IndexDB) ListObjectsToStabilize() ([]*IndexDBItem, error) {
 	listing := []*IndexDBItem{}
 	for _, db := range ot.dbs {
@@ -545,7 +550,8 @@ func (ot *IndexDB) ListObjectsToStabilize() ([]*IndexDBItem, error) {
 			rows, err := db.Query(`
 				SELECT hash, shard, timestamp, deletion, metahash, metadata, nursery, restabilize, expires
 				FROM objects
-				WHERE nursery = 1 OR restabilize = 1`)
+				WHERE nursery = 1 OR restabilize = 1
+                ORDER BY timestamp LIMIT ?`, numStabilizeObjects)
 			if err != nil {
 				return err
 			}

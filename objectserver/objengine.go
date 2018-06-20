@@ -26,6 +26,7 @@ import (
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/uber-go/tally"
 )
 
 // DriveFullError can be returned by Object.SetData and Object.Delete if the disk is too full for the operation.
@@ -63,6 +64,9 @@ type ObjectStabilizer interface {
 	// Stabilize object- move to stable location / erasure code / do nothing / etc
 	Stabilize(*ring.Device) error
 	Replicate(PriorityRepJob) error
+	// unique id (Hash) of object.
+	Uuid() string
+	MetadataMd5() string
 }
 
 type ReplicationDevice interface {
@@ -85,12 +89,13 @@ type ObjectEngine interface {
 
 type NurseryObjectEngine interface {
 	ObjectEngine
-	GetObjectsToStabilize(device string, c chan ObjectStabilizer, cancel chan struct{})
+	GetObjectsToStabilize(device *ring.Device) (c chan ObjectStabilizer, cancel chan struct{})
 	GetObjectsToReplicate(prirep PriorityRepJob, c chan ObjectStabilizer, cancel chan struct{})
+	UpdateItemStabilized(device, hash, ts string, stabilized bool) bool
 }
 
 type PolicyHandlerRegistrator interface {
-	RegisterHandlers(addRoute func(method, path string, handler http.HandlerFunc))
+	RegisterHandlers(addRoute func(method, path string, handler http.HandlerFunc), metScope tally.Scope)
 }
 
 // ObjectEngineConstructor> is a function that, given configs and flags, returns an ObjectEngine

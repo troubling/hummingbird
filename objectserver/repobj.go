@@ -99,6 +99,14 @@ func (ro *repObject) Repr() string {
 	return fmt.Sprintf("repObject<%s, %d>", ro.Hash, ro.Timestamp)
 }
 
+func (ro *repObject) Uuid() string {
+	return ro.Hash
+}
+
+func (ro *repObject) MetadataMd5() string {
+	return ro.Metahash
+}
+
 func (ro *repObject) SetData(size int64) (io.Writer, error) {
 	if ro.atomicFileWriter != nil {
 		ro.atomicFileWriter.Abandon()
@@ -215,7 +223,8 @@ func (ro *repObject) stabilizeDelete(dev *ring.Device) error {
 	if successes+1 != int64(len(nodes)) {
 		return fmt.Errorf("could not stabilize DELETE to all primaries %d/%d", successes, len(nodes)-1)
 	}
-	return ro.idb.Remove(ro.Hash, ro.Shard, ro.Timestamp, ro.Nursery)
+	_, err = ro.idb.Remove(ro.Hash, ro.Shard, ro.Timestamp, ro.Nursery, ro.Metahash)
+	return err
 }
 
 func (ro *repObject) restabilize(dev *ring.Device) error {
@@ -279,7 +288,8 @@ func (ro *repObject) Stabilize(dev *ring.Device) error {
 	}
 	if isStable {
 		if _, isHandoff := ro.ring.GetJobNodes(partition, dev.Id); isHandoff {
-			return ro.idb.Remove(ro.Hash, ro.Shard, ro.Timestamp, ro.Nursery)
+			_, err = ro.idb.Remove(ro.Hash, ro.Shard, ro.Timestamp, ro.Nursery, ro.Metahash)
+			return err
 		} else {
 			return ro.idb.SetStabilized(ro.Hash, roShard, ro.Timestamp, true)
 		}
@@ -330,7 +340,8 @@ func (ro *repObject) Replicate(prirep PriorityRepJob) error {
 		return fmt.Errorf("bad status code %d syncing obj with  %s", resp.StatusCode, ro.Hash)
 	}
 	if isHandoff {
-		return ro.idb.Remove(ro.Hash, ro.Shard, ro.Timestamp, ro.Nursery)
+		_, err = ro.idb.Remove(ro.Hash, ro.Shard, ro.Timestamp, ro.Nursery, ro.Metahash)
+		return err
 	}
 	return nil
 }

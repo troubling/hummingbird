@@ -236,7 +236,7 @@ func QuarantineItem(db *IndexDB, item *IndexDBItem) error {
 		}
 		return err
 	}
-	err = db.Remove(item.Hash, item.Shard, item.Timestamp, item.Nursery)
+	_, err = db.Remove(item.Hash, item.Shard, item.Timestamp, item.Nursery, item.Metahash)
 	if err == nil && rerr != nil {
 		return rerr
 	}

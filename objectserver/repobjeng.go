@@ -23,6 +23,7 @@ import (
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
+	"github.com/uber-go/tally"
 )
 
 const (
@@ -264,21 +265,29 @@ func (re *repEngine) GetObjectsToReplicate(prirep PriorityRepJob, c chan ObjectS
 	}
 }
 
-func (re *repEngine) GetObjectsToStabilize(device string, c chan ObjectStabilizer, cancel chan struct{}) {
+func (re *repEngine) GetObjectsToStabilize(device *ring.Device) (c chan ObjectStabilizer, cancel chan struct{}) {
+	c = make(chan ObjectStabilizer, numStabilizeObjects)
+	cancel = make(chan struct{})
+	go re.getObjectsToStabilize(device, c, cancel)
+	return c, cancel
+}
+
+func (re *repEngine) getObjectsToStabilize(device *ring.Device, c chan ObjectStabilizer, cancel chan struct{}) {
 	defer close(c)
-	idb, err := re.getDB(device)
+	idb, err := re.getDB(device.Device)
 	if err != nil {
 		return
 	}
-
 	idb.ExpireObjects()
 
-	items, err := idb.ListObjectsToStabilize()
+	idbItems, err := idb.ListObjectsToStabilize()
 	if err != nil {
+		re.logger.Error("ListObjectsToStabilize error", zap.Error(err))
 		return
 	}
 
-	for _, item := range items {
+	//TODO: do we add the skip stuff here? stabilize is a lot easier here
+	for _, item := range idbItems {
 		obj := &repObject{
 			IndexDBItem: *item,
 			reserve:     re.reserve,
@@ -287,7 +296,7 @@ func (re *repEngine) GetObjectsToStabilize(device string, c chan ObjectStabilize
 			idb:         idb,
 			metadata:    map[string]string{},
 			client:      re.client,
-			txnId:       fmt.Sprintf("%s-%s", common.UUID(), device),
+			txnId:       fmt.Sprintf("%s-%s", common.UUID(), device.Device),
 		}
 		if err = json.Unmarshal(item.Metabytes, &obj.metadata); err != nil {
 			continue
@@ -298,6 +307,11 @@ func (re *repEngine) GetObjectsToStabilize(device string, c chan ObjectStabilize
 			return
 		}
 	}
+}
+
+func (re *repEngine) UpdateItemStabilized(device, hash, ts string, stabilized bool) bool {
+	//TODO: this for some stabilization optimization later
+	return false
 }
 
 func (re *repEngine) listPartitionHandler(writer http.ResponseWriter, request *http.Request) {
@@ -381,14 +395,14 @@ func (re *repEngine) deleteStableObject(writer http.ResponseWriter, request *htt
 		return
 	}
 
-	if err := idb.Remove(item.Hash, item.Shard, item.Timestamp, item.Nursery); err != nil {
+	if _, err := idb.Remove(item.Hash, item.Shard, item.Timestamp, item.Nursery, item.Metahash); err != nil {
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 	} else {
 		srv.StandardResponse(writer, http.StatusNoContent)
 	}
 }
 
-func (re *repEngine) RegisterHandlers(addRoute func(method, path string, handler http.HandlerFunc)) {
+func (re *repEngine) RegisterHandlers(addRoute func(method, path string, handler http.HandlerFunc), metScope tally.Scope) {
 	addRoute("GET", "/rep-partition/:device/:partition", re.listPartitionHandler)
 	addRoute("PUT", "/rep-obj/:device/:hash", re.putStableObject)
 	addRoute("POST", "/rep-obj/:device/:hash", re.postStableObject)
