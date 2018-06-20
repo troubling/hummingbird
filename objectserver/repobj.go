@@ -315,6 +315,7 @@ func (ro *repObject) Replicate(prirep PriorityRepJob) error {
 		return err
 	}
 	req.ContentLength = ro.ContentLength()
+	req.Header.Set("X-Timestamp", ro.metadata["X-Timestamp"])
 	req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(ro.policy))
 	req.Header.Set("X-Trans-Id", ro.txnId)
 	for k, v := range ro.metadata {
