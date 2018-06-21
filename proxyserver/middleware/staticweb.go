@@ -240,7 +240,7 @@ func (s *staticWebHandler) handleDirectory(writer http.ResponseWriter, request *
 		path := s.webListingsCSS
 		if !strings.HasPrefix(s.webListingsCSS, "/") && !strings.HasPrefix(s.webListingsCSS, "http://") && !strings.HasPrefix(s.webListingsCSS, "https://") {
 			path = ""
-			for i := strings.Count(s.webListingsCSS, "/"); i > 0; i-- {
+			for i := strings.Count(s.object, "/"); i > 0; i-- {
 				path += "../"
 			}
 			path += s.webListingsCSS
