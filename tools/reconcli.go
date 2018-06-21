@@ -53,6 +53,74 @@ func deviceId(ip string, port int, device string) string {
 	return fmt.Sprintf("%s:%d/%s", ip, port, device)
 }
 
+func getDistinctIPServers(errors []string) ([]*ipPort, []string) {
+	serversMap := map[string]*ipPort{}
+	prefix, suffix := getAffixes()
+	fn := func(r ring.Ring) {
+		for _, dev := range r.AllDevices() {
+			if dev == nil || dev.Weight < 0 {
+				continue
+			}
+			serversMap[dev.Ip] = &ipPort{ip: dev.Ip, port: dev.Port, scheme: dev.Scheme, replicationPort: dev.ReplicationPort}
+		}
+	}
+	if r, err := ring.GetRing("account", prefix, suffix, 0); err != nil {
+		errors = append(errors, err.Error())
+	} else {
+		fn(r)
+	}
+	if r, err := ring.GetRing("container", prefix, suffix, 0); err != nil {
+		errors = append(errors, err.Error())
+	} else {
+		fn(r)
+	}
+	if policies, err := conf.GetPolicies(); err != nil {
+		errors = append(errors, err.Error())
+	} else {
+		for _, policy := range policies {
+			if r, err := ring.GetRing("object", prefix, suffix, policy.Index); err != nil {
+				errors = append(errors, err.Error())
+			} else {
+				fn(r)
+			}
+		}
+	}
+	var servers []*ipPort
+	for _, server := range serversMap {
+		servers = append(servers, server)
+	}
+	return servers, errors
+}
+
+func getDistinctObjectReplicationServers(errors []string) ([]*ipPort, []string) {
+	serversMap := map[string]*ipPort{}
+	prefix, suffix := getAffixes()
+	fn := func(r ring.Ring) {
+		for _, dev := range r.AllDevices() {
+			if dev == nil || dev.Weight < 0 {
+				continue
+			}
+			serversMap[serverId(dev.Ip, dev.ReplicationPort)] = &ipPort{ip: dev.Ip, port: dev.Port, scheme: dev.Scheme, replicationPort: dev.ReplicationPort}
+		}
+	}
+	if policies, err := conf.GetPolicies(); err != nil {
+		errors = append(errors, err.Error())
+	} else {
+		for _, policy := range policies {
+			if r, err := ring.GetRing("object", prefix, suffix, policy.Index); err != nil {
+				errors = append(errors, err.Error())
+			} else {
+				fn(r)
+			}
+		}
+	}
+	var servers []*ipPort
+	for _, server := range serversMap {
+		servers = append(servers, server)
+	}
+	return servers, errors
+}
+
 func queryHostRecon(client common.HTTPClient, s *ipPort, endpoint string) ([]byte, error) {
 	serverUrl := fmt.Sprintf("%s://%s:%d/recon/%s", s.scheme, s.ip, s.port, endpoint)
 	req, err := http.NewRequest("GET", serverUrl, nil)
@@ -96,12 +164,12 @@ type passable interface {
 }
 
 type ringMD5Report struct {
-	Name      string
-	Time      time.Time
-	Pass      bool
-	Servers   int
-	Successes int
-	Errors    []string
+	Name    string
+	Time    time.Time
+	Pass    bool
+	Servers int
+	Checks  int
+	Errors  []string
 }
 
 func (r *ringMD5Report) Passed() bool {
@@ -117,55 +185,125 @@ func (r *ringMD5Report) String() string {
 	for _, e := range r.Errors {
 		s += fmt.Sprintf("!! %s\n", e)
 	}
-	s += fmt.Sprintf(
-		"%d/%d hosts matched, %d error[s] while checking hosts.\n",
-		r.Successes, r.Servers, len(r.Errors),
-	)
+	s += fmt.Sprintf("%d ring checks done across %d servers\n", r.Checks, r.Servers)
 	return s
 }
 
-func getRingMD5Report(client common.HTTPClient, servers []*ipPort, ringMap map[string]string) *ringMD5Report {
+func getRingMD5Report(client common.HTTPClient, ringMap map[string]string, typeToServers map[string]map[string]*ipPort) *ringMD5Report {
+	// ringMap and typeToServers parameters are for overriding for tests, leave nil normally
 	report := &ringMD5Report{
-		Name:    "Ring MD5 Report",
-		Time:    time.Now().UTC(),
-		Servers: len(servers),
-		Pass:    true,
+		Name: "Ring MD5 Report",
+		Time: time.Now().UTC(),
+		Pass: true,
 	}
+	var err error
 	if ringMap == nil {
-		var err error
 		ringMap, err = common.GetAllRingFileMd5s()
-		if err != nil {
-			report.Errors = append(report.Errors, fmt.Sprintf("Unrecoverable error on ringmd5 report: %v", err))
-			report.Pass = false
-			return report
+	}
+	if err != nil {
+		report.Errors = append(report.Errors, err.Error())
+		report.Pass = false
+		return report
+	}
+	if typeToServers == nil {
+		typeToServers = map[string]map[string]*ipPort{}
+		prefix, suffix := getAffixes()
+		if r, err := ring.GetRing("account", prefix, suffix, 0); err != nil {
+			report.Errors = append(report.Errors, err.Error())
+		} else {
+			for _, dev := range r.AllDevices() {
+				if dev != nil && dev.Weight >= 0 {
+					m, ok := typeToServers[serverId(dev.Ip, dev.Port)]
+					if !ok {
+						m = map[string]*ipPort{}
+						typeToServers[serverId(dev.Ip, dev.Port)] = m
+					}
+					m["account.ring.gz"] = &ipPort{ip: dev.Ip, port: dev.Port, scheme: dev.Scheme, replicationPort: dev.ReplicationPort}
+				}
+			}
+		}
+		if r, err := ring.GetRing("container", prefix, suffix, 0); err != nil {
+			report.Errors = append(report.Errors, err.Error())
+		} else {
+			for _, dev := range r.AllDevices() {
+				if dev != nil && dev.Weight >= 0 {
+					m, ok := typeToServers[serverId(dev.Ip, dev.Port)]
+					if !ok {
+						m = map[string]*ipPort{}
+						typeToServers[serverId(dev.Ip, dev.Port)] = m
+					}
+					m["container.ring.gz"] = &ipPort{ip: dev.Ip, port: dev.Port, scheme: dev.Scheme, replicationPort: dev.ReplicationPort}
+				}
+			}
+		}
+		if policies, err := conf.GetPolicies(); err != nil {
+			report.Errors = append(report.Errors, err.Error())
+		} else {
+			for _, policy := range policies {
+				if r, err := ring.GetRing("object", prefix, suffix, policy.Index); err != nil {
+					report.Errors = append(report.Errors, err.Error())
+				} else {
+					for _, dev := range r.AllDevices() {
+						if dev != nil && dev.Weight >= 0 {
+							m, ok := typeToServers[serverId(dev.Ip, dev.Port)]
+							if !ok {
+								m = map[string]*ipPort{}
+								typeToServers[serverId(dev.Ip, dev.Port)] = m
+							}
+							if policy.Index == 0 {
+								m["object.ring.gz"] = &ipPort{ip: dev.Ip, port: dev.Port, scheme: dev.Scheme, replicationPort: dev.ReplicationPort}
+							} else {
+								m[fmt.Sprintf("object-%d.ring.gz", policy.Index)] = &ipPort{ip: dev.Ip, port: dev.Port, scheme: dev.Scheme, replicationPort: dev.ReplicationPort}
+							}
+						}
+					}
+				}
+			}
 		}
 	}
-	for _, server := range servers {
+	for _, serverMap := range typeToServers {
+		var server *ipPort
+		for _, server = range serverMap {
+			break
+		}
+		if server == nil {
+			continue
+		}
+		report.Servers++
 		rBytes, err := queryHostRecon(client, server, "ringmd5")
 		if err != nil {
 			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
-			report.Pass = false
 			continue
 		}
 		var rData map[string]string
 		if err := json.Unmarshal(rBytes, &rData); err != nil {
 			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s - %q", server, err, string(rBytes)))
-			report.Pass = false
 			continue
 		}
-		allMatch := true
-		for fName, md5sum := range ringMap {
-			if rData[fName] != md5sum {
-				report.Errors = append(report.Errors, fmt.Sprintf("%s://%s:%d/recon/ringmd5 (%s => %s) doesn't match on disk md5sum %s", server.scheme, server.ip, server.port, filepath.Base(fName), rData[fName], md5sum))
-				report.Pass = false
-				allMatch = false
+		for fname := range serverMap {
+			a := ""
+			for k, v := range rData {
+				if filepath.Base(k) == fname {
+					a = v
+					break
+				}
+			}
+			b := ""
+			for k, v := range ringMap {
+				if filepath.Base(k) == fname {
+					b = v
+					break
+				}
+			}
+			if a != "" || b != "" {
+				report.Checks++
+			}
+			if a != b {
+				report.Errors = append(report.Errors, fmt.Sprintf("%s://%s:%d/recon/ringmd5 (%s => %s) doesn't match on disk md5sum %s", server.scheme, server.ip, server.port, fname, a, b))
 			}
 		}
-		if allMatch {
-			report.Successes++
-		}
 	}
-	report.Pass = report.Successes == report.Servers
+	report.Pass = len(report.Errors) == 0
 	return report
 }
 
@@ -199,11 +337,16 @@ func (r *mainConfMD5Report) String() string {
 }
 
 func getMainConfMD5Report(client common.HTTPClient, servers []*ipPort) *mainConfMD5Report {
+	// servers parameter is for overriding for tests, leave nil normally
 	report := &mainConfMD5Report{
 		Name:    "hummingbird.conf MD5 Report",
 		Time:    time.Now().UTC(),
 		Servers: len(servers),
 		Pass:    true,
+	}
+	if servers == nil {
+		servers, report.Errors = getDistinctIPServers(report.Errors)
+		report.Servers = len(servers)
 	}
 	md5Map, err := common.FileMD5("/etc/hummingbird/hummingbird.conf")
 	if err != nil {
@@ -273,11 +416,16 @@ func (r *hummingbirdMD5Report) String() string {
 }
 
 func getHummingbirdMD5Report(client common.HTTPClient, servers []*ipPort) *hummingbirdMD5Report {
+	// servers parameter is for overriding for tests, leave nil normally
 	report := &hummingbirdMD5Report{
 		Name:    "hummingbird MD5 Report",
 		Time:    time.Now().UTC(),
 		Servers: len(servers),
 		Pass:    true,
+	}
+	if servers == nil {
+		servers, report.Errors = getDistinctIPServers(report.Errors)
+		report.Servers = len(servers)
 	}
 	var md5Map map[string]string
 	if exePath, err := os.Executable(); err != nil {
@@ -348,10 +496,15 @@ func (r *timeReport) String() string {
 }
 
 func getTimeReport(client common.HTTPClient, servers []*ipPort) *timeReport {
+	// servers parameter is for overriding for tests, leave nil normally
 	report := &timeReport{
 		Name:    "Time Sync Report",
 		Time:    time.Now().UTC(),
 		Servers: len(servers),
+	}
+	if servers == nil {
+		servers, report.Errors = getDistinctIPServers(report.Errors)
+		report.Servers = len(servers)
 	}
 	for _, server := range servers {
 		preCall := time.Now().Round(time.Microsecond)
@@ -496,6 +649,7 @@ func (r *quarantineReport) String() string {
 }
 
 func getQuarantineReport(client common.HTTPClient, servers []*ipPort) *quarantineReport {
+	// servers parameter is for overriding for tests, leave nil normally
 	report := &quarantineReport{
 		Name:    "Quarantine Report",
 		Time:    time.Now().UTC(),
@@ -507,11 +661,15 @@ func getQuarantineReport(client common.HTTPClient, servers []*ipPort) *quarantin
 			Policies:   map[string]map[string]int{},
 		},
 	}
+	if servers == nil {
+		servers, report.Errors = getDistinctIPServers(report.Errors)
+		report.Servers = len(servers)
+	}
 	for _, server := range servers {
 		rBytes, err := queryHostRecon(client, server, "quarantined")
-		report.Stats.Accounts[serverId(server.ip, server.port)] = -1
-		report.Stats.Containers[serverId(server.ip, server.port)] = -1
-		report.Stats.Objects[serverId(server.ip, server.port)] = -1
+		report.Stats.Accounts[server.ip] = -1
+		report.Stats.Containers[server.ip] = -1
+		report.Stats.Objects[server.ip] = -1
 		if err != nil {
 			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
 			continue
@@ -521,14 +679,14 @@ func getQuarantineReport(client common.HTTPClient, servers []*ipPort) *quarantin
 			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s - %q", server, err, string(rBytes)))
 			continue
 		}
-		report.Stats.Accounts[serverId(server.ip, server.port)] = rData.Accounts
-		report.Stats.Containers[serverId(server.ip, server.port)] = rData.Containers
-		report.Stats.Objects[serverId(server.ip, server.port)] = rData.Objects
+		report.Stats.Accounts[server.ip] = rData.Accounts
+		report.Stats.Containers[server.ip] = rData.Containers
+		report.Stats.Objects[server.ip] = rData.Objects
 		for pIndex, v := range rData.Policies {
 			if _, ok := report.Stats.Policies[pIndex]; !ok {
 				report.Stats.Policies[pIndex] = map[string]int{}
 			}
-			report.Stats.Policies[pIndex][serverId(server.ip, server.port)] = v["objects"]
+			report.Stats.Policies[pIndex][server.ip] = v["objects"]
 		}
 		report.Successes++
 	}
@@ -611,11 +769,16 @@ type quarantineDetailItem struct {
 }
 
 func getQuarantineDetailReport(client common.HTTPClient, servers []*ipPort) *quarantineDetailReport {
+	// servers parameter is for overriding for tests, leave nil normally
 	report := &quarantineDetailReport{
 		Name:                        "Quarantine Detail Report",
 		Time:                        time.Now().UTC(),
 		Servers:                     len(servers),
 		TypeToServerToDeviceToItems: map[string]map[string]map[string][]*quarantineDetailItem{},
+	}
+	if servers == nil {
+		servers, report.Errors = getDistinctIPServers(report.Errors)
+		report.Servers = len(servers)
 	}
 	for _, server := range servers {
 		jsonBytes, err := queryHostRecon(client, server, "quarantineddetail")
@@ -628,17 +791,16 @@ func getQuarantineDetailReport(client common.HTTPClient, servers []*ipPort) *qua
 			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s - %q", server, err, string(jsonBytes)))
 			continue
 		}
-		serverFmt := fmt.Sprintf("%s:%d", server.ip, server.port)
 		for typ, deviceToItems := range serverReport {
 			for device, items := range deviceToItems {
 				if len(items) > 0 {
 					if report.TypeToServerToDeviceToItems[typ] == nil {
 						report.TypeToServerToDeviceToItems[typ] = map[string]map[string][]*quarantineDetailItem{}
 					}
-					if report.TypeToServerToDeviceToItems[typ][serverFmt] == nil {
-						report.TypeToServerToDeviceToItems[typ][serverFmt] = map[string][]*quarantineDetailItem{}
+					if report.TypeToServerToDeviceToItems[typ][server.ip] == nil {
+						report.TypeToServerToDeviceToItems[typ][server.ip] = map[string][]*quarantineDetailItem{}
 					}
-					report.TypeToServerToDeviceToItems[typ][serverFmt][device] = items
+					report.TypeToServerToDeviceToItems[typ][server.ip][device] = items
 				}
 			}
 		}
@@ -649,13 +811,11 @@ func getQuarantineDetailReport(client common.HTTPClient, servers []*ipPort) *qua
 }
 
 type asyncReport struct {
-	Name      string
-	Time      time.Time
-	Pass      bool
-	Servers   int
-	Successes int
-	Errors    []string
-	Stats     map[string]int
+	Name   string
+	Time   time.Time
+	Pass   bool
+	Errors []string
+	Stats  map[int]map[string]int
 }
 
 func (r *asyncReport) Passed() bool {
@@ -671,20 +831,60 @@ func (r *asyncReport) String() string {
 	for _, e := range r.Errors {
 		s += fmt.Sprintf("!! %s\n", e)
 	}
-	s += statsLine("async_pending", r.Stats) + "\n"
+	var ii []int
+	for i := range r.Stats {
+		ii = append(ii, i)
+	}
+	sort.Ints(ii)
+	for i := range ii {
+		if i == 0 {
+			s += statsLine("async_pending", r.Stats[i]) + "\n"
+		} else {
+			s += statsLine(fmt.Sprintf("async_pending-%d", i), r.Stats[i]) + "\n"
+		}
+	}
 	return s
 }
 
-func getAsyncReport(client common.HTTPClient, servers []*ipPort) *asyncReport {
+func getAsyncReport(client common.HTTPClient) *asyncReport {
 	report := &asyncReport{
-		Name:    "Async Pending Report",
-		Time:    time.Now().UTC(),
-		Servers: len(servers),
-		Stats:   map[string]int{},
+		Name:  "Async Pending Report",
+		Time:  time.Now().UTC(),
+		Stats: map[int]map[string]int{},
 	}
+	policies, err := conf.GetPolicies()
+	if err != nil {
+		report.Errors = append(report.Errors, fmt.Sprintf("could not get policy configurations: %s", err))
+		return report
+	}
+	prefix, suffix := getAffixes()
+	for _, policy := range policies {
+		oring, err := ring.GetRing("object", prefix, suffix, policy.Index)
+		if err != nil {
+			report.Errors = append(report.Errors, fmt.Sprintf("could not ring for policy %d: %s", policy.Index, err))
+			continue
+		}
+		servers := map[string]*ipPort{}
+		for _, dev := range oring.AllDevices() {
+			if dev == nil || dev.Weight < 0 {
+				continue
+			}
+			sId := serverId(dev.Ip, dev.Port)
+			if _, ok := servers[sId]; !ok {
+				servers[sId] = &ipPort{ip: dev.Ip, port: dev.Port, scheme: dev.Scheme, replicationPort: dev.ReplicationPort}
+			}
+		}
+		getAsyncReportHelper(client, report, servers, policy.Index)
+	}
+	report.Pass = len(report.Errors) == 0
+	return report
+}
+
+func getAsyncReportHelper(client common.HTTPClient, report *asyncReport, servers map[string]*ipPort, policy int) {
+	report.Stats[policy] = map[string]int{}
 	for _, server := range servers {
 		rBytes, err := queryHostRecon(client, server, "async")
-		report.Stats[serverId(server.ip, server.port)] = -1
+		report.Stats[policy][serverId(server.ip, server.port)] = -1
 		if err != nil {
 			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s", server, err))
 			continue
@@ -694,10 +894,149 @@ func getAsyncReport(client common.HTTPClient, servers []*ipPort) *asyncReport {
 			report.Errors = append(report.Errors, fmt.Sprintf("%s: %s - %q", server, err, string(rBytes)))
 			continue
 		}
-		report.Stats[serverId(server.ip, server.port)] = rData["async_pending"]
-		report.Successes++
+		report.Stats[policy][serverId(server.ip, server.port)] = rData["async_pending"]
 	}
-	report.Pass = report.Successes == report.Servers
+}
+
+type devicesReport struct {
+	Name            string
+	Time            time.Time
+	Pass            bool
+	Errors          []string
+	AccountReport   []*deviceReport
+	ContainerReport []*deviceReport
+	ObjectReports   map[int][]*deviceReport
+}
+
+func (r *devicesReport) Passed() bool {
+	return r.Pass
+}
+
+func (r *devicesReport) String() string {
+	s := fmt.Sprintf(
+		"[%s] %s\n",
+		r.Time.Format("2006-01-02 15:04:05"),
+		r.Name,
+	)
+	for _, e := range r.Errors {
+		s += fmt.Sprintf("!! %s\n", e)
+	}
+	fn := func(drs []*deviceReport) {
+		up := 0
+		unknown := 0
+		for _, dr := range drs {
+			if dr.Up {
+				up++
+			} else if dr.LastTime.IsZero() {
+				unknown++
+			} else {
+				s += fmt.Sprintf("    %s:%d/%s has been down since %s (%s), last checked at %s\n", dr.IP, dr.Port, dr.Device, dr.FirstTime.Format("2006-01-02 15:04:05"), time.Since(dr.FirstTime).Round(time.Second), dr.LastTime.Format("2006-01-02 15:04:05"))
+			}
+		}
+		if up > 0 {
+			s += fmt.Sprintf("    %d devices are up\n", up)
+		}
+		if unknown > 0 {
+			s += fmt.Sprintf("    %d devices have not been monitored yet\n", unknown)
+		}
+	}
+	s += "Account Devices:\n"
+	fn(r.AccountReport)
+	s += "Container Devices:\n"
+	fn(r.ContainerReport)
+	policies := []int{}
+	for policy := range r.ObjectReports {
+		policies = append(policies, policy)
+	}
+	sort.Ints(policies)
+	for policy := range policies {
+		s += fmt.Sprintf("Object-%d Devices:\n", policy)
+		fn(r.ObjectReports[policy])
+	}
+	return s
+}
+
+type deviceReport struct {
+	FirstTime time.Time
+	LastTime  time.Time
+	IP        string
+	Port      int
+	Device    string
+	Weight    float64
+	Up        bool
+}
+
+func getDeviceReport(flags *flag.FlagSet) *devicesReport {
+	report := &devicesReport{
+		Name:          "Devices Report",
+		Time:          time.Now().UTC(),
+		ObjectReports: map[int][]*deviceReport{},
+	}
+	serverconf, err := getAndrewdConf(flags)
+	if err != nil {
+		report.Errors = append(report.Errors, err.Error())
+		return report
+	}
+	db, err := newDB(serverconf, "")
+	if err != nil {
+		report.Errors = append(report.Errors, err.Error())
+		return report
+	}
+	prefix, suffix := getAffixes()
+	fn := func(r ring.Ring) []*deviceReport {
+		var drs []*deviceReport
+		for _, dev := range r.AllDevices() {
+			if dev == nil || dev.Weight < 0 {
+				continue
+			}
+			devReport := &deviceReport{
+				IP:     dev.Ip,
+				Port:   dev.Port,
+				Device: dev.Device,
+				Weight: dev.Weight,
+			}
+			drs = append(drs, devReport)
+			states, err := db.deviceStates(dev.Ip, dev.Port, dev.Device)
+			if err != nil {
+				report.Errors = append(report.Errors, fmt.Sprintf("error getting device states for %s:%d/%s: %s", dev.Ip, dev.Port, dev.Device, err.Error()))
+				continue
+			}
+			if len(states) > 0 {
+				devReport.LastTime = states[0].recorded
+				devReport.Up = states[0].state
+				devReport.FirstTime = devReport.LastTime
+				for i := 1; i < len(states); i++ {
+					if states[i].state != devReport.Up {
+						devReport.FirstTime = states[i-1].recorded
+						break
+					}
+				}
+			}
+		}
+		return drs
+	}
+	if r, err := ring.GetRing("account", prefix, suffix, 0); err != nil {
+		report.Errors = append(report.Errors, err.Error())
+	} else {
+		report.AccountReport = fn(r)
+	}
+	if r, err := ring.GetRing("container", prefix, suffix, 0); err != nil {
+		report.Errors = append(report.Errors, err.Error())
+	} else {
+		report.ContainerReport = fn(r)
+	}
+	if policies, err := conf.GetPolicies(); err != nil {
+		report.Errors = append(report.Errors, err.Error())
+	} else {
+		for _, policy := range policies {
+			if r, err := ring.GetRing("object", prefix, suffix, policy.Index); err != nil {
+				report.Errors = append(report.Errors, err.Error())
+			} else {
+				report.ObjectReports[policy.Index] = fn(r)
+			}
+		}
+	}
+	report.Pass = len(report.Errors) == 0
 	return report
 }
 
@@ -731,11 +1070,16 @@ func (r *replicationDurationReport) String() string {
 }
 
 func getReplicationDurationReport(client common.HTTPClient, servers []*ipPort) *replicationDurationReport {
+	// servers parameter is for overriding for tests, leave nil normally
 	report := &replicationDurationReport{
 		Name:    "Replication Duration Report",
 		Time:    time.Now().UTC(),
 		Servers: len(servers),
 		Stats:   map[string]float64{},
+	}
+	if servers == nil {
+		servers, report.Errors = getDistinctObjectReplicationServers(report.Errors)
+		report.Servers = len(servers)
 	}
 	for _, server := range servers {
 		data, err := queryHostReplication(client, server)
@@ -801,12 +1145,17 @@ func (r *replicationPartsSecReport) String() string {
 }
 
 func getReplicationPartsSecReport(client common.HTTPClient, servers []*ipPort) *replicationPartsSecReport {
+	// servers parameter is for overriding for tests, leave nil normally
 	report := &replicationPartsSecReport{
 		Name:        "Replication Partitions Per Second Report",
 		Time:        time.Now().UTC(),
 		Servers:     len(servers),
 		Stats:       map[string]float64{},
 		DriveSpeeds: map[string]float64{},
+	}
+	if servers == nil {
+		servers, report.Errors = getDistinctObjectReplicationServers(report.Errors)
+		report.Servers = len(servers)
 	}
 	allDur := time.Duration(0)
 	allPartsDone := int64(0)
@@ -891,11 +1240,16 @@ func (r *replicationCanceledReport) String() string {
 }
 
 func getReplicationCanceledReport(client common.HTTPClient, servers []*ipPort) *replicationCanceledReport {
+	// servers parameter is for overriding for tests, leave nil normally
 	report := &replicationCanceledReport{
 		Name:    "Stalled Replicators Report",
 		Time:    time.Now().UTC(),
 		Servers: len(servers),
 		Stats:   map[string]int{},
+	}
+	if servers == nil {
+		servers, report.Errors = getDistinctObjectReplicationServers(report.Errors)
+		report.Servers = len(servers)
 	}
 	for _, server := range servers {
 		data, err := queryHostReplication(client, server)
@@ -1126,12 +1480,6 @@ func getAndrewdConf(flags *flag.FlagSet) (*conf.Config, error) {
 }
 
 func ReconClient(flags *flag.FlagSet, cnf srv.ConfigLoader) bool {
-	prefix, suffix := getAffixes()
-	oring, err := ring.GetRing("object", prefix, suffix, 0)
-	if err != nil {
-		fmt.Printf("Unrecoverable error on recon: %v\n", err)
-		return false
-	}
 	transport := &http.Transport{
 		MaxIdleConnsPerHost: 100,
 		MaxIdleConns:        0,
@@ -1152,55 +1500,41 @@ func ReconClient(flags *flag.FlagSet, cnf srv.ConfigLoader) bool {
 	}
 	// TODO: Do we want to trace requests from this client?
 	client := &http.Client{Timeout: 10 * time.Second, Transport: transport}
-	activeServerMap := make(map[string]*ipPort)
-	for _, dev := range oring.AllDevices() {
-		if dev == nil || dev.Weight < 0 {
-			continue
-		}
-		sId := serverId(dev.Ip, dev.Port)
-		if _, ok := activeServerMap[sId]; !ok {
-			activeServerMap[sId] = &ipPort{ip: dev.Ip, port: dev.Port, scheme: dev.Scheme, replicationPort: dev.ReplicationPort}
-		}
-	}
-	activeServers := make([]*ipPort, 0, len(activeServerMap))
-	for _, server := range activeServerMap {
-		activeServers = append(activeServers, server)
-	}
 	var reports []passable
 	if flags.Lookup("progress").Value.(flag.Getter).Get().(bool) {
 		reports = append(reports, getProgressReport(flags))
 	}
 	if flags.Lookup("md5").Value.(flag.Getter).Get().(bool) {
-		reports = append(reports, getRingMD5Report(client, activeServers, nil))
-		reports = append(reports, getMainConfMD5Report(client, activeServers))
-		reports = append(reports, getHummingbirdMD5Report(client, activeServers))
+		reports = append(reports, getRingMD5Report(client, nil, nil))
+		reports = append(reports, getMainConfMD5Report(client, nil))
+		reports = append(reports, getHummingbirdMD5Report(client, nil))
 	}
 	if flags.Lookup("time").Value.(flag.Getter).Get().(bool) {
-		reports = append(reports, getTimeReport(client, activeServers))
+		reports = append(reports, getTimeReport(client, nil))
 	}
 	if flags.Lookup("q").Value.(flag.Getter).Get().(bool) {
-		reports = append(reports, getQuarantineReport(client, activeServers))
+		reports = append(reports, getQuarantineReport(client, nil))
 	}
 	if flags.Lookup("qd").Value.(flag.Getter).Get().(bool) {
-		reports = append(reports, getQuarantineDetailReport(client, activeServers))
+		reports = append(reports, getQuarantineDetailReport(client, nil))
 	}
 	if flags.Lookup("a").Value.(flag.Getter).Get().(bool) {
-		reports = append(reports, getAsyncReport(client, activeServers))
+		reports = append(reports, getAsyncReport(client))
 	}
 	if flags.Lookup("rd").Value.(flag.Getter).Get().(bool) {
-		reports = append(reports, getReplicationDurationReport(client, activeServers))
+		reports = append(reports, getReplicationDurationReport(client, nil))
 	}
 	if flags.Lookup("rp").Value.(flag.Getter).Get().(bool) {
-		reports = append(reports, getReplicationPartsSecReport(client, activeServers))
+		reports = append(reports, getReplicationPartsSecReport(client, nil))
 	}
 	if flags.Lookup("rc").Value.(flag.Getter).Get().(bool) {
-		reports = append(reports, getReplicationCanceledReport(client, activeServers))
+		reports = append(reports, getReplicationCanceledReport(client, nil))
 	}
 	if flags.Lookup("d").Value.(flag.Getter).Get().(bool) {
 		reports = append(reports, getDispersionReport(flags))
 	}
 	if flags.Lookup("ds").Value.(flag.Getter).Get().(bool) {
-		// TODO: reports = append(reports, getDriveReport(flags))
+		reports = append(reports, getDeviceReport(flags))
 	}
 	if flags.Lookup("rar").Value.(flag.Getter).Get().(bool) {
 		reports = append(reports, getRingActionReport(flags))
