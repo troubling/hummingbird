@@ -452,8 +452,20 @@ func getHummingbirdMD5Report(client common.HTTPClient, servers []*ipPort) *hummi
 		}
 		allMatch := true
 		for fName, md5sum := range md5Map {
-			if rData[fName] != md5sum {
-				report.Errors = append(report.Errors, fmt.Sprintf("%s://%s:%d/recon/hummingbirdmd5 (%s => %s) doesn't match on disk md5sum %s", server.scheme, server.ip, server.port, filepath.Base(fName), rData[fName], md5sum))
+			bName := filepath.Base(fName)
+			found := false
+			for rName, rmd5sum := range rData {
+				if filepath.Base(rName) == bName {
+					found = true
+					if rmd5sum != md5sum {
+						report.Errors = append(report.Errors, fmt.Sprintf("%s://%s:%d/recon/hummingbirdmd5 (%s => %s) doesn't match on disk (%s => %s)", server.scheme, server.ip, server.port, rName, rmd5sum, fName, md5sum))
+						report.Pass = false
+						allMatch = false
+					}
+				}
+			}
+			if !found {
+				report.Errors = append(report.Errors, fmt.Sprintf("%s://%s:%d/recon/hummingbirdmd5 could not find %s md5 value", server.scheme, server.ip, server.port, bName))
 				report.Pass = false
 				allMatch = false
 			}
