@@ -1023,6 +1023,97 @@ func getRingActionReport(flags *flag.FlagSet) *ringActionReport {
 	return report
 }
 
+type ringBalanceReport struct {
+	Name             string
+	Time             time.Time
+	Pass             bool
+	Errors           []string
+	Warnings         []string
+	AccountBalance   float64
+	ContainerBalance float64
+	ObjectBalances   map[int]float64
+}
+
+func (r *ringBalanceReport) Passed() bool {
+	return r.Pass
+}
+
+func (r *ringBalanceReport) String() string {
+	s := fmt.Sprintf(
+		"[%s] %s\n",
+		r.Time.Format("2006-01-02 15:04:05"),
+		r.Name,
+	)
+	for _, e := range r.Errors {
+		s += fmt.Sprintf("!! %s\n", e)
+	}
+	for _, w := range r.Warnings {
+		s += fmt.Sprintf("! %s\n", w)
+	}
+	s += fmt.Sprintf("Account Balance: %.02f\n", r.AccountBalance)
+	s += fmt.Sprintf("Container Balance: %.02f\n", r.ContainerBalance)
+	var policies []int
+	for policy := range r.ObjectBalances {
+		policies = append(policies, policy)
+	}
+	sort.Ints(policies)
+	for policy := range policies {
+		if policy == 0 {
+			s += fmt.Sprintf("Object Balance: %.02f\n", r.ObjectBalances[policy])
+		} else {
+			s += fmt.Sprintf("Object-%d Balance: %.02f\n", policy, r.ObjectBalances[policy])
+		}
+	}
+	return s
+}
+
+func getRingBalanceReport(flags *flag.FlagSet) *ringBalanceReport {
+	report := &ringBalanceReport{
+		Name:           "Ring Balance Report",
+		Time:           time.Now().UTC(),
+		ObjectBalances: map[int]float64{},
+	}
+	builder, err := ring.NewRingBuilderFromFile("/etc/hummingbird/account.builder", false)
+	if err != nil {
+		builder, err = ring.NewRingBuilderFromFile("/etc/swift/account.builder", false)
+	}
+	if err != nil {
+		report.Errors = append(report.Errors, fmt.Sprintf("unable to load account ring: %s", err))
+	} else {
+		report.AccountBalance = builder.GetBalance()
+	}
+	builder, err = ring.NewRingBuilderFromFile("/etc/hummingbird/container.builder", false)
+	if err != nil {
+		builder, err = ring.NewRingBuilderFromFile("/etc/swift/container.builder", false)
+	}
+	if err != nil {
+		report.Errors = append(report.Errors, fmt.Sprintf("unable to load container ring: %s", err))
+	} else {
+		report.AccountBalance = builder.GetBalance()
+	}
+	if policies, err := conf.GetPolicies(); err != nil {
+		report.Errors = append(report.Errors, err.Error())
+	} else {
+		for _, policy := range policies {
+			bn := "object"
+			if policy.Index != 0 {
+				bn = fmt.Sprintf("object-%d", policy.Index)
+			}
+			builder, err = ring.NewRingBuilderFromFile(fmt.Sprintf("/etc/hummingbird/%s.builder", bn), false)
+			if err != nil {
+				builder, err = ring.NewRingBuilderFromFile(fmt.Sprintf("/etc/swift/%s.builder", bn), false)
+			}
+			if err != nil {
+				report.Errors = append(report.Errors, fmt.Sprintf("unable to load %s ring: %s", bn, err))
+			} else {
+				report.ObjectBalances[policy.Index] = builder.GetBalance()
+			}
+		}
+	}
+	report.Pass = len(report.Errors) == 0
+	return report
+}
+
 func getAndrewdConf(flags *flag.FlagSet) (*conf.Config, error) {
 	configFile := flags.Lookup("c").Value.(flag.Getter).Get().(string)
 	if configs, err := conf.LoadConfigs(configFile); err != nil {
@@ -1113,6 +1204,9 @@ func ReconClient(flags *flag.FlagSet, cnf srv.ConfigLoader) bool {
 	}
 	if flags.Lookup("rar").Value.(flag.Getter).Get().(bool) {
 		reports = append(reports, getRingActionReport(flags))
+	}
+	if flags.Lookup("rbr").Value.(flag.Getter).Get().(bool) {
+		reports = append(reports, getRingBalanceReport(flags))
 	}
 	if len(reports) == 0 {
 		flags.Usage()
