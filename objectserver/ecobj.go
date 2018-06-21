@@ -409,6 +409,7 @@ func (o *ecObject) Replicate(prirep PriorityRepJob) error {
 			return err
 		}
 		req.ContentLength = ecShardLength(o.ContentLength(), o.dataShards)
+		req.Header.Set("X-Timestamp", o.metadata["X-Timestamp"])
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
 		req.Header.Set("X-Trans-Id", o.txnId)
 		req.Header.Set("User-Agent", "nursery-stabilizer")
