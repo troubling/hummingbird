@@ -30,7 +30,7 @@ func getDefaultClient(t *testing.T) nectar.Client {
 
 func getClient(t *testing.T, tenant, user, password, key, region, authURL string, internal bool) nectar.Client {
 	t.Log("CREATING CLIENT!")
-	c, resp := nectar.NewClient(tenant, user, password, key, region, authURL, internal)
+	c, resp := nectar.NewClient(tenant, user, password, key, region, authURL, internal, nil)
 	if resp != nil {
 		bodyBytes, _ := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
