@@ -158,8 +158,15 @@ func (re *repEngine) New(vars map[string]string, needData bool, asyncWG *sync.Wa
 				return nil, fmt.Errorf("Error parsing metadata: %v", err)
 			}
 			if !item.Deletion {
-				if _, err := os.Stat(item.Path); err != nil {
+				if fi, err := os.Stat(item.Path); err != nil {
+					obj.Quarantine()
 					return nil, err
+				} else if contentLength, err := strconv.ParseInt(obj.metadata["Content-Length"], 10, 64); err != nil {
+					obj.Quarantine()
+					return nil, fmt.Errorf("Unable to parse content-length: %s %s", obj.metadata["Content-Length"], err)
+				} else if fi.Size() != contentLength {
+					obj.Quarantine()
+					return nil, fmt.Errorf("File size doesn't match content-length: %d vs %d", fi.Size(), contentLength)
 				}
 			}
 		} else if err != nil {
