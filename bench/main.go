@@ -198,7 +198,7 @@ or
 	if allowInsecureAuthCert {
 		cli, resp = nectar.NewInsecureClient(authTenant, authUser, authPassword, authKey, authRegion, authURL, authPrivateEndpoint)
 	} else {
-		cli, resp = nectar.NewClient(authTenant, authUser, authPassword, authKey, authRegion, authURL, authPrivateEndpoint)
+		cli, resp = nectar.NewClient(authTenant, authUser, authPassword, authKey, authRegion, authURL, authPrivateEndpoint, nil)
 	}
 	if resp != nil {
 		msg, _ := ioutil.ReadAll(resp.Body)
@@ -299,7 +299,7 @@ func RunThrash(args []string) {
 	if allowInsecureAuthCert {
 		cli, resp = nectar.NewInsecureClient("", authUser, "", authKey, "", authURL, false)
 	} else {
-		cli, resp = nectar.NewClient("", authUser, "", authKey, "", authURL, false)
+		cli, resp = nectar.NewClient("", authUser, "", authKey, "", authURL, false, nil)
 	}
 	if err != nil {
 		msg, _ := ioutil.ReadAll(resp.Body)
