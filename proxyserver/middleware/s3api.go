@@ -23,6 +23,7 @@
 //
 // Example using boto2 and haio with tempauth:
 //
+//  import boto
 //  from boto.s3.connection import S3Connection
 //  connection = S3Connection(
 //    aws_access_key_id="test:tester",
@@ -39,10 +40,14 @@
 package middleware
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"io"
+	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
@@ -56,7 +61,9 @@ import (
 )
 
 const (
-	s3Xmlns = "http://s3.amazonaws.com/doc/2006-03-01"
+	s3Xmlns                      = "http://s3.amazonaws.com/doc/2006-03-01"
+	s3MultipartCompleteBodyLimit = 65536
+	s3MultipartMaxParts          = 1000
 )
 
 type s3Response struct {
@@ -90,6 +97,85 @@ type s3BucketList struct {
 	Xmlns   string         `xml:"xmlns,attr"`
 	Owner   s3Owner        `xml:"Owner"`
 	Buckets []s3BucketInfo `xml:"Buckets>Bucket"`
+}
+
+type s3InitiateMultipartUploadResult struct {
+	XMLName  xml.Name `xml:"InitiateMultipartUploadResult"`
+	Xmlns    string   `xml:"xmlns,attr"`
+	Bucket   string
+	Key      string
+	UploadId string
+}
+
+type s3CompleteMultipartUploadResult struct {
+	XMLName  xml.Name `xml:"CompleteMultipartUploadResult"`
+	Xmlns    string   `xml:"xmlns,attr"`
+	Location string
+	Bucket   string
+	Key      string
+	ETag     string
+}
+
+type s3CompleteMultipartUpload struct {
+	XMLName xml.Name `xml:"CompleteMultipartUpload"`
+	Parts   []struct {
+		ETag       string
+		PartNumber int
+	} `xml:"Part"`
+}
+
+type s3ListPartsResultPart struct {
+	PartNumber   int
+	LastModified string
+	ETag         string
+	Size         int64
+}
+
+type s3ListPartsResult struct {
+	XMLName   xml.Name `xml:"ListPartsResult"`
+	Xmlns     string   `xml:"xmlns,attr"`
+	Bucket    string
+	Key       string
+	UploadId  string
+	Initiator struct {
+		ID          string
+		DisplayName string
+	}
+	Owner struct {
+		ID          string
+		DisplayName string
+	}
+	StorageClass string
+	MaxParts     int
+	IsTruncated  bool
+	Parts        []s3ListPartsResultPart `xml:"Part"`
+}
+
+type s3ListMultipartUploadsUpload struct {
+	Key       string
+	UploadId  string
+	Initiator struct {
+		ID          string
+		DisplayName string
+	}
+	Owner struct {
+		ID          string
+		DisplayName string
+	}
+	StorageClass string
+	Initiated    string
+}
+
+type s3ListMultipartUploadsResult struct {
+	XMLName            xml.Name `xml:"ListMultipartUploadsResult"`
+	Xmlns              string   `xml:"xmlns,attr"`
+	Bucket             string
+	UploadIdMarker     string
+	NextKeyMarker      string
+	NextUploadIdMarker string
+	MaxUploads         int
+	IsTruncated        bool
+	Uploads            []s3ListMultipartUploadsUpload `xml:"Upload"`
 }
 
 func NewS3BucketList() *s3BucketList {
@@ -265,8 +351,60 @@ func (s *s3ApiHandler) ServeHTTP(writer http.ResponseWriter, request *http.Reque
 
 func (s *s3ApiHandler) handleObjectRequest(writer http.ResponseWriter, request *http.Request) {
 	ctx := GetProxyContext(request)
+	request.ParseForm()
 
 	if request.Method == "GET" || request.Method == "HEAD" {
+		if uploadId := request.Form.Get("uploadId"); uploadId != "" {
+			newReq, err := ctx.newSubrequest("GET", fmt.Sprintf("/v1/AUTH_%s/%s+segments?prefix=%s-%s/", common.Urlencode(s.account),
+				common.Urlencode(s.container), common.Urlencode(uploadId), common.Urlencode(s.object)), http.NoBody, request, "s3api")
+			if err != nil {
+				srv.StandardResponse(writer, http.StatusInternalServerError)
+				return
+			}
+			newReq.Header.Set("Accept", "application/json")
+			w := NewCaptureWriter()
+			ctx.serveHTTPSubrequest(w, newReq)
+			if w.status/100 != 2 {
+				srv.StandardResponse(writer, w.status)
+				return
+			}
+			objectListing := []containerserver.ObjectListingRecord{}
+			if err = json.Unmarshal(w.body, &objectListing); err != nil {
+				srv.StandardResponse(writer, http.StatusInternalServerError)
+				return
+			}
+			x := s3ListPartsResult{
+				Xmlns:        s3Xmlns,
+				Bucket:       s.container,
+				Key:          s.object,
+				UploadId:     uploadId,
+				StorageClass: "STANDARD",
+				MaxParts:     s3MultipartMaxParts,
+				IsTruncated:  false,
+			}
+			for _, obj := range objectListing {
+				i := 0
+				if i, err = strconv.Atoi(obj.Name[len(uploadId)+2+len(s.object):]); err != nil || i < 1 {
+					continue
+				}
+				x.Parts = append(x.Parts, s3ListPartsResultPart{
+					PartNumber:   i,
+					LastModified: obj.LastModified,
+					ETag:         obj.ETag,
+					Size:         obj.Size,
+				})
+			}
+			output, err := xml.MarshalIndent(x, "", "  ")
+			if err != nil {
+				srv.StandardResponse(writer, http.StatusInternalServerError)
+				return
+			}
+			writer.Header().Set("Content-Type", "application/xml; charset=utf-8")
+			writer.WriteHeader(200)
+			writer.Write([]byte(xml.Header))
+			writer.Write(output)
+			return
+		}
 		newReq, err := ctx.newSubrequest(request.Method, s.path, http.NoBody, request, "s3api")
 		if err != nil {
 			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
@@ -281,6 +419,41 @@ func (s *s3ApiHandler) handleObjectRequest(writer http.ResponseWriter, request *
 	}
 
 	if request.Method == "DELETE" {
+		if uploadId := request.Form.Get("uploadId"); uploadId != "" {
+			newReq, err := ctx.newSubrequest("GET", fmt.Sprintf("/v1/AUTH_%s/%s+segments?prefix=%s-%s", common.Urlencode(s.account),
+				common.Urlencode(s.container), common.Urlencode(uploadId), common.Urlencode(s.object)), http.NoBody, request, "s3api")
+			if err != nil {
+				srv.StandardResponse(writer, http.StatusInternalServerError)
+			}
+			newReq.Header.Set("Accept", "application/json")
+			w := NewCaptureWriter()
+			ctx.serveHTTPSubrequest(w, newReq)
+			if w.status/100 != 2 {
+				srv.StandardResponse(writer, w.status)
+				return
+			}
+			objectListing := []containerserver.ObjectListingRecord{}
+			err = json.Unmarshal(w.body, &objectListing)
+			if err != nil {
+				srv.StandardResponse(writer, http.StatusInternalServerError)
+				return
+			}
+			for _, obj := range objectListing {
+				newReq, err := ctx.newSubrequest("DELETE", fmt.Sprintf("/v1/AUTH_%s/%s+segments/%s", common.Urlencode(s.account),
+					common.Urlencode(s.container), common.Urlencode(obj.Name)), http.NoBody, request, "s3api")
+				if err != nil {
+					srv.StandardResponse(writer, http.StatusInternalServerError)
+				}
+				w := NewCaptureWriter()
+				ctx.serveHTTPSubrequest(w, newReq)
+				if w.status/100 != 2 {
+					srv.StandardResponse(writer, w.status)
+					return
+				}
+			}
+			writer.WriteHeader(204)
+			return
+		}
 		newReq, err := ctx.newSubrequest("DELETE", s.path, http.NoBody, request, "s3api")
 		if err != nil {
 			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
@@ -297,6 +470,15 @@ func (s *s3ApiHandler) handleObjectRequest(writer http.ResponseWriter, request *
 	}
 
 	if request.Method == "PUT" {
+		if uploadId := request.Form.Get("uploadId"); uploadId != "" {
+			if partNumber, err := strconv.Atoi(request.Form.Get("partNumber")); err != nil || partNumber < 1 || partNumber > s3MultipartMaxParts {
+				srv.StandardResponse(writer, http.StatusBadRequest)
+				return
+			} else {
+				s.path = fmt.Sprintf("/v1/AUTH_%s/%s+segments/%s-%s/%08d", common.Urlencode(s.account),
+					common.Urlencode(s.container), common.Urlencode(uploadId), common.Urlencode(s.object), partNumber)
+			}
+		}
 		method := "PUT"
 		dest := ""
 		// Check to see if this is a copy request
@@ -310,11 +492,13 @@ func (s *s3ApiHandler) handleObjectRequest(writer http.ResponseWriter, request *
 		newReq, err := ctx.newSubrequest(method, s.path, request.Body, request, "s3api")
 		if err != nil {
 			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
+			return
 		}
 		if copySource != "" {
 			pathMap, err := common.ParseProxyPath(dest)
 			if err != nil {
 				srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
+				return
 			}
 			newReq.Header.Set("Destination", fmt.Sprintf("/%s/%s", pathMap["container"], pathMap["object"]))
 		}
@@ -348,8 +532,111 @@ func (s *s3ApiHandler) handleObjectRequest(writer http.ResponseWriter, request *
 	}
 
 	if request.Method == "POST" {
-		srv.StandardResponse(writer, http.StatusNotImplemented)
-		return
+		if _, upload := request.Form["uploads"]; upload && request.Form.Get("uploads") == "" {
+			uploadId := fmt.Sprintf("%x", rand.Int63())
+
+			newReq, err := ctx.newSubrequest("PUT", fmt.Sprintf("/v1/AUTH_%s/%s+segments", common.Urlencode(s.account),
+				common.Urlencode(s.container)), http.NoBody, request, "s3api")
+			newReq.Header.Set("Content-Length", "0")
+			if err != nil {
+				srv.StandardResponse(writer, http.StatusInternalServerError)
+				return
+			}
+			c := NewCaptureWriter()
+			ctx.serveHTTPSubrequest(c, newReq)
+			if c.status/100 != 2 {
+				srv.StandardResponse(writer, c.status)
+				return
+			}
+
+			newReq, err = ctx.newSubrequest("PUT", fmt.Sprintf("/v1/AUTH_%s/%s+segments/%s-%s", common.Urlencode(s.account),
+				common.Urlencode(s.container), common.Urlencode(uploadId), common.Urlencode(s.object)), http.NoBody, request, "s3api")
+			newReq.Header.Set("Content-Length", "0")
+			if err != nil {
+				srv.StandardResponse(writer, http.StatusInternalServerError)
+				return
+			}
+			c = NewCaptureWriter()
+			ctx.serveHTTPSubrequest(c, newReq)
+			if c.status/100 != 2 {
+				srv.StandardResponse(writer, c.status)
+				return
+			}
+			output, err := xml.MarshalIndent(s3InitiateMultipartUploadResult{
+				Xmlns:    s3Xmlns,
+				Bucket:   s.container,
+				Key:      s.object,
+				UploadId: uploadId,
+			}, "", "  ")
+			if err != nil {
+				srv.StandardResponse(writer, http.StatusInternalServerError)
+				return
+			}
+			writer.Header().Set("Content-Type", "application/xml; charset=utf-8")
+			writer.WriteHeader(200)
+			writer.Write([]byte(xml.Header))
+			writer.Write(output)
+			return
+		} else if uploadId := request.Form.Get("uploadId"); uploadId != "" {
+			body, err := ioutil.ReadAll(io.LimitReader(request.Body, s3MultipartCompleteBodyLimit))
+			if err != nil {
+				srv.StandardResponse(writer, http.StatusInternalServerError)
+				return
+			}
+			completeMU := s3CompleteMultipartUpload{}
+			if err := xml.Unmarshal(body, &completeMU); err != nil {
+				srv.StandardResponse(writer, http.StatusBadRequest)
+				return
+			}
+
+			type bodyPart struct {
+				Path string `json:"path"`
+			}
+			slobj := []bodyPart{}
+			for _, part := range completeMU.Parts {
+				slobj = append(slobj, bodyPart{Path: fmt.Sprintf("/%s+segments/%s-%s/%08d", common.Urlencode(s.container),
+					common.Urlencode(uploadId), common.Urlencode(s.object), part.PartNumber)})
+			}
+			slobjBody, err := json.Marshal(slobj)
+			if err != nil {
+				srv.StandardResponse(writer, http.StatusInternalServerError)
+				return
+			}
+			newReq, err := ctx.newSubrequest("PUT", fmt.Sprintf("/v1/AUTH_%s/%s/%s?multipart-manifest=put",
+				common.Urlencode(s.account), common.Urlencode(s.container), common.Urlencode(s.object)),
+				bytes.NewBuffer(slobjBody), request, "s3api")
+			if err != nil {
+				srv.StandardResponse(writer, http.StatusInternalServerError)
+				return
+			}
+			newReq.Header.Set("Content-Length", "0")
+			c := NewCaptureWriter()
+			ctx.serveHTTPSubrequest(c, newReq)
+			if c.status/100 != 2 {
+				srv.StandardResponse(writer, c.status)
+				return
+			}
+
+			output, err := xml.MarshalIndent(s3CompleteMultipartUploadResult{
+				Xmlns:    s3Xmlns,
+				Location: "", // TODO
+				Bucket:   s.container,
+				Key:      s.object,
+				ETag:     "", // TODO
+			}, "", "  ")
+			if err != nil {
+				srv.StandardResponse(writer, http.StatusInternalServerError)
+				return
+			}
+			writer.Header().Set("Content-Type", "application/xml; charset=utf-8")
+			writer.WriteHeader(200)
+			writer.Write([]byte(xml.Header))
+			writer.Write(output)
+			return
+		} else {
+			srv.StandardResponse(writer, http.StatusNotImplemented)
+			return
+		}
 	}
 
 	// If we didn't get to anything, then return method not allowed
@@ -358,6 +645,7 @@ func (s *s3ApiHandler) handleObjectRequest(writer http.ResponseWriter, request *
 
 func (s *s3ApiHandler) handleContainerRequest(writer http.ResponseWriter, request *http.Request) {
 	ctx := GetProxyContext(request)
+	request.ParseForm()
 
 	if request.Method == "HEAD" {
 		newReq, err := ctx.newSubrequest("HEAD", s.path, http.NoBody, request, "s3api")
@@ -409,6 +697,54 @@ func (s *s3ApiHandler) handleContainerRequest(writer http.ResponseWriter, reques
 	}
 
 	if request.Method == "GET" {
+		if _, upload := request.Form["uploads"]; upload && request.Form.Get("uploads") == "" {
+			newReq, err := ctx.newSubrequest("GET", fmt.Sprintf("/v1/AUTH_%s/%s+segments?prefix=&delimiter=/", s.account, s.container),
+				http.NoBody, request, "s3api")
+			if err != nil {
+				srv.StandardResponse(writer, http.StatusInternalServerError)
+				return
+			}
+			newReq.Header.Set("Accept", "application/json")
+			w := NewCaptureWriter()
+			ctx.serveHTTPSubrequest(w, newReq)
+			if w.status/100 != 2 {
+				srv.StandardResponse(writer, w.status)
+				return
+			}
+			objectListing := []containerserver.ObjectListingRecord{}
+			err = json.Unmarshal(w.body, &objectListing)
+			if err != nil {
+				srv.StandardResponse(writer, http.StatusInternalServerError)
+				return
+			}
+
+			uploadList := s3ListMultipartUploadsResult{
+				Bucket: s.container,
+			}
+			for _, obj := range objectListing {
+				ops := strings.SplitN(obj.Name, "-", 1)
+				if len(ops) != 2 {
+					srv.StandardResponse(writer, http.StatusInternalServerError)
+					return
+				}
+				uploadList.Uploads = append(uploadList.Uploads, s3ListMultipartUploadsUpload{
+					Key:          ops[1],
+					UploadId:     ops[0],
+					StorageClass: "STANDARD",
+					Initiated:    obj.LastModified,
+				})
+			}
+			output, err := xml.MarshalIndent(uploadList, "", "  ")
+			if err != nil {
+				srv.StandardResponse(writer, http.StatusInternalServerError)
+				return
+			}
+			writer.Header().Set("Content-Type", "application/xml; charset=utf-8")
+			writer.WriteHeader(200)
+			writer.Write([]byte(xml.Header))
+			writer.Write(output)
+			return
+		}
 		q := request.URL.Query()
 		maxKeys, err := strconv.Atoi(q.Get("max-keys"))
 		if err != nil {
