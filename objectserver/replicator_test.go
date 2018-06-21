@@ -51,6 +51,8 @@ func newTestReplicator(confLoader *srv.TestConfigLoader, settings ...string) (*R
 	return newTestReplicatorWithFlags(confLoader, settings, &flag.FlagSet{})
 }
 
+var testObjectReplicators uint64 = 0
+
 func newTestReplicatorWithFlags(confLoader *srv.TestConfigLoader, settings []string, flags *flag.FlagSet) (*Replicator, conf.Config, error) {
 	configString := "[object-replicator]\nmount_check=false\n"
 	for i := 0; i < len(settings); i += 2 {
@@ -62,6 +64,7 @@ func newTestReplicatorWithFlags(confLoader *srv.TestConfigLoader, settings []str
 		return nil, conf, err
 	}
 	rep := replicator.(*Replicator)
+	rep.GetHandler(conf, fmt.Sprintf("test_object_replicator_%d", atomic.AddUint64(&testObjectReplicators, 1)))
 	rep.replicateConcurrencySem = make(chan struct{}, 1)
 	rep.updateConcurrencySem = make(chan struct{}, 1)
 	rep.updateStat = make(chan statUpdate, 100)
@@ -1107,6 +1110,7 @@ func TestRunLoopStatUpdate(t *testing.T) {
 		},
 	}
 	st := replicator.stats["object-replicator"]["sda"]
+	replicator.addMetrics(st, 0, "sda")
 	rd := &mockReplicationDevice{}
 	replicator.runningDevices = map[string]ReplicationDevice{"sda": rd}
 	replicator.updateStat = make(chan statUpdate, 1)
