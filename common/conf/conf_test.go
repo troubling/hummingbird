@@ -128,6 +128,47 @@ func TestHasSection(t *testing.T) {
 	require.False(t, iniFile.HasSection("otherstuff"))
 }
 
+func TestGet(t *testing.T) {
+	tempFile, err := ioutil.TempFile("", "INI")
+	require.Nil(t, err)
+	defer os.RemoveAll(tempFile.Name())
+	tempFile.WriteString(`
+[app:stuff]
+test-a=1
+test-b=2
+
+[stuff]
+test-a=3
+test-c=4
+`)
+	iniFile, err := LoadConfig(tempFile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	type item_t struct {
+		section string
+		name    string
+		value   string
+		ok      bool
+	}
+	for _, item := range []item_t{
+		{"app:stuff", "test-a", "1", true},
+		{"app:stuff", "test-b", "2", true},
+		{"app:stuff", "test-c", "4", true},
+		{"app:stuff", "test-d", "", false},
+		{"stuff", "test-a", "3", true},
+		{"stuff", "test-b", "", false},
+		{"stuff", "test-c", "4", true},
+		{"stuff", "test-d", "", false},
+		{"blah", "test-a", "", false},
+	} {
+		value, ok := iniFile.Get(item.section, item.name)
+		if value != item.value || ok != item.ok {
+			t.Fatal(item, value, ok)
+		}
+	}
+}
+
 func fakeHashPrefixAndSuffix() (filename string, err error) {
 	var config_source []byte = []byte(
 		"[swift-hash]\n" +
