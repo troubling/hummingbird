@@ -72,7 +72,11 @@ func (server *ProxyServer) Finalize() {
 }
 
 func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) http.Handler {
-	obfuscatedPrefix, _ := config.Get("proxy-server", "obfuscated_prefix")
+	obfuscatedPrefix, ok := config.Get("app:proxy-server", "obfuscated_prefix")
+	if !ok {
+		// Fallback due to type in previous version
+		obfuscatedPrefix, _ = config.Get("proxy-server", "obfuscated_prefix")
+	}
 	var metricsScope tally.Scope
 	metricsScope, server.metricsCloser = tally.NewRootScope(tally.ScopeOptions{
 		Prefix:         metricsPrefix,
@@ -134,7 +138,14 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 	router.Options("/v1/:account", http.HandlerFunc(server.OptionsHandler))
 	router.Options("/v1/:account/", http.HandlerFunc(server.OptionsHandler))
 
-	tempAuth := config.GetBool("proxy-server", "tempauth_enabled", true)
+	var tempAuth bool
+	_, ok = config.Get("app:proxy-server", "tempauth_enabled")
+	if ok {
+		tempAuth = config.GetBool("app:proxy-server", "tempauth_enabled", true)
+	} else {
+		// Fallback due to type in previous version
+		tempAuth = config.GetBool("proxy-server", "tempauth_enabled", true)
+	}
 	var middlewares []struct {
 		construct func(conf.Section, tally.Scope) (func(http.Handler) http.Handler, error)
 		section   string
