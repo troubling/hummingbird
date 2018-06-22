@@ -181,7 +181,7 @@ func TestGetLoad(t *testing.T) {
 	require.True(t, ok)
 	m5f, ok := m5.(float64)
 	require.True(t, ok)
-	require.True(t, m5f > 0.0)
+	require.True(t, m5f >= 0.0)
 }
 
 func TestQuarantineDetail(t *testing.T) {
