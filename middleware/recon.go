@@ -592,7 +592,7 @@ func ReconHandler(driveRoot string, reconCachePath string, mountCheck bool, writ
 	case "async":
 		content, err = getTotalAsyncs(driveRoot, reconCachePath)
 		if err != nil {
-			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
 			return
 		}
 	case "replication":
@@ -607,13 +607,13 @@ func ReconHandler(driveRoot string, reconCachePath string, mountCheck bool, writ
 			content, err = fromReconCache(reconCachePath, "object", "object_replication_time", "object_replication_last")
 		}
 		if err != nil {
-			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
 			return
 		}
 	case "devices":
 		content, err = ListDevices(driveRoot)
 		if err != nil {
-			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
 			return
 		}
 	case "updater":
@@ -623,7 +623,7 @@ func ReconHandler(driveRoot string, reconCachePath string, mountCheck bool, writ
 			content, err = fromReconCache(reconCachePath, "object", "object_updater_sweep")
 		}
 		if err != nil {
-			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
 			return
 		}
 	case "auditor":
@@ -635,13 +635,13 @@ func ReconHandler(driveRoot string, reconCachePath string, mountCheck bool, writ
 			content, err = fromReconCache(reconCachePath, "object", "object_auditor_stats_ALL", "object_auditor_stats_ZBF")
 		}
 		if err != nil {
-			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
 			return
 		}
 	case "expirer":
 		content, err = fromReconCache(reconCachePath, "object", "object_expiration_pass", "expired_last_pass")
 		if err != nil {
-			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
 			return
 		}
 	case "mounted":
@@ -649,12 +649,12 @@ func ReconHandler(driveRoot string, reconCachePath string, mountCheck bool, writ
 	case "unmounted":
 		content, err = getUnmounted(driveRoot, mountCheck)
 		if err != nil {
-			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
 			return
 		}
 	case "ringmd5":
 		if content, err = common.GetAllRingFileMd5s(); err != nil {
-			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
 			return
 		}
 	case "swiftconfmd5":
@@ -662,7 +662,7 @@ func ReconHandler(driveRoot string, reconCachePath string, mountCheck bool, writ
 		if err != nil {
 			content, err = common.FileMD5("/etc/swift/swift.conf")
 			if err != nil {
-				http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
 				return
 			}
 		}
@@ -671,7 +671,7 @@ func ReconHandler(driveRoot string, reconCachePath string, mountCheck bool, writ
 		if err != nil {
 			content, err = common.FileMD5("/etc/swift/swift.conf")
 			if err != nil {
-				http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
 				return
 			}
 		}
@@ -679,11 +679,11 @@ func ReconHandler(driveRoot string, reconCachePath string, mountCheck bool, writ
 		if exe, err := os.Executable(); err == nil {
 			content, err = common.FileMD5(exe)
 			if err != nil {
-				http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
 				return
 			}
 		} else {
-			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
 			return
 		}
 	case "quarantined":
@@ -693,13 +693,13 @@ func ReconHandler(driveRoot string, reconCachePath string, mountCheck bool, writ
 			content, err = quarantineCounts(driveRoot)
 		}
 		if err != nil {
-			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
 			return
 		}
 	case "quarantineddetail":
 		content, err = quarantineDetail(driveRoot)
 		if err != nil {
-			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
 			return
 		}
 	case "quarantinedhistory":
@@ -707,7 +707,7 @@ func ReconHandler(driveRoot string, reconCachePath string, mountCheck bool, writ
 			content, err = quarantineHistoryDelete(driveRoot, vars["device"], vars["recon_type"], vars["item_path"])
 		}
 		if err != nil {
-			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
 			return
 		}
 	case "sockstat":
@@ -717,7 +717,7 @@ func ReconHandler(driveRoot string, reconCachePath string, mountCheck bool, writ
 	case "diskusage":
 		content, err = diskUsage(driveRoot, mountCheck)
 		if err != nil {
-			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
 			return
 		}
 	case "time":
@@ -728,15 +728,15 @@ func ReconHandler(driveRoot string, reconCachePath string, mountCheck bool, writ
 	case "driveaudit":
 		content, err = fromReconCache(reconCachePath, "drive", "drive_audit_errors")
 		if err != nil {
-			http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
 			return
 		}
 	default:
-		http.Error(writer, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		srv.StandardResponse(writer, http.StatusNotFound)
 		return
 	}
 	if content == nil {
-		http.Error(writer, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		srv.SimpleErrorResponse(writer, http.StatusInternalServerError, "no content when content was expected")
 		return
 	}
 	writer.WriteHeader(200)
