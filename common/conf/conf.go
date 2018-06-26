@@ -50,6 +50,9 @@ func (f Config) Get(section string, key string) (string, bool) {
 	} else if value, ok := f.File.Get("DEFAULT", "set "+key); ok {
 		return value, true
 	}
+	if strings.Contains(section, ":") {
+		return f.Get(strings.SplitN(section, ":", 2)[1], key)
+	}
 	return "", false
 }
 
