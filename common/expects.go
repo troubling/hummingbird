@@ -104,6 +104,7 @@ func (e *Expector) AddRequest(req *http.Request) {
 // indicating if they are waiting to read from their Body.
 func (e *Expector) Wait(timeout time.Duration) ([]*http.Response, []bool) {
 	timer := time.After(timeout)
+Loop:
 	for {
 		// count requests that haven't reported ready or returned a response
 		waitCount := 0
@@ -122,7 +123,7 @@ func (e *Expector) Wait(timeout time.Duration) ([]*http.Response, []bool) {
 		case resp := <-e.responded:
 			e.responses[resp.index] = resp.resp
 		case <-timer:
-			break
+			break Loop
 		}
 	}
 	return e.responses, e.readyRequests

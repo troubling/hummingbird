@@ -145,3 +145,25 @@ func TestExpectorErrorRetry(t *testing.T) {
 	require.Equal(t, true, ready[2])
 	require.Equal(t, true, ready[3])
 }
+
+func TestExpectorReadyTimer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(time.Second * 1)
+		io.Copy(ioutil.Discard, r.Body)
+	}))
+	defer srv.Close()
+	e := NewExpector(xpectClient)
+	defer e.Close()
+	for i := 0; i < 3; i++ {
+		req, err := http.NewRequest("PUT", srv.URL+"/"+strconv.Itoa(i), strings.NewReader("STUFF"))
+		require.Nil(t, err)
+		e.AddRequest(req)
+	}
+	//ti := time.Now()
+	_, ready := e.Wait(time.Second / 10)
+	// this'll fail if it actually takes 1s to process this code. do we care that much?
+	require.Equal(t, 3, len(ready))
+	for _, r := range ready {
+		require.Equal(t, false, r)
+	}
+}
