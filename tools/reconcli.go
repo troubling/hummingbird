@@ -27,6 +27,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/gholt/brimtext"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
@@ -934,9 +935,17 @@ func (r *devicesReport) String() string {
 		s += fmt.Sprintf("!! %s\n", e)
 	}
 	fn := func(drs []*deviceReport) {
+		var leastFree *deviceReport
+		var overallSize int64
+		var overallUsed int64
 		up := 0
 		unknown := 0
 		for _, dr := range drs {
+			if leastFree == nil || (leastFree.Size-leastFree.Used) < (dr.Size-dr.Used) {
+				leastFree = dr
+			}
+			overallSize += dr.Size
+			overallUsed += dr.Used
 			if dr.Up {
 				up++
 			} else if dr.LastTime.IsZero() {
@@ -951,6 +960,10 @@ func (r *devicesReport) String() string {
 		if unknown > 0 {
 			s += fmt.Sprintf("    %d devices have not been monitored yet\n", unknown)
 		}
+		if leastFree != nil {
+			s += fmt.Sprintf("    %s:%d/%s has the least free with %s\n", leastFree.IP, leastFree.Port, leastFree.Device, brimtext.HumanSize1024(float64(leastFree.Size-leastFree.Used)))
+		}
+		s += fmt.Sprintf("    The cluster size is %s with %s used, or %s free, or %.02f%% full\n", brimtext.HumanSize1024(float64(overallSize)), brimtext.HumanSize1024(float64(overallUsed)), brimtext.HumanSize1024(float64(overallSize-overallUsed)), 100*float64(overallUsed)/float64(overallSize))
 	}
 	s += "Account Devices:\n"
 	fn(r.AccountReport)
@@ -976,6 +989,8 @@ type deviceReport struct {
 	Device    string
 	Weight    float64
 	Up        bool
+	Size      int64
+	Used      int64
 }
 
 func getDeviceReport(flags *flag.FlagSet) *devicesReport {
@@ -1016,6 +1031,8 @@ func getDeviceReport(flags *flag.FlagSet) *devicesReport {
 			if len(states) > 0 {
 				devReport.LastTime = states[0].recorded
 				devReport.Up = states[0].state
+				devReport.Size = states[0].size
+				devReport.Used = states[0].used
 				devReport.FirstTime = devReport.LastTime
 				for i := 1; i < len(states); i++ {
 					if states[i].state != devReport.Up {

@@ -119,7 +119,9 @@ func newDB(serverconf *conf.Config, memoryDBID string) (*dbInstance, error) {
             port INTEGER NOT NULL,
             device TEXT NOT NULL,
             recorded TIMESTAMP NOT NULL,
-            state INTEGER NOT NULL      -- 0 = unmounted, 1 = mounted
+            state INTEGER NOT NULL,     -- 0 = unmounted, 1 = mounted
+            size INTEGER,
+            used INTEGER
         );
 
         CREATE INDEX IF NOT EXISTS ix_device_state_ip_port_recorded ON device_state (ip, port, recorded);
@@ -614,6 +616,8 @@ func (db *dbInstance) ringHash(typ string, policy int) (string, time.Time, error
 type stateEntry struct {
 	recorded time.Time
 	state    bool
+	size     int64
+	used     int64
 }
 
 func (db *dbInstance) serverStates(ip string, port int) ([]*stateEntry, error) {
@@ -676,7 +680,7 @@ func (db *dbInstance) deviceStates(ip string, port int, device string) ([]*state
 		}
 	}()
 	if rows, err = db.db.Query(`
-        SELECT recorded, state
+        SELECT recorded, state, size, used
         FROM device_state
         WHERE ip = ?
           AND port = ?
@@ -688,25 +692,27 @@ func (db *dbInstance) deviceStates(ip string, port int, device string) ([]*state
 	for rows.Next() {
 		var recorded time.Time
 		var state int
-		if err = rows.Scan(&recorded, &state); err != nil {
+		var size int64
+		var used int64
+		if err = rows.Scan(&recorded, &state, &size, &used); err != nil {
 			return states, err
 		}
-		states = append(states, &stateEntry{recorded: recorded, state: state == 1})
+		states = append(states, &stateEntry{recorded: recorded, state: state == 1, size: size, used: used})
 	}
 	err = rows.Err()
 	return states, err
 }
 
-func (db *dbInstance) addDeviceState(ip string, port int, device string, mounted bool, retention time.Time) error {
+func (db *dbInstance) addDeviceState(ip string, port int, device string, mounted bool, retention time.Time, size, used int64) error {
 	state := 0
 	if mounted {
 		state = 1
 	}
 	_, err := db.db.Exec(`
         INSERT INTO device_state
-        (ip, port, device, recorded, state)
-        VALUES (?, ?, ?, ?, ?)
-    `, ip, port, device, time.Now(), state)
+        (ip, port, device, recorded, state, size, used)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, ip, port, device, time.Now(), state, size, used)
 	if err != nil {
 		return err
 	}
