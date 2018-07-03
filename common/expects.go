@@ -122,7 +122,7 @@ func (e *Expector) Wait(timeout time.Duration) ([]*http.Response, []bool) {
 		case resp := <-e.responded:
 			e.responses[resp.index] = resp.resp
 		case <-timer:
-			break
+			return e.responses, e.readyRequests
 		}
 	}
 	return e.responses, e.readyRequests
