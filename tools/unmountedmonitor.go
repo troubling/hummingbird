@@ -73,6 +73,8 @@ func (um *unmountedMonitor) runOnce() time.Duration {
 	type reconData struct {
 		Device  string
 		Mounted bool
+		Size    int64
+		Used    int64
 	}
 	start := time.Now()
 	logger := um.aa.logger.With(zap.String("process", "unmounted monitor"))
@@ -157,7 +159,7 @@ func (um *unmountedMonitor) runOnce() time.Duration {
 			devLogger := reconLogger.With(zap.String("device", item.Device))
 			if item.Mounted {
 				atomic.AddInt64(&devicesMounted, 1)
-				um.deviceMounted(devLogger, endpoint.ip, endpoint.port, item.Device)
+				um.deviceMounted(devLogger, endpoint.ip, endpoint.port, item.Device, item.Size, item.Used)
 			} else {
 				atomic.AddInt64(&devicesUnmounted, 1)
 				um.deviceUnmounted(devLogger, endpoint.ip, endpoint.port, item.Device)
@@ -252,16 +254,16 @@ func (um *unmountedMonitor) serverDown(logger *zap.Logger, ip string, port int) 
 	um.removeFromBuilders(logger, ip, port, "")
 }
 
-func (um *unmountedMonitor) deviceMounted(logger *zap.Logger, ip string, port int, device string) {
+func (um *unmountedMonitor) deviceMounted(logger *zap.Logger, ip string, port int, device string, size, used int64) {
 	logger.Debug("device mounted")
-	if err := um.aa.db.addDeviceState(ip, port, device, true, time.Now().Add(-um.stateRetention)); err != nil {
+	if err := um.aa.db.addDeviceState(ip, port, device, true, time.Now().Add(-um.stateRetention), size, used); err != nil {
 		logger.Error("could not add device mounted state", zap.Error(err))
 	}
 }
 
 func (um *unmountedMonitor) deviceUnmounted(logger *zap.Logger, ip string, port int, device string) {
 	logger.Debug("device unmounted")
-	if err := um.aa.db.addDeviceState(ip, port, device, false, time.Now().Add(-um.stateRetention)); err != nil {
+	if err := um.aa.db.addDeviceState(ip, port, device, false, time.Now().Add(-um.stateRetention), 0, 0); err != nil {
 		logger.Error("could not add device unmounted state", zap.Error(err))
 	}
 	var lastUp time.Time
