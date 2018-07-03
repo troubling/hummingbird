@@ -353,6 +353,10 @@ func (server *ContainerServer) ContainerDeleteHandler(writer http.ResponseWriter
 		srv.StandardResponse(writer, http.StatusConflict)
 		return
 	}
+	if info.DeleteTimestamp != "" && info.DeleteTimestamp > info.PutTimestamp {
+		srv.StandardResponse(writer, http.StatusNotFound)
+		return
+	}
 	if err = db.Delete(timestamp); err != nil {
 		srv.GetLogger(request).Error("Unable to delete database.", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)

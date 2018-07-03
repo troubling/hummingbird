@@ -60,6 +60,34 @@ func TestContainerDeleteNotFound(t *testing.T) {
 	require.Equal(t, 404, rsp.Status)
 }
 
+func TestContainerDeleteDeleted(t *testing.T) {
+	handler, cleanup, err := makeTestServer()
+	require.Nil(t, err)
+	defer cleanup()
+
+	rsp := test.MakeCaptureResponse()
+	req, err := http.NewRequest("PUT", "/device/1/a/c", nil)
+	require.Nil(t, err)
+	req.Header.Set("X-Timestamp", "1000000000.00001")
+	req.Header.Set("X-Backend-Storage-Policy-Index", "2")
+	handler.ServeHTTP(rsp, req)
+	require.Equal(t, 201, rsp.Status)
+
+	rsp = test.MakeCaptureResponse()
+	req, err = http.NewRequest("DELETE", "/device/1/a/c", nil)
+	req.Header.Set("X-Timestamp", common.GetTimestamp())
+	require.Nil(t, err)
+	handler.ServeHTTP(rsp, req)
+	require.Equal(t, 204, rsp.Status)
+
+	rsp = test.MakeCaptureResponse()
+	req, err = http.NewRequest("DELETE", "/device/1/a/c", nil)
+	req.Header.Set("X-Timestamp", common.GetTimestamp())
+	require.Nil(t, err)
+	handler.ServeHTTP(rsp, req)
+	require.Equal(t, 404, rsp.Status)
+}
+
 func TestContainerPostDeleted(t *testing.T) {
 	handler, cleanup, err := makeTestServer()
 	require.Nil(t, err)
