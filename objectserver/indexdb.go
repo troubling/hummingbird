@@ -749,18 +749,11 @@ func (ot *IndexDB) StablePut(hsh string, shardIndex int, request *http.Request) 
 }
 
 func (ot *IndexDB) StablePost(hsh string, shardIndex int, request *http.Request) (int, error) {
-	item, err := ot.Lookup(hsh, shardIndex, false)
-	if err != nil || item == nil || item.Deletion {
-		return http.StatusNotFound, err
-	}
 	timestampTime, err := common.ParseDate(request.Header.Get("X-Timestamp"))
 	if err != nil {
 		return http.StatusBadRequest, fmt.Errorf("invalid timestamp")
 	}
 	timestamp := timestampTime.UnixNano()
-	if timestamp <= item.Timestamp {
-		return http.StatusConflict, nil
-	}
 	metadata := make(map[string]string)
 	for key := range request.Header {
 		if strings.HasPrefix(key, "Meta-") {
