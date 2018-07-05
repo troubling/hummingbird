@@ -271,8 +271,15 @@ func (f *ecEngine) ecNurseryPutHandler(writer http.ResponseWriter, request *http
 		}
 	}
 	if err := idb.Commit(atm, vars["hash"], 0, timestamp, method, metadata, true, ""); err != nil {
-		srv.GetLogger(request).Error("Error committing object to index", zap.Error(err))
-		srv.StandardResponse(writer, http.StatusInternalServerError)
+		switch err {
+		case ErrNotFound:
+			srv.StandardResponse(writer, http.StatusNotFound)
+		case ErrConflict:
+			srv.StandardResponse(writer, http.StatusConflict)
+		default:
+			srv.GetLogger(request).Error("Error committing object to index", zap.Error(err))
+			srv.StandardResponse(writer, http.StatusInternalServerError)
+		}
 	} else {
 		srv.StandardResponse(writer, http.StatusCreated)
 	}
