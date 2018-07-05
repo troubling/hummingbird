@@ -152,15 +152,14 @@ func (s *s3AuthHandler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 
 	buf.WriteString(request.URL.Path)
 	if request.URL.RawQuery != "" {
-		queryParts := strings.Split(request.URL.RawQuery, "&")
 		var signableQueryParts []string
-		for _, v := range queryParts {
-			if S3Subresources[v] {
-				signableQueryParts = append(signableQueryParts, v)
+		for k, v := range request.URL.Query() {
+			if S3Subresources[k] {
+				signableQueryParts = append(signableQueryParts, fmt.Sprintf("%s=%s", k, strings.Join(v, ",")))
 			}
 		}
-		sort.Strings(signableQueryParts)
 		if len(signableQueryParts) > 0 {
+			sort.Strings(signableQueryParts)
 			buf.WriteString("?" + strings.Join(signableQueryParts, "&"))
 		}
 	}
