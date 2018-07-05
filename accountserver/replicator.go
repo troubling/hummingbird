@@ -773,7 +773,40 @@ type contObj struct {
 	obj  string
 }
 
+// in case the db didn't get completely deleted- try again tomorrow
+func (r *Replicator) pushBackDeleteIfNeeded(dbFile string) {
+	db, err := sqliteOpenAccount(dbFile)
+	if err != nil {
+		r.logger.Error("error on opening dbfile", zap.String("dbFile", dbFile), zap.Error(err))
+		return
+	}
+	defer db.Close()
+	if d, err := db.IsDeleted(); err != nil {
+		r.logger.Error("error on checking IsDeleted", zap.String("dbFile", dbFile), zap.Error(err))
+		return
+	} else if !d {
+		r.logger.Error("pushBackDeleteIfNeeded was call on active account", zap.String("dbFile", dbFile))
+		return
+	}
+	info, err := db.GetInfo()
+	if err != nil {
+		r.logger.Error("pushBackDeleteIfNeeded getInfo error", zap.String("dbFile", dbFile), zap.Error(err))
+		return
+	}
+	if info.ObjectCount > 0 {
+		if dti, err := strconv.ParseFloat(info.DeleteTimestamp, 64); err == nil {
+			dti += common.ONE_DAY
+			db.Delete(common.CanonicalTimestamp(dti))
+		} else {
+			r.logger.Error("invalid timestamp error", zap.String("dbFile", dbFile), zap.Error(err))
+			return
+		}
+	}
+}
+
 func (r *Replicator) reapAccount(dbFile string, canceler chan struct{}) {
+	defer r.pushBackDeleteIfNeeded(dbFile)
+
 	db, err := sqliteOpenAccount(dbFile)
 	if err != nil {
 		r.logger.Error("error on opening dbfile", zap.String("dbFile", dbFile), zap.Error(err))
