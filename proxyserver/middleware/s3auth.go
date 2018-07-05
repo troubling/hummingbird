@@ -36,6 +36,34 @@ type S3AuthInfo struct {
 	Account      string
 }
 
+var S3Subresources = map[string]bool{
+	"acl":                          true,
+	"delete":                       true,
+	"lifecycle":                    true,
+	"location":                     true,
+	"logging":                      true,
+	"notification":                 true,
+	"partNumber":                   true,
+	"policy":                       true,
+	"requestPayment":               true,
+	"torrent":                      true,
+	"uploads":                      true,
+	"uploadId":                     true,
+	"versionId":                    true,
+	"versioning":                   true,
+	"versions":                     true,
+	"website":                      true,
+	"response-cache-control":       true,
+	"response-content-disposition": true,
+	"response-content-encoding":    true,
+	"response-content-language":    true,
+	"response-content-type":        true,
+	"response-expires":             true,
+	"cors":                         true,
+	"tagging":                      true,
+	"restore":                      true,
+}
+
 func (s *S3AuthInfo) validateSignature(secret []byte) bool {
 	// S3 Auth signature V2 Validation
 	mac := hmac.New(sha1.New, secret)
@@ -125,8 +153,16 @@ func (s *s3AuthHandler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 	buf.WriteString(request.URL.Path)
 	if request.URL.RawQuery != "" {
 		queryParts := strings.Split(request.URL.RawQuery, "&")
-		sort.Strings(queryParts)
-		buf.WriteString("?" + strings.Join(queryParts, "&"))
+		var signableQueryParts []string
+		for _, v := range queryParts {
+			if S3Subresources[v] {
+				signableQueryParts = append(signableQueryParts, v)
+			}
+		}
+		sort.Strings(signableQueryParts)
+		if len(signableQueryParts) > 0 {
+			buf.WriteString("?" + strings.Join(signableQueryParts, "&"))
+		}
 	}
 	ctx.S3Auth = &S3AuthInfo{
 		StringToSign: buf.String(),
