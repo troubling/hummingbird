@@ -185,6 +185,10 @@ func (db *sqliteContainer) IsDeleted() (bool, error) {
 	return info.DeleteTimestamp > info.PutTimestamp, nil
 }
 
+func (db *sqliteContainer) Destroy() error {
+	return os.RemoveAll(path.Dir(db.containerFile))
+}
+
 // Delete sets the container's deleted timestamp and tombstones any metadata older than that timestamp.
 // This may or may not make the container "deleted".
 func (db *sqliteContainer) Delete(timestamp string) error {

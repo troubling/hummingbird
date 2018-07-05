@@ -178,6 +178,9 @@ func (f fakeDatabase) IsDeleted() (bool, error) {
 func (f fakeDatabase) Delete(timestamp string) error {
 	return errors.New("")
 }
+func (f fakeDatabase) Destroy() error {
+	return nil
+}
 func (f fakeDatabase) ListContainers(limit int, marker string, endMarker string, prefix string, delimiter string, reverse bool) ([]interface{}, error) {
 	return nil, errors.New("")
 }
