@@ -271,6 +271,8 @@ func (re *repEngine) GetObjectsToStabilize(device string, c chan ObjectStabilize
 		return
 	}
 
+	idb.ExpireObjects()
+
 	items, err := idb.ListObjectsToStabilize()
 	if err != nil {
 		return
