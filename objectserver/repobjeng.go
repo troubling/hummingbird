@@ -30,7 +30,7 @@ const (
 )
 
 func init() {
-	RegisterObjectEngine("rep", repEngineConstructor)
+	RegisterObjectEngine("repng", repEngineConstructor)
 }
 
 var _ ObjectEngineConstructor = repEngineConstructor
@@ -124,8 +124,8 @@ func (re *repEngine) getDB(device string) (*IndexDB, error) {
 		return idb, nil
 	}
 	var err error
-	dbpath := filepath.Join(re.driveRoot, device, PolicyDir(re.policy), "rep.db")
-	path := filepath.Join(re.driveRoot, device, PolicyDir(re.policy), "rep")
+	dbpath := filepath.Join(re.driveRoot, device, PolicyDir(re.policy), "repng.db")
+	path := filepath.Join(re.driveRoot, device, PolicyDir(re.policy), "repng")
 	temppath := filepath.Join(re.driveRoot, device, "tmp")
 	ringPartPower := bits.Len64(re.ring.PartitionCount() - 1)
 	re.idbs[device], err = NewIndexDB(dbpath, path, temppath, ringPartPower, re.dbPartPower, re.numSubDirs, re.reserve, re.logger, repAuditor{})
