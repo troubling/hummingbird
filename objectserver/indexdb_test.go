@@ -106,7 +106,10 @@ func TestIndexDB_Commit(t *testing.T) {
 	f, err = ot.TempFile(hsh, 0, timestamp+1, int64(len(body)), true)
 	errnil(t, err)
 	f.Write([]byte(body))
-	errnil(t, ot.Commit(f, hsh, 0, timestamp-1, "PUT", map[string]string{}, true, ""))
+	err = ot.Commit(f, hsh, 0, timestamp-1, "PUT", map[string]string{}, true, "")
+	if err != ErrConflict {
+		t.Fatal(err)
+	}
 	pth, err = ot.WholeObjectPath(hsh, 0, timestamp-1, true)
 	fi, err = os.Stat(pth)
 	if !os.IsNotExist(err) {
@@ -278,7 +281,10 @@ func TestIndexDB_Lookup_withUnderwrite(t *testing.T) {
 	f, err = ot.TempFile(hsh, 0, timestamp+1, int64(len(bodyOlder)), true)
 	errnil(t, err)
 	f.Write([]byte(bodyOlder))
-	errnil(t, ot.Commit(f, hsh, 0, timestampOlder, "PUT", map[string]string{}, true, shardHashOlder))
+	err = ot.Commit(f, hsh, 0, timestampOlder, "PUT", map[string]string{}, true, shardHashOlder)
+	if err != ErrConflict {
+		t.Fatal(err)
+	}
 	// Do the lookup.
 	//lookedupTimestamp, deletion, metahash, metadata, path, err := ot.Lookup(hsh, 0)
 	i, err := ot.Lookup(hsh, 0, false)

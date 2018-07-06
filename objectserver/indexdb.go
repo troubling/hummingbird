@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,6 +24,9 @@ import (
 const (
 	shardAny = -1
 )
+
+var ErrNotFound = errors.New("not found")
+var ErrConflict = errors.New("conflict")
 
 // IndexDBItem is a single item returned by List.
 type IndexDBItem struct {
@@ -303,7 +307,7 @@ func (ot *IndexDB) Commit(f fs.AtomicFileWriter, hsh string, shard int, timestam
 			return err
 		}
 		if f == nil && !deletion {
-			return fmt.Errorf("no existing entry for %s and so refusing to store just a metadata update", hsh)
+			return ErrNotFound
 		}
 	} else {
 		var dbMetahash, dbShardHash string
@@ -320,7 +324,7 @@ func (ot *IndexDB) Commit(f fs.AtomicFileWriter, hsh string, shard int, timestam
 			return err
 		}
 		if metahash == dbMetahash && ((f == nil && !deletion) || dbTimestamp > timestamp) {
-			return nil
+			return ErrConflict
 		}
 		if shardhash == "" {
 			shardhash = dbShardHash
@@ -767,7 +771,14 @@ func (ot *IndexDB) StablePost(hsh string, shardIndex int, request *http.Request)
 		}
 	}
 	if err = ot.Commit(nil, hsh, shardIndex, timestamp, "POST", metadata, false, ""); err != nil {
-		return http.StatusInternalServerError, err
+		switch err {
+		case ErrNotFound:
+			return http.StatusNotFound, nil
+		case ErrConflict:
+			return http.StatusConflict, nil
+		default:
+			return http.StatusInternalServerError, err
+		}
 	}
 	return http.StatusAccepted, nil
 }

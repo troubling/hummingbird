@@ -343,6 +343,10 @@ func (server *ObjectServer) ObjPutHandler(writer http.ResponseWriter, request *h
 	outHeaders.Set("ETag", metadata["ETag"])
 
 	if err := obj.Commit(metadata); err != nil {
+		if err == ErrConflict {
+			srv.StandardResponse(writer, http.StatusConflict)
+			return
+		}
 		srv.GetLogger(request).Error("Error saving object", zap.Error(err))
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 		return
