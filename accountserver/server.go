@@ -305,21 +305,20 @@ func (server *AccountServer) AccountDeleteHandler(writer http.ResponseWriter, re
 	_, err = db.GetInfo()
 	if err != nil {
 		srv.GetLogger(request).Error("Unable to get account info.", zap.Error(err))
-		srv.StandardResponse(writer, http.StatusInternalServerError)
+		srv.ErrorResponse(writer, err)
 		return
 	}
-	status, err := db.Delete(timestamp)
-	if err != nil {
+	if err := db.Delete(timestamp); err != nil {
 		srv.GetLogger(request).Error("Unable to delete database", zap.Error(err))
-		srv.StandardResponse(writer, http.StatusInternalServerError)
+		srv.ErrorResponse(writer, err)
 		return
 	}
 	if _, err = db.GetInfo(); err != nil {
 		srv.GetLogger(request).Error("Unable to update cache after delete database", zap.Error(err))
-		srv.StandardResponse(writer, http.StatusInternalServerError)
+		srv.ErrorResponse(writer, err)
 		return
 	}
-	writer.WriteHeader(status)
+	writer.WriteHeader(http.StatusNoContent)
 	writer.Write([]byte(""))
 }
 

@@ -335,11 +335,11 @@ func (re *repEngine) putStableObject(writer http.ResponseWriter, request *http.R
 		srv.StandardResponse(writer, http.StatusBadRequest)
 		return
 	}
-	rStatus, err := idb.StablePut(vars["hash"], roShard, request)
-	if err != nil {
-		re.logger.Error("error in StablePut", zap.Error(err))
+	if err := idb.StablePut(vars["hash"], roShard, request); err != nil {
+		srv.ErrorResponse(writer, err)
+		return
 	}
-	srv.StandardResponse(writer, rStatus)
+	srv.StandardResponse(writer, http.StatusCreated)
 	return
 }
 
@@ -350,11 +350,11 @@ func (re *repEngine) postStableObject(writer http.ResponseWriter, request *http.
 		srv.StandardResponse(writer, http.StatusBadRequest)
 		return
 	}
-	rStatus, err := idb.StablePost(vars["hash"], roShard, request)
-	if err != nil {
-		srv.GetLogger(request).Error("error in StablePost", zap.Error(err))
+	if err := idb.StablePost(vars["hash"], roShard, request); err != nil {
+		srv.ErrorResponse(writer, err)
+		return
 	}
-	srv.StandardResponse(writer, rStatus)
+	srv.StandardResponse(writer, http.StatusAccepted)
 	return
 }
 

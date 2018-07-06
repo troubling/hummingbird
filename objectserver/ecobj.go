@@ -233,10 +233,12 @@ func (o *ecObject) commit(metadata map[string]string, method string, nursery boo
 	defer o.Close()
 	timestampStr, ok := metadata["X-Timestamp"]
 	if !ok {
+		o.logger.Error("no timestamp in metadata")
 		return errors.New("no timestamp in metadata")
 	}
 	timestampTime, err := common.ParseDate(timestampStr)
 	if err != nil {
+		o.logger.Error("invalid timestamp in metadata")
 		return err
 	}
 	timestamp := timestampTime.UnixNano()

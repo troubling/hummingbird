@@ -181,11 +181,11 @@ func (f *ecEngine) ecShardPostHandler(writer http.ResponseWriter, request *http.
 		srv.StandardResponse(writer, http.StatusBadRequest)
 		return
 	}
-	rStatus, err := idb.StablePost(vars["hash"], shardIndex, request)
-	if err != nil {
-		srv.GetLogger(request).Error("error in StablePost", zap.Error(err))
+	if err := idb.StablePost(vars["hash"], shardIndex, request); err != nil {
+		srv.ErrorResponse(writer, err)
+		return
 	}
-	srv.StandardResponse(writer, rStatus)
+	srv.StandardResponse(writer, http.StatusAccepted)
 	return
 }
 
@@ -201,11 +201,11 @@ func (f *ecEngine) ecShardPutHandler(writer http.ResponseWriter, request *http.R
 		srv.StandardResponse(writer, http.StatusBadRequest)
 		return
 	}
-	rStatus, err := idb.StablePut(vars["hash"], shardIndex, request)
-	if err != nil {
-		srv.GetLogger(request).Error("error in StablePut", zap.Error(err))
+	if err := idb.StablePut(vars["hash"], shardIndex, request); err != nil {
+		srv.ErrorResponse(writer, err)
+		return
 	}
-	srv.StandardResponse(writer, rStatus)
+	srv.StandardResponse(writer, http.StatusCreated)
 	return
 }
 
@@ -271,18 +271,11 @@ func (f *ecEngine) ecNurseryPutHandler(writer http.ResponseWriter, request *http
 		}
 	}
 	if err := idb.Commit(atm, vars["hash"], 0, timestamp, method, metadata, true, ""); err != nil {
-		switch err {
-		case ErrNotFound:
-			srv.StandardResponse(writer, http.StatusNotFound)
-		case ErrConflict:
-			srv.StandardResponse(writer, http.StatusConflict)
-		default:
-			srv.GetLogger(request).Error("Error committing object to index", zap.Error(err))
-			srv.StandardResponse(writer, http.StatusInternalServerError)
-		}
-	} else {
-		srv.StandardResponse(writer, http.StatusCreated)
+		srv.ErrorResponse(writer, err)
+		return
+
 	}
+	srv.StandardResponse(writer, http.StatusCreated)
 }
 
 func (f *ecEngine) ecReconstructHandler(writer http.ResponseWriter, request *http.Request) {

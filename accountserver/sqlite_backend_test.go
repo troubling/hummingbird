@@ -196,8 +196,7 @@ func TestDeleteRemovesMetadata(t *testing.T) {
 	defer cleanup()
 
 	db.UpdateMetadata(map[string][]string{"X-Container-Meta-Key": {"Value", "200000000.00001"}})
-	_, err = db.Delete("200000001.00000")
-	require.Nil(t, err)
+	require.Nil(t, db.Delete("200000001.00000"))
 	deleted, err := db.IsDeleted()
 	require.Nil(t, err)
 	require.True(t, deleted)

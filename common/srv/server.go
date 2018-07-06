@@ -172,6 +172,29 @@ func SimpleErrorResponse(w http.ResponseWriter, statusCode int, body string) {
 	w.Write([]byte(body))
 }
 
+func ErrorResponse(w http.ResponseWriter, err error) {
+	errCode := http.StatusInternalServerError
+	switch err {
+	case common.ErrBadRequest:
+		errCode = http.StatusBadRequest
+	case common.ErrNotFound:
+		errCode = http.StatusNotFound
+	case common.ErrConflict:
+		errCode = http.StatusConflict
+	case common.ErrDisconnect:
+		errCode = 499
+	default:
+	}
+	body := err.Error()
+	if body == "" {
+		body = responseBodies[errCode]
+	}
+	w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+	w.Header().Set("Content-Length", strconv.FormatInt(int64(len(body)), 10))
+	w.WriteHeader(errCode)
+	w.Write([]byte(body))
+}
+
 func CustomErrorResponse(w http.ResponseWriter, statusCode int, vars map[string]string) {
 	body := ""
 	switch statusCode {
