@@ -26,7 +26,6 @@ import (
 	"io"
 	"io/ioutil"
 	"math"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -224,28 +223,28 @@ func (db *sqliteAccount) IsDeleted() (bool, error) {
 
 // Delete sets the account's deleted timestamp and tombstones any metadata older than that timestamp.
 // This may or may not make the account "deleted".
-func (db *sqliteAccount) Delete(timestamp string) (int, error) {
+func (db *sqliteAccount) Delete(timestamp string) error {
 	if err := db.connect(); err != nil {
-		return http.StatusInternalServerError, err
+		return err
 	}
 	tx, err := db.Begin()
 	if err != nil {
-		return http.StatusInternalServerError, err
+		return err
 	}
 	defer tx.Rollback()
 	var deleteTimestamp, metastr string
 	var metadata map[string][]string
 	if err := tx.QueryRow("SELECT delete_timestamp, metadata FROM account_stat").Scan(&deleteTimestamp, &metastr); err != nil {
 		if common.IsCorruptDBError(err) {
-			return http.StatusInternalServerError, fmt.Errorf("Failed to Delete SELECT: %v; %v", err, common.QuarantineDir(path.Dir(db.accountFile), 4, "accounts"))
+			return fmt.Errorf("Failed to Delete SELECT: %v; %v", err, common.QuarantineDir(path.Dir(db.accountFile), 4, "accounts"))
 		}
-		return http.StatusInternalServerError, err
+		return err
 	}
 	if deleteTimestamp >= timestamp {
-		return http.StatusConflict, nil
+		return common.ErrConflict
 	}
 	if err := json.Unmarshal([]byte(metastr), &metadata); err != nil {
-		return http.StatusInternalServerError, err
+		return err
 	}
 	for key, value := range metadata {
 		if value[1] < timestamp {
@@ -254,22 +253,22 @@ func (db *sqliteAccount) Delete(timestamp string) (int, error) {
 	}
 	serializedMetadata, err := json.Marshal(metadata)
 	if err != nil {
-		return http.StatusInternalServerError, err
+		return err
 	}
 	if _, err = tx.Exec("UPDATE account_stat SET delete_timestamp = ?, metadata = ?", timestamp, string(serializedMetadata)); err != nil {
 		if common.IsCorruptDBError(err) {
-			return http.StatusInternalServerError, fmt.Errorf("Failed to Delete UPDATE: %v; %v", err, common.QuarantineDir(path.Dir(db.accountFile), 4, "accounts"))
+			return fmt.Errorf("Failed to Delete UPDATE: %v; %v", err, common.QuarantineDir(path.Dir(db.accountFile), 4, "accounts"))
 		}
-		return http.StatusInternalServerError, err
+		return err
 	}
 	defer db.invalidateCache()
 	if err := tx.Commit(); err != nil {
 		if common.IsCorruptDBError(err) {
-			return http.StatusInternalServerError, fmt.Errorf("Failed to Delete Commit: %v; %v", err, common.QuarantineDir(path.Dir(db.accountFile), 4, "accounts"))
+			return fmt.Errorf("Failed to Delete Commit: %v; %v", err, common.QuarantineDir(path.Dir(db.accountFile), 4, "accounts"))
 		}
-		return http.StatusInternalServerError, err
+		return err
 	}
-	return http.StatusNoContent, nil
+	return nil
 }
 
 // MergeItems merges ContainerRecords into the account.  If a remote id is provided (incoming replication), the incoming_sync table is updated.

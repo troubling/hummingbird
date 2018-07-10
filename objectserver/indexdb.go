@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,9 +23,6 @@ import (
 const (
 	shardAny = -1
 )
-
-var ErrNotFound = errors.New("not found")
-var ErrConflict = errors.New("conflict")
 
 // IndexDBItem is a single item returned by List.
 type IndexDBItem struct {
@@ -307,7 +303,7 @@ func (ot *IndexDB) Commit(f fs.AtomicFileWriter, hsh string, shard int, timestam
 			return err
 		}
 		if f == nil && !deletion {
-			return ErrNotFound
+			return common.ErrNotFound
 		}
 	} else {
 		var dbMetahash, dbShardHash string
@@ -324,7 +320,7 @@ func (ot *IndexDB) Commit(f fs.AtomicFileWriter, hsh string, shard int, timestam
 			return err
 		}
 		if metahash == dbMetahash && ((f == nil && !deletion) || dbTimestamp > timestamp) {
-			return ErrConflict
+			return common.ErrConflict
 		}
 		if shardhash == "" {
 			shardhash = dbShardHash
@@ -709,20 +705,20 @@ func (ot *IndexDB) RingPartRange(ringPart int) (string, string) {
 	return fmt.Sprintf("%016x0000000000000000", start), fmt.Sprintf("%016xffffffffffffffff", stop)
 }
 
-func (ot *IndexDB) StablePut(hsh string, shardIndex int, request *http.Request) (int, error) {
-
+func (ot *IndexDB) StablePut(hsh string, shardIndex int, request *http.Request) error {
 	timestampTime, err := common.ParseDate(request.Header.Get("Meta-X-Timestamp"))
 	if err != nil {
-		return http.StatusBadRequest, err
+		return common.ErrBadRequest
 	}
 	timestamp := timestampTime.UnixNano()
 	atm, err := ot.TempFile(hsh, shardIndex, timestamp, request.ContentLength, false)
 	if err != nil {
-		return http.StatusInternalServerError, err
+		ot.logger.Error("could not make a tempfile", zap.String("hash", hsh), zap.Error(err))
+		return err
 	}
 	if atm == nil {
 		ot.logger.Debug("could not make a tempfile", zap.String("hash", hsh))
-		return http.StatusConflict, nil
+		return common.ErrConflict
 	}
 	defer atm.Abandon()
 	metadata := make(map[string]string)
@@ -737,25 +733,21 @@ func (ot *IndexDB) StablePut(hsh string, shardIndex int, request *http.Request) 
 			}
 		}
 	}
-
 	sHash := md5.New() // TODO: this is wasteful to calc this for whole objects
 	n, err := common.Copy(request.Body, atm, sHash)
 	if err == io.ErrUnexpectedEOF || (request.ContentLength >= 0 && n != request.ContentLength) {
-		return 499, err
+		return common.ErrDisconnect
 	} else if err != nil {
-		return http.StatusInternalServerError, err
+		return err
 	}
 	shardHash := hex.EncodeToString(sHash.Sum(nil))
-	if err := ot.Commit(atm, hsh, shardIndex, timestamp, "PUT", metadata, false, shardHash); err != nil {
-		return http.StatusInternalServerError, err
-	}
-	return http.StatusCreated, nil
+	return ot.Commit(atm, hsh, shardIndex, timestamp, "PUT", metadata, false, shardHash)
 }
 
-func (ot *IndexDB) StablePost(hsh string, shardIndex int, request *http.Request) (int, error) {
+func (ot *IndexDB) StablePost(hsh string, shardIndex int, request *http.Request) error {
 	timestampTime, err := common.ParseDate(request.Header.Get("X-Timestamp"))
 	if err != nil {
-		return http.StatusBadRequest, fmt.Errorf("invalid timestamp")
+		return common.ErrBadRequest
 	}
 	timestamp := timestampTime.UnixNano()
 	metadata := make(map[string]string)
@@ -770,15 +762,5 @@ func (ot *IndexDB) StablePost(hsh string, shardIndex int, request *http.Request)
 			}
 		}
 	}
-	if err = ot.Commit(nil, hsh, shardIndex, timestamp, "POST", metadata, false, ""); err != nil {
-		switch err {
-		case ErrNotFound:
-			return http.StatusNotFound, nil
-		case ErrConflict:
-			return http.StatusConflict, nil
-		default:
-			return http.StatusInternalServerError, err
-		}
-	}
-	return http.StatusAccepted, nil
+	return ot.Commit(nil, hsh, shardIndex, timestamp, "POST", metadata, false, "")
 }

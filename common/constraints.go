@@ -16,6 +16,7 @@
 package common
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -64,6 +65,11 @@ var OwnerHeaders = map[string]bool{
 	"x-container-meta-temp-url-key-2": true,
 	"x-account-access-control":        true,
 }
+
+var ErrBadRequest = errors.New("bad request")
+var ErrNotFound = errors.New("not found")
+var ErrConflict = errors.New("conflict")
+var ErrDisconnect = errors.New("disconnect")
 
 func CheckMetadata(req *http.Request, targetType string) (int, string) {
 	metaCount := 0

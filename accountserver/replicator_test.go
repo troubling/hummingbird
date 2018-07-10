@@ -175,8 +175,8 @@ func (f fakeDatabase) PolicyStats() ([]*PolicyStat, error) {
 func (f fakeDatabase) IsDeleted() (bool, error) {
 	return false, errors.New("")
 }
-func (f fakeDatabase) Delete(timestamp string) (int, error) {
-	return 500, errors.New("")
+func (f fakeDatabase) Delete(timestamp string) error {
+	return errors.New("")
 }
 func (f fakeDatabase) ListContainers(limit int, marker string, endMarker string, prefix string, delimiter string, reverse bool) ([]interface{}, error) {
 	return nil, errors.New("")
@@ -808,9 +808,7 @@ func TestCheckForReaping(t *testing.T) {
 	rd := newTestReplicationDevice(&ring.Device{Id: 0}, r)
 	err = rd.checkForReaping(dbFile)
 	require.Nil(t, err)
-	st, err := c.Delete(common.GetTimestamp())
-	require.Equal(t, st, 204)
-	require.Nil(t, err)
+	require.Nil(t, c.Delete(common.GetTimestamp()))
 	r.reaperLastCheckin = time.Now().Add(-time.Minute * 2)
 	obs, logs := observer.New(zap.DebugLevel)
 	r.logger = zap.New(obs)

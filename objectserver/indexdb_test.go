@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/fs"
 
 	"go.uber.org/zap"
@@ -107,7 +108,7 @@ func TestIndexDB_Commit(t *testing.T) {
 	errnil(t, err)
 	f.Write([]byte(body))
 	err = ot.Commit(f, hsh, 0, timestamp-1, "PUT", map[string]string{}, true, "")
-	if err != ErrConflict {
+	if err != common.ErrConflict {
 		t.Fatal(err)
 	}
 	pth, err = ot.WholeObjectPath(hsh, 0, timestamp-1, true)
@@ -282,7 +283,7 @@ func TestIndexDB_Lookup_withUnderwrite(t *testing.T) {
 	errnil(t, err)
 	f.Write([]byte(bodyOlder))
 	err = ot.Commit(f, hsh, 0, timestampOlder, "PUT", map[string]string{}, true, shardHashOlder)
-	if err != ErrConflict {
+	if err != common.ErrConflict {
 		t.Fatal(err)
 	}
 	// Do the lookup.
