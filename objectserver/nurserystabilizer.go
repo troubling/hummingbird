@@ -69,7 +69,8 @@ func (nrd *nurseryDevice) Scan() {
 	cancel := make(chan struct{})
 	defer close(cancel)
 	go nrd.objEngine.GetObjectsToStabilize(nrd.dev.Device, c, cancel)
-	count := 0
+	count, success, failed := 0, 0, 0
+
 	for o := range c {
 		count++
 		nrd.stabilizationAttemptsMetric.Inc(1)
@@ -83,10 +84,12 @@ func (nrd *nurseryDevice) Scan() {
 				nrd.stabilizationSuccessesMetric.Inc(1)
 				nrd.UpdateStat("ObjectsStabilizedSuccess", 1)
 				nrd.UpdateStat("ObjectsStabilizedBytes", o.ContentLength())
+				success++
 			} else {
 				nrd.stabilizationFailuresMetric.Inc(1)
 				nrd.r.logger.Debug("[stabilizeDevice] error Stabilize obj", zap.String("Object", o.Repr()), zap.Error(err))
 				nrd.UpdateStat("ObjectsStabilizedError", 1)
+				failed++
 			}
 		}()
 		select {
@@ -99,7 +102,9 @@ func (nrd *nurseryDevice) Scan() {
 	// We don't use Tally's Timer Start().Stop() since we don't want to record canceled passes.
 	nrd.stabilizationLastPassDurationMetric.Record(time.Since(start))
 	nrd.UpdateStat("PassComplete", 1)
-	nrd.r.logger.Info("[stabilizeDevice] Pass complete.")
+	nrd.r.logger.Info("[stabilizeDevice] Pass complete.", zap.Int("count", count),
+		zap.Int("success", success), zap.Int("failed", failed),
+		zap.Duration("timeTook", time.Since(start)))
 }
 
 func (nrd *nurseryDevice) ScanLoop() {
