@@ -221,10 +221,6 @@ func (um *unmountedMonitor) serverUp(logger *zap.Logger, ip string, port int) {
 }
 
 func (um *unmountedMonitor) serverDown(logger *zap.Logger, ip string, port int) {
-	if err := um.aa.db.addServerState(ip, port, false, time.Now().Add(-um.stateRetention)); err != nil {
-		logger.Error("could not add server down state", zap.Error(err))
-		return
-	}
 	var lastUp time.Time
 	states, err := um.aa.db.serverStates(ip, port)
 	if err != nil {
@@ -237,15 +233,25 @@ func (um *unmountedMonitor) serverDown(logger *zap.Logger, ip string, port int) 
 			break
 		}
 	}
+	// This is to counteract the "andrewd hasn't been running for a while"
+	// scenario. If there are no entries since server_down_limit we'll make a
+	// fake "up" entry. This does mean that the pass_time_target and the actual
+	// pass times need to be faster than the server_down_limit.
+	if len(states) < 1 || time.Since(states[0].recorded) > um.serverDownLimit {
+		um.serverUp(logger, ip, port)
+		lastUp = time.Now()
+	}
+	if err := um.aa.db.addServerState(ip, port, false, time.Now().Add(-um.stateRetention)); err != nil {
+		logger.Error("could not add server down state", zap.Error(err))
+		return
+	}
 	// If there were no "up" entries...
 	if lastUp.IsZero() {
+		// Just pretend it was last "up" at the time of the oldest entry.
 		if len(states) > 0 {
-			// Just pretend it was last "up" at the time of the oldest entry.
 			lastUp = states[len(states)-1].recorded
 		} else {
-			// It would be weird if there are no entries, since we supposedly
-			// just added one. But, in that case, just get outta here.
-			return
+			lastUp = time.Now()
 		}
 	}
 	if time.Since(lastUp) < um.serverDownLimit {
@@ -263,10 +269,9 @@ func (um *unmountedMonitor) deviceMounted(logger *zap.Logger, ip string, port in
 
 func (um *unmountedMonitor) deviceUnmounted(logger *zap.Logger, ip string, port int, device string) {
 	logger.Debug("device unmounted")
-	if err := um.aa.db.addDeviceState(ip, port, device, false, time.Now().Add(-um.stateRetention), 0, 0); err != nil {
-		logger.Error("could not add device unmounted state", zap.Error(err))
-	}
 	var lastUp time.Time
+	var size int64
+	var used int64
 	states, err := um.aa.db.deviceStates(ip, port, device)
 	if err != nil {
 		logger.Error("could not retrieve device states", zap.Error(err))
@@ -275,22 +280,32 @@ func (um *unmountedMonitor) deviceUnmounted(logger *zap.Logger, ip string, port 
 	for _, entry := range states {
 		if entry.state {
 			lastUp = entry.recorded
+			size = entry.size
+			used = entry.used
 			break
 		}
 	}
+	// This is to counteract the "andrewd hasn't been running for a while"
+	// scenario. If there are no entries since device_unmounted_limit we'll
+	// make a fake mounted entry. This does mean that the pass_time_target and
+	// the actual pass times need to be faster than the device_unmounted_limit.
+	if len(states) < 1 || time.Since(states[0].recorded) > um.deviceUnmountedLimit {
+		um.deviceMounted(logger, ip, port, device, size, used)
+		lastUp = time.Now()
+	}
 	logger.Debug("device unmounted, last up initially", zap.String("last up", lastUp.String()))
+	if err := um.aa.db.addDeviceState(ip, port, device, false, time.Now().Add(-um.stateRetention), 0, 0); err != nil {
+		logger.Error("could not add device unmounted state", zap.Error(err))
+	}
 	// If there were no "up" entries...
 	if lastUp.IsZero() {
+		// Just pretend it was last "up" at the time of the oldest entry.
 		if len(states) > 0 {
-			// Just pretend it was last "up" at the time of the oldest entry.
 			lastUp = states[len(states)-1].recorded
-			logger.Debug("device unmounted, last up assumed", zap.String("last up", lastUp.String()))
 		} else {
-			// It would be weird if there are no entries, since we supposedly
-			// just added one. But, in that case, just get outta here.
-			logger.Error("device unmounted, NO ENTRIES!")
-			return
+			lastUp = time.Now()
 		}
+		logger.Debug("device unmounted, last up assumed", zap.String("last up", lastUp.String()))
 	}
 	logger.Debug("device unmounted, duration check", zap.String("last up", lastUp.String()), zap.String("limit", um.deviceUnmountedLimit.String()), zap.String("elapsed", time.Since(lastUp).String()))
 	if time.Since(lastUp) < um.deviceUnmountedLimit {
