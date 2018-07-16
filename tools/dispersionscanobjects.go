@@ -26,6 +26,7 @@ import (
 	"github.com/troubling/hummingbird/common/conf"
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/containerserver"
+	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
@@ -41,19 +42,29 @@ type checkInfo struct {
 type dispersionScanObjects struct {
 	aa *AutoAdmin
 	// delay between each request; adjusted each pass to try to make passes last passTimeTarget
-	delay          time.Duration
-	passTimeTarget time.Duration
-	reportInterval time.Duration
-	prefix         string
-	suffix         string
+	delay           time.Duration
+	passTimeTarget  time.Duration
+	reportInterval  time.Duration
+	prefix          string
+	suffix          string
+	passesMetric    tally.Timer
+	passesMetrics   map[int]tally.Timer
+	foundMetrics    map[int]tally.Counter
+	notFoundMetrics map[int]tally.Counter
+	erroredMetrics  map[int]tally.Counter
 }
 
 func newDispersionScanObjects(aa *AutoAdmin) *dispersionScanObjects {
 	dso := &dispersionScanObjects{
-		aa:             aa,
-		delay:          time.Duration(aa.serverconf.GetInt("dispersion-scan-objects", "initial_delay", 0)) * time.Second,
-		passTimeTarget: time.Duration(aa.serverconf.GetInt("dispersion-scan-objects", "pass_time_target", secondsInADay)) * time.Second,
-		reportInterval: time.Duration(aa.serverconf.GetInt("dispersion-scan-objects", "report_interval", 600)) * time.Second,
+		aa:              aa,
+		delay:           time.Duration(aa.serverconf.GetInt("dispersion-scan-objects", "initial_delay", 0)) * time.Second,
+		passTimeTarget:  time.Duration(aa.serverconf.GetInt("dispersion-scan-objects", "pass_time_target", secondsInADay)) * time.Second,
+		reportInterval:  time.Duration(aa.serverconf.GetInt("dispersion-scan-objects", "report_interval", 600)) * time.Second,
+		passesMetric:    aa.metricsScope.Timer("disp_scan_obj_passes"),
+		passesMetrics:   map[int]tally.Timer{},
+		foundMetrics:    map[int]tally.Counter{},
+		notFoundMetrics: map[int]tally.Counter{},
+		erroredMetrics:  map[int]tally.Counter{},
 	}
 	if dso.delay < 0 {
 		dso.delay = time.Second
@@ -76,6 +87,7 @@ func (dso *dispersionScanObjects) runForever() {
 }
 
 func (dso *dispersionScanObjects) runOnce() time.Duration {
+	defer dso.passesMetric.Start().Stop()
 	start := time.Now()
 	logger := dso.aa.logger.With(zap.String("process", "dispersion scan objects"))
 	logger.Debug("starting pass")
@@ -117,6 +129,13 @@ type dispersionScanObjectsContext struct {
 }
 
 func (dso *dispersionScanObjects) scanDispersionObjects(logger *zap.Logger, policy *conf.Policy) int {
+	if dso.passesMetrics[policy.Index] == nil {
+		dso.passesMetrics[policy.Index] = dso.aa.metricsScope.Timer(fmt.Sprintf("disp_scan_obj_%d_passes", policy.Index))
+		dso.foundMetrics[policy.Index] = dso.aa.metricsScope.Counter(fmt.Sprintf("disp_scan_obj_%d_found", policy.Index))
+		dso.notFoundMetrics[policy.Index] = dso.aa.metricsScope.Counter(fmt.Sprintf("disp_scan_obj_%d_notfound", policy.Index))
+		dso.erroredMetrics[policy.Index] = dso.aa.metricsScope.Counter(fmt.Sprintf("disp_scan_obj_%d_errored", policy.Index))
+	}
+	defer dso.passesMetrics[policy.Index].Start().Stop()
 	start := time.Now()
 	container := fmt.Sprintf("disp-objs-%d", policy.Index)
 	logger = logger.With(zap.String("account", AdminAccount), zap.String("container", container), zap.Int("policy", policy.Index))
@@ -273,6 +292,7 @@ func (dso *dispersionScanObjects) handleChecks(ctx *dispersionScanObjectsContext
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			atomic.AddInt64(&ctx.errored, 1)
+			dso.erroredMetrics[ctx.policy].Inc(1)
 			ctx.logger.Error("http.NewRequest(GET, url, nil) // likely programming error", zap.String("url", url), zap.Error(err))
 			if err = dso.aa.db.recordDispersionScanFailure("object", ctx.policy, check.partition, service, check.deviceID); err != nil {
 				ctx.logger.Error("recordDispersionScanFailure", zap.Int("policy", ctx.policy), zap.Uint64("partition", check.partition), zap.String("service", service), zap.Int("deviceID", check.deviceID), zap.Error(err))
@@ -284,6 +304,7 @@ func (dso *dispersionScanObjects) handleChecks(ctx *dispersionScanObjectsContext
 		resp, err := dso.aa.client.Do(req)
 		if err != nil {
 			atomic.AddInt64(&ctx.errored, 1)
+			dso.erroredMetrics[ctx.policy].Inc(1)
 			ctx.logger.Debug("Do", zap.String("url", url), zap.Error(err))
 			if err = dso.aa.db.recordDispersionScanFailure("object", ctx.policy, check.partition, service, -1); err != nil {
 				ctx.logger.Error("recordDispersionScanFailure", zap.Int("policy", ctx.policy), zap.Uint64("partition", check.partition), zap.String("service", service), zap.Error(err))
@@ -294,6 +315,7 @@ func (dso *dispersionScanObjects) handleChecks(ctx *dispersionScanObjectsContext
 		resp.Body.Close()
 		if resp.StatusCode == 404 {
 			atomic.AddInt64(&ctx.notFound, 1)
+			dso.notFoundMetrics[ctx.policy].Inc(1)
 			if err = dso.aa.db.queuePartitionReplication("object", ctx.policy, check.partition, "dispersion", -1, check.deviceID); err != nil {
 				ctx.logger.Error("queuePartitionReplication", zap.Uint64("partition", check.partition), zap.Int("deviceID", check.deviceID), zap.Error(err))
 			}
@@ -301,6 +323,7 @@ func (dso *dispersionScanObjects) handleChecks(ctx *dispersionScanObjectsContext
 		}
 		if resp.StatusCode/100 != 2 {
 			atomic.AddInt64(&ctx.errored, 1)
+			dso.erroredMetrics[ctx.policy].Inc(1)
 			ctx.logger.Debug("StatusCode", zap.String("url", url), zap.Int("status code", resp.StatusCode))
 			if err = dso.aa.db.recordDispersionScanFailure("object", ctx.policy, check.partition, "", check.deviceID); err != nil {
 				ctx.logger.Error("recordDispersionScanFailure", zap.Int("policy", ctx.policy), zap.Uint64("partition", check.partition), zap.Int("deviceID", check.deviceID), zap.Error(err))
@@ -308,6 +331,7 @@ func (dso *dispersionScanObjects) handleChecks(ctx *dispersionScanObjectsContext
 			continue
 		}
 		atomic.AddInt64(&ctx.found, 1)
+		dso.foundMetrics[ctx.policy].Inc(1)
 	}
 	ctx.wg.Done()
 }

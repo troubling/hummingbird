@@ -38,6 +38,7 @@ import (
 	"time"
 
 	"github.com/troubling/hummingbird/common/ring"
+	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
@@ -53,6 +54,11 @@ type ringScan struct {
 	suffix              string
 	ringMD5CacheLock    sync.Mutex
 	ringMD5Cache        map[string]map[int]ring.RingMD5
+	passesMetric        tally.Timer
+	fastPassesMetric    tally.Timer
+	queriesMetric       tally.Counter
+	errorsMetric        tally.Counter
+	pushesMetric        tally.Counter
 }
 
 func newRingScan(aa *AutoAdmin) *ringScan {
@@ -63,6 +69,11 @@ func newRingScan(aa *AutoAdmin) *ringScan {
 		reportInterval:      time.Duration(aa.serverconf.GetInt("ring-scan", "report_interval", 600)) * time.Second,
 		fastScanConcurrency: int(aa.serverconf.GetInt("ring-scan", "fast_scan_concurrency", 25)),
 		ringMD5Cache:        map[string]map[int]ring.RingMD5{},
+		passesMetric:        aa.metricsScope.Timer("ring_scan_passes"),
+		fastPassesMetric:    aa.metricsScope.Timer("ring_scan_fast_passes"),
+		queriesMetric:       aa.metricsScope.Counter("ring_scan_queries"),
+		errorsMetric:        aa.metricsScope.Counter("ring_scan_errors"),
+		pushesMetric:        aa.metricsScope.Counter("ring_scan_pushes"),
 	}
 	if rs.delay < 0 {
 		rs.delay = time.Second
@@ -109,6 +120,11 @@ func (rs *ringScan) runForever() {
 }
 
 func (rs *ringScan) runOnce() time.Duration {
+	if rs.fastScan {
+		defer rs.fastPassesMetric.Start().Stop()
+	} else {
+		defer rs.passesMetric.Start().Stop()
+	}
 	start := time.Now()
 	logger := rs.aa.logger.With(zap.String("process", "ring scan"))
 	if rs.fastScan {
@@ -149,17 +165,20 @@ func (rs *ringScan) runOnce() time.Duration {
 	}()
 	reconURL := func(getURL string) {
 		atomic.AddInt64(&delays, 1)
+		rs.queriesMetric.Inc(1)
 		getLogger := logger.With(zap.String("method", "GET"), zap.String("url", getURL))
 		req, err := http.NewRequest("GET", getURL, nil)
 		if err != nil {
 			getLogger.Error("http.NewRequest", zap.Error(err))
 			atomic.AddInt64(&errors, 1)
+			rs.errorsMetric.Inc(1)
 			return
 		}
 		resp, err := rs.aa.client.Do(req)
 		if err != nil {
 			getLogger.Error("Do", zap.Error(err))
 			atomic.AddInt64(&errors, 1)
+			rs.errorsMetric.Inc(1)
 			return
 		}
 		body, err := ioutil.ReadAll(resp.Body)
@@ -167,17 +186,20 @@ func (rs *ringScan) runOnce() time.Duration {
 		if err != nil {
 			getLogger.Error("Body", zap.Int("StatusCode", resp.StatusCode), zap.Error(err))
 			atomic.AddInt64(&errors, 1)
+			rs.errorsMetric.Inc(1)
 			return
 		}
 		if resp.StatusCode/100 != 2 {
 			getLogger.Error("StatusCode", zap.Int("StatusCode", resp.StatusCode), zap.Error(err))
 			atomic.AddInt64(&errors, 1)
+			rs.errorsMetric.Inc(1)
 			return
 		}
 		ringMD5s := map[string]string{}
 		if err := json.Unmarshal(body, &ringMD5s); err != nil {
 			getLogger.Error("JSON", zap.String("JSON", string(body)), zap.Error(err))
 			atomic.AddInt64(&errors, 1)
+			rs.errorsMetric.Inc(1)
 			return
 		}
 		getLogger.Debug("response", zap.Any("ring md5s", ringMD5s))
@@ -193,6 +215,7 @@ func (rs *ringScan) runOnce() time.Duration {
 				if err != nil {
 					getLogger.Error("policy parsing error", zap.String("ring path", ringPath), zap.Error(err))
 					atomic.AddInt64(&errors, 1)
+					rs.errorsMetric.Inc(1)
 					continue
 				}
 			}
@@ -201,6 +224,7 @@ func (rs *ringScan) runOnce() time.Duration {
 			if err != nil {
 				getLogger.Error("error getting ring", zap.String("type", typ), zap.Int("policy", policy), zap.String("md5", md5), zap.Error(err))
 				atomic.AddInt64(&errors, 1)
+				rs.errorsMetric.Inc(1)
 				continue
 			}
 			if md5 != ryng.MD5() {
@@ -209,6 +233,7 @@ func (rs *ringScan) runOnce() time.Duration {
 				if err != nil {
 					getLogger.Error("url.Parse", zap.String("url", getURL), zap.Error(err))
 					atomic.AddInt64(&errors, 1)
+					rs.errorsMetric.Inc(1)
 					continue
 				}
 				putURL := fmt.Sprintf("%s://%s/ring%s", u.Scheme, u.Host, ringPath)
@@ -217,6 +242,7 @@ func (rs *ringScan) runOnce() time.Duration {
 				if err != nil {
 					getLogger.Error("os.Open", zap.String("disk path", ryng.DiskPath()), zap.Error(err))
 					atomic.AddInt64(&errors, 1)
+					rs.errorsMetric.Inc(1)
 					continue
 				}
 				func() { // sub func so we can have the defer
@@ -225,6 +251,7 @@ func (rs *ringScan) runOnce() time.Duration {
 					if err != nil {
 						putLogger.Error("http.NewRequest", zap.Error(err))
 						atomic.AddInt64(&errors, 1)
+						rs.errorsMetric.Inc(1)
 						return
 					}
 					req.Header.Set("Etag", ryng.MD5())
@@ -232,14 +259,17 @@ func (rs *ringScan) runOnce() time.Duration {
 					if err != nil {
 						putLogger.Error("Do", zap.Error(err))
 						atomic.AddInt64(&errors, 1)
+						rs.errorsMetric.Inc(1)
 						return
 					}
 					resp.Body.Close()
 					if resp.StatusCode/100 != 2 {
 						putLogger.Error("StatusCode", zap.Int("StatusCode", resp.StatusCode), zap.Error(err))
 						atomic.AddInt64(&errors, 1)
+						rs.errorsMetric.Inc(1)
 						return
 					}
+					rs.pushesMetric.Inc(1)
 				}()
 			}
 		}

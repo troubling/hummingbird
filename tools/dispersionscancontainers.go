@@ -22,6 +22,7 @@ import (
 	"github.com/troubling/hummingbird/accountserver"
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/ring"
+	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
@@ -33,6 +34,10 @@ type dispersionScanContainers struct {
 	delay          time.Duration
 	passTimeTarget time.Duration
 	reportInterval time.Duration
+	passesMetric   tally.Timer
+	foundMetric    tally.Counter
+	notFoundMetric tally.Counter
+	erroredMetric  tally.Counter
 }
 
 func newDispersionScanContainers(aa *AutoAdmin) *dispersionScanContainers {
@@ -41,6 +46,10 @@ func newDispersionScanContainers(aa *AutoAdmin) *dispersionScanContainers {
 		delay:          time.Duration(aa.serverconf.GetInt("dispersion-scan-containers", "initial_delay", 0)) * time.Second,
 		passTimeTarget: time.Duration(aa.serverconf.GetInt("dispersion-scan-containers", "pass_time_target", secondsInADay)) * time.Second,
 		reportInterval: time.Duration(aa.serverconf.GetInt("dispersion-scan-containers", "report_interval", 600)) * time.Second,
+		passesMetric:   aa.metricsScope.Timer("disp_scan_cont_passes"),
+		foundMetric:    aa.metricsScope.Counter("disp_scan_cont_found"),
+		notFoundMetric: aa.metricsScope.Counter("disp_scan_cont_notfound"),
+		erroredMetric:  aa.metricsScope.Counter("disp_scan_cont_errored"),
 	}
 	if dsc.delay < 0 {
 		dsc.delay = time.Second
@@ -71,6 +80,7 @@ type dispersionScanContainersContext struct {
 }
 
 func (dsc *dispersionScanContainers) runOnce() time.Duration {
+	defer dsc.passesMetric.Start().Stop()
 	start := time.Now()
 	logger := dsc.aa.logger.With(zap.String("process", "dispersion scan containers"), zap.String("account", AdminAccount))
 	logger.Debug("starting pass")
@@ -197,6 +207,7 @@ func (dsc *dispersionScanContainers) handleChecks(ctx *dispersionScanContainersC
 		req, err := http.NewRequest("HEAD", url, nil)
 		if err != nil {
 			atomic.AddInt64(&ctx.errored, 1)
+			dsc.erroredMetric.Inc(1)
 			ctx.logger.Error("http.NewRequest(HEAD, url, nil) // likely programming error", zap.String("url", url), zap.Error(err))
 			if err = dsc.aa.db.recordDispersionScanFailure("container", 0, check.partition, service, check.deviceID); err != nil {
 				ctx.logger.Error("recordDispersionScanFailure", zap.Uint64("partition", check.partition), zap.String("service", service), zap.Int("deviceID", check.deviceID), zap.Error(err))
@@ -207,6 +218,7 @@ func (dsc *dispersionScanContainers) handleChecks(ctx *dispersionScanContainersC
 		resp, err := dsc.aa.client.Do(req)
 		if err != nil {
 			atomic.AddInt64(&ctx.errored, 1)
+			dsc.erroredMetric.Inc(1)
 			if err = dsc.aa.db.recordDispersionScanFailure("container", 0, check.partition, service, -1); err != nil {
 				ctx.logger.Error("recordDispersionScanFailure", zap.Uint64("partition", check.partition), zap.String("service", service), zap.Error(err))
 			}
@@ -216,6 +228,7 @@ func (dsc *dispersionScanContainers) handleChecks(ctx *dispersionScanContainersC
 		resp.Body.Close()
 		if resp.StatusCode == 404 {
 			atomic.AddInt64(&ctx.notFound, 1)
+			dsc.notFoundMetric.Inc(1)
 			if err = dsc.aa.db.queuePartitionReplication("container", 0, check.partition, "dispersion", -1, check.deviceID); err != nil {
 				ctx.logger.Error("queuePartitionReplication", zap.Uint64("partition", check.partition), zap.Int("deviceID", check.deviceID), zap.Error(err))
 			}
@@ -223,12 +236,14 @@ func (dsc *dispersionScanContainers) handleChecks(ctx *dispersionScanContainersC
 		}
 		if resp.StatusCode/100 != 2 {
 			atomic.AddInt64(&ctx.errored, 1)
+			dsc.erroredMetric.Inc(1)
 			if err = dsc.aa.db.recordDispersionScanFailure("container", 0, check.partition, "", check.deviceID); err != nil {
 				ctx.logger.Error("recordDispersionScanFailure", zap.Uint64("partition", check.partition), zap.Int("deviceID", check.deviceID), zap.Error(err))
 			}
 			continue
 		}
 		atomic.AddInt64(&ctx.found, 1)
+		dsc.foundMetric.Inc(1)
 	}
 	ctx.wg.Done()
 }

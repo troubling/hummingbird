@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
@@ -25,6 +26,11 @@ type quarantineHistory struct {
 	passTimeTarget  time.Duration
 	keepHistoryDays int
 	reportInterval  time.Duration
+	passesMetric    tally.Timer
+	queriesMetric   tally.Counter
+	errorsMetric    tally.Counter
+	purgedMetric    tally.Counter
+	leftMetric      tally.Counter
 }
 
 const secondsInADay = 60 * 60 * 24
@@ -36,6 +42,11 @@ func newQuarantineHistory(aa *AutoAdmin) *quarantineHistory {
 		passTimeTarget:  time.Duration(aa.serverconf.GetInt("quarantine-history", "pass_time_target", secondsInADay)) * time.Second,
 		keepHistoryDays: int(aa.serverconf.GetInt("quarantine-history", "keep_history", secondsInADay*30) / secondsInADay),
 		reportInterval:  time.Duration(aa.serverconf.GetInt("quarantine-history", "report_interval", 600)) * time.Second,
+		passesMetric:    aa.metricsScope.Timer("quar_hist_passes"),
+		queriesMetric:   aa.metricsScope.Counter("quar_hist_queries"),
+		errorsMetric:    aa.metricsScope.Counter("quar_hist_errors"),
+		purgedMetric:    aa.metricsScope.Counter("quar_hist_purged"),
+		leftMetric:      aa.metricsScope.Counter("quar_hist_left"),
 	}
 	if qh.delay < 0 {
 		qh.delay = time.Second
@@ -60,6 +71,7 @@ func (qh *quarantineHistory) runForever() {
 }
 
 func (qh *quarantineHistory) runOnce() time.Duration {
+	defer qh.passesMetric.Start().Stop()
 	responseBody := &struct {
 		Message     string `json:"message"`
 		Days        int    `json:"days"`
@@ -103,18 +115,21 @@ func (qh *quarantineHistory) runOnce() time.Duration {
 	}()
 	for _, url := range urls {
 		atomic.AddInt64(&delays, 1)
+		qh.queriesMetric.Inc(1)
 		time.Sleep(qh.delay)
 		deleteLogger := logger.With(zap.String("method", "DELETE"), zap.String("url", url))
 		req, err := http.NewRequest("DELETE", url, nil)
 		if err != nil {
 			deleteLogger.Error("http.NewRequest", zap.Error(err))
 			atomic.AddInt64(&errors, 1)
+			qh.errorsMetric.Inc(1)
 			continue
 		}
 		resp, err := qh.aa.client.Do(req)
 		if err != nil {
 			deleteLogger.Error("Do", zap.Error(err))
 			atomic.AddInt64(&errors, 1)
+			qh.errorsMetric.Inc(1)
 			continue
 		}
 		body, err := ioutil.ReadAll(resp.Body)
@@ -122,21 +137,26 @@ func (qh *quarantineHistory) runOnce() time.Duration {
 		if err != nil {
 			deleteLogger.Error("Body", zap.Int("StatusCode", resp.StatusCode), zap.Error(err))
 			atomic.AddInt64(&errors, 1)
+			qh.errorsMetric.Inc(1)
 			continue
 		}
 		if resp.StatusCode/100 != 2 {
 			deleteLogger.Error("StatusCode", zap.Int("StatusCode", resp.StatusCode), zap.Error(err))
 			atomic.AddInt64(&errors, 1)
+			qh.errorsMetric.Inc(1)
 			continue
 		}
 		if err := json.Unmarshal(body, &responseBody); err != nil {
 			deleteLogger.Error("JSON", zap.String("JSON", string(body)), zap.Error(err))
 			atomic.AddInt64(&errors, 1)
+			qh.errorsMetric.Inc(1)
 			continue
 		}
 		deleteLogger.Debug("response", zap.String("Message", responseBody.Message), zap.Int("Days", responseBody.Days), zap.Int("ItemsPurged", responseBody.ItemsPurged), zap.Int("ItemsLeft", responseBody.ItemsLeft))
 		atomic.AddInt64(&itemsPurged, int64(responseBody.ItemsPurged))
+		qh.purgedMetric.Inc(int64(responseBody.ItemsPurged))
 		atomic.AddInt64(&itemsLeft, int64(responseBody.ItemsLeft))
+		qh.leftMetric.Inc(int64(responseBody.ItemsLeft))
 	}
 	close(cancel)
 	<-progressDone

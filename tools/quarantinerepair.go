@@ -18,23 +18,32 @@ import (
 	"time"
 
 	"github.com/troubling/hummingbird/common/ring"
+	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
 type quarantineRepair struct {
 	aa *AutoAdmin
 	// delay between each request; adjusted each pass to try to make passes last passTimeTarget
-	delay          time.Duration
-	passTimeTarget time.Duration
-	reportInterval time.Duration
+	delay                             time.Duration
+	passTimeTarget                    time.Duration
+	reportInterval                    time.Duration
+	passesMetric                      tally.Timer
+	queriesMetric                     tally.Counter
+	repairsMadeMetric                 tally.Counter
+	partitionReplicationsQueuedMetric tally.Counter
 }
 
 func newQuarantineRepair(aa *AutoAdmin) *quarantineRepair {
 	qr := &quarantineRepair{
-		aa:             aa,
-		delay:          time.Duration(aa.serverconf.GetInt("quarantine-repair", "initial_delay", 1)) * time.Second,
-		passTimeTarget: time.Duration(aa.serverconf.GetInt("quarantine-repair", "pass_time_target", 60*60)) * time.Second,
-		reportInterval: time.Duration(aa.serverconf.GetInt("quarantine-repair", "report_interval", 600)) * time.Second,
+		aa:                                aa,
+		delay:                             time.Duration(aa.serverconf.GetInt("quarantine-repair", "initial_delay", 1)) * time.Second,
+		passTimeTarget:                    time.Duration(aa.serverconf.GetInt("quarantine-repair", "pass_time_target", 60*60)) * time.Second,
+		reportInterval:                    time.Duration(aa.serverconf.GetInt("quarantine-repair", "report_interval", 600)) * time.Second,
+		passesMetric:                      aa.metricsScope.Timer("quar_rep_passes"),
+		queriesMetric:                     aa.metricsScope.Counter("quar_rep_queries"),
+		repairsMadeMetric:                 aa.metricsScope.Counter("quar_rep_repairs"),
+		partitionReplicationsQueuedMetric: aa.metricsScope.Counter("quar_rep_replications"),
 	}
 	if qr.delay < 0 {
 		qr.delay = time.Second
@@ -56,6 +65,7 @@ func (qr *quarantineRepair) runForever() {
 }
 
 func (qr *quarantineRepair) runOnce() time.Duration {
+	defer qr.passesMetric.Start().Stop()
 	start := time.Now()
 	logger := qr.aa.logger.With(zap.String("process", "quarantine repair"))
 	logger.Debug("starting pass")
@@ -91,6 +101,7 @@ func (qr *quarantineRepair) runOnce() time.Duration {
 	}()
 	for url, ipp := range urls {
 		atomic.AddInt64(&delays, 1)
+		qr.queriesMetric.Inc(1)
 		time.Sleep(qr.delay)
 		getLogger := logger.With(zap.String("method", "GET"), zap.String("url", url))
 		for typ, deviceToEntries := range qr.retrieveTypeToDeviceToEntries(getLogger, url) {
@@ -131,10 +142,14 @@ func (qr *quarantineRepair) runOnce() time.Duration {
 						if !qr.repairObject(deviceLogger, typ, policy, ringg, entry.NameInURL) {
 							continue
 						}
+						atomic.AddInt64(&repairsMade, 1)
+						qr.repairsMadeMetric.Inc(1)
 					} else { // entry.NameOnDevice
 						if !qr.queuePartitionReplication(deviceLogger, typ, policy, ringg, deviceID, entry.NameOnDevice) {
 							continue
 						}
+						atomic.AddInt64(&partitionReplicationsQueued, 1)
+						qr.partitionReplicationsQueuedMetric.Inc(1)
 					}
 					qr.clearQuarantine(deviceLogger, ipp, device, typ, policy, entry.NameOnDevice)
 				}
