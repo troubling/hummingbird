@@ -103,7 +103,7 @@ func (nrd *nurseryDevice) Scan() {
 	nrd.stabilizationLastPassDurationMetric.Record(time.Since(start))
 	nrd.UpdateStat("PassComplete", 1)
 	nrd.r.logger.Info("[stabilizeDevice] Pass complete.", zap.Int("count", count),
-		zap.Int("success", success), zap.Int("failed", failed),
+		zap.Int("success", success), zap.Int("failed", failed), zap.String("device", nrd.dev.Device),
 		zap.Duration("timeTook", time.Since(start)))
 }
 
