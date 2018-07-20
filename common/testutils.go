@@ -3,6 +3,7 @@ package common
 import (
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/uber-go/tally"
 )
@@ -10,10 +11,14 @@ import (
 type testScope struct {
 	lock     sync.RWMutex
 	counters map[string]tally.Counter
+	timers   map[string]tally.Timer
 }
 
 func NewTestScope() *testScope {
-	return &testScope{counters: map[string]tally.Counter{}}
+	return &testScope{
+		counters: map[string]tally.Counter{},
+		timers:   map[string]tally.Timer{},
+	}
 }
 
 func (t *testScope) Counter(name string) tally.Counter {
@@ -37,7 +42,19 @@ func (t *testScope) Gauge(name string) tally.Gauge {
 }
 
 func (t *testScope) Timer(name string) tally.Timer {
-	panic("Not implemented yet.")
+	t.lock.RLock()
+	c := t.timers[name]
+	t.lock.RUnlock()
+	if c == nil {
+		t.lock.Lock()
+		c = t.timers[name]
+		if c == nil {
+			c = &TestTimer{}
+			t.timers[name] = c
+		}
+		t.lock.Unlock()
+	}
+	return c
 }
 
 func (t *testScope) Histogram(name string, buckets tally.Buckets) tally.Histogram {
@@ -66,4 +83,20 @@ func (c *TestCounter) Inc(delta int64) {
 
 func (c *TestCounter) Value() int64 {
 	return atomic.LoadInt64(&c.count)
+}
+
+type TestTimer struct {
+	lastRecord time.Duration
+}
+
+func (t *TestTimer) Record(value time.Duration) {
+	t.lastRecord = value
+}
+
+func (t *TestTimer) RecordStopwatch(stopwatchStart time.Time) {
+	t.Record(time.Since(stopwatchStart))
+}
+
+func (t *TestTimer) Start() tally.Stopwatch {
+	return tally.NewStopwatch(time.Now(), t)
 }

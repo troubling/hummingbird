@@ -17,6 +17,7 @@ import (
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/containerserver"
 	"github.com/troubling/hummingbird/objectserver"
+	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
@@ -26,6 +27,10 @@ type replication struct {
 	minimumPassTime time.Duration
 	reportInterval  time.Duration
 	dbPollInterval  time.Duration
+	passesMetric    tally.Timer
+	countLeftMetric tally.Gauge
+	countDoneMetric tally.Counter
+	activeMetric    tally.Gauge
 }
 
 func newReplication(aa *AutoAdmin) *replication {
@@ -35,6 +40,10 @@ func newReplication(aa *AutoAdmin) *replication {
 		minimumPassTime: time.Duration(aa.serverconf.GetInt("replication", "minimum_pass_time", 60)) * time.Second,
 		reportInterval:  time.Duration(aa.serverconf.GetInt("replication", "report_interval", 600)) * time.Second,
 		dbPollInterval:  time.Duration(aa.serverconf.GetInt("replication", "db_poll_interval", 10)) * time.Second,
+		passesMetric:    aa.metricsScope.Timer("repl_passes"),
+		countLeftMetric: aa.metricsScope.Gauge("repl_left"),
+		countDoneMetric: aa.metricsScope.Counter("repl_done"),
+		activeMetric:    aa.metricsScope.Gauge("repl_active"),
 	}
 	return r
 }
@@ -57,11 +66,13 @@ type replicationContext struct {
 	progressDone    chan struct{}
 	countLeft       int64
 	countDone       int64
+	active          int64
 	ipDevsInUseLock sync.Mutex
 	ipDevsInUse     map[string]int
 }
 
 func (r *replication) runOnce() time.Duration {
+	defer r.passesMetric.Start().Stop()
 	ctx := &replicationContext{
 		start:        time.Now(),
 		logger:       r.aa.logger.With(zap.String("process", "replication")),
@@ -97,6 +108,7 @@ func (r *replication) runOnce() time.Duration {
 			break
 		}
 		atomic.StoreInt64(&ctx.countLeft, int64(len(qrs)))
+		r.countLeftMetric.Update(float64(len(qrs)))
 		for _, qr := range qrs {
 			r.handleQueuedReplication(ctx, qr)
 		}
@@ -126,6 +138,7 @@ func (r *replication) progress(ctx *replicationContext) {
 			close(ctx.progressDone)
 			return
 		case <-time.After(r.reportInterval):
+			active := atomic.LoadInt64(&ctx.active)
 			activeDevs := 0
 			ctx.ipDevsInUseLock.Lock()
 			for _, count := range ctx.ipDevsInUse {
@@ -140,8 +153,8 @@ func (r *replication) progress(ctx *replicationContext) {
 			if countDone > 0 {
 				eta = time.Duration(int64(time.Since(ctx.start)) / countDone * countLeft)
 			}
-			ctx.logger.Debug("progress", zap.Int64("jobs done", countDone), zap.Int64("jobs left", countLeft), zap.Int("active devices", activeDevs), zap.String("eta", eta.String()))
-			if err := r.aa.db.progressProcessPass("replication", "", 0, fmt.Sprintf("%d jobs done, %d jobs left, %d active devices, %s eta", countDone, countLeft, activeDevs, eta)); err != nil {
+			ctx.logger.Debug("progress", zap.Int64("jobs done", countDone), zap.Int64("jobs left", countLeft), zap.Int64("active jobs", active), zap.Int("active devices", activeDevs), zap.String("eta", eta.String()))
+			if err := r.aa.db.progressProcessPass("replication", "", 0, fmt.Sprintf("%d jobs done, %d jobs left, %d jobs active, %d active devices, %s eta", countDone, countLeft, active, activeDevs, eta)); err != nil {
 				ctx.logger.Error("progressProcessPass", zap.Error(err))
 			}
 		}
@@ -208,6 +221,7 @@ func (r *replication) runJob(ctx *replicationContext, logger *zap.Logger, qr *qu
 	ctx.ipDevsInUse[fromIPDevice]++
 	ctx.ipDevsInUse[toIPDevice]++
 	ctx.ipDevsInUseLock.Unlock()
+	r.activeMetric.Update(float64(atomic.AddInt64(&ctx.active, 1)))
 	logger.Debug("starting job", zap.Int("job from device", fromDev.Id), zap.Int("job to device", toDev.Id))
 	// sends this to the back of the queue in case of future retries
 	if err := r.aa.db.updateQueuedReplication(qr); err != nil {
@@ -254,12 +268,15 @@ func (r *replication) runJob(ctx *replicationContext, logger *zap.Logger, qr *qu
 		ctx.ipDevsInUse[fromIPDevice]--
 		ctx.ipDevsInUse[toIPDevice]--
 		ctx.ipDevsInUseLock.Unlock()
+		r.activeMetric.Update(float64(atomic.AddInt64(&ctx.active, -1)))
 		atomic.AddInt64(&ctx.countDone, 1)
+		r.countDoneMetric.Inc(1)
 	} else {
 		ctx.ipDevsInUseLock.Lock()
 		ctx.ipDevsInUse[fromIPDevice]--
 		ctx.ipDevsInUse[toIPDevice]--
 		ctx.ipDevsInUseLock.Unlock()
+		r.activeMetric.Update(float64(atomic.AddInt64(&ctx.active, -1)))
 	}
 	return success
 }

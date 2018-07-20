@@ -19,28 +19,37 @@ import (
 	"time"
 
 	"github.com/troubling/hummingbird/common/ring"
+	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
 type ringMonitor struct {
 	aa *AutoAdmin
 	// delay between each ring check; adjusted each pass to try to make passes last passTimeTarget
-	delay            time.Duration
-	passTimeTarget   time.Duration
-	reportInterval   time.Duration
-	prefix           string
-	suffix           string
-	ringMD5CacheLock sync.Mutex
-	ringMD5Cache     map[string]map[int]ring.RingMD5
+	delay                        time.Duration
+	passTimeTarget               time.Duration
+	reportInterval               time.Duration
+	prefix                       string
+	suffix                       string
+	ringMD5CacheLock             sync.Mutex
+	ringMD5Cache                 map[string]map[int]ring.RingMD5
+	passesMetric                 tally.Timer
+	checksMetric                 tally.Counter
+	errorsMetric                 tally.Counter
+	partitionCopiesChangedMetric tally.Counter
 }
 
 func newRingMonitor(aa *AutoAdmin) *ringMonitor {
 	rm := &ringMonitor{
-		aa:             aa,
-		delay:          time.Duration(aa.serverconf.GetInt("ring-monitor", "initial_delay", 1)) * time.Second,
-		passTimeTarget: time.Duration(aa.serverconf.GetInt("ring-monitor", "pass_time_target", 60)) * time.Second,
-		reportInterval: time.Duration(aa.serverconf.GetInt("ring-monitor", "report_interval", 600)) * time.Second,
-		ringMD5Cache:   map[string]map[int]ring.RingMD5{},
+		aa:                           aa,
+		delay:                        time.Duration(aa.serverconf.GetInt("ring-monitor", "initial_delay", 1)) * time.Second,
+		passTimeTarget:               time.Duration(aa.serverconf.GetInt("ring-monitor", "pass_time_target", 60)) * time.Second,
+		reportInterval:               time.Duration(aa.serverconf.GetInt("ring-monitor", "report_interval", 600)) * time.Second,
+		ringMD5Cache:                 map[string]map[int]ring.RingMD5{},
+		passesMetric:                 aa.metricsScope.Timer("ring_mon_passes"),
+		checksMetric:                 aa.metricsScope.Counter("ring_mon_checks"),
+		errorsMetric:                 aa.metricsScope.Counter("ring_mon_errors"),
+		partitionCopiesChangedMetric: aa.metricsScope.Counter("ring_mon_changes"),
 	}
 	if rm.delay < 0 {
 		rm.delay = time.Second
@@ -77,6 +86,7 @@ type ringTaskInstance struct {
 }
 
 func (rm *ringMonitor) runOnce() time.Duration {
+	defer rm.passesMetric.Start().Stop()
 	start := time.Now()
 	logger := rm.aa.logger.With(zap.String("process", "ring monitor"))
 	logger.Debug("starting pass")
@@ -90,6 +100,7 @@ func (rm *ringMonitor) runOnce() time.Duration {
 	ryng, err := rm.GetRingMD5("account", 0)
 	if err != nil {
 		errors++
+		rm.errorsMetric.Inc(1)
 		logger.Error("could not load ring", zap.String("type", "account"), zap.Int("policy", 0), zap.Error(err))
 	} else {
 		ringTasks = append(ringTasks, &ringTaskInstance{
@@ -100,6 +111,7 @@ func (rm *ringMonitor) runOnce() time.Duration {
 	ryng, err = rm.GetRingMD5("container", 0)
 	if err != nil {
 		errors++
+		rm.errorsMetric.Inc(1)
 		logger.Error("could not load ring", zap.String("type", "container"), zap.Int("policy", 0), zap.Error(err))
 	} else {
 		ringTasks = append(ringTasks, &ringTaskInstance{
@@ -112,6 +124,7 @@ func (rm *ringMonitor) runOnce() time.Duration {
 			ryng, err = rm.GetRingMD5("object", policy.Index)
 			if err != nil {
 				errors++
+				rm.errorsMetric.Inc(1)
 				logger.Error("could not load ring", zap.String("type", "object"), zap.Int("policy", policy.Index), zap.Error(err))
 				continue
 			}
@@ -147,12 +160,14 @@ func (rm *ringMonitor) runOnce() time.Duration {
 	}()
 	for _, ringTask := range ringTasks {
 		atomic.AddInt64(&delays, 1)
+		rm.checksMetric.Inc(1)
 		time.Sleep(rm.delay)
 		taskLogger := logger.With(zap.String("type", ringTask.typ), zap.Int("policy", ringTask.policy))
 		if ringTask.previousMD5 == "" {
 			ringTask.previousMD5, ringTask.nextRebalance, err = rm.aa.db.ringHash(ringTask.typ, ringTask.policy)
 			if err != nil {
 				atomic.AddInt64(&errors, 1)
+				rm.errorsMetric.Inc(1)
 				taskLogger.Error("couldn't retreive previous hash", zap.Error(err))
 				continue
 			}
@@ -160,6 +175,7 @@ func (rm *ringMonitor) runOnce() time.Duration {
 		if ringTask.ring.MD5() == ringTask.previousMD5 && !ringTask.nextRebalance.IsZero() && time.Now().After(ringTask.nextRebalance) {
 			if !rm.rebalance(taskLogger, ringTask) {
 				atomic.AddInt64(&errors, 1)
+				rm.errorsMetric.Inc(1)
 				continue
 			}
 		}
@@ -177,6 +193,7 @@ func (rm *ringMonitor) runOnce() time.Duration {
 		previousRing := ringTask.ring.RingMatching(ringTask.previousMD5)
 		if previousRing == nil {
 			atomic.AddInt64(&errors, 1)
+			rm.errorsMetric.Inc(1)
 			changeTaskLogger.Error("can't find previous ring; assuming nothing changed")
 			rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, ringTask.ring.MD5(), time.Now().Add(randomDuration(time.Minute*30, time.Hour)))
 			continue
@@ -184,6 +201,7 @@ func (rm *ringMonitor) runOnce() time.Duration {
 		partitionCount := previousRing.PartitionCount()
 		if partitionCount != ringTask.ring.PartitionCount() {
 			atomic.AddInt64(&errors, 1)
+			rm.errorsMetric.Inc(1)
 			changeTaskLogger.Error(
 				"cannot handle changing partition counts; assuming new ring as if no previous ring ever existed",
 				zap.Uint64("previous partition count", previousRing.PartitionCount()),
@@ -195,6 +213,7 @@ func (rm *ringMonitor) runOnce() time.Duration {
 		replicaCount := previousRing.ReplicaCount()
 		if replicaCount != ringTask.ring.ReplicaCount() {
 			atomic.AddInt64(&errors, 1)
+			rm.errorsMetric.Inc(1)
 			changeTaskLogger.Error(
 				"cannot handle changing replica counts; assuming new ring as if no previous ring ever existed",
 				zap.Uint64("previous replica count", previousRing.ReplicaCount()),
@@ -218,6 +237,7 @@ func (rm *ringMonitor) runOnce() time.Duration {
 						currentDev[replica].Id,
 					); err != nil {
 						atomic.AddInt64(&errors, 1)
+						rm.errorsMetric.Inc(1)
 						changeTaskLogger.Error(
 							"could not queue ring change; will try again next pass",
 							zap.Uint64("partition", partition),
@@ -230,6 +250,7 @@ func (rm *ringMonitor) runOnce() time.Duration {
 						break
 					} else {
 						atomic.AddInt64(&partitionCopiesChanged, 1)
+						rm.partitionCopiesChangedMetric.Inc(1)
 					}
 				}
 			}
@@ -237,6 +258,7 @@ func (rm *ringMonitor) runOnce() time.Duration {
 		if !failed {
 			if err = rm.aa.db.setRingHash(ringTask.typ, ringTask.policy, ringTask.ring.MD5(), time.Now().Add(randomDuration(time.Minute*30, time.Hour))); err != nil {
 				atomic.AddInt64(&errors, 1)
+				rm.errorsMetric.Inc(1)
 				changeTaskLogger.Error(
 					"could not record the new ring hash; will try again next pass",
 					zap.Error(err),

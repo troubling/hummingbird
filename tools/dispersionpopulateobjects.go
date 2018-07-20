@@ -15,24 +15,32 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go.uber.org/zap"
-
 	"github.com/troubling/hummingbird/common"
 	"github.com/troubling/hummingbird/common/conf"
+	"github.com/uber-go/tally"
+	"go.uber.org/zap"
 )
 
 type dispersionPopulateObjects struct {
-	aa             *AutoAdmin
-	retryTime      time.Duration
-	reportInterval time.Duration
-	concurrency    uint64
+	aa               *AutoAdmin
+	retryTime        time.Duration
+	reportInterval   time.Duration
+	concurrency      uint64
+	passesMetric     tally.Timer
+	passesMetrics    map[int]tally.Timer
+	successesMetrics map[int]tally.Counter
+	errorsMetrics    map[int]tally.Counter
 }
 
 func newDispersionPopulateObjects(aa *AutoAdmin) *dispersionPopulateObjects {
 	dpo := &dispersionPopulateObjects{
-		aa:             aa,
-		retryTime:      time.Duration(aa.serverconf.GetInt("dispersion-populate-objects", "retry_time", 3600)) * time.Second,
-		reportInterval: time.Duration(aa.serverconf.GetInt("dispersion-populate-objects", "report_interval", 600)) * time.Second,
+		aa:               aa,
+		retryTime:        time.Duration(aa.serverconf.GetInt("dispersion-populate-objects", "retry_time", 3600)) * time.Second,
+		reportInterval:   time.Duration(aa.serverconf.GetInt("dispersion-populate-objects", "report_interval", 600)) * time.Second,
+		passesMetric:     aa.metricsScope.Timer("disp_pop_obj_passes"),
+		passesMetrics:    map[int]tally.Timer{},
+		successesMetrics: map[int]tally.Counter{},
+		errorsMetrics:    map[int]tally.Counter{},
 	}
 	concurrency := aa.serverconf.GetInt("dispersion-populate-objects", "concurrency", 0)
 	if concurrency < 1 {
@@ -53,6 +61,7 @@ func (dpo *dispersionPopulateObjects) runForever() {
 }
 
 func (dpo *dispersionPopulateObjects) runOnce() time.Duration {
+	defer dpo.passesMetric.Start().Stop()
 	start := time.Now()
 	logger := dpo.aa.logger.With(zap.String("process", "dispersion populate objects"))
 	logger.Debug("starting pass")
@@ -86,6 +95,12 @@ func (dpo *dispersionPopulateObjects) runOnce() time.Duration {
 }
 
 func (dpo *dispersionPopulateObjects) putDispersionObjects(logger *zap.Logger, policy *conf.Policy) bool {
+	if dpo.passesMetrics[policy.Index] == nil {
+		dpo.passesMetrics[policy.Index] = dpo.aa.metricsScope.Timer(fmt.Sprintf("disp_pop_obj_%d_passes", policy.Index))
+		dpo.successesMetrics[policy.Index] = dpo.aa.metricsScope.Counter(fmt.Sprintf("disp_pop_obj_%d_successes", policy.Index))
+		dpo.errorsMetrics[policy.Index] = dpo.aa.metricsScope.Counter(fmt.Sprintf("disp_pop_obj_%d_errors", policy.Index))
+	}
+	defer dpo.passesMetrics[policy.Index].Start().Stop()
 	start := time.Now()
 	logger = logger.With(zap.Int("policy", policy.Index))
 	container := fmt.Sprintf("disp-objs-%d", policy.Index)
@@ -168,7 +183,9 @@ func (dpo *dispersionPopulateObjects) putDispersionObjects(logger *zap.Logger, p
 		resp.Body.Close()
 		if resp.StatusCode/100 == 2 {
 			atomic.AddInt64(&successes, 1)
+			dpo.successesMetrics[policy.Index].Inc(1)
 		} else {
+			dpo.errorsMetrics[policy.Index].Inc(1)
 			if atomic.AddInt64(&errors, 1) > 1000 {
 				// After 1000 errors we'll just assume "things" are broken
 				// right now and try again next pass.
@@ -198,6 +215,7 @@ func (dpo *dispersionPopulateObjects) putDispersionObjects(logger *zap.Logger, p
 		if resp.StatusCode/100 != 2 {
 			logger.Error("PUT", zap.String("account", AdminAccount), zap.String("container", container), zap.String("object", "object-init"), zap.Int("status", resp.StatusCode))
 			errors++
+			dpo.errorsMetrics[policy.Index].Inc(1)
 		}
 	}
 	if err := dpo.aa.db.progressProcessPass("dispersion populate", "object", policy.Index, fmt.Sprintf("%d successes, %d errors", successes, errors)); err != nil {

@@ -15,21 +15,28 @@ import (
 	"time"
 
 	"github.com/troubling/hummingbird/common"
+	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
 type dispersionPopulateContainers struct {
-	aa             *AutoAdmin
-	retryTime      time.Duration
-	reportInterval time.Duration
-	concurrency    uint64
+	aa              *AutoAdmin
+	retryTime       time.Duration
+	reportInterval  time.Duration
+	concurrency     uint64
+	passesMetric    tally.Timer
+	successesMetric tally.Counter
+	errorsMetric    tally.Counter
 }
 
 func newDispersionPopulateContainers(aa *AutoAdmin) *dispersionPopulateContainers {
 	dpc := &dispersionPopulateContainers{
-		aa:             aa,
-		retryTime:      time.Duration(aa.serverconf.GetInt("dispersion-populate-containers", "retry_time", 3600)) * time.Second,
-		reportInterval: time.Duration(aa.serverconf.GetInt("dispersion-populate-containers", "report_interval", 600)) * time.Second,
+		aa:              aa,
+		retryTime:       time.Duration(aa.serverconf.GetInt("dispersion-populate-containers", "retry_time", 3600)) * time.Second,
+		reportInterval:  time.Duration(aa.serverconf.GetInt("dispersion-populate-containers", "report_interval", 600)) * time.Second,
+		passesMetric:    aa.metricsScope.Timer("disp_pop_cont_passes"),
+		successesMetric: aa.metricsScope.Counter("disp_pop_cont_successes"),
+		errorsMetric:    aa.metricsScope.Counter("disp_pop_cont_errors"),
 	}
 	concurrency := aa.serverconf.GetInt("dispersion-populate-containers", "concurrency", 0)
 	if concurrency < 1 {
@@ -50,6 +57,7 @@ func (dpc *dispersionPopulateContainers) runForever() {
 }
 
 func (dpc *dispersionPopulateContainers) runOnce() time.Duration {
+	defer dpc.passesMetric.Start().Stop()
 	start := time.Now()
 	logger := dpc.aa.logger.With(zap.String("process", "dispersion populate containers"))
 	resp := dpc.aa.hClient.HeadContainer(context.Background(), AdminAccount, "container-init", nil)
@@ -105,7 +113,9 @@ func (dpc *dispersionPopulateContainers) runOnce() time.Duration {
 		resp.Body.Close()
 		if resp.StatusCode/100 == 2 {
 			atomic.AddInt64(&successes, 1)
+			dpc.successesMetric.Inc(1)
 		} else {
+			dpc.errorsMetric.Inc(1)
 			if atomic.AddInt64(&errors, 1) > 1000 {
 				// After 1000 errors we'll just assume "things" are broken
 				// right now and try again next pass.
@@ -132,6 +142,7 @@ func (dpc *dispersionPopulateContainers) runOnce() time.Duration {
 		if resp.StatusCode/100 != 2 {
 			logger.Error("PUT", zap.String("account", AdminAccount), zap.String("container", "container-init"), zap.Int("status", resp.StatusCode))
 			errors++
+			dpc.errorsMetric.Inc(1)
 		}
 	}
 	if err := dpc.aa.db.progressProcessPass("dispersion populate", "container", 0, fmt.Sprintf("%d successes, %d errors", successes, errors)); err != nil {

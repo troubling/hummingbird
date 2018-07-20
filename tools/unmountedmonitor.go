@@ -19,33 +19,52 @@ import (
 	"time"
 
 	"github.com/troubling/hummingbird/common/ring"
+	"github.com/uber-go/tally"
 	"go.uber.org/zap"
 )
 
 type unmountedMonitor struct {
 	aa *AutoAdmin
 	// delay between each request; adjusted each pass to try to make passes last passTimeTarget
-	delay                time.Duration
-	passTimeTarget       time.Duration
-	reportInterval       time.Duration
-	stateRetention       time.Duration
-	serverDownLimit      time.Duration
-	deviceUnmountedLimit time.Duration
-	ignoreDuration       time.Duration
-	ignore               map[string]time.Time
+	delay                  time.Duration
+	passTimeTarget         time.Duration
+	reportInterval         time.Duration
+	stateRetention         time.Duration
+	serverDownLimit        time.Duration
+	deviceUnmountedLimit   time.Duration
+	ignoreDuration         time.Duration
+	ignore                 map[string]time.Time
+	passesMetric           tally.Timer
+	queriesMetric          tally.Counter
+	errorsMetric           tally.Counter
+	serversUpMetric        tally.Counter
+	serversDownMetric      tally.Counter
+	devicesMountedMetric   tally.Counter
+	devicesUnmountedMetric tally.Counter
+	serverRemovals         tally.Counter
+	deviceRemovals         tally.Counter
 }
 
 func newUnmountedMonitor(aa *AutoAdmin) *unmountedMonitor {
 	um := &unmountedMonitor{
-		aa:                   aa,
-		delay:                time.Duration(aa.serverconf.GetInt("unmounted-monitor", "initial_delay", 10)) * time.Second,
-		passTimeTarget:       time.Duration(aa.serverconf.GetInt("unmounted-monitor", "pass_time_target", 600)) * time.Second,
-		reportInterval:       time.Duration(aa.serverconf.GetInt("unmounted-monitor", "report_interval", 60)) * time.Second,
-		stateRetention:       time.Duration(aa.serverconf.GetInt("unmounted-monitor", "state_retention", 86400)) * time.Second,
-		serverDownLimit:      time.Duration(aa.serverconf.GetInt("unmounted-monitor", "server_down_limit", 14400)) * time.Second,
-		deviceUnmountedLimit: time.Duration(aa.serverconf.GetInt("unmounted-monitor", "device_unmounted_limit", 3600)) * time.Second,
-		ignoreDuration:       time.Duration(aa.serverconf.GetInt("unmounted-monitor", "ignore_duration", 14400)) * time.Second,
-		ignore:               map[string]time.Time{},
+		aa:                     aa,
+		delay:                  time.Duration(aa.serverconf.GetInt("unmounted-monitor", "initial_delay", 10)) * time.Second,
+		passTimeTarget:         time.Duration(aa.serverconf.GetInt("unmounted-monitor", "pass_time_target", 600)) * time.Second,
+		reportInterval:         time.Duration(aa.serverconf.GetInt("unmounted-monitor", "report_interval", 60)) * time.Second,
+		stateRetention:         time.Duration(aa.serverconf.GetInt("unmounted-monitor", "state_retention", 86400)) * time.Second,
+		serverDownLimit:        time.Duration(aa.serverconf.GetInt("unmounted-monitor", "server_down_limit", 14400)) * time.Second,
+		deviceUnmountedLimit:   time.Duration(aa.serverconf.GetInt("unmounted-monitor", "device_unmounted_limit", 3600)) * time.Second,
+		ignoreDuration:         time.Duration(aa.serverconf.GetInt("unmounted-monitor", "ignore_duration", 14400)) * time.Second,
+		ignore:                 map[string]time.Time{},
+		passesMetric:           aa.metricsScope.Timer("unmounted_passes"),
+		queriesMetric:          aa.metricsScope.Counter("unmounted_queries"),
+		errorsMetric:           aa.metricsScope.Counter("unmounted_errors"),
+		serversUpMetric:        aa.metricsScope.Counter("unmounted_server_up_hits"),
+		serversDownMetric:      aa.metricsScope.Counter("unmounted_server_down_hits"),
+		devicesMountedMetric:   aa.metricsScope.Counter("unmounted_device_mounted_hits"),
+		devicesUnmountedMetric: aa.metricsScope.Counter("unmounted_device_unmounted_hits"),
+		serverRemovals:         aa.metricsScope.Counter("unmounted_server_removals"),
+		deviceRemovals:         aa.metricsScope.Counter("unmounted_device_removals"),
 	}
 	if um.delay < 0 {
 		um.delay = time.Second
@@ -70,6 +89,7 @@ func (um *unmountedMonitor) runForever() {
 }
 
 func (um *unmountedMonitor) runOnce() time.Duration {
+	defer um.passesMetric.Start().Stop()
 	type reconData struct {
 		Device  string
 		Mounted bool
@@ -117,18 +137,21 @@ func (um *unmountedMonitor) runOnce() time.Duration {
 	}()
 	for url, endpoint := range endpoints {
 		atomic.AddInt64(&delays, 1)
+		um.queriesMetric.Inc(1)
 		time.Sleep(um.delay)
 		reconLogger := logger.With(zap.String("method", "GET"), zap.String("url", url))
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			reconLogger.Error("http.NewRequest", zap.Error(err))
 			atomic.AddInt64(&errors, 1)
+			um.errorsMetric.Inc(1)
 			continue
 		}
 		resp, err := um.aa.client.Do(req)
 		if err != nil {
 			reconLogger.Error("Do", zap.Error(err))
 			atomic.AddInt64(&serversDown, 1)
+			um.serversDownMetric.Inc(1)
 			um.serverDown(reconLogger, endpoint.ip, endpoint.port)
 			continue
 		}
@@ -137,12 +160,14 @@ func (um *unmountedMonitor) runOnce() time.Duration {
 		if err != nil {
 			reconLogger.Error("Body", zap.Int("StatusCode", resp.StatusCode), zap.Error(err))
 			atomic.AddInt64(&serversDown, 1)
+			um.serversDownMetric.Inc(1)
 			um.serverDown(reconLogger, endpoint.ip, endpoint.port)
 			continue
 		}
 		if resp.StatusCode/100 != 2 {
 			reconLogger.Error("StatusCode", zap.Int("StatusCode", resp.StatusCode), zap.Error(err))
 			atomic.AddInt64(&serversDown, 1)
+			um.serversDownMetric.Inc(1)
 			um.serverDown(reconLogger, endpoint.ip, endpoint.port)
 			continue
 		}
@@ -150,18 +175,22 @@ func (um *unmountedMonitor) runOnce() time.Duration {
 		if err := json.Unmarshal(body, &items); err != nil {
 			reconLogger.Error("JSON", zap.String("JSON", string(body)), zap.Error(err))
 			atomic.AddInt64(&serversDown, 1)
+			um.serversDownMetric.Inc(1)
 			um.serverDown(reconLogger, endpoint.ip, endpoint.port)
 			continue
 		}
 		atomic.AddInt64(&serversUp, 1)
+		um.serversUpMetric.Inc(1)
 		um.serverUp(reconLogger, endpoint.ip, endpoint.port)
 		for _, item := range items {
 			devLogger := reconLogger.With(zap.String("device", item.Device))
 			if item.Mounted {
 				atomic.AddInt64(&devicesMounted, 1)
+				um.devicesMountedMetric.Inc(1)
 				um.deviceMounted(devLogger, endpoint.ip, endpoint.port, item.Device, item.Size, item.Used)
 			} else {
 				atomic.AddInt64(&devicesUnmounted, 1)
+				um.devicesUnmountedMetric.Inc(1)
 				um.deviceUnmounted(devLogger, endpoint.ip, endpoint.port, item.Device)
 			}
 		}
@@ -258,6 +287,7 @@ func (um *unmountedMonitor) serverDown(logger *zap.Logger, ip string, port int) 
 		return
 	}
 	um.removeFromBuilders(logger, ip, port, "")
+	um.serverRemovals.Inc(1)
 }
 
 func (um *unmountedMonitor) deviceMounted(logger *zap.Logger, ip string, port int, device string, size, used int64) {
@@ -314,6 +344,7 @@ func (um *unmountedMonitor) deviceUnmounted(logger *zap.Logger, ip string, port 
 	}
 	logger.Debug("device unmounted, it's time to remove it")
 	um.removeFromBuilders(logger, ip, port, device)
+	um.deviceRemovals.Inc(1)
 	logger.Debug("device unmounted, done trying to remove it")
 }
 
