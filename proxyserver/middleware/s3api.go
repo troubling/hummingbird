@@ -49,8 +49,10 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/troubling/hummingbird/accountserver"
 	"github.com/troubling/hummingbird/common"
@@ -72,9 +74,10 @@ type s3Response struct {
 }
 
 var s3Responses = map[int]s3Response{
-	// NOTE: These are meant to be generic responses
+	// NOTE: These are meant to be generic responses but they wont be soon.
+	400: {"InvalidBucketName", "The specified bucket is not valid."},
 	403: {"AccessDenied", "Access Denied"},
-	404: {"NotFound", "Not Found"}, // TODO: S3 responds with differetn 404 messages
+	404: {"NotFound", "Not Found"}, // TODO: S3 responds with different 404 messages
 	405: {"MethodNotAllowed", "The specified method is not allowed against this resource."},
 	411: {"MissingContentLength", "You must provide the Content-Length HTTP header."},
 	500: {"InternalError", "We encountered an internal error. Please try again."},
@@ -314,6 +317,41 @@ func s3PathSplit(path string) (string, string) {
 	}
 }
 
+func validBucketName(s string) bool {
+	if len(s) < 3 || len(s) > 63 {
+		return false
+	}
+	if !(unicode.IsLetter(rune(s[0])) || unicode.IsDigit(rune(s[0]))) {
+		return false
+	}
+	if strings.Index(s, ".-") != -1 {
+		return false
+	}
+	if strings.Index(s, "-.") != -1 {
+		return false
+	}
+	if strings.Index(s, "..") != -1 {
+		return false
+	}
+	if s[len(s)-1] == '.' {
+		return false
+	}
+	ip := regexp.MustCompile(`(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}`)
+	if ip.MatchString(s) {
+		return false
+	}
+	validChars := regexp.MustCompile(`^[-.a-z0-9]*$`)
+	if !validChars.MatchString(s) {
+		return false
+	}
+	return true
+}
+
+func InvalidBucketNameResponse(writer http.ResponseWriter, request *http.Request) {
+	writer.WriteHeader(400)
+	writer.Write(nil)
+}
+
 func (s *s3ApiHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	ctx := GetProxyContext(request)
 	// Check if this is an S3 request
@@ -325,6 +363,13 @@ func (s *s3ApiHandler) ServeHTTP(writer http.ResponseWriter, request *http.Reque
 
 	s.container, s.object = s3PathSplit(request.URL.Path)
 	s.account = ctx.S3Auth.Account
+
+	if s.container != "" {
+		if !validBucketName(s.container) {
+			InvalidBucketNameResponse(writer, request)
+			return
+		}
+	}
 
 	// TODO: Validate the container
 	// Generate the hbird api path
