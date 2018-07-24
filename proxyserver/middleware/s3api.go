@@ -815,6 +815,10 @@ func (s *s3ApiHandler) handleContainerRequest(writer http.ResponseWriter, reques
 		}
 		cap := NewCaptureWriter()
 		ctx.serveHTTPSubrequest(cap, newReq)
+                if cap.status == 404 {
+                        NoSuchBucketResponse(writer, request)
+                        return
+                }
 		if cap.status/100 != 2 {
 			srv.StandardResponse(writer, cap.status)
 			return
@@ -831,6 +835,11 @@ func (s *s3ApiHandler) handleContainerRequest(writer http.ResponseWriter, reques
 		}
 		cap := NewCaptureWriter()
 		ctx.serveHTTPSubrequest(cap, newReq)
+                /* Can't overwrite a bucket in s3, so we'll lie about it here. */
+                if cap.status == http.StatusAccepted {
+                        BucketAlreadyExistsResponse(writer, request)
+                        return
+                }
 		if cap.status/100 != 2 {
 			srv.StandardResponse(writer, cap.status)
 			return
@@ -932,6 +941,10 @@ func (s *s3ApiHandler) handleContainerRequest(writer http.ResponseWriter, reques
 		cap := NewCaptureWriter()
 		newReq.URL.RawQuery = nq.Encode()
 		ctx.serveHTTPSubrequest(cap, newReq)
+                if cap.status == 404 {
+                        NoSuchBucketResponse(writer, request)
+                        return
+                }
 		if cap.status/100 != 2 {
 			srv.StandardResponse(writer, cap.status)
 			return
