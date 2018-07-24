@@ -75,15 +75,17 @@ type s3Response struct {
 }
 
 var s3Responses = map[int]s3Response{
-	// NOTE: These are meant to be generic responses but they wont be soon.
-	400: {"InvalidBucketName", "The specified bucket is not valid."},
-	403: {"AccessDenied", "Access Denied"},
-	404: {"NotFound", "Not Found"}, // TODO: S3 responds with different 404 messages
-	405: {"MethodNotAllowed", "The specified method is not allowed against this resource."},
-	411: {"MissingContentLength", "You must provide the Content-Length HTTP header."},
-	500: {"InternalError", "We encountered an internal error. Please try again."},
-	501: {"NotImplemented", "A header you provided implies functionality that is not implemented."},
-	503: {"ServiceUnavailable", "Reduce your request rate."},
+	403:   {"AccessDenied", "Access Denied"},
+	404:   {"NotFound", "Not Found"}, // TODO: S3 responds with differetn 404 messages
+	405:   {"MethodNotAllowed", "The specified method is not allowed against this resource."},
+	411:   {"MissingContentLength", "You must provide the Content-Length HTTP header."},
+	500:   {"InternalError", "We encountered an internal error. Please try again."},
+	501:   {"NotImplemented", "A header you provided implies functionality that is not implemented."},
+	503:   {"ServiceUnavailable", "Reduce your request rate."},
+	40000: {"InvalidBucketName", "The specified bucket is not valid."},
+	40001: {"BucketAlreadyExists", "The specified bucket is not valid."},
+	40300: {"SignatureDoesNotMatch", "The request signature we calculated does not match the signature you provided."},
+	40400: {"NoSuchBucket", "The specified bucket does not exist."},
 }
 
 type s3Owner struct {
@@ -429,8 +431,23 @@ func validBucketName(s string) bool {
 	return true
 }
 
+func NoSuchBucketResponse(writer http.ResponseWriter, request *http.Request) {
+	writer.WriteHeader(40400)
+	writer.Write(nil)
+}
+
+func SignatureDoesNotMatchResponse(writer http.ResponseWriter, request *http.Request) {
+	writer.WriteHeader(40300)
+	writer.Write(nil)
+}
+
 func InvalidBucketNameResponse(writer http.ResponseWriter, request *http.Request) {
-	writer.WriteHeader(400)
+	writer.WriteHeader(40000)
+	writer.Write(nil)
+}
+
+func BucketAlreadyExistsResponse(writer http.ResponseWriter, request *http.Request) {
+	writer.WriteHeader(40001)
 	writer.Write(nil)
 }
 
