@@ -362,6 +362,9 @@ func (w *s3ResponseWriterWrapper) WriteHeader(statusCode int) {
 		headers.Set("Content-Length", strconv.Itoa(len(output)))
 		w.msg = output
 	}
+	if statusCode > 1000 {
+		statusCode /= 100
+	}
 	w.writer.WriteHeader(statusCode)
 }
 
