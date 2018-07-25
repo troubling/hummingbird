@@ -317,6 +317,9 @@ func s3PathSplit(path string) (string, string) {
 	}
 }
 
+var bucketIsIP = regexp.MustCompile(`(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}`)
+var bucketValidChars = regexp.MustCompile(`^[-.a-z0-9]*$`)
+
 func validBucketName(s string) bool {
 	if len(s) < 3 || len(s) > 63 {
 		return false
@@ -336,12 +339,10 @@ func validBucketName(s string) bool {
 	if s[len(s)-1] == '.' {
 		return false
 	}
-	ip := regexp.MustCompile(`(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}`)
-	if ip.MatchString(s) {
+	if bucketIsIP.MatchString(s) {
 		return false
 	}
-	validChars := regexp.MustCompile(`^[-.a-z0-9]*$`)
-	if !validChars.MatchString(s) {
+	if !bucketValidChars.MatchString(s) {
 		return false
 	}
 	return true
