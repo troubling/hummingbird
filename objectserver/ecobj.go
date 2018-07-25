@@ -37,6 +37,8 @@ import (
 	"github.com/troubling/hummingbird/common/srv"
 )
 
+const dataShardTimeout = time.Millisecond * 25
+
 type ecObject struct {
 	IndexDBItem
 	afw             fs.AtomicFileWriter
@@ -127,27 +129,78 @@ func (o *ecObject) Copy(dsts ...io.Writer) (written int64, err error) {
 	if len(nodes) < dataShards+parityShards {
 		return 0, fmt.Errorf("Not enough nodes (%d) for scheme (%d)", len(nodes), dataShards+parityShards)
 	}
-	bodies := make([]io.Reader, len(nodes))
-	// TODO: This could be parallelized, and we can probably stop looking once we have dataShards bodies available.
-	for i, node := range nodes {
+
+	type bod struct {
+		i   int
+		bod io.ReadCloser
+	}
+	bods := make(chan *bod)
+	errs := make(chan error)
+	done := make(chan struct{})
+	grabShard := func(i int, node *ring.Device) {
 		req, err := http.NewRequest("GET", fmt.Sprintf("%s://%s:%d/ec-shard/%s/%s/%d", node.Scheme, node.Ip, node.Port, node.Device, o.Hash, i), nil)
 		if err != nil {
-			continue
+			select {
+			case errs <- err:
+			case <-done:
+			}
+			return
 		}
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
 		req.Header.Set("X-Trans-Id", o.txnId)
-		resp, err := o.client.Do(req)
-		if err != nil {
-			continue
+		if resp, err := o.client.Do(req); err == nil && resp.StatusCode == http.StatusOK {
+			select {
+			case bods <- &bod{i: i, bod: resp.Body}:
+			case <-done:
+				resp.Body.Close()
+			}
+		} else {
+			if err == nil {
+				err = fmt.Errorf("Bad status code %d", resp.StatusCode)
+				resp.Body.Close()
+			}
+			select {
+			case errs <- err:
+			case <-done:
+			}
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			continue
-		}
-		bodies[i] = resp.Body
 	}
-	ecGlue(dataShards, parityShards, bodies, chunkSize, contentLength, dsts...)
-	return contentLength, nil
+	bodies := make([]io.Reader, len(nodes))
+	bodcount := 0
+	errcount := 0
+	// launch requests for the object's data shards
+	nodeI := 0
+	for ; nodeI < dataShards; nodeI++ {
+		go grabShard(nodeI, nodes[nodeI])
+	}
+	ticker := time.NewTicker(dataShardTimeout)
+	defer ticker.Stop()
+	for {
+		select {
+		case b := <-bods:
+			defer b.bod.Close()
+			bodies[b.i] = b.bod
+			bodcount++
+			if bodcount >= dataShards {
+				close(done)
+				return contentLength, ecGlue(dataShards, parityShards, bodies, chunkSize, contentLength, dsts...)
+			}
+		// if we get an error or a little time passes, request a parity shard.
+		case err := <-errs:
+			if errcount++; errcount > parityShards {
+				close(done)
+				return 0, fmt.Errorf("Unable to retrieve enough shards to reconstruct: %v", err)
+			} else if nodeI < len(nodes) {
+				go grabShard(nodeI, nodes[nodeI])
+				nodeI++
+			}
+		case <-ticker.C:
+			if nodeI < len(nodes) {
+				go grabShard(nodeI, nodes[nodeI])
+				nodeI++
+			}
+		}
+	}
 }
 
 // CopyRange copies a range of bytes from the object to the writer.
