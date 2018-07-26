@@ -214,6 +214,7 @@ func (dsc *dispersionScanContainers) handleChecks(ctx *dispersionScanContainersC
 			}
 			continue
 		}
+		req.Header.Set("User-Agent", "Andrewd")
 		req.Header.Set("X-Backend-Suppress-2xx-Logging", "t")
 		resp, err := dsc.aa.client.Do(req)
 		if err != nil {

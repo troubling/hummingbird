@@ -115,6 +115,7 @@ func (oc *standardObjectClient) putObject(ctx context.Context, account, containe
 		if err != nil {
 			return nil, err
 		}
+		req.Header.Set("User-Agent", oc.pdc.userAgent)
 		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		req.Header.Set("Content-Type", "application/octet-stream")
 		for key := range headers {
@@ -218,6 +219,7 @@ func (oc *standardObjectClient) postObject(ctx context.Context, account, contain
 		if err != nil {
 			return nil, err
 		}
+		req.Header.Set("User-Agent", oc.pdc.userAgent)
 		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
@@ -238,6 +240,7 @@ func (oc *standardObjectClient) getObject(ctx context.Context, account, containe
 		if err != nil {
 			return nil, err
 		}
+		req.Header.Set("User-Agent", oc.pdc.userAgent)
 		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
@@ -256,6 +259,7 @@ func (oc *standardObjectClient) grepObject(ctx context.Context, account, contain
 		if err != nil {
 			return nil, err
 		}
+		req.Header.Set("User-Agent", oc.pdc.userAgent)
 		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(oc.policy))
 		return req, nil
@@ -271,6 +275,7 @@ func (oc *standardObjectClient) headObject(ctx context.Context, account, contain
 		if err != nil {
 			return nil, err
 		}
+		req.Header.Set("User-Agent", oc.pdc.userAgent)
 		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
@@ -293,6 +298,7 @@ func (oc *standardObjectClient) deleteObject(ctx context.Context, account, conta
 		if err != nil {
 			return nil, err
 		}
+		req.Header.Set("User-Agent", oc.pdc.userAgent)
 		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))

@@ -197,7 +197,7 @@ func TestPriRepJobs(t *testing.T) {
 			ToDevice:   &ring.Device{Device: "sdb"},
 		},
 	}
-	doPriRepJobs(jobs, 2, http.DefaultClient)
+	doPriRepJobs(jobs, 2, http.DefaultClient, "Test Agent")
 	require.Equal(t, true, handlerRan)
 }
 

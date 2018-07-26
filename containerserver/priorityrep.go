@@ -12,6 +12,6 @@ type PriorityRepJob struct {
 }
 
 // TODO
-func SendPriRepJob(job *PriorityRepJob, client common.HTTPClient) (string, bool) {
+func SendPriRepJob(job *PriorityRepJob, client common.HTTPClient, userAgent string) (string, bool) {
 	return "pretending to do priority replication; normal replication should be fast enough for now", true
 }

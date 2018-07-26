@@ -174,6 +174,7 @@ func (rs *ringScan) runOnce() time.Duration {
 			rs.errorsMetric.Inc(1)
 			return
 		}
+		req.Header.Set("User-Agent", "Andrewd")
 		resp, err := rs.aa.client.Do(req)
 		if err != nil {
 			getLogger.Error("Do", zap.Error(err))
@@ -254,6 +255,7 @@ func (rs *ringScan) runOnce() time.Duration {
 						rs.errorsMetric.Inc(1)
 						return
 					}
+					req.Header.Set("User-Agent", "Andrewd")
 					req.Header.Set("Etag", ryng.MD5())
 					resp, err := rs.aa.client.Do(req)
 					if err != nil {

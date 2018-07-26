@@ -34,6 +34,7 @@ type RequestClient interface {
 	ObjectRingFor(ctx context.Context, account string, container string) (ring.Ring, *http.Response)
 	ContainerRing() ring.Ring
 	AccountRing() ring.Ring
+	SetUserAgent(string)
 }
 
 // ProxyClient is the factory for RequestClients, and manages any persistent/shared client resources.
