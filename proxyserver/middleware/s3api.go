@@ -50,6 +50,7 @@ import (
 	"math/rand"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -190,28 +191,108 @@ type s3ObjectInfo struct {
 	LastModified string   `xml:"LastModified"`
 	ETag         string   `xml:"ETag"`
 	Size         int64    `xml:"Size"`
-	StorageClass string   `xml:"StorageClass"`
 	Owner        *s3Owner `xml:"Owner,omitempty"`
+	StorageClass string   `xml:"StorageClass"`
 }
 
-type s3ObjectList struct {
+type s3Prefix struct {
+	Prefix string `xml:"Prefix,omitempty"`
+}
+
+type s3ObjectListV1 struct {
+	XMLName     xml.Name       `xml:"ListBucketResult"`
+	Xmlns       string         `xml:"xmlns,attr"`
+	Name        string         `xml:"Name"`
+	Prefix      string         `xml:"Prefix"`
+	Marker      string         `xml:"Marker"`
+	NextMarker  string         `xml:"NextMarker,omitempty"`
+	MaxKeys     int            `xml:"MaxKeys"`
+	Delimiter   string         `xml:"Delimiter,omitempty"`
+	IsTruncated bool           `xml:"IsTruncated"`
+	Objects     []s3ObjectInfo `xml:"Contents"`
+	Prefixes    []s3Prefix     `xml:"CommonPrefixes,omitempty"`
+}
+
+type s3ObjectListV2 struct {
 	XMLName               xml.Name       `xml:"ListBucketResult"`
 	Xmlns                 string         `xml:"xmlns,attr"`
 	Name                  string         `xml:"Name"`
 	Prefix                string         `xml:"Prefix"`
-	Marker                string         `xml:"Marker"`
-	NextMarker            string         `xml:"NextMarker"`
-	MaxKeys               int            `xml:"MaxKeys"`
-	IsTruncated           bool           `xml:"IsTruncated"`
-	ContinuationToken     string         `xml:"ContinuationToken,omitempty"`
 	NextContinuationToken string         `xml:"NextContinationToken,omitempty"`
+	ContinuationToken     string         `xml:"ContinuationToken,omitempty"`
 	StartAfter            string         `xml:"StartAfter,omitempty"`
-	KeyCount              string         `xml:"KeyCount,omitempty"`
+	KeyCount              string         `xml:"KeyCount"`
+	MaxKeys               int            `xml:"MaxKeys"`
+	Delimiter             string         `xml:"Delimiter,omitempty"`
+	IsTruncated           bool           `xml:"IsTruncated"`
 	Objects               []s3ObjectInfo `xml:"Contents"`
+	Prefixes              []s3Prefix     `xml:"CommonPrefixes,omitempty"`
 }
 
-func NewS3ObjectList() *s3ObjectList {
-	return &s3ObjectList{Xmlns: s3Xmlns}
+type s3ObjectList interface {
+	SetName(val string)
+	SetPrefix(val string)
+	SetMarker(val string)
+	SetNextMarker(val string)
+	SetMaxKeys(val int)
+	SetDelimiter(val string)
+	SetIsTruncated(val bool)
+	SetNextContinuationToken(val string)
+	SetContinuationToken(val string)
+	SetStartAfter(val string)
+	SetKeyCount(val string)
+	GetObjects() []s3ObjectInfo
+	SetObjects(val []s3ObjectInfo)
+	GetPrefixes() []s3Prefix
+	SetPrefixes(val []s3Prefix)
+}
+
+func (l *s3ObjectListV1) SetName(val string)                  { l.Name = val }
+func (l *s3ObjectListV1) SetPrefix(val string)                { l.Prefix = val }
+func (l *s3ObjectListV1) SetMarker(val string)                { l.Marker = val }
+func (l *s3ObjectListV1) SetNextMarker(val string)            { l.NextMarker = val }
+func (l *s3ObjectListV1) SetMaxKeys(val int)                  { l.MaxKeys = val }
+func (l *s3ObjectListV1) SetDelimiter(val string)             { l.Delimiter = val }
+func (l *s3ObjectListV1) SetIsTruncated(val bool)             { l.IsTruncated = val }
+func (l *s3ObjectListV1) SetNextContinuationToken(val string) {}
+func (l *s3ObjectListV1) SetContinuationToken(val string)     {}
+func (l *s3ObjectListV1) SetStartAfter(val string)            {}
+func (l *s3ObjectListV1) SetKeyCount(val string)              {}
+func (l *s3ObjectListV1) GetObjects() []s3ObjectInfo          { return l.Objects }
+func (l *s3ObjectListV1) SetObjects(val []s3ObjectInfo)       { l.Objects = val }
+func (l *s3ObjectListV1) GetPrefixes() []s3Prefix             { return l.Prefixes }
+func (l *s3ObjectListV1) SetPrefixes(val []s3Prefix)          { l.Prefixes = val }
+
+func (l *s3ObjectListV2) SetName(val string)                  { l.Name = val }
+func (l *s3ObjectListV2) SetPrefix(val string)                { l.Prefix = val }
+func (l *s3ObjectListV2) SetMarker(val string)                {}
+func (l *s3ObjectListV2) SetNextMarker(val string)            {}
+func (l *s3ObjectListV2) SetMaxKeys(val int)                  { l.MaxKeys = val }
+func (l *s3ObjectListV2) SetDelimiter(val string)             { l.Delimiter = val }
+func (l *s3ObjectListV2) SetIsTruncated(val bool)             { l.IsTruncated = val }
+func (l *s3ObjectListV2) SetNextContinuationToken(val string) { l.NextContinuationToken = val }
+func (l *s3ObjectListV2) SetContinuationToken(val string)     { l.ContinuationToken = val }
+func (l *s3ObjectListV2) SetStartAfter(val string)            { l.StartAfter = val }
+func (l *s3ObjectListV2) SetKeyCount(val string)              { l.KeyCount = val }
+func (l *s3ObjectListV2) GetObjects() []s3ObjectInfo          { return l.Objects }
+func (l *s3ObjectListV2) SetObjects(val []s3ObjectInfo)       { l.Objects = val }
+func (l *s3ObjectListV2) GetPrefixes() []s3Prefix             { return l.Prefixes }
+func (l *s3ObjectListV2) SetPrefixes(val []s3Prefix)          { l.Prefixes = val }
+
+func NewS3ObjectList(ver string) s3ObjectList {
+	if ver == "2" {
+		return &s3ObjectListV2{Xmlns: s3Xmlns}
+	}
+	return &s3ObjectListV1{Xmlns: s3Xmlns}
+}
+
+type ObjectListingRecord struct {
+	Name         string `json:"name"`
+	LastModified string `json:"last_modified"`
+	Size         int64  `json:"bytes"`
+	ContentType  string `json:"content_type"`
+	ETag         string `json:"hash"`
+	Subdir       string `json:"subdir"`
 }
 
 type s3CopyObject struct {
@@ -807,7 +888,7 @@ func (s *s3ApiHandler) handleContainerRequest(writer http.ResponseWriter, reques
 		ver := q.Get("list-type")
 		marker := q.Get("marker")
 		prefix := q.Get("prefix")
-		delimeter := q.Get("delimeter")
+		delimiter := q.Get("delimiter")
 		fetchOwner := false
 		if ver == "2" {
 			marker = q.Get("start-after")
@@ -828,8 +909,8 @@ func (s *s3ApiHandler) handleContainerRequest(writer http.ResponseWriter, reques
 		if prefix != "" {
 			nq.Set("prefix", prefix)
 		}
-		if delimeter != "" {
-			nq.Set("delimiter", delimeter)
+		if delimiter != "" {
+			nq.Set("delimiter", delimiter)
 		}
 		cap := NewCaptureWriter()
 		newReq.URL.RawQuery = nq.Encode()
@@ -838,35 +919,40 @@ func (s *s3ApiHandler) handleContainerRequest(writer http.ResponseWriter, reques
 			srv.StandardResponse(writer, cap.status)
 			return
 		}
-		objectListing := []containerserver.ObjectListingRecord{}
+		objectListing := []ObjectListingRecord{}
 		err = json.Unmarshal(cap.body, &objectListing)
 		if err != nil {
 			srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
 			return
 		}
 		truncated := maxKeys > 0 && len(objectListing) > maxKeys
+		next := ""
 		if len(objectListing) > maxKeys {
+			next = objectListing[maxKeys-1].Name
 			objectListing = objectListing[:maxKeys]
 		}
-		objectList := NewS3ObjectList()
-		objectList.Name = s.container
-		objectList.MaxKeys = maxKeys
-		objectList.IsTruncated = truncated
-		objectList.Marker = marker
-		objectList.Prefix = prefix
-		if ver == "2" {
-			if truncated {
-				objectList.NextContinuationToken = base64.StdEncoding.EncodeToString([]byte(objectListing[len(objectListing)].Name))
-			}
-			objectList.ContinuationToken = q.Get("continuation-token")
-			objectList.StartAfter = q.Get("start-after")
-			objectList.KeyCount = strconv.Itoa(len(objectListing))
-		} else {
-			if truncated && delimeter != "" {
-				objectList.NextMarker = objectListing[len(objectListing)].Name
+		objectList := NewS3ObjectList(ver)
+		objectList.SetName(s.container)
+		objectList.SetMaxKeys(maxKeys)
+		objectList.SetDelimiter(delimiter)
+		objectList.SetIsTruncated(truncated)
+		objectList.SetPrefix(prefix)
+		if truncated {
+			objectList.SetNextContinuationToken(base64.StdEncoding.EncodeToString([]byte(next)))
+			if delimiter != "" {
+				objectList.SetNextMarker(next)
 			}
 		}
+		objectList.SetContinuationToken(q.Get("continuation-token"))
+		objectList.SetStartAfter(q.Get("start-after"))
+		objectList.SetKeyCount(strconv.Itoa(len(objectListing)))
+		objectList.SetMarker(marker)
+		var prefixes []string
 		for _, o := range objectListing {
+			if o.Subdir != "" {
+				prefixes = append(prefixes, o.Subdir)
+				continue
+			}
 			obj := s3ObjectInfo{
 				Name:         o.Name,
 				LastModified: o.LastModified + "Z",
@@ -880,7 +966,13 @@ func (s *s3ApiHandler) handleContainerRequest(writer http.ResponseWriter, reques
 					DisplayName: ctx.S3Auth.Account,
 				}
 			}
-			objectList.Objects = append(objectList.Objects, obj)
+			objectList.SetObjects(append(objectList.GetObjects(), obj))
+		}
+		if len(prefixes) > 0 {
+			sort.Strings(prefixes)
+			for _, prefix := range prefixes {
+				objectList.SetPrefixes(append(objectList.GetPrefixes(), s3Prefix{Prefix: prefix}))
+			}
 		}
 		output, err := xml.MarshalIndent(objectList, "", "  ")
 		if err != nil {
