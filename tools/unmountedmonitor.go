@@ -147,6 +147,7 @@ func (um *unmountedMonitor) runOnce() time.Duration {
 			um.errorsMetric.Inc(1)
 			continue
 		}
+		req.Header.Set("User-Agent", "Andrewd")
 		resp, err := um.aa.client.Do(req)
 		if err != nil {
 			reconLogger.Error("Do", zap.Error(err))

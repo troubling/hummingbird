@@ -96,6 +96,9 @@ type testDispersionClient struct {
 	objCalls  int
 }
 
+func (c *testDispersionClient) SetUserAgent(v string) {
+}
+
 func (c *testDispersionClient) PutAccount(ctx context.Context, account string, headers http.Header) *http.Response {
 	return nectarutil.ResponseStub(200, "")
 }

@@ -213,6 +213,7 @@ func (qr *quarantineRepair) retrieveTypeToDeviceToEntries(logger *zap.Logger, ur
 		logger.Error("http.NewRequest", zap.Error(err))
 		return typeToDeviceToEntries
 	}
+	req.Header.Set("User-Agent", "Andrewd")
 	resp, err := qr.aa.client.Do(req)
 	if err != nil {
 		logger.Debug("Do", zap.Error(err))
@@ -246,6 +247,7 @@ func (qr *quarantineRepair) repairHECObject(logger *zap.Logger, policy int, ring
 			logger.Error("repair HEC http.NewRequest", zap.Error(err))
 			continue
 		}
+		req.Header.Set("User-Agent", "Andrewd")
 		req.Header.Set("X-Backend-Storage-Policy-Index", fmt.Sprintf("%d", policy))
 		resp, err := qr.aa.client.Do(req)
 		if err != nil {
@@ -326,6 +328,7 @@ func (qr *quarantineRepair) repairObject(logger *zap.Logger, typ string, policy 
 			logger.Error("http.NewRequest", zap.Error(err))
 			return false
 		}
+		req.Header.Set("User-Agent", "Andrewd")
 		resp, err := qr.aa.client.Do(req)
 		if err != nil {
 			logger.Debug("Do", zap.Error(err))
@@ -363,6 +366,7 @@ func (qr *quarantineRepair) repairObject(logger *zap.Logger, typ string, policy 
 			logger.Error("http.NewRequest", zap.Error(err))
 			return false
 		}
+		fromReq.Header.Set("User-Agent", "Andrewd")
 		fromResp, err := qr.aa.client.Do(fromReq)
 		if err != nil {
 			logger.Debug("Do", zap.Error(err))
@@ -387,6 +391,7 @@ func (qr *quarantineRepair) repairObject(logger *zap.Logger, typ string, policy 
 			return false
 		}
 		toReq.Header = fromResp.Header
+		toReq.Header.Set("User-Agent", "Andrewd")
 		toResp, err := qr.aa.client.Do(toReq)
 		if err != nil {
 			logger.Debug("Do", zap.Error(err))
@@ -464,6 +469,7 @@ func (qr *quarantineRepair) clearQuarantine(logger *zap.Logger, ipp *ippInstance
 		logger.Error("http.NewRequest", zap.Error(err))
 		return err
 	}
+	req.Header.Set("User-Agent", "Andrewd")
 	resp, err := qr.aa.client.Do(req)
 	if err != nil {
 		logger.Debug("Do", zap.Error(err))

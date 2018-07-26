@@ -51,6 +51,7 @@ type proxyClient struct {
 	objectClients     map[int]proxyObjectClient
 	Logger            srv.LowLevelLogger
 	ClientTraceCloser io.Closer
+	userAgent         string
 }
 
 var _ ProxyClient = &proxyClient{}
@@ -87,6 +88,7 @@ func NewProxyClient(policyList conf.PolicyList, cnf srv.ConfigLoader, logger srv
 		policyList: policyList,
 		client:     httpClient,
 		Logger:     logger,
+		userAgent:  "Proxy",
 	}
 	if serverconf.HasSection("tracing") {
 		clientTracer, clientTraceCloser, err := tracing.Init("proxydirect-client", logger, serverconf.GetSection("tracing"))
@@ -159,6 +161,10 @@ func NewProxyClient(policyList conf.PolicyList, cnf srv.ConfigLoader, logger srv
 		c.objectClients[policy.Index] = client
 	}
 	return c, nil
+}
+
+func (c *proxyClient) SetUserAgent(v string) {
+	c.userAgent = v
 }
 
 // quorumResponse returns with a response representative of a quorum of nodes.
@@ -358,6 +364,10 @@ type requestClient struct {
 
 var _ RequestClient = &requestClient{}
 
+func (c *requestClient) SetUserAgent(v string) {
+	c.pdc.SetUserAgent(v)
+}
+
 func (c *requestClient) getObjectClient(ctx context.Context, account string, container string, mc ring.MemcacheRing, lc map[string]*ContainerInfo) proxyObjectClient {
 	ci, err := c.GetContainerInfo(ctx, account, container)
 	if err != nil {
@@ -388,6 +398,7 @@ func (c *requestClient) PutAccount(ctx context.Context, account string, headers 
 		if err != nil {
 			return nil, err
 		}
+		req.Header.Set("User-Agent", c.pdc.userAgent)
 		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
@@ -404,6 +415,7 @@ func (c *requestClient) PostAccount(ctx context.Context, account string, headers
 		if err != nil {
 			return nil, err
 		}
+		req.Header.Set("User-Agent", c.pdc.userAgent)
 		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
@@ -422,6 +434,7 @@ func (c *requestClient) GetAccountRaw(ctx context.Context, account string, optio
 		if err != nil {
 			return nil, err
 		}
+		req.Header.Set("User-Agent", c.pdc.userAgent)
 		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
@@ -439,6 +452,7 @@ func (c *requestClient) HeadAccount(ctx context.Context, account string, headers
 		if err != nil {
 			return nil, err
 		}
+		req.Header.Set("User-Agent", c.pdc.userAgent)
 		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
@@ -455,6 +469,7 @@ func (c *requestClient) DeleteAccount(ctx context.Context, account string, heade
 		if err != nil {
 			return nil, err
 		}
+		req.Header.Set("User-Agent", c.pdc.userAgent)
 		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
@@ -487,6 +502,7 @@ func (c *requestClient) PutContainer(ctx context.Context, account string, contai
 		if err != nil {
 			return nil, err
 		}
+		req.Header.Set("User-Agent", c.pdc.userAgent)
 		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
@@ -511,6 +527,7 @@ func (c *requestClient) PostContainer(ctx context.Context, account string, conta
 		if err != nil {
 			return nil, err
 		}
+		req.Header.Set("User-Agent", c.pdc.userAgent)
 		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
@@ -529,6 +546,7 @@ func (c *requestClient) GetContainerRaw(ctx context.Context, account string, con
 		if err != nil {
 			return nil, err
 		}
+		req.Header.Set("User-Agent", c.pdc.userAgent)
 		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
@@ -638,6 +656,7 @@ func (c *requestClient) HeadContainer(ctx context.Context, account string, conta
 		if err != nil {
 			return nil, err
 		}
+		req.Header.Set("User-Agent", c.pdc.userAgent)
 		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))
@@ -659,6 +678,7 @@ func (c *requestClient) DeleteContainer(ctx context.Context, account string, con
 		if err != nil {
 			return nil, err
 		}
+		req.Header.Set("User-Agent", c.pdc.userAgent)
 		req = req.WithContext(tracing.CopySpanFromContext(ctx))
 		for key := range headers {
 			req.Header.Set(key, headers.Get(key))

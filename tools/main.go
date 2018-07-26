@@ -763,6 +763,7 @@ func NewAdmin(serverconf conf.Config, flags *flag.FlagSet, cnf srv.ConfigLoader)
 		logLevel:     logLevel,
 		fastRingScan: make(chan struct{}, 32), // 32 just "because"; gives some room for a bunch of ring changes to get queued up before blocking.
 	}
+	a.hClient.SetUserAgent("Andrewd")
 	a.db, err = newDB(&serverconf, "")
 	if err != nil {
 		return ipPort, nil, nil, err

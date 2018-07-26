@@ -71,7 +71,7 @@ func (d *devLimiter) waitForSomethingToFinish() {
 	<-d.somethingFinished
 }
 
-func SendPriRepJob(job *PriorityRepJob, client common.HTTPClient) (string, bool) {
+func SendPriRepJob(job *PriorityRepJob, client common.HTTPClient, userAgent string) (string, bool) {
 	url := fmt.Sprintf("%s://%s:%d/priorityrep", job.FromDevice.Scheme, job.FromDevice.ReplicationIp, job.FromDevice.ReplicationPort)
 	jsonned, err := json.Marshal(job)
 	if err != nil {
@@ -81,6 +81,7 @@ func SendPriRepJob(job *PriorityRepJob, client common.HTTPClient) (string, bool)
 	if err != nil {
 		return fmt.Sprintf("Failed to create request for some reason: %s", err), false
 	}
+	req.Header.Set("User-Agent", userAgent)
 	req.ContentLength = int64(len(jsonned))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
@@ -113,7 +114,7 @@ func SendPriRepJob(job *PriorityRepJob, client common.HTTPClient) (string, bool)
 }
 
 // doPriRepJobs executes a list of PriorityRepJobs, limiting concurrent jobs per device to deviceMax.
-func doPriRepJobs(jobs []*PriorityRepJob, deviceMax int, client common.HTTPClient) []uint64 {
+func doPriRepJobs(jobs []*PriorityRepJob, deviceMax int, client common.HTTPClient, userAgent string) []uint64 {
 	limiter := &devLimiter{inUse: make(map[int]int), max: deviceMax, somethingFinished: make(chan struct{}, 1)}
 	wg := sync.WaitGroup{}
 	badParts := []uint64{}
@@ -129,7 +130,7 @@ func doPriRepJobs(jobs []*PriorityRepJob, deviceMax int, client common.HTTPClien
 			go func(job *PriorityRepJob) {
 				defer wg.Done()
 				defer limiter.finished(job)
-				res, ok := SendPriRepJob(job, client)
+				res, ok := SendPriRepJob(job, client, userAgent)
 				fmt.Println(res)
 				if !ok {
 					badPartsLock.Lock()
@@ -291,7 +292,7 @@ func doMoveParts(args []string, cnf srv.ConfigLoader) int {
 			jobs[j], jobs[i] = jobs[i], jobs[j]
 		}
 		fmt.Println("Job count:", len(jobs))
-		badParts = doPriRepJobs(jobs, 2, client)
+		badParts = doPriRepJobs(jobs, 2, client, "doMoveParts")
 		if len(badParts) == 0 {
 			break
 		} else {
@@ -451,7 +452,7 @@ func RestoreDevice(args []string, cnf srv.ConfigLoader) {
 			j := rand.Intn(i + 1)
 			jobs[j], jobs[i] = jobs[i], jobs[j]
 		}
-		badParts = doPriRepJobs(jobs, *conc, client)
+		badParts = doPriRepJobs(jobs, *conc, client, "RestoreDevice")
 		if len(badParts) == 0 {
 			break
 		} else {

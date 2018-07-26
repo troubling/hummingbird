@@ -125,6 +125,7 @@ func (qh *quarantineHistory) runOnce() time.Duration {
 			qh.errorsMetric.Inc(1)
 			continue
 		}
+		req.Header.Set("User-Agent", "Andrewd")
 		resp, err := qh.aa.client.Do(req)
 		if err != nil {
 			deleteLogger.Error("Do", zap.Error(err))

@@ -34,6 +34,10 @@ func NewDirectClient(account string, cnf srv.ConfigLoader, certFile, keyFile str
 	return &directClient{pc: pdc.NewRequestClient(nil, nil, logger), account: account}, nil
 }
 
+func (c *directClient) SetUserAgent(v string) {
+	c.pc.SetUserAgent(v)
+}
+
 func (c *directClient) GetURL() string {
 	return "<direct>/" + c.account
 }
