@@ -19,3 +19,12 @@ func TestValidBucketName(t *testing.T) {
 	assert.False(t, validBucketName("bucket+invalid"))
 	assert.True(t, validBucketName("boring.bucket.name"))
 }
+
+func TestS3DateString(t *testing.T) {
+	// Removes 3 of the last 6 digits
+	assert.Equal(t, "2018-07-05T18:16:09.295Z", s3DateString("2018-07-05T18:16:09.295890Z"))
+	// Always adds a Z
+	assert.Equal(t, "123456Z", s3DateString("123456789"))
+	// Doesn't index out of range.
+	assert.Equal(t, "no", s3DateString("no"))
+}

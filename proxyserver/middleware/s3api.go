@@ -338,6 +338,8 @@ func (w *s3ResponseWriterWrapper) Header() http.Header {
 }
 
 func (w *s3ResponseWriterWrapper) WriteHeader(statusCode int) {
+	w.writer.Header().Set("x-amz-id-2", w.requestId)
+	w.writer.Header().Set("x-amz-request-id", w.requestId)
 	if statusCode/100 != 2 {
 		// We are going to hijack to return an S3 style result
 		w.hijack = true
@@ -432,6 +434,19 @@ func validBucketName(s string) bool {
 func InvalidBucketNameResponse(writer http.ResponseWriter, request *http.Request) {
 	writer.WriteHeader(400)
 	writer.Write(nil)
+}
+
+func s3DateString(s string) string {
+	// This is just trimming out some extra precision off our seconds for
+	// the swift s3api func tests.
+	// r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$'
+	if strings.HasSuffix(s, "Z") {
+		s = s[:len(s)-1]
+	}
+	if len(s) < 3 {
+		return s
+	}
+	return s[:len(s)-3] + "Z"
 }
 
 func (s *s3ApiHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -955,7 +970,7 @@ func (s *s3ApiHandler) handleContainerRequest(writer http.ResponseWriter, reques
 			}
 			obj := s3ObjectInfo{
 				Name:         o.Name,
-				LastModified: o.LastModified + "Z",
+				LastModified: s3DateString(o.LastModified),
 				ETag:         "\"" + o.ETag + "\"",
 				Size:         o.Size,
 				StorageClass: "STANDARD",
