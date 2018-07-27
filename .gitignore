@@ -13,5 +13,8 @@
 # Output of the go coverage tool
 *.out
 
+# vim
+*.sw?
+
 #Hummingbird related build directory
 bin

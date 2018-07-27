@@ -205,9 +205,8 @@ func (ta *tempAuth) ServeHTTP(writer http.ResponseWriter, request *http.Request)
 			secret := ta.getUserPassword(account, user)
 			isValid := ctx.S3Auth.validateSignature([]byte(secret))
 			if !isValid {
-				ctx.Authorize = func(r *http.Request) (bool, int) {
-					return false, http.StatusForbidden
-				}
+				SignatureDoesNotMatchResponse(writer, request)
+				return
 			} else {
 				ctx.S3Auth.Account = account
 				// Get a token for this user to be used with the rest of the request
