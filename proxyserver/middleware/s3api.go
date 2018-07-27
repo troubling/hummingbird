@@ -437,6 +437,9 @@ func InvalidBucketNameResponse(writer http.ResponseWriter, request *http.Request
 }
 
 func s3DateString(s string) string {
+	// This is just trimming out some extra precision off our seconds for
+	// the swift s3api func tests.
+	// r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$'
 	if strings.HasSuffix(s, "Z") {
 		s = s[:len(s)-1]
 	}
