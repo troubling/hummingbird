@@ -24,3 +24,11 @@ test.functional.test_versioned_writes.TestObjectVersioningHistoryMode.test_overw
 test.functional.test_tempurl.TestTempurlAlgorithms.test_sha1
 test.functional.test_slo.TestSlo
 test.functional.test_slo.TestSloUTF8
+# s3. here be dragons
+test.functional.s3api.test_object
+test.functional.s3api.test_bucket
+test.functional.s3api.test_acl
+test.functional.s3api.test_multi_delete
+test.functional.s3api.test_multi_upload
+test.functional.s3api.test_service
+test.functional.s3api.test_presigned

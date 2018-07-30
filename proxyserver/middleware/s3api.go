@@ -86,6 +86,7 @@ var s3Responses = map[int]s3Response{
 	40001: {"BucketAlreadyExists", "The specified bucket is not valid."},
 	40300: {"SignatureDoesNotMatch", "The request signature we calculated does not match the signature you provided."},
 	40400: {"NoSuchBucket", "The specified bucket does not exist."},
+	40401: {"NoSuchKey", "The specified key does not exist."},
 }
 
 type s3Owner struct {
@@ -220,7 +221,7 @@ type s3ObjectListV2 struct {
 	Xmlns                 string         `xml:"xmlns,attr"`
 	Name                  string         `xml:"Name"`
 	Prefix                string         `xml:"Prefix"`
-	NextContinuationToken string         `xml:"NextContinationToken,omitempty"`
+	NextContinuationToken string         `xml:"NextContinuationToken,omitempty"`
 	ContinuationToken     string         `xml:"ContinuationToken,omitempty"`
 	StartAfter            string         `xml:"StartAfter,omitempty"`
 	KeyCount              string         `xml:"KeyCount"`
@@ -441,6 +442,11 @@ func NoSuchBucketResponse(writer http.ResponseWriter, request *http.Request) {
 	writer.Write(nil)
 }
 
+func NoSuchKeyResponse(writer http.ResponseWriter, request *http.Request) {
+	writer.WriteHeader(40401)
+	writer.Write(nil)
+}
+
 func SignatureDoesNotMatchResponse(writer http.ResponseWriter, request *http.Request) {
 	writer.WriteHeader(40300)
 	writer.Write(nil)
@@ -622,6 +628,10 @@ func (s *s3ApiHandler) handleObjectRequest(writer http.ResponseWriter, request *
 		}
 		cap := NewCaptureWriter()
 		ctx.serveHTTPSubrequest(cap, newReq)
+		if cap.status == 404 {
+			NoSuchKeyResponse(writer, request)
+			return
+		}
 		if cap.status/100 != 2 {
 			srv.StandardResponse(writer, cap.status)
 			return
@@ -809,6 +819,8 @@ func (s *s3ApiHandler) handleContainerRequest(writer http.ResponseWriter, reques
 	ctx := GetProxyContext(request)
 	request.ParseForm()
 
+	writer.Header().Set("Location", "/"+s.container)
+
 	if request.Method == "HEAD" {
 		newReq, err := ctx.newSubrequest("HEAD", s.path, http.NoBody, request, "s3api")
 		if err != nil {
@@ -821,6 +833,8 @@ func (s *s3ApiHandler) handleContainerRequest(writer http.ResponseWriter, reques
 			srv.StandardResponse(writer, cap.status)
 			return
 		} else {
+			writer.Header().Set("Content-Type", "application/xml; charset=utf-8")
+			writer.Header().Set("Content-Length", "0")
 			writer.WriteHeader(200)
 			return
 		}
@@ -1100,7 +1114,7 @@ func NewS3Api(config conf.Section, metricsScope tally.Scope) (func(http.Handler)
 			})
 		}, nil
 	}
-	RegisterInfo("s3Api", map[string]interface{}{})
+	RegisterInfo("s3api", map[string]interface{}{})
 	return s3Api(metricsScope.Counter("s3Api_requests")), nil
 }
 
