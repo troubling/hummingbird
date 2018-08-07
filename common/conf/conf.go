@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	"github.com/troubling/hummingbird/common"
+	"github.com/troubling/hummingbird/common/fs"
 	"github.com/vaughan0/go-ini"
 )
 
@@ -305,4 +306,24 @@ func ReadPrefixedOptions(conf Section, prefixName string, defaults map[string][]
 		}
 	}
 	return params
+}
+
+// FindConfig returns the full path to the config named; e.g.
+// FindConfig("proxy") might return "/etc/hummingbird/proxy-server.conf".
+func FindConfig(name string) string {
+	configName := strings.Split(name, "-")[0]
+	configSearch := []string{
+		fmt.Sprintf("/etc/hummingbird/%s-server.conf", configName),
+		fmt.Sprintf("/etc/hummingbird/%s-server.conf.d", configName),
+		fmt.Sprintf("/etc/hummingbird/%s-server", configName),
+		fmt.Sprintf("/etc/swift/%s-server.conf", configName),
+		fmt.Sprintf("/etc/swift/%s-server.conf.d", configName),
+		fmt.Sprintf("/etc/swift/%s-server", configName),
+	}
+	for _, config := range configSearch {
+		if fs.Exists(config) {
+			return config
+		}
+	}
+	return ""
 }

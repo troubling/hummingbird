@@ -66,24 +66,6 @@ func getProcess(name string) (*os.Process, error) {
 	return process, nil
 }
 
-func findConfig(name string) string {
-	configName := strings.Split(name, "-")[0]
-	configSearch := []string{
-		fmt.Sprintf("/etc/hummingbird/%s-server.conf", configName),
-		fmt.Sprintf("/etc/hummingbird/%s-server.conf.d", configName),
-		fmt.Sprintf("/etc/hummingbird/%s-server", configName),
-		fmt.Sprintf("/etc/swift/%s-server.conf", configName),
-		fmt.Sprintf("/etc/swift/%s-server.conf.d", configName),
-		fmt.Sprintf("/etc/swift/%s-server", configName),
-	}
-	for _, config := range configSearch {
-		if fs.Exists(config) {
-			return config
-		}
-	}
-	return ""
-}
-
 func startServer(name string, args ...string) error {
 	process, err := getProcess(name)
 	if err == nil {
@@ -91,7 +73,7 @@ func startServer(name string, args ...string) error {
 		return errors.New("Found already running " + name + " server")
 	}
 
-	serverConf := findConfig(name)
+	serverConf := conf.FindConfig(name)
 	if serverConf == "" {
 		return errors.New("Unable to find config file.")
 	}
@@ -235,7 +217,7 @@ func init() {
 
 func main() {
 	proxyFlags := flag.NewFlagSet("proxy server", flag.ExitOnError)
-	proxyFlags.String("c", findConfig("proxy"), "Config file/directory to use")
+	proxyFlags.String("c", conf.FindConfig("proxy"), "Config file/directory to use")
 	proxyFlags.String("l", "stdout", "Log location")
 	proxyFlags.String("e", "stderr", "Error log location")
 	proxyFlags.Usage = func() {
@@ -245,7 +227,7 @@ func main() {
 	}
 
 	objectFlags := flag.NewFlagSet("object server", flag.ExitOnError)
-	objectFlags.String("c", findConfig("object"), "Config file/directory to use")
+	objectFlags.String("c", conf.FindConfig("object"), "Config file/directory to use")
 	objectFlags.String("l", "stdout", "Log location")
 	objectFlags.String("e", "stderr", "Error log location")
 	objectFlags.Usage = func() {
@@ -256,7 +238,7 @@ func main() {
 
 	objectReplicatorFlags := flag.NewFlagSet("object replicator", flag.ExitOnError)
 	objectReplicatorFlags.Bool("q", false, "Quorum Delete. Will delete handoff node if pushed to #replicas/2 + 1 nodes.")
-	objectReplicatorFlags.String("c", findConfig("object"), "Config file/directory to use")
+	objectReplicatorFlags.String("c", conf.FindConfig("object"), "Config file/directory to use")
 	objectReplicatorFlags.String("l", "stdout", "Log location")
 	objectReplicatorFlags.String("e", "stderr", "Error log location")
 	objectReplicatorFlags.Bool("once", false, "Run one pass of the replicator")
@@ -269,7 +251,7 @@ func main() {
 	}
 
 	containerFlags := flag.NewFlagSet("container server", flag.ExitOnError)
-	containerFlags.String("c", findConfig("container"), "Config file/directory to use")
+	containerFlags.String("c", conf.FindConfig("container"), "Config file/directory to use")
 	containerFlags.String("l", "stdout", "Log location")
 	containerFlags.String("e", "stderr", "Error log location")
 	containerFlags.Usage = func() {
@@ -279,7 +261,7 @@ func main() {
 	}
 
 	containerReplicatorFlags := flag.NewFlagSet("container replicator", flag.ExitOnError)
-	containerReplicatorFlags.String("c", findConfig("container"), "Config file/directory to use")
+	containerReplicatorFlags.String("c", conf.FindConfig("container"), "Config file/directory to use")
 	containerReplicatorFlags.String("l", "stdout", "Log location")
 	containerReplicatorFlags.String("e", "stderr", "Error log location")
 	containerReplicatorFlags.Bool("once", false, "Run one pass of the replicator")
@@ -290,7 +272,7 @@ func main() {
 	}
 
 	accountFlags := flag.NewFlagSet("account server", flag.ExitOnError)
-	accountFlags.String("c", findConfig("account"), "Config file/directory to use")
+	accountFlags.String("c", conf.FindConfig("account"), "Config file/directory to use")
 	accountFlags.String("l", "stdout", "Log location")
 	accountFlags.String("e", "stderr", "Error log location")
 	accountFlags.Usage = func() {
@@ -300,7 +282,7 @@ func main() {
 	}
 
 	accountReplicatorFlags := flag.NewFlagSet("account replicator", flag.ExitOnError)
-	accountReplicatorFlags.String("c", findConfig("account"), "Config file/directory to use")
+	accountReplicatorFlags.String("c", conf.FindConfig("account"), "Config file/directory to use")
 	accountReplicatorFlags.String("l", "stdout", "Log location")
 	accountReplicatorFlags.String("e", "stderr", "Error log location")
 	accountReplicatorFlags.Bool("once", false, "Run one pass of the replicator")
@@ -352,7 +334,7 @@ func main() {
 	}
 
 	andrewdFlags := flag.NewFlagSet("andrewd", flag.ExitOnError)
-	andrewdFlags.String("c", findConfig("andrewd"), "Config file to use")
+	andrewdFlags.String("c", conf.FindConfig("andrewd"), "Config file to use")
 	andrewdFlags.String("l", "stdout", "Log location")
 	andrewdFlags.String("e", "stderr", "Error log location")
 	andrewdFlags.Bool("once", false, "Run one pass of the tools")
@@ -390,13 +372,20 @@ func main() {
 	reconFlags.Bool("ds", false, "Show device status report")
 	reconFlags.Bool("rar", false, "Show andrewd ring action report")
 	reconFlags.Bool("rbr", false, "Show andrewd ring balance report")
-	reconFlags.String("c", findConfig("andrewd"), "Andrewd Config file to use (e.g. for dispersion)")
+	reconFlags.String("c", conf.FindConfig("andrewd"), "Andrewd Config file to use (e.g. for dispersion)")
 	reconFlags.Bool("json", false, "Output in json. {\"ok\": true|false, \"msg\": \"text-output\"}")
 	reconFlags.String("certfile", "", "Cert file to use for setting up https client")
 	reconFlags.String("keyfile", "", "Key file to use for setting up https client")
 	reconFlags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "hummingbird recon [ARGS] \n")
 		reconFlags.PrintDefaults()
+	}
+
+	osscryptFlags := flag.NewFlagSet("", flag.ExitOnError)
+	osscryptFlags.Usage = func() {
+		fmt.Fprintln(os.Stderr, "hummingbird osscrypt")
+		fmt.Fprintln(os.Stderr, "    Returns information about the OpenStack Swift Encryption compatibility layer.")
+		osscryptFlags.PrintDefaults()
 	}
 
 	/* main flag parser, which doesn't do much */
@@ -456,6 +445,8 @@ func main() {
 		andrewdFlags.Usage()
 		fmt.Fprintln(os.Stderr)
 		objectInfoFlags.Usage()
+		fmt.Fprintln(os.Stderr)
+		osscryptFlags.Usage()
 		fmt.Fprintln(os.Stderr)
 		reconFlags.Usage()
 	}
@@ -544,6 +535,11 @@ func main() {
 		}
 	case "nectar":
 		nectar.CLI(flag.Args(), nil, nil, nil)
+	case "osscrypt":
+		osscryptFlags.Parse(flag.Args()[1:])
+		if pass := tools.OSSCrypt(osscryptFlags, srv.DefaultConfigLoader{}); !pass {
+			os.Exit(1)
+		}
 	default:
 		flag.Usage()
 	}
