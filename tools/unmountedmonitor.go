@@ -6,7 +6,7 @@ package tools
 // pass_time_target = 600           # seconds to try to make subsequent passes take
 // report_interval = 60             # seconds between progress reports
 // state_retention = 86400          # seconds to retain state entries
-// server_down_limit = 14400        # seconds a server can be down before removal
+// server_down_limit = 172800       # seconds a server can be down before removal
 // device_unmounted_limit = 3600    # seconds a device can be unmounted before removal
 // ignore_duration = 14400          # seconds to ignore a device's state change after updating its state in a ring
 
@@ -52,7 +52,7 @@ func newUnmountedMonitor(aa *AutoAdmin) *unmountedMonitor {
 		passTimeTarget:         time.Duration(aa.serverconf.GetInt("unmounted-monitor", "pass_time_target", 600)) * time.Second,
 		reportInterval:         time.Duration(aa.serverconf.GetInt("unmounted-monitor", "report_interval", 60)) * time.Second,
 		stateRetention:         time.Duration(aa.serverconf.GetInt("unmounted-monitor", "state_retention", 86400)) * time.Second,
-		serverDownLimit:        time.Duration(aa.serverconf.GetInt("unmounted-monitor", "server_down_limit", 14400)) * time.Second,
+		serverDownLimit:        time.Duration(aa.serverconf.GetInt("unmounted-monitor", "server_down_limit", 172800)) * time.Second,
 		deviceUnmountedLimit:   time.Duration(aa.serverconf.GetInt("unmounted-monitor", "device_unmounted_limit", 3600)) * time.Second,
 		ignoreDuration:         time.Duration(aa.serverconf.GetInt("unmounted-monitor", "ignore_duration", 14400)) * time.Second,
 		ignore:                 map[string]time.Time{},
