@@ -1,4 +1,5 @@
 //  Copyright (c) 2017 Rackspace
+
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
 //  you may not use this file except in compliance with the License.
@@ -1255,16 +1256,40 @@ func (b *RingBuilder) reassignParts(reassignParts []partReplicas, repPlan map[st
 			replaceReplicas[i], replaceReplicas[j] = replaceReplicas[j], replaceReplicas[i]
 		}
 		for _, replica := range replaceReplicas {
-			// Find a new home for this replicas
+			// Find a new home for this replica
 			tier := ""
 			depth := 1
+
+			curDevs := b.devsForPart(int(part))
 			for depth <= maxTierDepth {
 				candidates := make([]string, 0)
+				dirtyCandidates := make([]string, 0)
 				for _, t := range tier2Children[tier] {
 					if float64(replicasAtTier[t]) < repPlan[t].max {
-						candidates = append(candidates, t)
+						found := false
+						for _, dev := range curDevs {
+							// Check if this candidate already has a dev with this part
+							for _, t2 := range dev.tiers {
+								if t2 == t {
+									dirtyCandidates = append(dirtyCandidates, t)
+									found = true
+								}
+							}
+						}
+						if !found {
+							if partsAvailableInTier[t] <= 0 {
+								// If this tier doesn't have any parts available then consider it a dirtyCandidates
+								dirtyCandidates = append(dirtyCandidates, t)
+							} else {
+								candidates = append(candidates, t)
+							}
+						}
 					}
 				}
+				if len(candidates) == 0 {
+					candidates = dirtyCandidates
+				}
+
 				if len(candidates) == 0 {
 					data := make(map[string]string)
 					for _, t := range tier2Children[tier] {
@@ -1399,7 +1424,6 @@ func (b *RingBuilder) Rebalance() (int, float64, int, error) {
 	if float64(numDevices) < b.Replicas {
 		return 0, 0.0, 0, fmt.Errorf("Replica count of %f requires more than %d devices.", b.Replicas, numDevices)
 	}
-
 	oldReplica2Part2Dev := make([][]uint, len(b.replica2Part2Dev))
 	for i := range b.replica2Part2Dev {
 		oldReplica2Part2Dev[i] = make([]uint, len(b.replica2Part2Dev[i]))
