@@ -221,7 +221,7 @@ func (db *sqliteAccount) IsDeleted() (bool, error) {
 	return info.DeleteTimestamp > info.PutTimestamp, nil
 }
 
-func (db *sqliteAccount) Destroy() error {
+func (db *sqliteAccount) Remove() error {
 	return os.RemoveAll(path.Dir(db.accountFile))
 }
 

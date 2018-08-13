@@ -120,7 +120,7 @@ type fakeDatabase struct{}
 func (f fakeDatabase) GetInfo() (*ContainerInfo, error) {
 	return nil, errors.New("")
 }
-func (f fakeDatabase) Destroy() error {
+func (f fakeDatabase) Remove() error {
 	return nil
 }
 func (f fakeDatabase) IsDeleted() (bool, error) {

@@ -325,7 +325,7 @@ func (rd *replicationDevice) replicateDatabase(dbFile string) error {
 		}
 		if doDelete {
 			c.Close()
-			return c.Destroy()
+			return c.Remove()
 		}
 	}
 	defer c.Close()

@@ -125,7 +125,7 @@ type Container interface {
 	// Close frees any resources associated with the container.
 	Close() error
 	// removeall's database directory
-	Destroy() error
+	Remove() error
 }
 
 // ReplicableContainer is a container that also implements the replication API.

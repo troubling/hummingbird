@@ -185,7 +185,7 @@ func (db *sqliteContainer) IsDeleted() (bool, error) {
 	return info.DeleteTimestamp > info.PutTimestamp, nil
 }
 
-func (db *sqliteContainer) Destroy() error {
+func (db *sqliteContainer) Remove() error {
 	return os.RemoveAll(path.Dir(db.containerFile))
 }
 

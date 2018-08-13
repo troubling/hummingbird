@@ -127,7 +127,7 @@ type Account interface {
 	// Close frees any resources associated with the account.
 	Close() error
 	// removeall's database directory
-	Destroy() error
+	Remove() error
 	// Ping makes sure the database still has a valid connection.
 	Ping() error
 }
