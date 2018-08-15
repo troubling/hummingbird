@@ -505,6 +505,7 @@ func (ot *IndexDB) Lookup(hsh string, shard int, justStable bool) (*IndexDBItem,
 			SELECT timestamp, deletion, metahash, metadata, nursery, shard, shardhash, restabilize, expires
 			FROM objects
 			WHERE hash = ? AND shard = ? AND nursery = 0
+			LIMIT 1
 		`, hsh, shard)
 	} else if shard == shardAny {
 		rows, err = db.Query(`
@@ -512,6 +513,7 @@ func (ot *IndexDB) Lookup(hsh string, shard int, justStable bool) (*IndexDBItem,
 			FROM objects
 			WHERE hash = ? AND metadata IS NOT NULL
 			ORDER BY nursery DESC, shard ASC
+			LIMIT 1
 		`, hsh)
 	} else {
 		rows, err = db.Query(`
@@ -519,6 +521,7 @@ func (ot *IndexDB) Lookup(hsh string, shard int, justStable bool) (*IndexDBItem,
 			FROM objects
 			WHERE hash = ? AND shard = ?
 			ORDER BY nursery DESC
+			LIMIT 1
 		`, hsh, shard)
 	}
 	if err != nil {
@@ -613,6 +616,7 @@ func (ot *IndexDB) List(startHash, stopHash, marker string, limit int) ([]*Index
 		if err != nil {
 			return nil, err
 		}
+		defer rows.Close()
 		for rows.Next() {
 			item := &IndexDBItem{}
 			if err = rows.Scan(&item.Hash, &item.Shard, &item.Timestamp, &item.Deletion, &item.Metahash,
