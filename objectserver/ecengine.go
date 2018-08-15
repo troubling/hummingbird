@@ -149,24 +149,54 @@ func (f *ecEngine) ecShardGetHandler(writer http.ResponseWriter, request *http.R
 		srv.StandardResponse(writer, http.StatusBadRequest)
 		return
 	}
-	item, err := idb.Lookup(vars["hash"], shardIndex, false)
-	if err != nil || item == nil || item.Deletion {
-		srv.StandardResponse(writer, http.StatusNotFound)
-		return
-	}
-	metadata := map[string]string{}
-	if err = json.Unmarshal(item.Metabytes, &metadata); err != nil {
-		srv.StandardResponse(writer, http.StatusBadRequest)
-		return
-	}
-	writer.Header().Set("Ec-Shard-Index", metadata["Ec-Shard-Index"])
-	fl, err := os.Open(item.Path)
-	if err != nil {
-		srv.StandardResponse(writer, http.StatusInternalServerError)
-		return
+	shardTimestamp := request.Header.Get("X-Shard-Timestamp")
+	var fl *os.File
+	var itemPath string
+	var ts int64
+	if shardTimestamp == "" {
+		item, err := idb.Lookup(vars["hash"], shardIndex, false)
+		if err != nil || item == nil || item.Deletion {
+			srv.StandardResponse(writer, http.StatusNotFound)
+			return
+		}
+		metadata := map[string]string{}
+		if err = json.Unmarshal(item.Metabytes, &metadata); err != nil {
+			srv.StandardResponse(writer, http.StatusBadRequest)
+			return
+		}
+		writer.Header().Set("Ec-Shard-Index", metadata["Ec-Shard-Index"])
+		itemPath = item.Path
+		ts = item.Timestamp
+		fl, err = os.Open(itemPath)
+		if err != nil {
+			srv.StandardResponse(writer, http.StatusInternalServerError)
+			return
+		}
+	} else {
+		ts, err = strconv.ParseInt(shardTimestamp, 10, 64)
+		if err != nil {
+			srv.StandardResponse(writer, http.StatusBadRequest)
+			return
+		}
+		itemPath, err = idb.WholeObjectPath(vars["hash"], shardIndex, ts, false)
+		if err != nil {
+			srv.StandardResponse(writer, http.StatusBadRequest)
+			return
+		}
+		writer.Header().Set("Ec-Shard-Index", vars["index"])
+		fl, err = os.Open(itemPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				srv.StandardResponse(writer, http.StatusNotFound)
+				return
+			} else {
+				srv.StandardResponse(writer, http.StatusInternalServerError)
+				return
+			}
+		}
 	}
 	defer fl.Close()
-	http.ServeContent(writer, request, item.Path, time.Unix(item.Timestamp, 0), fl)
+	http.ServeContent(writer, request, itemPath, time.Unix(ts, 0), fl)
 }
 
 func (f *ecEngine) ecShardPostHandler(writer http.ResponseWriter, request *http.Request) {

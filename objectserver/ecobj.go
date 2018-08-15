@@ -147,6 +147,7 @@ func (o *ecObject) Copy(dsts ...io.Writer) (written int64, err error) {
 			return
 		}
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
+		req.Header.Set("X-Shard-Timestamp", strconv.FormatInt(o.Timestamp, 10))
 		req.Header.Set("X-Trans-Id", o.txnId)
 		if resp, err := o.client.Do(req); err == nil && resp.StatusCode == http.StatusOK {
 			select {
