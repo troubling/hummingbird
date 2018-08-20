@@ -332,6 +332,22 @@ func (rd *replicationDevice) replicateDatabase(dbFile string) error {
 	if err != nil {
 		return err
 	}
+	if isD, err := c.IsDeleted(); err == nil && isD {
+		doDelete := false
+		if info, err := c.GetInfo(); err == nil && info.ObjectCount == 0 && info.DeleteTimestamp > info.PutTimestamp {
+			if dti, err := strconv.ParseFloat(info.DeleteTimestamp, 64); err == nil {
+				dt := time.Unix(int64(dti), 0)
+				cutOff := time.Now().Add(time.Second * time.Duration(-rd.r.reclaimAge))
+				if dt.Before(cutOff) {
+					doDelete = true
+				}
+			}
+		}
+		if doDelete {
+			c.Close()
+			return c.Remove()
+		}
+	}
 	defer c.Close()
 	if err := c.CleanupTombstones(rd.r.reclaimAge); err != nil {
 		return err

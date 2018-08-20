@@ -221,6 +221,10 @@ func (db *sqliteAccount) IsDeleted() (bool, error) {
 	return info.DeleteTimestamp > info.PutTimestamp, nil
 }
 
+func (db *sqliteAccount) Remove() error {
+	return os.RemoveAll(path.Dir(db.accountFile))
+}
+
 // Delete sets the account's deleted timestamp and tombstones any metadata older than that timestamp.
 // This may or may not make the account "deleted".
 func (db *sqliteAccount) Delete(timestamp string) error {
