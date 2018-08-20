@@ -306,8 +306,11 @@ func TestGetObjectsToStabilize(t *testing.T) {
 
 	osc, cancel := ece.GetObjectsToStabilize(&ring.Device{Id: 0, Device: "sdb1"})
 	defer close(cancel)
-	os := <-osc
-	require.Equal(t, "o1", os.Metadata()["name"])
-	os = <-osc
-	require.Equal(t, "o2", os.Metadata()["name"])
+	os1 := <-osc
+	os2 := <-osc
+	if os1.Metadata()["name"] == "o2" {
+		os1, os2 = os2, os1
+	}
+	require.Equal(t, "o1", os1.Metadata()["name"])
+	require.Equal(t, "o2", os2.Metadata()["name"])
 }
