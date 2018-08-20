@@ -164,6 +164,7 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 			{middleware.NewContainerQuota, "filter:container-quotas"},
 			{middleware.NewVersionedWrites, "filter:versioned_writes"},
 			{middleware.NewXlo, "filter:slo"},
+			{middleware.NewEncryption, "filter:encryption"},
 		}
 	} else {
 		middlewares = []struct {
@@ -190,6 +191,7 @@ func (server *ProxyServer) GetHandler(config conf.Config, metricsPrefix string) 
 			{middleware.NewContainerQuota, "filter:container-quotas"},
 			{middleware.NewVersionedWrites, "filter:versioned_writes"},
 			{middleware.NewXlo, "filter:slo"},
+			{middleware.NewEncryption, "filter:encryption"},
 		}
 	}
 	pipeline := alice.New(globalmiddleware.ServerTracer(server.tracer), middleware.NewContext(config.GetBool("debug", "debug_x_source_code", false),
