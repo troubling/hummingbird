@@ -353,7 +353,7 @@ func (r *Replicator) GetHandler(config conf.Config, metricsPrefix string) http.H
 		if rhoe, ok := objEngine.(PolicyHandlerRegistrator); ok {
 			rhoe.RegisterHandlers(func(method, path string, handler http.HandlerFunc) {
 				router.HandlePolicy(method, path, policy, commonHandlers.ThenFunc(handler))
-			})
+			}, r.metricsScope)
 		}
 	}
 	return alice.New(middleware.Metrics(r.metricsScope), middleware.ServerTracer(r.tracer)).Then(router)

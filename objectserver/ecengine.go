@@ -23,6 +23,7 @@ import (
 	"io"
 	"io/ioutil"
 	"math/bits"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -41,27 +42,37 @@ import (
 	"github.com/troubling/hummingbird/common/ring"
 	"github.com/troubling/hummingbird/common/srv"
 	"github.com/troubling/hummingbird/common/tracing"
+	"github.com/uber-go/tally"
 	"golang.org/x/net/http2"
 )
 
 // ContentLength parses and returns the Content-Length for the object.
 type ecEngine struct {
-	driveRoot       string
-	hashPathPrefix  string
-	hashPathSuffix  string
-	reserve         int64
-	policy          int
-	ring            ring.Ring
-	idbs            map[string]*IndexDB
-	idbm            sync.Mutex
-	logger          srv.LowLevelLogger
-	dataShards      int
-	parityShards    int
-	chunkSize       int
-	client          common.HTTPClient
-	nurseryReplicas int
-	dbPartPower     int
-	numSubDirs      int
+	driveRoot                      string
+	hashPathPrefix                 string
+	hashPathSuffix                 string
+	reserve                        int64
+	policy                         int
+	ring                           ring.Ring
+	idbs                           map[string]*IndexDB
+	idbm                           sync.Mutex
+	stabm                          sync.Mutex
+	stabItems                      map[string]bool
+	stabReset                      time.Time
+	logger                         srv.LowLevelLogger
+	dataShards                     int
+	parityShards                   int
+	chunkSize                      int
+	client                         common.HTTPClient
+	nurseryReplicas                int
+	dbPartPower                    int
+	numSubDirs                     int
+	nurseryNotifyStabilizeAttempts tally.Counter
+	nurseryNotifyStabilizeNoop     tally.Counter
+	nurseryNotifyStabilizeFastNoop tally.Counter
+	nurseryNotifyStabilizeFailure  tally.Counter
+	nurseryNotifyStabilizeSuccess  tally.Counter
+	nurseryNotifyStabilizeSkips    tally.Counter
 }
 
 func (f *ecEngine) getDB(device string) (*IndexDB, error) {
@@ -239,6 +250,44 @@ func (f *ecEngine) ecShardPutHandler(writer http.ResponseWriter, request *http.R
 	return
 }
 
+// This is called after an object was stabilized from another server.
+// It will delete the nursery row from here if it matches what was stabilized
+func (f *ecEngine) ecNurseryPostHandler(writer http.ResponseWriter, request *http.Request) {
+	f.nurseryNotifyStabilizeAttempts.Inc(1)
+	vars := srv.GetVars(request)
+	idb, err := f.getDB(vars["device"])
+	if err != nil {
+		srv.SimpleErrorResponse(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+	timestamp, err := strconv.ParseInt(vars["ts"], 10, 64)
+	if err != nil {
+		srv.SimpleErrorResponse(writer, http.StatusBadRequest, err.Error())
+		return
+	}
+	if vars["mhash"] == "" {
+		srv.StandardResponse(writer, http.StatusBadRequest)
+		return
+	}
+	if !f.UpdateItemStabilized(vars["device"], vars["hash"], vars["mhash"], true) {
+		f.nurseryNotifyStabilizeFastNoop.Inc(1)
+		srv.StandardResponse(writer, http.StatusNoContent)
+		return
+	}
+	if rr, err := idb.Remove(vars["hash"], 0, timestamp, true, vars["mhash"]); err != nil {
+		f.nurseryNotifyStabilizeFailure.Inc(1)
+		f.UpdateItemStabilized(vars["device"], vars["hash"], vars["mhash"], false)
+		srv.SimpleErrorResponse(writer, http.StatusInternalServerError, err.Error())
+		return
+	} else if rr == 0 {
+		srv.StandardResponse(writer, http.StatusNotFound)
+		return
+	}
+	f.nurseryNotifyStabilizeSuccess.Inc(1)
+	srv.StandardResponse(writer, http.StatusAccepted)
+	return
+}
+
 func (f *ecEngine) ecNurseryPutHandler(writer http.ResponseWriter, request *http.Request) {
 	vars := srv.GetVars(request)
 	idb, err := f.getDB(vars["device"])
@@ -278,7 +327,7 @@ func (f *ecEngine) ecNurseryPutHandler(writer http.ResponseWriter, request *http
 
 	var atm fs.AtomicFileWriter
 	if !deletion {
-		atm, err = idb.TempFile(vars["hash"], 0, timestamp, 0, true)
+		atm, err = idb.TempFile(vars["hash"], shardNursery, timestamp, 0, true)
 		if err != nil {
 			srv.GetLogger(request).Error("Error opening file for writing", zap.Error(err))
 			srv.StandardResponse(writer, http.StatusInternalServerError)
@@ -359,7 +408,7 @@ func (f *ecEngine) ecShardDeleteHandler(writer http.ResponseWriter, request *htt
 		srv.StandardResponse(writer, http.StatusConflict)
 		return
 	}
-	if err := idb.Remove(item.Hash, item.Shard, item.Timestamp, item.Nursery); err != nil {
+	if _, err := idb.Remove(item.Hash, item.Shard, item.Timestamp, item.Nursery, item.Metahash); err != nil {
 		srv.StandardResponse(writer, http.StatusInternalServerError)
 	} else {
 		srv.StandardResponse(writer, http.StatusNoContent)
@@ -485,8 +534,15 @@ func (f *ecEngine) listPartitionHandler(writer http.ResponseWriter, request *htt
 	return
 }
 
-func (f *ecEngine) RegisterHandlers(addRoute func(method, path string, handler http.HandlerFunc)) {
+func (f *ecEngine) RegisterHandlers(addRoute func(method, path string, handler http.HandlerFunc), metScope tally.Scope) {
+	f.nurseryNotifyStabilizeAttempts = metScope.Counter(fmt.Sprintf("%d_stabilize_notify_attempts", f.policy))
+	f.nurseryNotifyStabilizeNoop = metScope.Counter(fmt.Sprintf("%d_stabilize_notify_noops", f.policy))
+	f.nurseryNotifyStabilizeFastNoop = metScope.Counter(fmt.Sprintf("%d_stabilize_notify_fast_noops", f.policy))
+	f.nurseryNotifyStabilizeFailure = metScope.Counter(fmt.Sprintf("%d_stabilize_notify_failures", f.policy))
+	f.nurseryNotifyStabilizeSuccess = metScope.Counter(fmt.Sprintf("%d_stabilize_notify_successes", f.policy))
+	f.nurseryNotifyStabilizeSkips = metScope.Counter(fmt.Sprintf("%d_stabilize_notify_skips", f.policy))
 	addRoute("PUT", "/ec-nursery/:device/:hash", f.ecNurseryPutHandler)
+	addRoute("POST", "/ec-nursery/:device/:hash/:mhash/:ts", f.ecNurseryPostHandler)
 	addRoute("GET", "/ec-shard/:device/:hash/:index", f.ecShardGetHandler)
 	addRoute("PUT", "/ec-shard/:device/:hash/:index", f.ecShardPutHandler)
 	addRoute("DELETE", "/ec-shard/:device/:hash/:index", f.ecShardDeleteHandler)
@@ -495,21 +551,57 @@ func (f *ecEngine) RegisterHandlers(addRoute func(method, path string, handler h
 	addRoute("PUT", "/ec-reconstruct/:device/:account/:container/*obj", f.ecReconstructHandler)
 }
 
-func (f *ecEngine) GetObjectsToStabilize(device string, c chan ObjectStabilizer, cancel chan struct{}) {
+func (f *ecEngine) updateItemsBeingStabilized(device string, objs []*ecObject) {
+	f.stabm.Lock()
+	defer f.stabm.Unlock()
+	if len(f.stabItems) > maxStableObjectCacheSize || time.Since(f.stabReset) > 10*time.Minute {
+		f.logger.Info("reseting f.stabItems", zap.Int("size", len(f.stabItems)))
+		f.stabItems = map[string]bool{} //TODO: make this smarter
+		f.stabReset = time.Now()
+	}
+	for _, o := range objs {
+		k := fmt.Sprintf("%s-%s-%s", device, o.Hash, o.Metahash)
+		if _, ok := f.stabItems[k]; !ok {
+			f.stabItems[k] = true
+		}
+	}
+}
+
+func (f *ecEngine) UpdateItemStabilized(device, hash, mhash string, stabilized bool) bool {
+	f.stabm.Lock()
+	defer f.stabm.Unlock()
+	if stabilized {
+		// if stabilizing and it has already been stabilized then tell caller to skip
+		if val, ok := f.stabItems[fmt.Sprintf("%s-%s-%s", device, hash, mhash)]; !val && ok {
+			return false
+		}
+	}
+	f.stabItems[fmt.Sprintf("%s-%s-%s", device, hash, mhash)] = !stabilized
+	return true
+}
+
+func (f *ecEngine) GetObjectsToStabilize(device *ring.Device) (chan ObjectStabilizer, chan struct{}) {
+	c := make(chan ObjectStabilizer, numStabilizeObjects)
+	cancel := make(chan struct{})
+	go f.getObjectsToStabilize(device, c, cancel)
+	return c, cancel
+}
+
+func (f *ecEngine) getObjectsToStabilize(device *ring.Device, c chan ObjectStabilizer, cancel chan struct{}) {
 	defer close(c)
-	idb, err := f.getDB(device)
+	idb, err := f.getDB(device.Device)
 	if err != nil {
 		return
 	}
-
 	idb.ExpireObjects()
 
-	items, err := idb.ListObjectsToStabilize()
+	idbItems, err := idb.ListObjectsToStabilize()
 	if err != nil {
+		f.logger.Error("ListObjectsToStabilize error", zap.Error(err))
 		return
 	}
-
-	for _, item := range items {
+	objs := []*ecObject{}
+	for _, item := range idbItems {
 		obj := &ecObject{
 			IndexDBItem:     *item,
 			idb:             idb,
@@ -523,11 +615,22 @@ func (f *ecEngine) GetObjectsToStabilize(device string, c chan ObjectStabilizer,
 			chunkSize:       f.chunkSize,
 			client:          f.client,
 			nurseryReplicas: f.nurseryReplicas,
-			txnId:           fmt.Sprintf("%s-%s", common.UUID(), device),
+			txnId:           fmt.Sprintf("%s-%s", common.UUID(), device.Device),
 		}
 		if err = json.Unmarshal(item.Metabytes, &obj.metadata); err != nil {
+			f.logger.Error("invalid metadata", zap.String("ObjHash", item.Hash), zap.Error(err))
 			continue
 		}
+		objs = append(objs, obj)
+	}
+	f.updateItemsBeingStabilized(device.Device, objs)
+
+	for i := len(objs) - 1; i > 0; i-- { // shuffle
+		j := rand.Intn(i + 1)
+		objs[j], objs[i] = objs[i], objs[j]
+	}
+
+	for _, obj := range objs {
 		select {
 		case c <- obj:
 		case <-cancel:
@@ -594,6 +697,7 @@ func ecEngineConstructor(config conf.Config, policy *conf.Policy, flags *flag.Fl
 		policy:         policy.Index,
 		ring:           r,
 		idbs:           map[string]*IndexDB{},
+		stabItems:      map[string]bool{},
 		dbPartPower:    int(dbPartPower),
 		numSubDirs:     subdirs,
 		client:         httpClient,

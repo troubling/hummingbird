@@ -270,10 +270,18 @@ func (o *ecObject) Repr() string {
 	return fmt.Sprintf("ecObject(%s)", o.Hash)
 }
 
+func (o *ecObject) Uuid() string {
+	return o.Hash
+}
+
+func (o *ecObject) MetadataMd5() string {
+	return o.Metahash
+}
+
 func (o *ecObject) SetData(size int64) (io.Writer, error) {
 	var err error
 	o.Close()
-	if o.afw, err = o.idb.TempFile(o.Hash, 0, math.MaxInt64, size, true); err != nil {
+	if o.afw, err = o.idb.TempFile(o.Hash, shardNursery, math.MaxInt64, size, true); err != nil {
 		return nil, fmt.Errorf("Error creating temp file: %v", err)
 	}
 	if err := o.afw.Preallocate(size, o.reserve); err != nil {
@@ -296,7 +304,7 @@ func (o *ecObject) commit(metadata map[string]string, method string, nursery boo
 		return err
 	}
 	timestamp := timestampTime.UnixNano()
-	shard := 0
+	shard := shardNursery
 	if !nursery {
 		shard = o.Shard
 	}
@@ -481,9 +489,74 @@ func (o *ecObject) Replicate(prirep PriorityRepJob) error {
 		if !(resp.StatusCode/100 == 2 || resp.StatusCode == 409) {
 			return fmt.Errorf("bad status code %d syncing shard with  %s/%d", resp.StatusCode, o.Hash, o.Shard)
 		}
-		return o.idb.Remove(o.Hash, o.Shard, o.Timestamp, o.Nursery)
+		_, err = o.idb.Remove(o.Hash, o.Shard, o.Timestamp, o.Nursery, o.Metahash)
+		return err
 	}
 	return o.Reconstruct()
+}
+
+func (o *ecObject) notifyStable(partition uint64, dev *ring.Device) error {
+	nodes := o.ring.GetNodes(partition)
+	var successes int64
+	wg := sync.WaitGroup{}
+	sendNotify := func(node *ring.Device) {
+		defer wg.Done()
+		req, err := http.NewRequest("POST",
+			fmt.Sprintf("%s://%s:%d/ec-nursery/%s/%s/%s/%d",
+				node.Scheme, node.ReplicationIp, node.ReplicationPort,
+				node.Device, o.Hash, o.Metahash, o.Timestamp), nil)
+		if err != nil {
+			return
+		}
+		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
+		req.Header.Set("User-Agent", "nursery-stabilizer")
+		req.Header.Set("X-Trans-Id", o.txnId)
+		resp, err := o.client.Do(req)
+		if err != nil {
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode/100 == 2 {
+			atomic.AddInt64(&successes, 1)
+		}
+	}
+	i := 0
+	for ; i < o.nurseryReplicas && i < len(nodes); i++ {
+		if nodes[i].Id == dev.Id {
+			atomic.AddInt64(&successes, 1)
+			continue
+		}
+		wg.Add(1)
+		go sendNotify(nodes[i])
+	}
+	allDone := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(allDone)
+	}()
+	sendToRest := false
+	select {
+	case <-allDone:
+		if successes < int64(o.nurseryReplicas) {
+			sendToRest = true
+		}
+	case <-time.After(5 * time.Second):
+		sendToRest = true
+	}
+	if sendToRest {
+		for ; i < len(nodes); i++ {
+			if nodes[i].Id == dev.Id {
+				atomic.AddInt64(&successes, 1)
+				continue
+			}
+			wg.Add(1)
+			go sendNotify(nodes[i])
+		}
+	}
+	<-allDone
+	wg.Wait()
+	o.logger.Debug("stabilize notification", zap.Bool("allNodes", successes == int64(len(nodes))))
+	return nil
 }
 
 func (o *ecObject) nurseryReplicate(partition uint64, dev *ring.Device) error {
@@ -563,7 +636,8 @@ func (o *ecObject) nurseryReplicate(partition uint64, dev *ring.Device) error {
 	}
 	successes := e.Successes(time.Second*15, sts...)
 	if handoff && successes >= nurseryReplicaCount && successes > 0 {
-		return o.idb.Remove(o.Hash, o.Shard, o.Timestamp, true)
+		_, err := o.idb.Remove(o.Hash, o.Shard, o.Timestamp, true, o.Metahash)
+		return err
 	} else if successes < nurseryReplicaCount {
 		return errors.New("Unable to fully nursery-replicate object.")
 	}
@@ -645,8 +719,6 @@ func (o *ecObject) Stabilize(dev *ring.Device) error {
 		if !o.Deletion {
 			req.ContentLength = ecShardLength(o.ContentLength(), o.dataShards)
 		}
-		req.Header.Set("X-Timestamp", o.metadata["X-Timestamp"])
-		req.Header.Set("Deletion", strconv.FormatBool(o.Deletion)) //TODO: this can be removed right?
 		req.Header.Set("X-Backend-Storage-Policy-Index", strconv.Itoa(o.policy))
 		req.Header.Set("X-Trans-Id", o.txnId)
 		req.Header.Set("User-Agent", "nursery-stabilizer")
@@ -682,6 +754,10 @@ func (o *ecObject) Stabilize(dev *ring.Device) error {
 		if needUpload {
 			fp, err := os.Open(o.Path)
 			if err != nil {
+				if os.IsNotExist(err) {
+					// probably got notified stable, skip
+					return nil
+				}
 				return err
 			}
 			defer fp.Close()
@@ -711,7 +787,25 @@ func (o *ecObject) Stabilize(dev *ring.Device) error {
 		o.nurseryReplicate(partition, dev)
 		return fmt.Errorf("Failed to stabilize object: %s", o.txnId)
 	} else if o.idb != nil {
-		return o.idb.Remove(o.Hash, o.Shard, o.Timestamp, true)
+		nSuccess := e.Successes(0, 409)
+		if nSuccess != len(nodes) {
+			st := time.Now()
+			done := make(chan struct{}, 1)
+			go func() {
+				if err = o.notifyStable(partition, dev); err != nil {
+					o.logger.Debug("stabilize notify failed", zap.Error(err), zap.Duration("dur", time.Since(st)))
+				} else {
+					o.logger.Debug("object notified", zap.String("hash", o.Uuid()), zap.Duration("dur", time.Since(st)))
+				}
+				done <- struct{}{}
+			}()
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+			}
+		}
+		_, err := o.idb.Remove(o.Hash, o.Shard, o.Timestamp, true, o.Metahash)
+		return err
 	}
 	return nil
 }

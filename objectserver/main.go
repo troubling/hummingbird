@@ -621,7 +621,7 @@ func (server *ObjectServer) GetHandler(config conf.Config, metricsPrefix string)
 		if rhoe, ok := objEngine.(PolicyHandlerRegistrator); ok {
 			rhoe.RegisterHandlers(func(method, path string, handler http.HandlerFunc) {
 				router.HandlePolicy(method, path, policy, commonHandlers.ThenFunc(handler))
-			})
+			}, metricsScope)
 		}
 	}
 	return alice.New(middleware.Metrics(metricsScope), middleware.GrepObject, middleware.ServerTracer(server.tracer)).Then(router)

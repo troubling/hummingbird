@@ -29,7 +29,7 @@ import (
 	"github.com/uber-go/tally"
 )
 
-const nurseryObjectSleep = 10 * time.Millisecond
+const nurseryObjectSleep = time.Millisecond
 
 type nurseryDevice struct {
 	r         *Replicator
@@ -45,6 +45,7 @@ type nurseryDevice struct {
 	stabilizationFailuresMetric         tally.Counter
 	stabilizationLastPassCountMetric    tally.Gauge
 	stabilizationLastPassDurationMetric tally.Timer
+	stabilizationSkipMetric             tally.Counter
 }
 
 type PriorityReplicationResult struct {
@@ -65,27 +66,31 @@ func (nrd *nurseryDevice) Scan() {
 		return
 	}
 	start := time.Now()
-	c := make(chan ObjectStabilizer, 100)
-	cancel := make(chan struct{})
+	c, cancel := nrd.objEngine.GetObjectsToStabilize(nrd.dev)
 	defer close(cancel)
-	go nrd.objEngine.GetObjectsToStabilize(nrd.dev.Device, c, cancel)
 	count, success, failed := 0, 0, 0
-
 	for o := range c {
 		count++
-		nrd.stabilizationAttemptsMetric.Inc(1)
 		nrd.UpdateStat("checkin", 1)
 		func() {
 			nrd.r.nurseryConcurrencySem <- struct{}{}
 			defer func() {
 				<-nrd.r.nurseryConcurrencySem
 			}()
+			if !nrd.objEngine.UpdateItemStabilized(nrd.dev.Device, o.Uuid(), o.MetadataMd5(), true) {
+				nrd.stabilizationSkipMetric.Inc(1)
+				return
+			}
+			nrd.stabilizationAttemptsMetric.Inc(1)
+			st := time.Now()
 			if err := o.Stabilize(nrd.dev); err == nil {
+				nrd.r.logger.Debug("object stabilized", zap.String("hash", o.Uuid()), zap.Duration("dur", time.Since(st)))
 				nrd.stabilizationSuccessesMetric.Inc(1)
 				nrd.UpdateStat("ObjectsStabilizedSuccess", 1)
 				nrd.UpdateStat("ObjectsStabilizedBytes", o.ContentLength())
 				success++
 			} else {
+				nrd.objEngine.UpdateItemStabilized(nrd.dev.Device, o.Uuid(), o.MetadataMd5(), false)
 				nrd.stabilizationFailuresMetric.Inc(1)
 				nrd.r.logger.Debug("[stabilizeDevice] error Stabilize obj", zap.String("Object", o.Repr()), zap.Error(err))
 				nrd.UpdateStat("ObjectsStabilizedError", 1)
@@ -113,8 +118,11 @@ func (nrd *nurseryDevice) ScanLoop() {
 		case <-nrd.canchan:
 			return
 		default:
+			st := time.Now()
 			nrd.Scan()
-			time.Sleep(10 * time.Second)
+			if time.Since(st) < time.Second {
+				time.Sleep(time.Second - time.Since(st))
+			}
 		}
 	}
 }
@@ -181,6 +189,7 @@ func GetNurseryDevice(oring ring.Ring, dev *ring.Device, policy int, r *Replicat
 	}
 	nrd.stabilizationAttemptsMetric = r.metricsScope.Counter(fmt.Sprintf("%d_%s_stabilization_attempts", policy, dev.Device))
 	nrd.stabilizationSuccessesMetric = r.metricsScope.Counter(fmt.Sprintf("%d_%s_stabilization_successes", policy, dev.Device))
+	nrd.stabilizationSkipMetric = r.metricsScope.Counter(fmt.Sprintf("%d_%s_stabilization_skip_successes", policy, dev.Device))
 	nrd.stabilizationFailuresMetric = r.metricsScope.Counter(fmt.Sprintf("%d_%s_stabilization_failures", policy, dev.Device))
 	nrd.stabilizationLastPassCountMetric = r.metricsScope.Gauge(fmt.Sprintf("%d_%s_stabilization_last_pass_count", policy, dev.Device))
 	nrd.stabilizationLastPassDurationMetric = r.metricsScope.Timer(fmt.Sprintf("%d_%s_stabilization_last_pass_duration", policy, dev.Device))

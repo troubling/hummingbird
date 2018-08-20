@@ -51,7 +51,7 @@ func TestEcEngineConstructor(t *testing.T) {
 	require.Nil(t, err)
 }
 
-func getTestEce() (*ecEngine, string, error) {
+func getTestEce(frDevs []*ring.Device) (*ecEngine, string, error) {
 	driveRoot, err := ioutil.TempDir("", "")
 	if err != nil {
 		return nil, "", err
@@ -62,7 +62,7 @@ func getTestEce() (*ecEngine, string, error) {
 		Config: map[string]string{"policy_type": "hec",
 			"default": "yes", "name": "gold", "data_shards": "2",
 			"parity_shards": "1"}}
-	testRing := &test.FakeRing{}
+	testRing := &test.FakeRing{MockDevices: frDevs}
 	transport := &http.Transport{
 		MaxIdleConnsPerHost: 256,
 		MaxIdleConns:        0,
@@ -84,6 +84,7 @@ func getTestEce() (*ecEngine, string, error) {
 		logger:         logger,
 		ring:           testRing,
 		idbs:           map[string]*IndexDB{},
+		stabItems:      map[string]bool{},
 		dbPartPower:    1,
 		numSubDirs:     32,
 		client: &http.Client{
@@ -118,7 +119,7 @@ func TestGetObjectsToReplicate(t *testing.T) {
 	port, err := strconv.Atoi(ports)
 	require.Nil(t, err)
 
-	ece, dr, err := getTestEce()
+	ece, dr, err := getTestEce(nil)
 	if dr != "" {
 		defer os.RemoveAll(dr)
 	}
@@ -151,7 +152,7 @@ func TestGetObjectsToReplicate(t *testing.T) {
 }
 
 func TestGetObjectsToReplicateRemoteHasAll(t *testing.T) {
-	ece, dr, err := getTestEce()
+	ece, dr, err := getTestEce(nil)
 	if dr != "" {
 		defer os.RemoveAll(dr)
 	}
@@ -197,7 +198,7 @@ func TestGetObjectsToReplicateRemoteHasAll(t *testing.T) {
 }
 
 func TestGetObjectsToReplicateRemoteHasSome(t *testing.T) {
-	ece, dr, err := getTestEce()
+	ece, dr, err := getTestEce(nil)
 	if dr != "" {
 		defer os.RemoveAll(dr)
 	}
@@ -246,7 +247,7 @@ func TestGetObjectsToReplicateRemoteHasSome(t *testing.T) {
 }
 
 func TestEcShardDelete(t *testing.T) {
-	ece, dr, err := getTestEce()
+	ece, dr, err := getTestEce(nil)
 	if dr != "" {
 		defer os.RemoveAll(dr)
 	}
@@ -275,4 +276,38 @@ func TestEcShardDelete(t *testing.T) {
 	ece.ecShardDeleteHandler(w, req)
 	resp = w.Result()
 	require.Equal(t, 204, resp.StatusCode)
+}
+
+func TestGetObjectsToStabilize(t *testing.T) {
+	mds := []*ring.Device{}
+	mds = append(mds, &ring.Device{Id: 0})
+	mds = append(mds, &ring.Device{Id: 1})
+	mds = append(mds, &ring.Device{Id: 2})
+	ece, dr, err := getTestEce(mds)
+	if dr != "" {
+		defer os.RemoveAll(dr)
+	}
+	require.Nil(t, err)
+	idb, err := ece.getDB("sdb1")
+	require.Nil(t, err)
+
+	timestamp := time.Now().UnixNano()
+	body := "just testing"
+	hsh0 := "00000000000000000000000000000001"
+	f, err := idb.TempFile(hsh0, 0, timestamp, int64(len(body)), true)
+	require.Nil(t, err)
+	f.Write([]byte(body))
+	require.Nil(t, idb.Commit(f, hsh0, 0, timestamp, "PUT", map[string]string{"name": "o1"}, true, ""))
+	hsh1 := "00000000000000000000000000000002"
+	f, err = idb.TempFile(hsh1, 0, timestamp, int64(len(body)), true)
+	require.Nil(t, err)
+	f.Write([]byte(body))
+	require.Nil(t, idb.Commit(f, hsh1, 0, timestamp, "PUT", map[string]string{"name": "o2"}, true, ""))
+
+	osc, cancel := ece.GetObjectsToStabilize(&ring.Device{Id: 0, Device: "sdb1"})
+	defer close(cancel)
+	os := <-osc
+	require.Equal(t, "o1", os.Metadata()["name"])
+	os = <-osc
+	require.Equal(t, "o2", os.Metadata()["name"])
 }
